@@ -281,7 +281,7 @@ public final class AddIntakeViewModel: ObservableObject {
     @Published public private(set) var prefilledNutrients: [String: NutrientValue] = [:]
     @Published public private(set) var lookupBasis: BarcodeLookupBasis?
     /// The basis of a label the camera captured, so the amount preview can scale it like a looked-up product.
-    @Published private(set) var capturedPanelBasis: BarcodeLookupBasis?
+    @Published private(set) var capturedLabelBasis: String?
     /// What one serving is, when the values are per serving.
     @Published public private(set) var serving: ServingDefinition?
     /// The attribution the source requires next to its values.
@@ -788,14 +788,7 @@ public final class AddIntakeViewModel: ObservableObject {
         // The captured panel's serving and basis feed the Servings control and the amount preview, the same
         // as a looked-up product's. Form state only; the stored values are not changed.
         servingOption = Self.capturedServing(of: product)
-        capturedPanelBasis = Self.capturedBasis(of: product)
-    }
-
-    /// The basis a captured panel states, read from its stored label basis ("per 100 g", "per serving (30 g)").
-    static func capturedBasis(of product: ProductDefinition) -> BarcodeLookupBasis? {
-        BarcodeLookupBasis.allCases.first { basis in
-            product.labelBasis == basis.label || product.labelBasis.hasPrefix(basis.label + " (")
-        }
+        capturedLabelBasis = product.labelBasis
     }
 
     /// Prefills a Library product without changing its saved snapshot identity.
@@ -882,7 +875,7 @@ public final class AddIntakeViewModel: ObservableObject {
         lookedUp = nil
         // A serving from an earlier product must not stay on the Servings control or count the next entry.
         servingOption = nil
-        capturedPanelBasis = nil
+        capturedLabelBasis = nil
         listedPortions = [:]
         portionsAsked = false
         portionsLoaded = false
@@ -1049,9 +1042,36 @@ public final class AddIntakeViewModel: ObservableObject {
     /// Calories and macros for the amount as typed, from per-100 g values. Nil when the amount is not a
     /// mass or the values are not per 100 g; per-serving values are not scaled here.
     public var amountPreview: AmountPreview? {
-        AmountPreview.make(
-            nutrients: prefilledNutrients, basis: lookupBasis ?? lookedUp?.basis ?? capturedPanelBasis,
-            amountText: amountText, unit: unit)
+        if let basis = lookupBasis ?? lookedUp?.basis {
+            return AmountPreview.make(nutrients: prefilledNutrients, basis: basis, amountText: amountText, unit: unit)
+        }
+        guard let labelBasis = capturedLabelBasis else { return nil }
+        return capturedPreview(labelBasis: labelBasis)
+    }
+
+    /// The preview for a captured panel. A per-serving panel scales the same way the "This adds" lines and the
+    /// save path do: IntakeContextSnapshotBasis's scaling factor for the stored label basis and the amount typed.
+    /// Only a mass amount is scaled, so a volume or count amount shows no preview.
+    private func capturedPreview(labelBasis: String) -> AmountPreview? {
+        guard let amount = AmountParser.parseTyped(amountText), unit.dimension == .mass,
+              let converted = try? Quantity(value: amount, unit: unit).converted(to: .g)
+        else { return nil }
+        let component = IntakeComponent(componentID: "preview", name: name, amount: amount, unit: unit)
+        guard let factor = DailyTotalsBuilder.scalingFactor(labelBasis: labelBasis, logged: [component]) else {
+            return nil
+        }
+        func scaled(_ key: String, in expected: MeasureUnit) -> Decimal? {
+            guard case .known(let value, let stated) = prefilledNutrients[key] ?? .unknown, stated == expected else {
+                return nil
+            }
+            return value * factor
+        }
+        return AmountPreview(
+            grams: converted.value,
+            kcal: scaled(LookedUpProduct.energyKcal, in: .kcal),
+            protein: scaled(LookedUpProduct.protein, in: .g),
+            carbohydrates: scaled(LookedUpProduct.carbohydrates, in: .g),
+            fat: scaled(LookedUpProduct.fat, in: .g))
     }
 
     /// The "Save to Library" switch. It starts on every time the form opens, so no earlier choice carries over.

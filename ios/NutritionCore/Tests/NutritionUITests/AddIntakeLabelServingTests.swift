@@ -46,21 +46,23 @@ final class AddIntakeLabelServingTests: XCTestCase {
         XCTAssertFalse(model.canCountServings)
     }
 
-    /// A captured per-100 g panel scales the typed amount in the preview, as a looked-up product does.
-    func testCapturedPer100gPanelFeedsTheAmountPreview() throws {
+    /// A captured per-serving panel with a weight scales its nutrients to the amount typed, through the same
+    /// factor the "This adds" lines and the save path use: 15 g of a 30 g serving is half the serving.
+    func testCapturedServingPanelFeedsTheAmountPreview() throws {
         let model = makeModel(try makeStore())
-        model.applyLabelProduct(panel(basis: "per 100 g"), fromLabelCapture: true)
-        model.amountText = "50"
+        model.applyLabelProduct(panel(basis: "per serving (30 g)"), fromLabelCapture: true)
+        model.amountText = "15"
         model.unit = .g
 
         XCTAssertEqual(model.amountPreview?.kcal, 240)
+        XCTAssertEqual(model.amountPreview?.grams, 15)
     }
 
     /// Clearing the form drops the captured serving and basis, so the next entry starts clean.
     func testClearingTheFormDropsTheCapturedServingAndBasis() throws {
         let model = makeModel(try makeStore())
-        model.applyLabelProduct(panel(basis: "per 100 g"), fromLabelCapture: true)
-        model.amountText = "50"
+        model.applyLabelProduct(panel(basis: "per serving (30 g)"), fromLabelCapture: true)
+        model.amountText = "15"
         model.unit = .g
         XCTAssertNotNil(model.amountPreview)
         model.invalidateLookup()
