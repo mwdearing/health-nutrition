@@ -3,7 +3,7 @@ import NutritionDomain
 
 /// Per-day averages over the last 30 local days, for the Insights screen.
 ///
-/// Only days that have a known total count towards an average, and the line says how many days that was,
+/// Only days with a known amount for a nutrient count towards its average; a partly logged day counts with its known sum, as a minimum (#510), and the line says how many days that was,
 /// so a month with gaps reads as an average of what was logged and never as a month of zeros.
 public struct InsightsAverages: Equatable {
     public static let windowDays = 30
@@ -87,10 +87,10 @@ public struct InsightsAverages: Equatable {
                 amount: rounded, unit: shown.unit,
                 isBelowSmallest: shown.isBelowSmallest || (rounded == 0 && average > 0))
             let name = NutrientNames.displayName(for: nutrient)
-            let days = values.count == 1 ? "1 logged day" : "\(values.count) logged days"
+            let dayCount = values.count == 1 ? "1 logged day" : "\(values.count) logged days"
             let text = partialDays > 0
-                ? "\(name): at least \(figure.text) a day over \(days)"
-                : "\(name): average \(figure.text) a day over \(days)"
+                ? "\(name): at least \(figure.text) a day over \(dayCount)"
+                : "\(name): average \(figure.text) a day over \(dayCount)"
             lines.append(Line(id: nutrient, text: text))
         }
         return InsightsAverages(lines: lines)
