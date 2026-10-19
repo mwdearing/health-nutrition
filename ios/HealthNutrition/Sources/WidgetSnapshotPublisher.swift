@@ -77,6 +77,7 @@ final class WidgetSnapshotPublisher {
         // Only the load whose totals are on screen is written: a pending write from an earlier load, or one whose
         // successor failed part way (lastLoadedAt is nil then), is dropped.
         // A failed read leaves no rows and no totals to summarise, so it is never written as an empty day.
+        // Second line of defence: load() already clears lastLoadedAt on a failed read (TodayViewModel.swift:202).
         guard let store, !isErasing(), erasure.accepts(generation: generation), today.lastLoadedAt == loadedAt,
               !today.journalReadFailed
         else { return }

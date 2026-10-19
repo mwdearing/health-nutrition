@@ -117,7 +117,7 @@ final class TodayTests: XCTestCase {
         XCTAssertEqual(model.errorMessage, "Could not read the journal.")
         XCTAssertFalse(model.showsEmptyState, "a failed read is not an empty day")
         XCTAssertTrue(model.waterIsUnknown, "a failed read has no water total to show")
-        XCTAssertEqual(model.waterUnknownSpokenValue, "Water not available")
+        XCTAssertEqual(model.waterUnknownSpokenValue, "not available")
         XCTAssertTrue(model.showsTryAgain, "a failed read offers Try again")
     }
 
@@ -137,7 +137,7 @@ final class TodayTests: XCTestCase {
         XCTAssertNil(model.waterBar, "no water goal bar from a failed read")
         XCTAssertNil(model.waterTotalMilliliters, "a failed read has no water total, not 0")
         XCTAssertEqual(model.waterDisplayText, "–")
-        XCTAssertEqual(model.waterCardAccessibilityValue, "Water not available")
+        XCTAssertEqual(model.waterCardAccessibilityValue, "not available")
     }
 
     /// A failed goals read is not a failed journal read: the water total stays known and the journal message shows only
@@ -155,7 +155,7 @@ final class TodayTests: XCTestCase {
         XCTAssertEqual(model.waterTotalMilliliters, Decimal(0))
     }
 
-    /// A model that has not read yet has no water total: it shows a dash and "Water not available", never 0 mL.
+    /// A model that has not read yet has no water total: it shows a dash and "not available" under the Water label, never 0 mL.
     func testAFreshModelShowsWaterUnknownNotZero() throws {
         let model = TodayViewModel(store: StubJournalStore(intakes: [], components: [:]), timeZoneIdentifier: "UTC")
 
@@ -163,7 +163,7 @@ final class TodayTests: XCTestCase {
         XCTAssertFalse(model.showsEmptyState, "no read yet is not an empty day")
         XCTAssertTrue(model.waterIsUnknown)
         XCTAssertEqual(model.waterDisplayText, "–")
-        XCTAssertEqual(model.waterCardAccessibilityValue, "Water not available")
+        XCTAssertEqual(model.waterCardAccessibilityValue, "not available")
     }
 
     /// Try again reloads the same day: a read that now succeeds clears the error and shows the empty day.

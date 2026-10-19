@@ -30,6 +30,11 @@ struct WidgetSnapshot: Codable, Equatable {
 
     func isPartial(_ figure: String) -> Bool { partialFigures?.contains(figure) == true }
 
+    /// What VoiceOver says for one widget row: its figure when known, otherwise "<name> not available".
+    static func rowSpoken(_ name: String, figure: String, known: Bool) -> String {
+        known ? "\(name) \(figure)" : "\(name) not available"
+    }
+
     /// "Nothing logged today" is said only by a summary for today that has no entries. No summary means nothing is known.
     static func showsNothingLogged(_ snapshot: WidgetSnapshot?, now: Date, calendar: Calendar = .current) -> Bool {
         guard let snapshot, snapshot.isCurrent(on: now, calendar: calendar) else { return false }

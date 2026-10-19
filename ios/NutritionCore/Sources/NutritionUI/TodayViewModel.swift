@@ -577,7 +577,7 @@ public final class TodayViewModel: ObservableObject {
     public var showsTryAgain: Bool { journalReadFailed }
 
     /// The spoken water value while the water total is unknown. Not dated: Today can show other days.
-    public var waterUnknownSpokenValue: String { "Water not available" }
+    public var waterUnknownSpokenValue: String { "not available" }
 
     /// The water figure on the card: a dash while the total is unknown, the total otherwise.
     public var waterDisplayText: String { waterIsUnknown ? "–" : (waterTotalDisplay?.text ?? "–") }

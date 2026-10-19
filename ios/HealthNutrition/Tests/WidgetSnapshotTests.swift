@@ -22,6 +22,12 @@ final class WidgetSnapshotTests: XCTestCase {
             energyGoalKcal: 2_100, proteinGrams: 80, carbohydrateGrams: 120, fatGrams: 40, waterMilliliters: 750)
     }
 
+    /// An unknown widget row is spoken as "<name> not available", a known one with its figure.
+    func testAnUnknownRowIsSpokenAsNotAvailable() {
+        XCTAssertEqual(WidgetSnapshot.rowSpoken("Protein", figure: "—", known: false), "Protein not available")
+        XCTAssertEqual(WidgetSnapshot.rowSpoken("Protein", figure: "12 g", known: true), "Protein 12 g")
+    }
+
     /// "Nothing logged today" is shown only for a summary for today with no entries, never for a missing summary.
     func testNothingIsLoggedOnlyForACurrentEmptySummary() {
         let now = Date(timeIntervalSince1970: 1_700_000_000)

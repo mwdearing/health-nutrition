@@ -89,9 +89,17 @@ struct TodayWidgetView: View {
                 if !isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Protein \(WidgetFigure.figure(snapshot?.proteinGrams, unit: "g", partial: snapshot?.isPartial("protein") == true))")
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel(WidgetSnapshot.rowSpoken("Protein", figure: WidgetFigure.figure(snapshot?.proteinGrams, unit: "g", partial: snapshot?.isPartial("protein") == true), known: snapshot?.proteinGrams != nil))
                         Text("Carbohydrate \(WidgetFigure.figure(snapshot?.carbohydrateGrams, unit: "g", partial: snapshot?.isPartial("carbohydrate") == true))")
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel(WidgetSnapshot.rowSpoken("Carbohydrate", figure: WidgetFigure.figure(snapshot?.carbohydrateGrams, unit: "g", partial: snapshot?.isPartial("carbohydrate") == true), known: snapshot?.carbohydrateGrams != nil))
                         Text("Fat \(WidgetFigure.figure(snapshot?.fatGrams, unit: "g", partial: snapshot?.isPartial("fat") == true))")
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel(WidgetSnapshot.rowSpoken("Fat", figure: WidgetFigure.figure(snapshot?.fatGrams, unit: "g", partial: snapshot?.isPartial("fat") == true), known: snapshot?.fatGrams != nil))
                         Text("Water \(WidgetFigure.water(snapshot?.waterMilliliters, usUnits: snapshot?.usUnits))")
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel(WidgetSnapshot.rowSpoken("Water", figure: WidgetFigure.water(snapshot?.waterMilliliters, usUnits: snapshot?.usUnits), known: snapshot?.waterMilliliters != nil))
                         if snapshot?.partialFigures?.isEmpty == false {
                             Text("+ Some entries are missing nutrients").font(.caption2).foregroundStyle(.secondary)
                         }
