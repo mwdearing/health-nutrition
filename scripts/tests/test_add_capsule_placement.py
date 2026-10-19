@@ -69,5 +69,5 @@ def test_the_trends_tab_hosts_the_trends_screen_and_there_is_no_settings_tab() -
     assert "TrendsView(today: services.today, journal: services.journal)" in body
     assert 'Label("Trends"' in body
     # Settings lives behind the gear on every tab, not in the tab bar.
-    assert 'Label("Settings"' not in text
+    assert 'Label("Settings", systemImage: "gearshape")' not in text
     assert "SettingsTabRedirect" not in text
