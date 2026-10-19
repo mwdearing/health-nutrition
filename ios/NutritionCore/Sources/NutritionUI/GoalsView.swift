@@ -97,7 +97,14 @@ public struct GoalsView: View {
                     .foregroundStyle(TokenColors.textPrimary)
                     .decimalKeyboard()
                     .focused($focusedNutrient, equals: row.nutrient)
-                    .onSubmit { self.model.commitTarget(for: row.nutrient) }
+                    .onSubmit {
+                        // Return on an empty field is the explicit removal (#506); leaving the field keeps the goal.
+                        if (self.model.draftText[row.nutrient] ?? "").isEmpty {
+                            self.model.clearTarget(for: row.nutrient)
+                        } else {
+                            self.model.commitTarget(for: row.nutrient)
+                        }
+                    }
                     .accessibilityLabel("Daily target for \(row.displayName)")
                     .accessibilityHint("Leave blank to remove the goal")
                 Picker("Unit", selection: Binding(
