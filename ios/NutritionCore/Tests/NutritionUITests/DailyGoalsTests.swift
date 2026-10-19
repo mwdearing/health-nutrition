@@ -1084,7 +1084,8 @@ final class DailyGoalsTests: XCTestCase {
         XCTAssertEqual(model.sections[4].rows.first?.detail, "Added by a scanned label")
     }
 
-    func testBlankTargetRemovesTheGoal() throws {
+    /// Leaving a blank field keeps the goal (#506). Return on a blank field removes it, through `submitTarget`.
+    func testBlankTargetKeepsTheGoalOnLeavingAndRemovesItOnReturn() throws {
         let goals = InMemoryGoalStore(goals: [
             NutrientGoal(nutrient: "protein", target: 60, unit: .g),
         ])
@@ -1092,6 +1093,9 @@ final class DailyGoalsTests: XCTestCase {
         model.load()
         model.draftText["protein"] = "  "
         XCTAssertTrue(model.commitTarget(for: "protein"))
+        XCTAssertEqual(try goals.goal(for: "protein")?.target, 60)
+
+        XCTAssertTrue(model.submitTarget(for: "protein"))
         XCTAssertNil(try goals.goal(for: "protein"))
         XCTAssertEqual(model.sections[0].rows.first { $0.nutrient == "protein" }?.targetText, "None")
     }

@@ -533,7 +533,6 @@ public final class GoalsViewModel: ObservableObject {
     /// Commits one inline field without discarding drafts in other fields.
     @discardableResult
     public func commitTarget(for nutrient: String) -> Bool {
-        clearedGoal = nil
         let text = (draftText[nutrient] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         rowError[nutrient] = nil
         if nutrient == DailyTotalsBuilder.waterKey {
@@ -595,6 +594,8 @@ public final class GoalsViewModel: ObservableObject {
                 .map { NutrientGoal(nutrient: nutrient, target: $0.value, unit: $0.unit) }
         }
         guard setTarget(text, for: nutrient, unit: writtenUnit) else { return false }
+        // A goal saved for this nutrient after a Clear is the newer value, so the Undo offer ends.
+        if clearedGoal?.nutrient == nutrient { clearedGoal = nil }
         draftText[nutrient] = DecimalFormatting.text(target)
         if nutrient == DailyTotalsBuilder.waterKey {
             selectedUnits[nutrient] = writtenUnit
