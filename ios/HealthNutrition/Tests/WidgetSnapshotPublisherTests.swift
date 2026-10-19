@@ -7,6 +7,8 @@ import XCTest
 @testable import HealthNutrition
 
 private final class ReadFailingStoreStub: JournalStore, @unchecked Sendable {
+    /// The protocol requires it; this stub only fails reads, so it is never set.
+    var failNextSaveForTesting = false
     let intakes: [Intake]
     let components: [String: [IntakeComponent]]
 
