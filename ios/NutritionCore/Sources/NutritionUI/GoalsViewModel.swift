@@ -469,6 +469,73 @@ public final class GoalsViewModel: ObservableObject {
         }
     }
 
+    /// The goal a Clear removed, kept so Undo can put it back. Nil once it is restored or another
+    /// change is made.
+    public struct ClearedGoal: Equatable {
+        public let nutrient: String
+        public let goal: NutrientGoal
+    }
+
+    /// Shown with Undo after a goal is removed.
+    public static let clearedMessage = "Goal removed"
+
+    @Published public private(set) var clearedGoal: ClearedGoal?
+
+    /// Removes the goal for `nutrient` on an explicit clear (the row's Clear button, or Return on an
+    /// empty field). The removed goal is kept for Undo. A goal that cannot be read is not removed, since
+    /// Undo could not put it back.
+    @discardableResult
+    public func clearTarget(for nutrient: String) -> Bool {
+        rowError[nutrient] = nil
+        let previous: NutrientGoal?
+        do { previous = try storedGoal(for: nutrient) } catch {
+            errorMessage = Self.readFailedMessage
+            return false
+        }
+        // Nothing stored means nothing to undo, so a pending Undo for another goal is left alone.
+        guard let previous else {
+            draftText[nutrient] = ""
+            return true
+        }
+        guard removeTarget(for: nutrient) else { return false }
+        draftText[nutrient] = ""
+        loadedDraftText[nutrient] = ""
+        clearedGoal = ClearedGoal(nutrient: nutrient, goal: previous)
+        noteSaved()
+        return true
+    }
+
+    /// Puts back the goal the last Clear removed, and returns whether it did. Only when nothing has been
+    /// stored for that nutrient since: a goal saved after the Clear is the person's newer value and is kept.
+    @discardableResult
+    public func undoClear() -> Bool {
+        guard let cleared = clearedGoal else { return false }
+        let current: NutrientGoal?
+        do { current = try storedGoal(for: cleared.nutrient) } catch {
+            errorMessage = Self.readFailedMessage
+            return false
+        }
+        guard current == nil else {
+            clearedGoal = nil
+            return false
+        }
+        guard restoreGoal(cleared.goal, for: cleared.nutrient) else { return false }
+        clearedGoal = nil
+        draftText[cleared.nutrient] = nil
+        load()
+        noteSaved()
+        return true
+    }
+
+    /// Return in a goal field: an empty field removes the goal, anything else is committed.
+    @discardableResult
+    public func submitTarget(for nutrient: String) -> Bool {
+        if (draftText[nutrient] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return clearTarget(for: nutrient)
+        }
+        return commitTarget(for: nutrient)
+    }
+
     /// Commits one inline field without discarding drafts in other fields.
     @discardableResult
     public func commitTarget(for nutrient: String) -> Bool {
@@ -500,9 +567,17 @@ public final class GoalsViewModel: ObservableObject {
             }
         }
         if text.isEmpty {
-            guard removeTarget(for: nutrient) else { return false }
-            draftText[nutrient] = ""
-            noteSaved()
+            // Leaving an empty field keeps the stored goal (#506). Removal is `clearTarget`. The field
+            // goes back to what is stored, so the screen does not show a goal that is not there.
+            // Only this field is restored; the other drafts are the person's own text.
+            // A failed read is said, not shown as an empty field over a stored goal.
+            let stored: NutrientGoal?
+            do { stored = try storedGoal(for: nutrient) } catch {
+                errorMessage = Self.readFailedMessage
+                return false
+            }
+            draftText[nutrient] = stored.map { DecimalFormatting.text(displayGoal($0).amount) } ?? ""
+            loadedDraftText[nutrient] = draftText[nutrient]
             return true
         }
         guard let target = AmountParser.parseTyped(text), !target.isNaN, target > 0 else {
@@ -525,6 +600,8 @@ public final class GoalsViewModel: ObservableObject {
                 .map { NutrientGoal(nutrient: nutrient, target: $0.value, unit: $0.unit) }
         }
         guard setTarget(text, for: nutrient, unit: writtenUnit) else { return false }
+        // Undo covers only the latest action: any saved goal after a Clear ends the Undo offer.
+        clearedGoal = nil
         draftText[nutrient] = DecimalFormatting.text(target)
         if nutrient == DailyTotalsBuilder.waterKey {
             selectedUnits[nutrient] = writtenUnit
