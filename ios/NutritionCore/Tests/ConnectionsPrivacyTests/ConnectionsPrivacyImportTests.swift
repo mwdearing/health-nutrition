@@ -582,10 +582,11 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
     func testAFailedFlagClearLeavesTheImportRunning() async throws {
         let journal = ImportStubStore()
         journal.failClearRestoreForTesting = true
+        journal.pauseBeforeRestoreForTesting = true
         let model = ConnectionsPrivacyViewModel(store: journal, erasers: [journal])
 
         model.importJournal(data: try export(includeFavorite: false))
-        let restorePaused = await waitForSignal(journal.restorePausedForTesting)
+        let restorePaused = await waitForSignal(journal.restorePausedBeforeWriteForTesting)
         XCTAssertTrue(restorePaused)
 
         let erased = await model.eraseAllData()
@@ -594,7 +595,7 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         XCTAssertTrue(model.eraseRetryAvailable)
         XCTAssertTrue(model.isImporting, "the failed erase must not cancel the import")
 
-        journal.resumeRestoreForTesting.signal()
+        journal.resumeRestoreBeforeWriteForTesting.signal()
         for _ in 0..<200 where model.isImporting {
             try await Task.sleep(nanoseconds: 10_000_000)
         }
