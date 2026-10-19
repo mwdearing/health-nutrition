@@ -86,7 +86,7 @@ public struct NourishTodayHeader: View {
         let calories = model.calorieRemaining
         // One gate for the visible note and the spoken one: the day's own partial flag.
         let partial = Self.partialLine(calories, reason: bar(Self.ringKey)?.reason)
-        let spoken = Self.spokenSummary(calories, partial: partial, footnote: ringFootnote)
+        let spoken = Self.spokenSummary(calories, partial: partial, footnote: calories.remaining == nil ? nil : ringFootnote)
         return VStack(alignment: .leading, spacing: DesignSpacing.s) {
             if let remaining = calories.remaining {
                 Text(BodyActivityViewModel.whole(remaining))
