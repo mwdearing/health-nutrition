@@ -274,6 +274,9 @@ final class SupplementStackTests: XCTestCase {
         let store = try makeStore()
         let favorites = try makeFavorites()
         let schedules = try makeSchedules()
+        let product = supplement()
+        // Two days ago, so the product snapshot is in the journal for the repeat to copy.
+        try log(store, at: now.addingTimeInterval(-2 * 86_400), product: product)
         try saveFavorite(favorites)
         let model = makeModel(store: store, favorites: favorites, schedules: schedules)
         model.load(now: now)
