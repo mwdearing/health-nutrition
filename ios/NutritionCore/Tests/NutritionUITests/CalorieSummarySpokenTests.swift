@@ -6,7 +6,7 @@ import XCTest
 final class CalorieSummarySpokenTests: XCTestCase {
     /// VoiceOver reads remaining, then "Food, N calories" and "Burned, N calories", as one line.
     func testSpokenSummaryNamesFoodAndBurnedAsLabels() throws {
-        let calories = CalorieRemaining(goal: 2000, food: 500, isPartial: false, burned: 120, remaining: 1620)
+        let calories = CalorieRemaining(goal: 2000, food: 500, isPartial: false, partialNote: nil, burned: 120, remaining: 1620)
         // Thousands are grouped by the device locale, so the expected figures come from the same formatter.
         let remaining = BodyActivityViewModel.whole(1620), food = BodyActivityViewModel.whole(500), burned = BodyActivityViewModel.whole(120)
         XCTAssertEqual(
@@ -16,19 +16,11 @@ final class CalorieSummarySpokenTests: XCTestCase {
 
     /// Burned is left out when Health gave no reading, and the partial note joins the line when present.
     func testSpokenSummaryOmitsBurnedWithoutAReadingAndKeepsThePartialNote() throws {
-        let calories = CalorieRemaining(goal: 2000, food: 500, isPartial: true, burned: nil, remaining: 1500)
+        let calories = CalorieRemaining(
+            goal: 2000, food: 500, isPartial: true, partialNote: "Some entries have no calories", burned: nil, remaining: 1500)
         let remaining = BodyActivityViewModel.whole(1500), food = BodyActivityViewModel.whole(500)
         XCTAssertEqual(
             NourishTodayHeader.spokenSummary(calories, partial: "Some entries have no calories", footnote: nil),
             "\(remaining) calories remaining, Food, \(food) calories, Some entries have no calories")
-    }
-
-    /// The partial note appears only when the day is partial, and then reads the goal bar's reason.
-    func testPartialLineGatesOnTheDaysFlag() throws {
-        let whole = CalorieRemaining(goal: 2000, food: 500, isPartial: false, burned: nil, remaining: 1500)
-        let partial = CalorieRemaining(goal: 2000, food: 500, isPartial: true, burned: nil, remaining: 1500)
-        XCTAssertNil(NourishTodayHeader.partialLine(whole, reason: "Some entries have no calories"))
-        XCTAssertEqual(NourishTodayHeader.partialLine(partial, reason: "Some entries have no calories"), "Some entries have no calories")
-        XCTAssertNil(NourishTodayHeader.partialLine(partial, reason: nil))
     }
 }

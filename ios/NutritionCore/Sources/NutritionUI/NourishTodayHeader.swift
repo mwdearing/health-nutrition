@@ -62,11 +62,6 @@ public struct NourishTodayHeader: View {
         return model.goalBars.filter { !shown.contains($0.id) }
     }
 
-    /// The partial note for the summary, shown and spoken from this one gate: the day's own partial flag.
-    static func partialLine(_ calories: CalorieRemaining, reason: String?) -> String? {
-        calories.isPartial ? reason : nil
-    }
-
     /// The one spoken line for the summary: remaining, food and burned as labels, then the partial note and the goal footnote.
     static func spokenSummary(_ calories: CalorieRemaining, partial: String?, footnote: String?) -> String {
         [
@@ -84,8 +79,8 @@ public struct NourishTodayHeader: View {
     /// A partly known day reuses the existing partial note; Remaining is then an upper bound.
     private var calorieSummary: some View {
         let calories = model.calorieRemaining
-        // One gate for the visible note and the spoken one: the day's own partial flag.
-        let partial = Self.partialLine(calories, reason: bar(Self.ringKey)?.reason)
+        // The note comes from the calorie model, which builds it from the same missing count as its partial flag.
+        let partial = calories.partialNote
         let spoken = Self.spokenSummary(calories, partial: partial, footnote: calories.remaining == nil ? nil : ringFootnote)
         return VStack(alignment: .leading, spacing: DesignSpacing.s) {
             if let remaining = calories.remaining {
