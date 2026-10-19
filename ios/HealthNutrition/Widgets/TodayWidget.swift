@@ -41,7 +41,7 @@ struct TodayWidgetView: View {
     private var snapshot: WidgetSnapshot? { entry.snapshot }
     /// No summary could be read (not written yet, or the device has not been unlocked since a restart): the
     /// widget then states nothing about the day rather than claiming nothing was logged.
-    private var isEmpty: Bool { snapshot?.hasEntries == false }
+    private var isEmpty: Bool { WidgetSnapshot.showsNothingLogged(snapshot) }
 
     var body: some View {
         switch family {

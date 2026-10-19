@@ -30,6 +30,9 @@ struct WidgetSnapshot: Codable, Equatable {
 
     func isPartial(_ figure: String) -> Bool { partialFigures?.contains(figure) == true }
 
+    /// "Nothing logged today" is said only by a summary for today that has no entries. No summary means nothing is known.
+    static func showsNothingLogged(_ snapshot: WidgetSnapshot?) -> Bool { snapshot?.hasEntries == false }
+
     /// A summary with nothing in it: no entries and no figures, as after Erase all data.
     static func empty(at time: Date) -> WidgetSnapshot {
         WidgetSnapshot(

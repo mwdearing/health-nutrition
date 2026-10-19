@@ -22,6 +22,16 @@ final class WidgetSnapshotTests: XCTestCase {
             energyGoalKcal: 2_100, proteinGrams: 80, carbohydrateGrams: 120, fatGrams: 40, waterMilliliters: 750)
     }
 
+    /// "Nothing logged today" is shown only for a summary for today with no entries, never for a missing summary.
+    func testNothingIsLoggedOnlyForACurrentEmptySummary() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let current = WidgetSnapshot.empty(at: now)
+
+        XCTAssertTrue(current.isCurrent(on: now))
+        XCTAssertTrue(WidgetSnapshot.showsNothingLogged(current))
+        XCTAssertFalse(WidgetSnapshot.showsNothingLogged(nil), "no summary says nothing about the day")
+    }
+
     func testTheAppGroupIsNamedAfterTheAppAndTheExtensionResolvesToTheSameGroup() {
         let app = WidgetAppGroup.identifier(forBundleIdentifier: "dev.example.HealthNutrition", isExtension: false)
         let widgets = WidgetAppGroup.identifier(
