@@ -12,6 +12,15 @@ private struct FixedFacts: NutrientFactsLookup {
 }
 
 /// Serves canned intakes so tests can hold stored values the real store would refuse to create.
+private final class ThrowingGoalStore: GoalStore, @unchecked Sendable {
+    private struct Failure: Error {}
+    func goals() throws -> [NutrientGoal] { throw Failure() }
+    func goal(for nutrient: String) throws -> NutrientGoal? { throw Failure() }
+    func setGoal(_ goal: NutrientGoal) throws { throw Failure() }
+    func removeGoal(nutrient: String) throws { throw Failure() }
+    func close() {}
+}
+
 private final class StubJournalStore: JournalStore, @unchecked Sendable {
     var failNextSaveForTesting = false
     let intakes: [Intake]
@@ -125,6 +134,24 @@ final class TodayTests: XCTestCase {
         XCTAssertTrue(model.progress.isEmpty, "no ring or progress from a failed read")
         XCTAssertTrue(model.goalBars.isEmpty, "no goal bars from a failed read")
         XCTAssertNil(model.waterBar, "no water goal bar from a failed read")
+        XCTAssertNil(model.waterTotalMilliliters, "a failed read has no water total, not 0")
+        XCTAssertEqual(model.waterDisplayText, "–")
+        XCTAssertEqual(model.waterCardAccessibilityValue, "Water not available")
+    }
+
+    /// A failed goals read is not a failed journal read: the water total stays known and the journal message shows only
+    /// the goals text.
+    func testAGoalsOnlyFailureKeepsWaterKnown() throws {
+        let store = StubJournalStore(intakes: [], components: [:])
+        let model = TodayViewModel(
+            store: store, goals: ThrowingGoalStore(), timeZoneIdentifier: "UTC")
+
+        model.load(now: now)
+
+        XCTAssertFalse(model.waterIsUnknown, "a goals failure does not make the water total unknown")
+        XCTAssertFalse(model.journalReadFailed)
+        XCTAssertEqual(model.errorMessage, GoalsViewModel.readFailedMessage)
+        XCTAssertEqual(model.waterTotalMilliliters, Decimal(0))
     }
 
     /// Try again reloads the same day: a read that now succeeds clears the error and shows the empty day.

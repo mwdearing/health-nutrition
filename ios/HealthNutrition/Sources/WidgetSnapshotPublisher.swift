@@ -116,7 +116,7 @@ final class WidgetSnapshotPublisher {
             generatedAt: now, hasEntries: !today.rows.isEmpty, energyKcal: energy,
             energyGoalKcal: energyGoal, proteinGrams: protein,
             carbohydrateGrams: carbohydrate, fatGrams: fat,
-            waterMilliliters: NSDecimalNumber(decimal: today.waterTotalMilliliters).doubleValue,
+            waterMilliliters: today.waterTotalMilliliters.map { NSDecimalNumber(decimal: $0).doubleValue },
             usUnits: today.unitSystem == .usCustomary, partialFigures: partial.isEmpty ? nil : partial,
             remainingKcal: calories.remaining, burnedKcal: calories.burned, remainingIsPartial: calories.isPartial)
     }

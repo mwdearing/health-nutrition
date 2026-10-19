@@ -30,7 +30,7 @@ final class StoredShareCountingTests: XCTestCase {
     func todayWater(_ store: SwiftDataJournalStore) -> Decimal {
         let today = TodayViewModel(store: store, timeZoneIdentifier: "UTC")
         today.load(now: now)
-        return today.waterTotalMilliliters
+        return today.waterTotalMilliliters ?? 0
     }
 
     func dailyWater(_ store: SwiftDataJournalStore) throws -> NutrientValue? {

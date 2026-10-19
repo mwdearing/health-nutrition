@@ -84,7 +84,8 @@ public final class TodayViewModel: ObservableObject {
 
     @Published public private(set) var rows: [TodayRow] = []
     /// Water today in mL, an exact decimal.
-    @Published public private(set) var waterTotalMilliliters: Decimal = 0
+    /// The day's water in millilitres, or nil when the journal could not be read: a failed read has no total, never 0.
+    @Published public private(set) var waterTotalMilliliters: Decimal? = nil
     /// Water components skipped because their unit is not a volume (never counted as zero).
     @Published public private(set) var waterSkippedCount: Int = 0
     /// Stored intakes left out of Today because their time zone identifier is not a valid time zone.
@@ -411,7 +412,7 @@ public final class TodayViewModel: ObservableObject {
             rows = []
             mealSections = []
             calorieRemaining = .none
-            waterTotalMilliliters = 0
+            waterTotalMilliliters = nil
             waterEntryCount = 0
             waterSkippedCount = 0
             skippedIntakeCount = 0
@@ -577,8 +578,14 @@ public final class TodayViewModel: ObservableObject {
     /// The spoken water value while the water total is unknown. Not dated: Today can show other days.
     public var waterUnknownSpokenValue: String { "Water not available" }
 
+    /// The water figure on the card: a dash while the total is unknown, the total otherwise.
+    public var waterDisplayText: String { waterIsUnknown ? "–" : waterTotalDisplay.text }
+
+    /// The spoken water value on the card, whichever figure it shows.
+    public var waterCardAccessibilityValue: String { waterIsUnknown ? waterUnknownSpokenValue : waterAccessibilityValue }
+
     public var waterTotalDisplay: DisplayAmount {
-        AmountDisplay.water(self.waterTotalMilliliters, system: self.preferences.unitSystem)
+        AmountDisplay.water(self.waterTotalMilliliters ?? 0, system: self.preferences.unitSystem)
     }
 
     /// The quick-water amount in the unit the reader chose.
