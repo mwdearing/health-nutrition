@@ -129,7 +129,7 @@ public struct GoalBarModel: Equatable, Identifiable {
 
     /// The nutrient's name inside a sentence: lower case, except a name that is all capitals.
     private static func inSentence(_ label: String) -> String {
-        label == label.uppercased() ? label : label.lowercased()
+        MissingValueWording.inSentence(label)
     }
 
     private static func reasonText(
@@ -140,12 +140,11 @@ public struct GoalBarModel: Equatable, Identifiable {
             if skippedWaterCount > 0 {
                 return "\(skippedWaterCount) water entries have a unit that is not a volume and are not counted."
             }
-            return "Some entries can't be added up for \(name)"
+            return MissingValueWording.fallback(name: name)
         }
-        if missingCount == 1 { return "1 entry has no \(name) value" }
-        if missingCount > 1 { return "\(missingCount) entries have no \(name) value" }
-        return "Some entries can't be added up for \(name)"
+        return MissingValueWording.note(count: missingCount, name: name)
     }
+
 }
 
 /// A labeled bar: the nutrient and its figure above a capsule track. One accessibility element, so
@@ -234,5 +233,26 @@ struct HatchLines: Shape {
             x += 6
         }
         return path
+    }
+}
+
+/// The one source for the missing-value wording shared by the goal rows and the calorie summary: the name in a
+/// sentence, the count note, and the fallback for a partial line with no missing entry.
+enum MissingValueWording {
+    /// Lower case unless the label is all capitals, so a name reads the same wherever it sits in a sentence.
+    static func inSentence(_ label: String) -> String {
+        label == label.uppercased() ? label : label.lowercased()
+    }
+
+    /// "1 entry has no energy value" and "2 entries have no energy value"; the fallback when no entry is missing.
+    static func note(count: Int, name: String) -> String {
+        if count == 1 { return "1 entry has no \(name) value" }
+        if count > 1 { return "\(count) entries have no \(name) value" }
+        return fallback(name: name)
+    }
+
+    /// The wording for a partial line with no missing entry (a below-threshold amount).
+    static func fallback(name: String) -> String {
+        "Some entries can't be added up for \(name)"
     }
 }

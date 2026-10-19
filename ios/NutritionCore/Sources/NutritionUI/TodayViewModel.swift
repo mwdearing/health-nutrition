@@ -395,8 +395,10 @@ public final class TodayViewModel: ObservableObject {
                     if case .known(let value, _) = line.shownAmount { return value }
                     return nil
                 },
-                isPartial: foodLine?.isPartial ?? false,
-                burned: burnedCounted ? activeEnergyKcal.flatMap { $0 >= 0 ? $0 : nil } : nil)
+                partial: foodLine?.isPartial ?? false,
+                missingCount: foodLine?.missingCount ?? 0,
+                burned: burnedCounted ? activeEnergyKcal.flatMap { $0 >= 0 ? $0 : nil } : nil,
+                energyLabel: foodLine?.label ?? "Energy")
             missingValuesSummary = Self.makeMissingValuesSummary(
                 entries: foodEntries, trackedNutrients: trackedFood, lookup: lookup)
             errorMessage = goalsUnreadable ? GoalsViewModel.readFailedMessage : nil

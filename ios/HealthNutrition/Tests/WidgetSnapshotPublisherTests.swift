@@ -111,7 +111,7 @@ final class WidgetSnapshotPublisherTests: XCTestCase {
     // MARK: Calories remaining
 
     func testRemainingBurnedAndPartialAreTakenFromTheModelOnce() {
-        let model = CalorieRemaining.make(goal: 2_000, food: 800, isPartial: true, burned: 300)
+        let model = CalorieRemaining.make(goal: 2_000, food: 800, partial: true, missingCount: 1, burned: 300, energyLabel: "Energy")
         let figures = WidgetSnapshotPublisher.calorieFigures(model)
         XCTAssertEqual(figures.remaining, 1_500)
         XCTAssertEqual(figures.burned, 300)
@@ -120,7 +120,7 @@ final class WidgetSnapshotPublisherTests: XCTestCase {
 
     func testAWholeDayHasNoPartialFlag() {
         let figures = WidgetSnapshotPublisher.calorieFigures(
-            CalorieRemaining.make(goal: 2_000, food: 800, isPartial: false, burned: nil))
+            CalorieRemaining.make(goal: 2_000, food: 800, partial: false, missingCount: 0, burned: nil, energyLabel: "Energy"))
         XCTAssertEqual(figures.remaining, 1_200)
         XCTAssertNil(figures.burned, "no counted burned means no Burned figure, not zero")
         XCTAssertNil(figures.isPartial)
@@ -128,12 +128,12 @@ final class WidgetSnapshotPublisherTests: XCTestCase {
 
     func testNoGoalOrNoFoodMeansNoRemainingAndNoPartialFlag() {
         let noGoal = WidgetSnapshotPublisher.calorieFigures(
-            CalorieRemaining.make(goal: nil, food: 800, isPartial: true, burned: 200))
+            CalorieRemaining.make(goal: nil, food: 800, partial: true, missingCount: 1, burned: 200, energyLabel: "Energy"))
         XCTAssertNil(noGoal.remaining)
         XCTAssertNil(noGoal.isPartial, "nothing for a partial flag to qualify")
         XCTAssertEqual(noGoal.burned, 200)
         let noFood = WidgetSnapshotPublisher.calorieFigures(
-            CalorieRemaining.make(goal: 2_000, food: nil, isPartial: false, burned: nil))
+            CalorieRemaining.make(goal: 2_000, food: nil, partial: false, missingCount: 0, burned: nil, energyLabel: "Energy"))
         XCTAssertNil(noFood.remaining)
         let none = WidgetSnapshotPublisher.calorieFigures(.none)
         XCTAssertNil(none.remaining)
@@ -142,7 +142,7 @@ final class WidgetSnapshotPublisherTests: XCTestCase {
 
     func testAnOverspentDayKeepsItsNegativeRemaining() {
         let figures = WidgetSnapshotPublisher.calorieFigures(
-            CalorieRemaining.make(goal: 2_000, food: 2_300, isPartial: false, burned: nil))
+            CalorieRemaining.make(goal: 2_000, food: 2_300, partial: false, missingCount: 0, burned: nil, energyLabel: "Energy"))
         XCTAssertEqual(figures.remaining, -300)
     }
 }

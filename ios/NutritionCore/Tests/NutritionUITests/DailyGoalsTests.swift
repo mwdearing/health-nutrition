@@ -1084,3 +1084,72 @@ final class DailyGoalsTests: XCTestCase {
         XCTAssertNil(model.rowError["protein"])
     }
 }
+
+// MARK: The calorie summary's inputs, read through the Today view model
+
+extension DailyGoalsTests {
+    /// Active energy on: Burned counts, so Remaining = goal − food + burned. The bar is 400 kcal per 100 g.
+    func testCalorieSummaryCountsBurnedWhenTheSettingIsOn() throws {
+        let journal = try makeJournalStore()
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "energy", target: 2000, unit: .kcal))
+        try logBar(journal, grams: 100)
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setAddsActiveEnergyToGoal(true)
+
+        let model = TodayViewModel(
+            store: journal, goals: goals, lookup: SnapshotOnlyFacts(), preferences: preferences)
+        model.activeEnergyKcal = 120
+        model.load(now: when)
+
+        XCTAssertEqual(model.calorieRemaining.food, 400)
+        XCTAssertEqual(model.calorieRemaining.burned, 120)
+        XCTAssertEqual(model.calorieRemaining.remaining, 1720)
+    }
+
+    /// Active energy off: Burned is left out and Remaining = goal − food, even when Health has a reading.
+    func testCalorieSummaryLeavesBurnedOutWhenTheSettingIsOff() throws {
+        let journal = try makeJournalStore()
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "energy", target: 2000, unit: .kcal))
+        try logBar(journal, grams: 100)
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setAddsActiveEnergyToGoal(false)
+
+        let model = TodayViewModel(
+            store: journal, goals: goals, lookup: SnapshotOnlyFacts(), preferences: preferences)
+        model.activeEnergyKcal = 120
+        model.load(now: when)
+
+        XCTAssertNil(model.calorieRemaining.burned)
+        XCTAssertEqual(model.calorieRemaining.remaining, 1600)
+    }
+
+    /// A partial day: the count and the note come from the energy line, so the oats entry with no energy gives
+    /// one missing entry and the shipped note.
+    func testCalorieSummaryPartialDayTakesItsNoteFromTheEnergyLine() throws {
+        let journal = try makeJournalStore()
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "energy", target: 2000, unit: .kcal))
+        try logBar(journal, grams: 100)
+        try logOats(journal, grams: 50)
+
+        let model = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts())
+        model.load(now: when)
+
+        XCTAssertTrue(model.calorieRemaining.isPartial)
+        XCTAssertEqual(model.calorieRemaining.partialNote, "1 entry has no energy value")
+    }
+
+    /// No energy goal: there is no Remaining, but Food is still shown.
+    func testCalorieSummaryHidesRemainingWithoutAGoal() throws {
+        let journal = try makeJournalStore()
+        try logBar(journal, grams: 100)
+
+        let model = TodayViewModel(store: journal, lookup: SnapshotOnlyFacts())
+        model.load(now: when)
+
+        XCTAssertNil(model.calorieRemaining.remaining)
+        XCTAssertEqual(model.calorieRemaining.food, 400)
+    }
+}
