@@ -17,6 +17,13 @@ final class LogSavedMealShortcutTests: XCTestCase {
                 components: [FavoriteComponent(componentID: "oats", name: "Sample oats", amountText: "40", unitSymbol: "g")])])
     }
 
+    /// While an erase or import runs the Shortcut replies with the busy message and writes nothing (#480).
+    func testABusyAppRepliesWithTheBusyMessageAndLogsNothing() {
+        XCTAssertEqual(
+            SavedMealShortcut.busyReply(isBusy: true), "The app is busy with an erase or import. Try again in a moment.")
+        XCTAssertNil(SavedMealShortcut.busyReply(isBusy: false))
+    }
+
     func testLogsUnderTheMealItWasSavedWithUnlessOneIsNamed() {
         var loggedUnder: [MealLabel?] = []
         let log: (SavedMeal, MealLabel?, Date) throws -> SavedMealLogResult = { _, meal, _ in
