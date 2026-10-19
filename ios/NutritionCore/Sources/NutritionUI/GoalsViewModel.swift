@@ -492,9 +492,14 @@ public final class GoalsViewModel: ObservableObject {
             errorMessage = Self.readFailedMessage
             return false
         }
+        // Nothing stored means nothing to undo, so a pending Undo for another goal is left alone.
+        guard let previous else {
+            draftText[nutrient] = ""
+            return true
+        }
         guard removeTarget(for: nutrient) else { return false }
         draftText[nutrient] = ""
-        clearedGoal = previous.map { ClearedGoal(nutrient: nutrient, goal: $0) }
+        clearedGoal = ClearedGoal(nutrient: nutrient, goal: previous)
         noteSaved()
         return true
     }

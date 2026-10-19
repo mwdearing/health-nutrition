@@ -263,6 +263,22 @@ final class DailyGoalsTests: XCTestCase {
         XCTAssertNil(model.clearedGoal)
     }
 
+    /// Clearing a nutrient that has no goal removes nothing, so it must not end a pending Undo for another goal.
+    func testClearingAnEmptyRowKeepsAPendingUndoForAnotherGoal() throws {
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+        XCTAssertTrue(model.clearTarget(for: "protein"))
+        model.draftText["carbohydrate"] = ""
+
+        XCTAssertTrue(model.submitTarget(for: "carbohydrate"))
+        XCTAssertEqual(model.clearedGoal?.nutrient, "protein")
+        XCTAssertTrue(model.undoClear())
+        XCTAssertEqual(try goals.goal(for: "protein")?.target, Decimal(60))
+    }
+
     /// A goal saved after a Clear is the person's newer value, so Undo must not overwrite it.
     func testUndoAfterANewerGoalWasSavedKeepsTheNewerGoal() throws {
         let goals = try makeGoalStore()
