@@ -164,8 +164,10 @@ struct BarcodeDataScanner: UIViewControllerRepresentable {
         @MainActor
         func startScanning(on controller: DataScannerViewController) {
             guard !isRunning, !hasDelivered, !hasFailed else { return }
-            guard DataScannerViewController.isSupported, DataScannerViewController.isAvailable else {
-                report("This device cannot scan barcodes. Type the digits instead.")
+            if let message = CameraAccessNotice.unavailableMessage(
+                isSupported: DataScannerViewController.isSupported, access: CameraAccess.current(),
+                isAvailable: DataScannerViewController.isAvailable, sheet: .barcode) {
+                report(message)
                 return
             }
             do {

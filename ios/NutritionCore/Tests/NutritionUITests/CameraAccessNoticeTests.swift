@@ -16,27 +16,76 @@ final class CameraAccessNoticeTests: XCTestCase {
         XCTAssertTrue(CameraAccessNotice.offersOpenSettings(for: .denied))
     }
 
-    func testRestrictedAccessIsTheSameAsDeniedPerSheet() {
+    func testRestrictedHasItsOwnCopyAndNoSettingsButton() {
         XCTAssertEqual(
             CameraAccessNotice.failureMessage(for: .restricted, sheet: .barcode),
-            CameraAccessNotice.barcodeAccessOffMessage)
+            "Camera access is restricted on this phone. Type the digits instead.")
         XCTAssertEqual(
             CameraAccessNotice.failureMessage(for: .restricted, sheet: .label),
-            CameraAccessNotice.labelAccessOffMessage)
-        XCTAssertTrue(CameraAccessNotice.offersOpenSettings(for: .restricted))
+            "Camera access is restricted on this phone.")
+        XCTAssertFalse(CameraAccessNotice.offersOpenSettings(for: .restricted))
     }
 
-    func testBarcodeSheetKeepsItsTypeInFallback() {
+    func testAuthorizedAndNotDeterminedKeepStartFailureCopy() {
         XCTAssertEqual(
             CameraAccessNotice.failureMessage(for: .authorized, sheet: .barcode),
             "The camera could not be started. Type the digits instead.")
         XCTAssertFalse(CameraAccessNotice.offersOpenSettings(for: .authorized))
-    }
-
-    func testLabelSheetStartFailureUsesPlainCopy() {
         XCTAssertEqual(
             CameraAccessNotice.failureMessage(for: .notDetermined, sheet: .label),
             "The camera could not be started.")
         XCTAssertFalse(CameraAccessNotice.offersOpenSettings(for: .notDetermined))
+    }
+
+    func testUnsupportedDeviceWinsOverEveryAccessState() {
+        for access in [CameraAccessState.authorized, .notDetermined, .denied, .restricted] {
+            XCTAssertEqual(
+                CameraAccessNotice.unavailableMessage(isSupported: false, access: access, isAvailable: false, sheet: .barcode),
+                "This device cannot scan barcodes. Type the digits instead.")
+            XCTAssertEqual(
+                CameraAccessNotice.unavailableMessage(isSupported: false, access: access, isAvailable: true, sheet: .label),
+                "This device cannot read text with the camera.")
+        }
+    }
+
+    func testDeniedWithScannerUnavailableStillShowsAccessOff() {
+        XCTAssertEqual(
+            CameraAccessNotice.unavailableMessage(isSupported: true, access: .denied, isAvailable: false, sheet: .barcode),
+            "Camera access is off. Turn it on in Settings to scan, or type the digits instead.")
+        XCTAssertEqual(
+            CameraAccessNotice.unavailableMessage(isSupported: true, access: .denied, isAvailable: false, sheet: .label),
+            "Camera access is off. Turn it on in Settings to scan.")
+    }
+
+    func testDeniedWithScannerAvailableStillShowsAccessOff() {
+        XCTAssertEqual(
+            CameraAccessNotice.unavailableMessage(isSupported: true, access: .denied, isAvailable: true, sheet: .label),
+            "Camera access is off. Turn it on in Settings to scan.")
+    }
+
+    func testRestrictedWithScannerUnavailableShowsRestricted() {
+        XCTAssertEqual(
+            CameraAccessNotice.unavailableMessage(isSupported: true, access: .restricted, isAvailable: false, sheet: .label),
+            "Camera access is restricted on this phone.")
+    }
+
+    func testAuthorizedWithScannerUnavailableShowsStartFailure() {
+        XCTAssertEqual(
+            CameraAccessNotice.unavailableMessage(isSupported: true, access: .authorized, isAvailable: false, sheet: .barcode),
+            "The camera could not be started. Type the digits instead.")
+        XCTAssertEqual(
+            CameraAccessNotice.unavailableMessage(isSupported: true, access: .authorized, isAvailable: false, sheet: .label),
+            "The camera could not be started.")
+    }
+
+    func testNotDeterminedWithScannerUnavailableShowsStartFailure() {
+        XCTAssertEqual(
+            CameraAccessNotice.unavailableMessage(isSupported: true, access: .notDetermined, isAvailable: false, sheet: .label),
+            "The camera could not be started.")
+    }
+
+    func testReadyCameraHasNoMessage() {
+        XCTAssertNil(CameraAccessNotice.unavailableMessage(isSupported: true, access: .authorized, isAvailable: true, sheet: .barcode))
+        XCTAssertNil(CameraAccessNotice.unavailableMessage(isSupported: true, access: .notDetermined, isAvailable: true, sheet: .label))
     }
 }

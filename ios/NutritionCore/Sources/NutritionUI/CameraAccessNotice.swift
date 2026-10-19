@@ -20,6 +20,10 @@ public enum CameraSheet: Sendable, Equatable {
 public enum CameraAccessNotice {
     public static let barcodeAccessOffMessage = "Camera access is off. Turn it on in Settings to scan, or type the digits instead."
     public static let labelAccessOffMessage = "Camera access is off. Turn it on in Settings to scan."
+    public static let barcodeUnsupportedMessage = "This device cannot scan barcodes. Type the digits instead."
+    public static let labelUnsupportedMessage = "This device cannot read text with the camera."
+    public static let barcodeRestrictedMessage = "Camera access is restricted on this phone. Type the digits instead."
+    public static let labelRestrictedMessage = "Camera access is restricted on this phone."
     public static let barcodeStartFailureMessage = "The camera could not be started. Type the digits instead."
     public static let labelStartFailureMessage = "The camera could not be started."
     public static let openSettingsTitle = "Open Settings"
@@ -28,15 +32,36 @@ public enum CameraAccessNotice {
     /// The message for a camera that did not start, given what the system says about access and which sheet asks.
     public static func failureMessage(for access: CameraAccessState, sheet: CameraSheet) -> String {
         switch access {
-        case .denied, .restricted:
+        case .denied:
             return sheet == .barcode ? barcodeAccessOffMessage : labelAccessOffMessage
+        case .restricted:
+            return sheet == .barcode ? barcodeRestrictedMessage : labelRestrictedMessage
         case .authorized, .notDetermined:
             return sheet == .barcode ? barcodeStartFailureMessage : labelStartFailureMessage
         }
     }
 
-    /// Whether the failure should offer the Settings button: only when access is actually off.
+    /// Whether the failure should offer the Settings button: only when access is off and the user can change it.
+    /// Restricted access (MDM or parental controls) is set by someone else, so it gets no button.
     public static func offersOpenSettings(for access: CameraAccessState) -> Bool {
-        access == .denied || access == .restricted
+        access == .denied
+    }
+
+    /// The message a sheet shows before it tries to start the camera, or nil when the camera can start.
+    /// Order: unsupported hardware first, then access that is denied, then restricted access, then the scanner
+    /// reporting itself unavailable (which, on a device with access off, is why the access checks come first).
+    public static func unavailableMessage(
+        isSupported: Bool, access: CameraAccessState, isAvailable: Bool, sheet: CameraSheet
+    ) -> String? {
+        if !isSupported {
+            return sheet == .barcode ? barcodeUnsupportedMessage : labelUnsupportedMessage
+        }
+        if access == .denied || access == .restricted {
+            return failureMessage(for: access, sheet: sheet)
+        }
+        if !isAvailable {
+            return failureMessage(for: .authorized, sheet: sheet)
+        }
+        return nil
     }
 }

@@ -368,8 +368,10 @@ struct LabelCaptureDataScanner: UIViewControllerRepresentable {
         func startScanning(on controller: DataScannerViewController) {
             parent.session.attach(controller)
             guard !isRunning, !hasFailed else { return }
-            guard DataScannerViewController.isSupported, DataScannerViewController.isAvailable else {
-                report("This device cannot read text with the camera.")
+            if let message = CameraAccessNotice.unavailableMessage(
+                isSupported: DataScannerViewController.isSupported, access: CameraAccess.current(),
+                isAvailable: DataScannerViewController.isAvailable, sheet: .label) {
+                report(message)
                 return
             }
             do {
