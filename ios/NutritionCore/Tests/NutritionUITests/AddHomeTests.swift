@@ -130,6 +130,35 @@ final class AddHomeTests: XCTestCase {
         XCTAssertEqual(try store.activeIntakes().count, 1)
     }
 
+    /// The Recent row subtitle shows the item's meal after its amounts, the same as the Library row.
+    func testRecentSubtitleShowsTheMealAfterTheAmounts() throws {
+        let store = try makeStore()
+        let seed = AddIntakeViewModel(store: store, now: now, timeZoneIdentifier: "UTC")
+        seed.name = "Oats"
+        seed.amountText = "40"
+        seed.meal = .breakfast
+        XCTAssertTrue(seed.save(now: now))
+        let home = AddHomeViewModel(store: store, meal: nil, now: { self.now })
+        home.load()
+        let recent = try XCTUnwrap(home.recents.first)
+        XCTAssertEqual(
+            home.recentSubtitle(of: recent.template),
+            "\(home.amountSummary(of: recent.template)) · Breakfast")
+    }
+
+    /// A Recent with no meal recorded shows its amounts alone, with no separator.
+    func testRecentSubtitleWithNoMealShowsOnlyTheAmounts() throws {
+        let store = try makeStore()
+        let seed = AddIntakeViewModel(store: store, now: now, timeZoneIdentifier: "UTC")
+        seed.name = "Oats"
+        seed.amountText = "40"
+        XCTAssertTrue(seed.save(now: now))
+        let home = AddHomeViewModel(store: store, meal: nil, now: { self.now })
+        home.load()
+        let recent = try XCTUnwrap(home.recents.first)
+        XCTAssertEqual(home.recentSubtitle(of: recent.template), home.amountSummary(of: recent.template))
+    }
+
     /// A one-tap Recent with Meal set to None keeps the meal the item was logged under.
     func testQuickAddFromRecentWithNoMealKeepsTheItemsOwnMeal() throws {
         let store = try makeStore()

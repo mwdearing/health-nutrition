@@ -81,12 +81,12 @@ public struct AddHomeView: View {
                             } label: {
                                 VStack(alignment: .leading) {
                                     Text(recent.template.displayName).font(.headline)
-                                    Text(model.amountSummary(of: recent.template))
+                                    Text(model.recentSubtitle(of: recent.template))
                                         .font(.subheadline).foregroundStyle(TokenColors.textSecondary)
                                 }
                             }
                             .buttonStyle(.borderless)
-                            .accessibilityLabel("Log \(recent.template.displayName) now, \(model.amountSummary(of: recent.template))")
+                            .accessibilityLabel("Log \(recent.template.displayName) now, \(model.recentSubtitle(of: recent.template))")
                             .accessibilityHint("Logs once. You can undo for 10 seconds.")
                             .contextMenu {
                                 if let onOpen { Button("Details") { onOpen(recent.template) } }
