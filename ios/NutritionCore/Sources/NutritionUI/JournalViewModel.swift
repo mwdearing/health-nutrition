@@ -402,14 +402,41 @@ public final class JournalViewModel: ObservableObject {
     /// Copies every entry of a past day to now, as new entries. The day's own entries are untouched.
     @discardableResult
     public func copyDayToToday(_ sectionID: String, now: Date) -> IntakeCopyResult? {
-        runCopy(now: now) { try copier.copyDay(dayKey: sectionID, now: now) }
+        let result = runCopy(now: now) { try copier.copyDay(dayKey: sectionID, now: now) }
+        copiedIDs = result?.createdIDs ?? []
+        return result
+    }
+
+    /// The entries the latest copy created, held so Undo can remove exactly them. A new copy replaces them.
+    private var copiedIDs: [String] = []
+
+    /// Whether the latest copy can still be undone.
+    public var canUndoCopy: Bool { !copiedIDs.isEmpty }
+
+    /// Removes exactly the entries the latest copy created, and nothing else. Taken once: a second call finds
+    /// nothing to undo.
+    @discardableResult
+    public func undoCopy(now: Date = Date()) -> Bool {
+        guard !copiedIDs.isEmpty else { return false }
+        let ids = copiedIDs
+        copiedIDs = []
+        do {
+            for id in ids { try store.delete(intakeID: id, now: now) }
+        } catch {
+            load(now: now)
+            return false
+        }
+        load(now: now)
+        return true
     }
 
     /// Copies one meal group of a past day to now. "Other" copies the entries with no named meal.
     @discardableResult
     public func copyMealToToday(_ sectionID: String, groupID: String, now: Date) -> IntakeCopyResult? {
         let selector = MealLabel.allCases.first { $0.displayName == groupID }.map(MealSelector.named) ?? .other
-        return runCopy(now: now) { try copier.copyMeal(selector, dayKey: sectionID, now: now) }
+        let result = runCopy(now: now) { try copier.copyMeal(selector, dayKey: sectionID, now: now) }
+        copiedIDs = result?.createdIDs ?? []
+        return result
     }
 
     /// The saved meals "Save as meal" writes to. Set once by the app; nil leaves the action out.
