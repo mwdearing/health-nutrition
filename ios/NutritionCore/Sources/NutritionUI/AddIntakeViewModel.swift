@@ -787,8 +787,6 @@ public final class AddIntakeViewModel: ObservableObject {
         fillProductValues(product)
         // The captured panel's serving and basis feed the Servings control and the amount preview, the same
         // as a looked-up product's. Form state only; the stored values are not changed.
-        servingOption = Self.capturedServing(of: product)
-        capturedPanelBasis = Self.capturedBasis(of: product)
     }
 
     /// The basis a captured panel states, read from its stored label basis ("per 100 g", "per serving (30 g)").
