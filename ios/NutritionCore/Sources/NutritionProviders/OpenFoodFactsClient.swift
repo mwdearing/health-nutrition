@@ -302,11 +302,11 @@ func parseRetryAfter(_ raw: String, now: Date) -> TimeInterval? {
     return min(max(0, date.timeIntervalSince(now)), maxRetryAfter)
 }
 
-/// Connection loss: the device has no network, or the network dropped or timed out. A server status, an
-/// unreadable reply and a missing product are not loss, so they keep their own outcome.
+/// Connection loss: the device has no network, or the network dropped. A timeout or an unreachable host can
+/// happen on a working connection (a slow or down service), so it keeps the transport outcome, never "no internet".
 func isNetworkLoss(_ error: URLError) -> Bool {
     switch error.code {
-    case .notConnectedToInternet, .networkConnectionLost, .timedOut, .cannotConnectToHost, .dataNotAllowed:
+    case .notConnectedToInternet, .networkConnectionLost, .dataNotAllowed:
         return true
     default:
         return false

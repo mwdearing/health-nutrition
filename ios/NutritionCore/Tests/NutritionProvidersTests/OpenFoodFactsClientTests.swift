@@ -374,4 +374,11 @@ final class OpenFoodFactsClientTests: XCTestCase {
 private struct ThrowingOpenFoodFactsTransport: OpenFoodFactsTransport {
     let error: URLError
     func get(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) { throw error }
+
+    func testTimeoutOnAWorkingConnectionIsNotOffline() async throws {
+        let outcome = await client(ThrowingOpenFoodFactsTransport(error: URLError(.timedOut))).lookup(barcode: foundCode)
+        guard case .transport = outcome else {
+            return XCTFail("a timeout is not 'no internet connection', got \(outcome)")
+        }
+    }
 }
