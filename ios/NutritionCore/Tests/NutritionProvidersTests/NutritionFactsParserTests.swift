@@ -1293,6 +1293,13 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(amountSpaced.1, .mcg)
     }
 
+    /// A hyphenated panel or packaging label is not a nutrient: "Net-Wt 85g" and "Serving-Size 30g" stay out of the extras.
+    func testHyphenatedPanelLabelsAreNotExtras() throws {
+        let panel = parse(["Nutrition Facts", "Total Fat 8g", "Net-Wt 85g", "Serving-Size 30g"])
+
+        XCTAssertTrue(panel.additionalNutrients.isEmpty)
+    }
+
     /// Non-ASCII digits are never a name's number: "Vitamin B１２" (fullwidth digits) is not an extra with that name.
     func testFullwidthDigitsAreNotANameNumber() throws {
         let panel = parse(["Supplement Facts", "Serving size 1 capsule", "Vitamin B１２ 2mcg"])
