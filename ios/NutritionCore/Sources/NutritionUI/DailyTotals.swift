@@ -95,14 +95,18 @@ public enum DailyTotalsBuilder {
             let snapshot = Self.snapshot(of: current, in: &snapshots, using: store)
             entries.append((current.components, snapshot, intake.category))
         }
+        // Decided once per entry over a fixed universe of nutrients, so the answer does not depend on which nutrients
+        // a caller asks for. Every caller, the meal section included, gets the same answer for the same entry.
+        let distrustedEntries = entries.map { Self.isDistrusted($0, lookup: lookup) }
         var totals: [String: NutrientTotal] = [:]
         var knownSums: [String: NutrientValue] = [:]
         var missingCounts: [String: Int] = [:]
         for nutrient in nutrients {
             var values: [NutrientValue] = []
             var missing = 0
-            for entry in entries {
-                let contribution = contributions(of: entry, nutrient: nutrient, lookup: lookup)
+            for (index, entry) in entries.enumerated() {
+                let contribution = contributions(
+                    of: entry, nutrient: nutrient, lookup: lookup, distrusted: distrustedEntries[index])
                 // An entry counts as missing when one of its values is unknown, which is exactly the case the sum
                 // leaves out. A supplement with an undeclared nutrient contributes nothing, so it is not counted;
                 // one whose label basis cannot be scaled does contribute unknown, and is counted.
@@ -116,6 +120,44 @@ public enum DailyTotalsBuilder {
             }
         }
         return DailyTotals(totals: totals, knownSums: knownSums, missingCounts: missingCounts)
+    }
+
+    /// The nutrients a negative value is looked for under, whatever the caller asks for: the reference table,
+    /// the Health mapping keys, water, every goal choice, and the default tracked nutrients.
+    static let distrustUniverse: [String] = {
+        var keys = Set(ReferenceIntakes.nutrients)
+        keys.insert(waterKey)
+        keys.formUnion(NutrientGoalChoices.keys)
+        keys.formUnion(TodayViewModel.defaultTrackedNutrients)
+        for mapping in HealthKitWritePlanner.mappings { keys.formUnion(mapping.acceptedKeys) }
+        return keys.sorted()
+    }()
+
+    /// Whether one entry is distrusted: a logged amount that is negative, a stated value on its product snapshot
+    /// that is negative, or, for an entry with no product, a lookup value over the universe that is negative. A
+    /// product's lookup values are not re-read here: the snapshot scan already covers every value the lookup can
+    /// answer from it.
+    static func isDistrusted(
+        _ entry: (components: [IntakeComponent], snapshot: ProductDefinition?, category: String),
+        lookup: NutrientFactsLookup
+    ) -> Bool {
+        if entry.components.contains(where: { $0.amount < 0 }) { return true }
+        if let snapshot = entry.snapshot {
+            return snapshot.nutrients.values.contains { value in
+                if case .known(let stated, _) = value { return stated < 0 }
+                return false
+            }
+        }
+        for nutrient in distrustUniverse {
+            for component in entry.components {
+                if case .known(let stated, _) = Self.value(for: component, snapshot: nil, nutrient: nutrient, lookup: lookup),
+                    stated < 0
+                {
+                    return true
+                }
+            }
+        }
+        return false
     }
 
     /// A drink's water: each volume component times its share (its own, else the drink default). Non-volume
@@ -135,8 +177,13 @@ public enum DailyTotalsBuilder {
     private static func contributions(
         of entry: (components: [IntakeComponent], snapshot: ProductDefinition?, category: String),
         nutrient: String,
-        lookup: NutrientFactsLookup
+        lookup: NutrientFactsLookup,
+        distrusted: Bool = false
     ) -> [NutrientValue] {
+        // A distrusted drink row is unknown for water and contributes nothing to any other nutrient, as a drink does.
+        if distrusted && entry.category == waterCategory {
+            return nutrient == waterKey ? [.unknown] : []
+        }
         if entry.category == waterCategory {
             // Water is dietary water only for a drink. A food can carry a volume component, and
             // that is not a glass of water the person drank, so a non-drink contributes no water.
@@ -148,6 +195,25 @@ public enum DailyTotalsBuilder {
         // answers unknown there — a snapshot states no water unless the product states water — and a
         // day holding one food makes the day's water unknown rather than what was actually drunk.
         // The one exception is a stored water share, which counts toward the day's water as Today shows it.
+        // One decision per entry, made in totals() from every value the entry carries: a negative logged amount,
+        // a negative stated value, or a negative lookup value on any nutrient. A distrusted food row is unknown for
+        // every nutrient, except that a food with no water share contributes nothing to water. A distrusted supplement
+        // row is unknown for the nutrients it declares, and undeclared ones
+        // still contribute nothing, as on a healthy supplement. A zero is a known zero.
+        if distrusted {
+            // A food with no water share never contributed to water, so a distrusted food still contributes nothing
+            // to water. An entry that carries a water share, or a distrusted drink, makes its water unknown.
+            if nutrient == waterKey {
+                return entry.components.contains(where: { $0.hydrationPercent != nil }) ? [.unknown] : []
+            }
+            guard let snapshot = entry.snapshot, snapshot.kind == .supplement,
+                let component = entry.components.first
+            else { return [.unknown] }
+            if case .unknown = Self.value(for: component, snapshot: snapshot, nutrient: nutrient, lookup: lookup) {
+                return []
+            }
+            return [.unknown]
+        }
         guard nutrient != waterKey else { return drinkWaterContributions(entry.components) }
         // A snapshot states the product's own values once, not once per component, so it is scaled
         // and summed once per entry. Summing it per component would count a two-component product's
