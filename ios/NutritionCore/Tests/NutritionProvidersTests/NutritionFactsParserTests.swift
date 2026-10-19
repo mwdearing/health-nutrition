@@ -1201,13 +1201,11 @@ final class NutritionFactsParserTests: XCTestCase {
     func testSecondNumberIsNotPartOfAName() throws {
         let panel = parse(["Nutrition Facts", "Total Fat 8g", "Vitamin B 1 2 mcg"])
 
-        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Vitamin B 1"])
-        if case .known(let amount, let unit)? = panel.additionalNutrients.first?.value {
-            XCTAssertEqual(amount, dec("2"))
-            XCTAssertEqual(unit, .mcg)
-        } else {
-            XCTFail("Vitamin B 1 should carry 2 mcg")
-        }
+        // The line is ambiguous (B1 at 2 mcg, or B12 with its amount lost), so it gives nothing: no extra and no
+        // value on a known field. Its unread count is not asserted here; see the follow-up issue.
+        XCTAssertTrue(panel.additionalNutrients.isEmpty, "an ambiguous line is not an extra")
+        if case .known = panel.value(for: .vitaminD) { XCTFail("an ambiguous line is not vitamin D") }
+        if case .known = panel.value(for: .iron) { XCTFail("an ambiguous line is not iron") }
     }
 
     /// Regression guard, not fail-first: a supplement's vitamin with its unit keeps its name without the amount.
