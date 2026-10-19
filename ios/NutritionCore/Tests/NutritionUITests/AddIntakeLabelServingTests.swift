@@ -53,13 +53,16 @@ final class AddIntakeLabelServingTests: XCTestCase {
         model.amountText = "50"
         model.unit = .g
 
-        XCTAssertNotNil(model.amountPreview)
+        XCTAssertEqual(model.amountPreview?.kcal, 240)
     }
 
     /// Clearing the form drops the captured serving and basis, so the next entry starts clean.
     func testClearingTheFormDropsTheCapturedServingAndBasis() throws {
         let model = makeModel(try makeStore())
-        model.applyLabelProduct(panel(basis: "per serving (30 g)"), fromLabelCapture: true)
+        model.applyLabelProduct(panel(basis: "per 100 g"), fromLabelCapture: true)
+        model.amountText = "50"
+        model.unit = .g
+        XCTAssertNotNil(model.amountPreview)
         model.invalidateLookup()
 
         XCTAssertNil(model.servingOption)
