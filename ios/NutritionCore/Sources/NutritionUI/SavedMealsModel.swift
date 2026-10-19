@@ -228,7 +228,7 @@ public final class SavedMealsModel: ObservableObject {
             return restored
         } catch {
             // The offer stays up, so the meal can still be put back once there is room for it.
-            return finish(failure: "Could not put back \(removal.meal.name).")
+            return finish(failure: "Couldn't put back \(removal.meal.name). Tap Undo to try again.")
         }
     }
 
