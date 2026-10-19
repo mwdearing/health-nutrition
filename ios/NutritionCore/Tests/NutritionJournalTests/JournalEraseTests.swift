@@ -91,6 +91,26 @@ final class JournalEraseTests: XCTestCase {
         XCTAssertEqual(try store.revisions(of: intakeID).count, 1)
     }
 
+    /// The erase deletes the store file with its write-ahead and shared-memory files, so a store opened on the
+    /// same file afterwards reads empty and a write made after the erase survives a reopen.
+    func testEraseLeavesAReopenedStoreEmptyAndWritableAfterwards() throws {
+        let directory = try makeDirectory()
+        let url = directory.appendingPathComponent("journal.store")
+        let store = try SwiftDataJournalStore(url: url)
+        try store.create(sampleIntake(), components: [oats()], product: product(), now: when)
+        try store.eraseAll()
+        store.close()
+
+        let reopened = try SwiftDataJournalStore(url: url)
+        XCTAssertTrue(try reopened.activeIntakes().isEmpty)
+        XCTAssertTrue(try reopened.revisions(of: intakeID).isEmpty)
+        try reopened.create(sampleIntake(), components: [oats()], product: nil, now: when)
+        reopened.close()
+
+        let again = try SwiftDataJournalStore(url: url)
+        XCTAssertEqual(try again.activeIntakes().map(\.id), [intakeID])
+    }
+
     func testEraseRemovesEveryFavorite() throws {
         let store = try SwiftDataFavoritesStore(url: try makeDirectory().appendingPathComponent("favorites.store"))
         try store.add(sampleFavorite("fav-1"))

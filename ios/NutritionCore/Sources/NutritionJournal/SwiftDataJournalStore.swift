@@ -1093,6 +1093,8 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     private var container: ModelContainer?
     /// Where `markRestoreInProgress(fileDigest:)` keeps its flag, beside the store file.
     private let restoreMarkerURL: URL
+    /// The store file itself. An erase deletes it with its write-ahead and shared-memory files.
+    private let storeURL: URL
     private let enabledDestinations: Set<JournalDestination>
 
     public var failNextSaveForTesting: Bool {
@@ -1104,12 +1106,17 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     /// disabled projection and no outbox operation.
     public init(url: URL, enabledDestinations: Set<JournalDestination> = [.healthKit, .relay]) throws {
         self.enabledDestinations = enabledDestinations
+        storeURL = url
         restoreMarkerURL = url.appendingPathExtension("restore-in-progress")
+        container = try Self.makeContainer(url: url)
+        try recoverProductOperations()
+    }
+
+    private static func makeContainer(url: URL) throws -> ModelContainer {
         let schema = Schema(versionedSchema: JournalSchemaV10.self)
         let configuration = ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
-        container = try ModelContainer(
+        return try ModelContainer(
             for: schema, migrationPlan: JournalMigrationPlan.self, configurations: configuration)
-        try recoverProductOperations()
     }
 
     public func close() {
@@ -1781,7 +1788,8 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     /// as it was: a journal emptied by a failed save would be worse than an unerased one, because the
     /// person cannot tell which half is gone.
     ///
-    /// The container is not closed: the store reads empty and accepts new entries afterwards.
+    /// The store file is then deleted and reopened empty, so the store reads empty and accepts new entries
+    /// afterwards, and no erased row survives in the write-ahead file.
     public func eraseAll() throws {
         // The restore flag goes first so a re-import cannot put erased favorites back. Clearing it twice is harmless.
         try clearRestoreInProgress()
@@ -1798,6 +1806,23 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             for row in try context.fetch(FetchDescriptor<ProjectionRecord>()) { context.delete(row) }
             for row in try context.fetch(FetchDescriptor<ProductRecord>()) { context.delete(row) }
             for row in try context.fetch(FetchDescriptor<IntakeRecord>()) { context.delete(row) }
+        }
+        try removeStoreFiles()
+    }
+
+    /// Deletes the store file with its write-ahead and shared-memory files, then opens an empty store at the
+    /// same place. The rows the commit deleted can still sit in the write-ahead file, and a reopened store would
+    /// read them back. The store stays open afterwards, as before. A file that cannot be removed fails the erase.
+    private func removeStoreFiles() throws {
+        try lock.withLock {
+            container = nil
+            for suffix in ["", "-wal", "-shm"] {
+                let file = URL(fileURLWithPath: storeURL.path + suffix)
+                if FileManager.default.fileExists(atPath: file.path) {
+                    try FileManager.default.removeItem(at: file)
+                }
+            }
+            container = try Self.makeContainer(url: storeURL)
         }
     }
 
