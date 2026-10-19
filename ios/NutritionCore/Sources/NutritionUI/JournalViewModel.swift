@@ -441,7 +441,7 @@ public final class JournalViewModel: ObservableObject {
     /// Removes exactly the entries the latest copy created, and nothing else. Taken once: a second call finds
     /// nothing to undo.
     @discardableResult
-    public func undoCopy(now: Date = Date()) -> Bool {
+    public func undoCopy(now: Date) -> Bool {
         guard canUndoCopy(now: now) else { return false }
         // The copy notice is kept on a failed undo, so the Undo control stays on screen while copies remain. A
         // successful undo leaves nothing to say, so the notice goes.
@@ -486,6 +486,8 @@ public final class JournalViewModel: ObservableObject {
     @discardableResult
     public func saveMeal(_ sectionID: String, groupID: String, name: String) -> Bool {
         guard let savedMeals else { return false }
+        // Saving a meal is a newer action than the copy, so the copy's Undo is no longer offered.
+        expireCopyUndo()
         let label = MealLabel.allCases.first { $0.displayName == groupID }
         let selector = label.map(MealSelector.named) ?? .other
         let intakes: [Intake]

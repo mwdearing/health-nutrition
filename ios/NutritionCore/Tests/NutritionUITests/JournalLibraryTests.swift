@@ -320,13 +320,13 @@ final class JournalLibraryTests: XCTestCase {
         let result = try XCTUnwrap(model.copyDayToToday(past.id, now: now))
         XCTAssertEqual(result.createdIDs.count, 2)
 
-        XCTAssertTrue(model.undoCopy())
+        XCTAssertTrue(model.undoCopy(now: now))
 
         let activeIDs = Set(try store.activeIntakes().map(\.id))
         XCTAssertTrue(activeIDs.isDisjoint(with: result.createdIDs))
         XCTAssertEqual(activeIDs, Set([first, second]))
         XCTAssertNil(model.copyNotice, "a successful undo leaves no stale 'Copied' notice")
-        XCTAssertFalse(model.undoCopy(), "an undo offer is taken once")
+        XCTAssertFalse(model.undoCopy(now: now), "an undo offer is taken once")
     }
 
     /// A delete that fails partway leaves the copies it did not reach, so a retry removes them.
@@ -345,14 +345,14 @@ final class JournalLibraryTests: XCTestCase {
         XCTAssertEqual(result.createdIDs.count, 3)
 
         store.failDeleteAt = 2
-        XCTAssertFalse(model.undoCopy())
+        XCTAssertFalse(model.undoCopy(now: now))
         XCTAssertTrue(model.canUndoCopy(now: now), "the copies not yet removed stay undoable")
         XCTAssertNotNil(model.copyNotice, "the notice, and so the Undo control, stays after a failed undo")
         // The first copy was removed; the other two copies are still there.
         XCTAssertEqual(Set(try store.activeIntakes().map(\.id)), Set(sources).union(result.createdIDs.dropFirst()))
 
         store.failDeleteAt = nil
-        XCTAssertTrue(model.undoCopy())
+        XCTAssertTrue(model.undoCopy(now: now))
         let activeIDs = Set(try store.activeIntakes().map(\.id))
         XCTAssertTrue(activeIDs.isDisjoint(with: result.createdIDs))
         XCTAssertEqual(activeIDs, Set(sources))
@@ -371,7 +371,7 @@ final class JournalLibraryTests: XCTestCase {
         let handDeleted = try XCTUnwrap(result.createdIDs.first)
         try store.delete(intakeID: handDeleted, now: now)
 
-        XCTAssertTrue(model.undoCopy())
+        XCTAssertTrue(model.undoCopy(now: now))
 
         let activeIDs = Set(try store.activeIntakes().map(\.id))
         XCTAssertEqual(activeIDs, Set([first, second]))
