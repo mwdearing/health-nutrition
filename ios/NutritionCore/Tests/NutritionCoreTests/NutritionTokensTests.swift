@@ -169,6 +169,18 @@ final class NutritionTokensTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(RGB.contrastRatio(accent.dark, track.dark), 3, "dark")
     }
 
+    func testFieldBorderMeetsThreeToOneOnBackgroundAndSurfaceInBothAppearances() throws {
+        let border = try token("border")
+        let background = try token("background")
+        let surface = try token("surface")
+        XCTAssertEqual(border.light.hex, "#86868B")
+        XCTAssertEqual(border.dark.hex, "#5B98A4")
+        XCTAssertGreaterThanOrEqual(RGB.contrastRatio(border.light, background.light), 3, "light on background")
+        XCTAssertGreaterThanOrEqual(RGB.contrastRatio(border.dark, background.dark), 3, "dark on background")
+        XCTAssertGreaterThanOrEqual(RGB.contrastRatio(border.light, surface.light), 3, "light on surface")
+        XCTAssertGreaterThanOrEqual(RGB.contrastRatio(border.dark, surface.dark), 3, "dark on surface")
+    }
+
     func testAccentInkOnAccentTintIsAtLeastFourPointFiveToOneInBothAppearances() throws {
         let ink = try token("RelayAccentInk")
         let tint = try token("accentTint")
