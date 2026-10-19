@@ -295,14 +295,31 @@ public struct UndoToast: View {
         self.onUndo = onUndo
     }
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     public var body: some View {
-        HStack(spacing: DesignSpacing.m) {
+        // Stacked at accessibility sizes so the Undo button keeps its width and the message can wrap.
+        let stacked = dynamicTypeSize.isAccessibilitySize
+        let layout: AnyLayout = stacked ? AnyLayout(VStackLayout(alignment: .leading, spacing: DesignSpacing.s))
+            : AnyLayout(HStackLayout(spacing: DesignSpacing.m))
+        layout {
             Text(message).font(.body)
-            Spacer(minLength: DesignSpacing.s)
-            QuietCapsule("Undo", action: onUndo)
+            if !stacked { Spacer(minLength: DesignSpacing.s) }
+            // Undo is an accent fill with the background ink, so it reads apart from the accentTint toast.
+            Button(action: onUndo) {
+                Text("Undo")
+                    .font(.headline)
+                    .foregroundStyle(TokenColors.background)
+                    .padding(.horizontal, DesignSpacing.m)
+                    .frame(minHeight: 44)
+                    .background(TokenColors.accent, in: Capsule())
+            }
+            .buttonStyle(.plain)
         }
         .foregroundStyle(TokenColors.textPrimary)
         .padding(DesignSpacing.m)
         .background(TokenColors.accentTint, in: RoundedRectangle(cornerRadius: DesignRadius.control, style: .continuous))
+        // VoiceOver hears the toast's own message when it appears.
+        .onAppear { AccessibilityNotification.Announcement(message).post() }
     }
 }
