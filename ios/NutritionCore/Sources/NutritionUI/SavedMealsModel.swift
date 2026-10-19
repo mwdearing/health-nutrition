@@ -201,7 +201,8 @@ public final class SavedMealsModel: ObservableObject {
     }
 
     public func remove(_ saved: SavedMeal) {
-        let index = meals.firstIndex { $0.id == saved.id } ?? 0
+        // Read the position from the store, not the screen's cached list, so Undo puts it back where it was.
+        let index = (try? book.meals())?.firstIndex { $0.id == saved.id } ?? 0
         do {
             try book.remove(id: saved.id)
             load()
@@ -219,12 +220,13 @@ public final class SavedMealsModel: ObservableObject {
     @discardableResult
     public func undoRemove() -> Bool {
         guard let removal = removalUndo else { return false }
-        removalUndo = nil
         do {
             let restored = try book.restore(removal.meal, at: removal.index)
+            removalUndo = nil
             load()
             return restored
         } catch {
+            // The offer stays up, so the meal can still be put back once there is room for it.
             return finish(failure: "Could not put back \(removal.meal.name).")
         }
     }
