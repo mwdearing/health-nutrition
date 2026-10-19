@@ -305,6 +305,26 @@ final class JournalLibraryTests: XCTestCase {
         XCTAssertFalse(model.canCopyToToday(today, now: now))
     }
 
+    /// Undo after copying a past day removes exactly the entries that copy created, and leaves the day alone.
+    func testUndoCopyToTodayRemovesExactlyTheCopiedEntries() throws {
+        let store = try makeStore()
+        let yesterday = now.addingTimeInterval(-86_400)
+        let first = try addFood(store, name: "Oats", at: yesterday, product: product("snap-a"), meal: "breakfast")
+        let second = try addFood(store, name: "Rice", at: yesterday.addingTimeInterval(60), product: product("snap-b"), meal: "dinner")
+        let model = JournalViewModel(store: store, timeZoneIdentifier: "UTC")
+        model.load(now: now)
+        let past = try XCTUnwrap(model.sections.first { $0.id != JournalViewModel.dayKey(now, zone: TimeZone(identifier: "UTC")!) })
+        let result = try XCTUnwrap(model.copyDayToToday(past.id, now: now))
+        XCTAssertEqual(result.createdIDs.count, 2)
+
+        XCTAssertTrue(model.undoCopy())
+
+        let activeIDs = Set(try store.activeIntakes().map(\.id))
+        XCTAssertTrue(activeIDs.isDisjoint(with: result.createdIDs))
+        XCTAssertEqual(activeIDs, Set([first, second]))
+        XCTAssertFalse(model.undoCopy(), "an undo offer is taken once")
+    }
+
     func testCopyMealToTodayCopiesOnlyThatMeal() throws {
         let store = try makeStore()
         let yesterday = now.addingTimeInterval(-86_400)
