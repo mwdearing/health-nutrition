@@ -165,7 +165,7 @@ struct BarcodeDataScanner: UIViewControllerRepresentable {
                 try controller.startScanning()
                 isRunning = true
             } catch {
-                report(CameraAccessNotice.failureMessage(for: CameraAccess.current()))
+                report(CameraAccessNotice.failureMessage(for: CameraAccess.current(), sheet: .barcode))
             }
         }
 
