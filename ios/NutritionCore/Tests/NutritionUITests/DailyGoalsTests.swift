@@ -884,7 +884,7 @@ final class DailyGoalsTests: XCTestCase {
 
         for text in ["", "  ", "abc", "0", "-3", "1,5,0", "1e3", "1.2.3", "12g", "."] {
             XCTAssertFalse(model.setTarget(text, for: "protein"), text)
-            XCTAssertEqual(model.errorMessage, "Enter a target above zero.", text)
+            XCTAssertEqual(model.errorMessage, "Enter a number above zero.", text)
         }
 
         XCTAssertTrue(try goals.goals().isEmpty)

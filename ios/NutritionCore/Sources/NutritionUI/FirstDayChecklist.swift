@@ -118,7 +118,7 @@ public struct FirstDayChecklistView: View {
                 }
                 HStack {
                     Spacer(minLength: DesignSpacing.s)
-                    Button("Hide") { model.hide() }
+                    Button("Hide checklist") { model.hide() }
                         .font(.subheadline)
                         .foregroundStyle(TokenColors.accent)
                         .accessibilityHint("Hides this checklist")
