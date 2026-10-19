@@ -97,11 +97,11 @@ struct USDAProductNameSearch: ProductNameSearching {
             basis: .per100g,
             nutrients: food.nutrientsPer100g,
             attribution: ProductAttribution(source: catalogOrigin, text: attributionText, url: attributionURL),
-            sourceID: String(food.fdcId),
             // The default serving is imperial: grams are converted to ounces for display and the amount stays
             // per 100 g internally.
             serving: food.servingGrams.map { ServingDefinition(quantity: $0 / Self.gramsPerOunce, unit: .oz, text: food.servingText) }
                 ?? food.servingText.map { ServingDefinition(quantity: nil, unit: nil, text: $0) },
-            version: nil)
+            version: nil,
+            sourceID: String(food.fdcId))
     }
 }

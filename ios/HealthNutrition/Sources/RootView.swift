@@ -413,8 +413,8 @@ struct RootView: View {
                 barcode: BarcodeScanner.isAvailable, label: LabelTextScanner.isAvailable),
             lookup: services.barcodeLookup, preferences: services.displayPreferences,
             labelSubmitter: services.community,
-            isSharingAllowed: { services.account?.sharingAllowed ?? false },
-            portionLookup: services.householdPortions)
+            portionLookup: services.householdPortions,
+            isSharingAllowed: { services.account?.sharingAllowed ?? false })
     }
 
     /// Opens Add on its details form, prefilled from a Library item. Nothing is logged until Save.
