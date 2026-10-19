@@ -26,7 +26,7 @@ final class LogSavedMealShortcutTests: XCTestCase {
     private func effects(busy: Bool, _ counts: Counts) -> SavedMealShortcut.Effects {
         SavedMealShortcut.Effects(
             isBusy: { busy },
-            readMeals: { counts.reads += 1; return ([saved()], nil) },
+            readMeals: { counts.reads += 1; return ([self.saved()], nil) },
             logMeal: { _, _, _ in
                 counts.writes += 1
                 return SavedMealLogResult(createdIDs: ["a"], skippedCount: 0)
