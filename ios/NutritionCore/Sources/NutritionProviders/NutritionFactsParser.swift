@@ -1773,9 +1773,9 @@ public enum NutritionFactsParser {
         // digit inside a name ("Vitamin B１２") is left as printed, so the name is not read as a row.
         line.split(whereSeparator: \.isWhitespace).map { word -> String in
             guard let first = word.first, ("\u{FF10}"..."\u{FF19}").contains(first) else { return String(word) }
-            // Each fullwidth digit maps to its ASCII digit by code point, so no transform can fail and fall back.
+            // The unit after a fullwidth amount is fullwidth too ("２ｇ"), so the whole fullwidth ASCII block maps.
             return String(String.UnicodeScalarView(word.unicodeScalars.map { scalar -> Unicode.Scalar in
-                (0xFF10...0xFF19).contains(scalar.value) ? Unicode.Scalar(scalar.value - 0xFF10 + 0x30)! : scalar
+                (0xFF01...0xFF5E).contains(scalar.value) ? Unicode.Scalar(scalar.value - 0xFF01 + 0x21)! : scalar
             }))
         }.joined(separator: " ")
     }
