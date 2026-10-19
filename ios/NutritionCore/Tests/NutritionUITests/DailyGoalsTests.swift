@@ -215,6 +215,54 @@ final class DailyGoalsTests: XCTestCase {
         XCTAssertEqual(model.draftText["protein"], "")
     }
 
+    /// Clear removes the goal, and Undo puts back the same goal (issue #506).
+    func testClearThenUndoRestoresTheGoal() throws {
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+
+        XCTAssertTrue(model.clearTarget(for: "protein"))
+        XCTAssertNil(try goals.goal(for: "protein"))
+        XCTAssertEqual(model.clearedGoal?.nutrient, "protein")
+
+        XCTAssertTrue(model.undoClear())
+        XCTAssertEqual(try goals.goal(for: "protein")?.target, Decimal(60))
+        XCTAssertEqual(model.draftText["protein"], "60")
+        XCTAssertNil(model.clearedGoal)
+    }
+
+    /// Return on an empty field removes the goal the same way Clear does, and Undo restores it.
+    func testReturnOnAnEmptyFieldRemovesTheGoalAndUndoRestoresIt() throws {
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+        model.draftText["protein"] = ""
+
+        XCTAssertTrue(model.submitTarget(for: "protein"))
+        XCTAssertNil(try goals.goal(for: "protein"))
+
+        XCTAssertTrue(model.undoClear())
+        XCTAssertEqual(try goals.goal(for: "protein")?.target, Decimal(60))
+    }
+
+    /// Return on a filled field commits it and removes nothing.
+    func testReturnOnAFilledFieldCommitsWithoutRemoving() throws {
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+        model.draftText["protein"] = "75"
+
+        XCTAssertTrue(model.submitTarget(for: "protein"))
+        XCTAssertEqual(try goals.goal(for: "protein")?.target, Decimal(75))
+        XCTAssertNil(model.clearedGoal)
+    }
+
     /// Metric display, water typed in fl oz: 8 fl oz is stored as 236.588 mL and shown as 237, so the
     /// field text never matches the read. An outside change must still be followed, not written back.
     func testAWaterGoalTypedInAnotherUnitFollowsAnOutsideChange() throws {

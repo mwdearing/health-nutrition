@@ -469,14 +469,50 @@ public final class GoalsViewModel: ObservableObject {
         }
     }
 
-    /// Removes the goal for `nutrient` on an explicit clear, and clears its field.
+    /// The goal a Clear removed, kept so Undo can put it back. Nil once it is restored or another
+    /// change is made.
+    public struct ClearedGoal: Equatable {
+        public let nutrient: String
+        public let goal: NutrientGoal
+    }
+
+    /// Shown with Undo after a goal is removed.
+    public static let clearedMessage = "Goal removed"
+
+    @Published public private(set) var clearedGoal: ClearedGoal?
+
+    /// Removes the goal for `nutrient` on an explicit clear (the row's Clear button, or Return on an
+    /// empty field). The removed goal is kept for Undo.
     @discardableResult
     public func clearTarget(for nutrient: String) -> Bool {
         rowError[nutrient] = nil
+        let previous = (try? storedGoal(for: nutrient)) ?? nil
         guard removeTarget(for: nutrient) else { return false }
         draftText[nutrient] = ""
+        clearedGoal = previous.map { ClearedGoal(nutrient: nutrient, goal: $0) }
         noteSaved()
         return true
+    }
+
+    /// Puts back the goal the last Clear removed, and returns whether it did.
+    @discardableResult
+    public func undoClear() -> Bool {
+        guard let cleared = clearedGoal else { return false }
+        clearedGoal = nil
+        guard restoreGoal(cleared.goal, for: cleared.nutrient) else { return false }
+        draftText[cleared.nutrient] = nil
+        load()
+        noteSaved()
+        return true
+    }
+
+    /// Return in a goal field: an empty field removes the goal, anything else is committed.
+    @discardableResult
+    public func submitTarget(for nutrient: String) -> Bool {
+        if (draftText[nutrient] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return clearTarget(for: nutrient)
+        }
+        return commitTarget(for: nutrient)
     }
 
     /// Commits one inline field without discarding drafts in other fields.

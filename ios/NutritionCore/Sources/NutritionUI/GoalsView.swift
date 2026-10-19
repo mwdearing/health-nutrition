@@ -53,6 +53,9 @@ public struct GoalsView: View {
             if let message = model.errorMessage {
                 InlineNotice(message, tone: .failed)
             }
+            if model.clearedGoal != nil {
+                UndoToast(GoalsViewModel.clearedMessage) { self.model.undoClear() }
+            }
         }
         .scrollContentBackground(.hidden)
         .background(TokenColors.background)
@@ -97,16 +100,8 @@ public struct GoalsView: View {
                     .foregroundStyle(TokenColors.textPrimary)
                     .decimalKeyboard()
                     .focused($focusedNutrient, equals: row.nutrient)
-                    .onSubmit {
-                        // Return on an empty field is the explicit removal (#506); leaving the field keeps the goal.
-                        if (self.model.draftText[row.nutrient] ?? "").isEmpty {
-                            self.model.clearTarget(for: row.nutrient)
-                        } else {
-                            self.model.commitTarget(for: row.nutrient)
-                        }
-                    }
+                    .onSubmit { self.model.submitTarget(for: row.nutrient) }
                     .accessibilityLabel("Daily target for \(row.displayName)")
-                    .accessibilityHint("Leave blank to remove the goal")
                 Picker("Unit", selection: Binding(
                     get: { self.model.selectedUnits[row.nutrient] ?? row.unit },
                     set: { self.model.selectedUnits[row.nutrient] = $0 })) {
@@ -119,6 +114,13 @@ public struct GoalsView: View {
                 .onChange(of: row.unit) { _, _ in
                     self.model.commitTarget(for: row.nutrient)
                 }
+                Button("Clear") {
+                    self.focusedNutrient = nil
+                    self.model.clearTarget(for: row.nutrient)
+                }
+                .disabled(!row.hasTarget)
+                .frame(minWidth: 44, minHeight: 44)
+                .accessibilityLabel("Clear goal for \(row.displayName)")
             }
             if let error = row.rowError {
                 Text(error).font(.footnote).foregroundStyle(TokenColors.error)
