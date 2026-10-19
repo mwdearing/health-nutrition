@@ -33,4 +33,25 @@ final class UnitReadFailureTests: XCTestCase {
         XCTAssertEqual(model.errorMessage, "Could not read the journal.")
         XCTAssertNil(model.todaySection)
     }
+
+    /// A failed read after a good load must not leave the earlier day, its totals or its week on screen.
+    func testJournalDropsEarlierDaysWhenALaterUnitReadFails() throws {
+        let store = try makeJournal()
+        let seed = AddIntakeViewModel(store: store, now: now, timeZoneIdentifier: "UTC")
+        seed.name = "Oats"
+        seed.amountText = "40"
+        XCTAssertTrue(seed.save(now: now))
+        store.failsUnitReads = false
+        let model = JournalViewModel(store: store, timeZoneIdentifier: "UTC")
+        model.load(now: now)
+        XCTAssertNil(model.errorMessage)
+        XCTAssertNotNil(model.todaySection)
+
+        store.failsUnitReads = true
+        model.load(now: now)
+        XCTAssertEqual(model.errorMessage, "Could not read the journal.")
+        XCTAssertNil(model.todaySection)
+        XCTAssertTrue(model.sections.isEmpty)
+        XCTAssertNil(model.weekSummary)
+    }
 }

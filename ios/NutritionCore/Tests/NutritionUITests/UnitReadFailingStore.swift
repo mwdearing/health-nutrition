@@ -59,7 +59,13 @@ extension UnitReadFailingStore {
         try units.recordLoggedUnit(loggedUnit)
     }
 
-    func loggedUnits() throws -> [JournalLoggedUnit] { throw UnitsUnreadable() }
+    /// Set to false to let the reads succeed, so a test can load good data before failing the read.
+    var failsUnitReads = true
+
+    func loggedUnits() throws -> [JournalLoggedUnit] {
+        if failsUnitReads { throw UnitsUnreadable() }
+        return try (inner as? JournalLoggedUnits)?.loggedUnits() ?? []
+    }
 
     func removeLoggedUnit(intakeID: String, componentID: String) throws {
         guard let units = inner as? JournalLoggedUnits else { throw UnitsUnreadable() }
