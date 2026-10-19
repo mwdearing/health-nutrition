@@ -1261,6 +1261,25 @@ final class NutritionFactsParserTests: XCTestCase {
         if case .known = panel.value(for: .fat) { XCTFail("Saturated-Fat must not set total fat") }
     }
 
+    /// Supplement rows with a number inside the name stay extras with their printed name and amount.
+    func testSupplementNumberedRowsStayExtras() throws {
+        let panel = parse([
+            "Supplement Facts", "Serving size 1 capsule", "Vitamin B12 2.4mcg", "Vitamin B6 1.7mg", "Vitamin K2 90mcg",
+            "Omega-3 500mg",
+        ])
+
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Vitamin B12", "Vitamin B6", "Vitamin K2", "Omega-3"])
+        let expected: [(Decimal, MeasureUnit)] = [(dec("2.4"), .mcg), (dec("1.7"), .mg), (dec("90"), .mcg), (dec("500"), .mg)]
+        for (row, want) in zip(panel.additionalNutrients, expected) {
+            guard case .known(let value, let unit) = row.value else {
+                XCTFail("\(row.name) should carry its amount")
+                continue
+            }
+            XCTAssertEqual(value, want.0, row.name)
+            XCTAssertEqual(unit, want.1, row.name)
+        }
+    }
+
     /// The ambiguous line gives nothing on a supplement panel either: "Vitamin B 1 2 mcg" is no extra.
     func testAmbiguousBVitaminLineIsNoSupplementExtra() throws {
         let panel = parse(["Supplement Facts", "Serving size 1 capsule", "Vitamin B 1 2 mcg"])
