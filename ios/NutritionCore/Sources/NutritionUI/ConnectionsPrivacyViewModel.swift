@@ -617,29 +617,23 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         // the end, because an import asked for during the erase is refused with a message of its own, and
         // clearing afterwards would throw that away - and it is the only thing on the screen explaining why
         // the file they chose did nothing.
+        defer { isErasing = false }
+        // A restore flag left behind would let the next import of that file put back favorites the person is
+        // erasing, so it goes before any store is touched and before the import is cancelled. A flag that cannot be
+        // removed stops the erase with nothing erased and no import cancelled, and the screen offers Retry.
+        guard clearRestoreFlagOrStop() else { return false }
+        // The import state from *before* the erase goes now, once the erase is known to be going ahead, so a failed
+        // flag clear leaves the import on screen as it was.
         clearImport()
         // Anything an in-flight import publishes afterwards is about a journal that is about to be deleted.
         importGeneration += 1
         importTask?.cancel()
         guard importGate.wait(upTo: Self.eraseWaitsForImportSeconds) else {
-            isErasing = false
             errorMessage = Self.eraseWaitTimedOutMessage
             return false
         }
-        defer { isErasing = false }
-
-        // A restore flag left behind would let the next import of that file put back favorites the person is
-        // erasing, so it goes first, before any store is touched. A flag that cannot be removed stops the erase
-        // with nothing erased, and the screen offers Retry.
-        do {
-            try (store as? JournalRestoreProgress)?.clearRestoreInProgress()
-        } catch {
-            errorMessage = Self.eraseNothingErasedMessage
-            eraseRetryAvailable = true
-            // Nothing was erased, but the import effects deferred during this erase still need resolving.
-            resolveDeferredImportEffectsAfterErase(journalEraseSucceeded: false)
-            return false
-        }
+        // An import that was running when the flag was first cleared may have written a new one before it stopped.
+        guard clearRestoreFlagOrStop() else { return false }
 
         // Every store and export file that is still on the phone afterwards is named, in the order the erase ran,
         // so the person knows exactly what to retry. One failure never stops the rest.
@@ -681,6 +675,20 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         eraseGeneration += 1
         if !failed { afterSuccessfulErase() }
         return !failed
+    }
+
+    /// Clears the restore-in-progress flag. On failure the erase has erased nothing: the screen says so and offers
+    /// Retry, and the import effects deferred during the erase are resolved. Returns whether the flag is clear.
+    private func clearRestoreFlagOrStop() -> Bool {
+        do {
+            try (store as? JournalRestoreProgress)?.clearRestoreInProgress()
+            return true
+        } catch {
+            errorMessage = Self.eraseNothingErasedMessage
+            eraseRetryAvailable = true
+            resolveDeferredImportEffectsAfterErase(journalEraseSucceeded: false)
+            return false
+        }
     }
 
     /// Puts the display preferences back to their defaults and republishes that state, so the screen

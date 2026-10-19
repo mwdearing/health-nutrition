@@ -14,9 +14,15 @@ import XCTest
 /// A journal store held in memory, standing in for the real one. It reproduces the two things the screen
 /// can be shown: a restore that lands, and a refusal with the reason the importer would give.
 private final class ImportStubStore: JournalStore, JournalTombstoneSource, JournalRestoreTarget,
-    JournalErasing, @unchecked Sendable
+    JournalErasing, JournalRestoreProgress, @unchecked Sendable
 {
     struct Unsupported: Error {}
+    var failClearRestoreForTesting = false
+    func markRestoreInProgress(fileDigest: String) throws {}
+    func restoreInProgressDigest() throws -> String? { nil }
+    func clearRestoreInProgress() throws {
+        if failClearRestoreForTesting { throw Unsupported() }
+    }
     let erasureName = "journal"
 
     var failNextSaveForTesting = false
@@ -569,6 +575,31 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         XCTAssertEqual(model.journalRestoreGeneration, 0)
         XCTAssertTrue(try journal.activeIntakes().isEmpty)
         XCTAssertEqual(model.eraseGeneration, 1)
+    }
+
+    /// A restore flag that cannot be cleared stops the erase before the import is cancelled, so the import keeps
+    /// running and completes once it is let go, and the screen says nothing was erased.
+    func testAFailedFlagClearLeavesTheImportRunning() async throws {
+        let journal = ImportStubStore()
+        journal.failClearRestoreForTesting = true
+        journal.pauseBeforeRestoreForTesting = true
+        let model = ConnectionsPrivacyViewModel(store: journal, erasers: [journal])
+
+        model.importJournal(data: try export(includeFavorite: false))
+        let restorePaused = await waitForSignal(journal.restorePausedBeforeWriteForTesting)
+        XCTAssertTrue(restorePaused)
+
+        let erased = await model.eraseAllData()
+        XCTAssertFalse(erased)
+        XCTAssertEqual(model.errorMessage, ConnectionsPrivacyViewModel.eraseNothingErasedMessage)
+        XCTAssertTrue(model.eraseRetryAvailable)
+        XCTAssertTrue(model.isImporting, "the failed erase must not cancel the import")
+
+        journal.resumeRestoreBeforeWriteForTesting.signal()
+        for _ in 0..<200 where model.isImporting {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertEqual(try journal.activeIntakes().map(\.id), [entryID])
     }
 
     func testFailedErasePublishesPartialRestoreThatCompletesDuringOrAfterErase() async throws {
