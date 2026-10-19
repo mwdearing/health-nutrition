@@ -51,6 +51,6 @@ public struct CalorieRemaining: Equatable, Sendable {
     /// amount) gets the rows' fallback wording, so the summary never shows a partial day without a note.
     static func partialNote(missingCount: Int, label: String) -> String {
         let name = label.prefix(1).lowercased() + label.dropFirst()
-        return GoalBar.missingValueNote(count: missingCount, name: name) ?? "Some entries can't be added up for \(name)"
+        return GoalBarModel.missingValueNote(count: missingCount, name: name) ?? "Some entries can't be added up for \(name)"
     }
 }
