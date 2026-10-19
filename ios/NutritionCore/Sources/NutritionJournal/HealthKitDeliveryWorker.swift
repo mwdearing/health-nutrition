@@ -192,7 +192,10 @@ public struct JournalSnapshotTotals: Sendable {
             // A water entry with a stored share counts that share of its volume, and one without counts all of it.
             guard let share = component.hydrationPercent ?? (category == waterCategory ? Decimal(100) : nil)
             else { continue }
-            milliliters += converted.value * share / 100
+            // A component whose share is 0 percent counts no water, so it neither adds nor marks the water as found.
+            let counted = converted.value * share / 100
+            guard counted > 0 else { continue }
+            milliliters += counted
             found = true
         }
         return found ? .known(milliliters, .mL) : nil
