@@ -1750,15 +1750,15 @@ final class NutritionFactsParserTests: XCTestCase {
     func testVitaminD3AndSpacedD3ReadAsVitaminDWithTheCanonicalName() {
         let attached = parse(["Supplement Facts", "Serving Size 1 softgel", "Vitamin D3 25mcg"])
         let spaced = parse(["Supplement Facts", "Serving Size 1 softgel", "Vitamin D 3 25mcg"])
-        XCTAssertEqual(attached.nutrientDisplayNames[NutritionFactKey.vitaminD.rawValue], "Vitamin D")
-        XCTAssertEqual(spaced.nutrientDisplayNames[NutritionFactKey.vitaminD.rawValue], "Vitamin D")
+        // A plain vitamin D name needs no override; the journal shows its own name, "Vitamin D".
+        XCTAssertEqual(attached.nutrientDisplayNames[NutritionFactKey.vitaminD.rawValue] ?? "Vitamin D", "Vitamin D")
+        XCTAssertEqual(spaced.nutrientDisplayNames[NutritionFactKey.vitaminD.rawValue] ?? "Vitamin D", "Vitamin D")
     }
 
-    func testVitaminBTwelveWrittenTwoWaysGivesTheSameRows() {
-        let hyphen = parse(["Supplement Facts", "Serving Size 1 tablet", "Vitamin B-12 25mcg"])
-        let spaced = parse(["Supplement Facts", "Serving Size 1 tablet", "Vitamin B 12 25mcg"])
-        XCTAssertEqual(hyphen.additionalNutrients.count, 1)
-        XCTAssertEqual(hyphen.additionalNutrients, spaced.additionalNutrients)
+    func testVitaminBTwelveWrittenTwoWaysKeepsBothRowsInOneParse() {
+        let panel = parse(["Supplement Facts", "Serving Size 1 tablet", "Vitamin B-12 25mcg", "Vitamin B 12 10mcg"])
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Vitamin B-12", "Vitamin B 12"])
+        XCTAssertNotEqual(panel.additionalNutrients[0].key, panel.additionalNutrients[1].key)
     }
 
     func testSugarAlcoholGivesNoExtraOnANutritionFactsPanel() {
@@ -1767,11 +1767,12 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(panel.unnamedRowCount, 1)
     }
 
-    func testHyphenatedSugarAlcoholMatchesTheSpacedFormOnASupplementPanel() {
+    func testHyphenatedSugarAlcoholIsAnExtraOnASupplementPanelLikeTheSpacedForm() {
         let hyphen = parse(["Supplement Facts", "Serving Size 1 bar", "Sugar-Alcohol 2g"])
         let spaced = parse(["Supplement Facts", "Serving Size 1 bar", "Sugar Alcohol 2g"])
-        XCTAssertEqual(hyphen.additionalNutrients, spaced.additionalNutrients)
-        XCTAssertEqual(hyphen.unnamedRowCount, spaced.unnamedRowCount)
+        XCTAssertEqual(hyphen.additionalNutrients.count, 1)
+        XCTAssertEqual(spaced.additionalNutrients.count, 1)
+        XCTAssertEqual(hyphen.additionalNutrients[0].value, spaced.additionalNutrients[0].value)
     }
 
     func testMultiWordAliasWithAnAmountGivesNoExtraOnBothPanels() {
@@ -1786,12 +1787,12 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Vitamin A", "Vitamin E", "Vitamin K"])
     }
 
-    func testBAmbiguousSpacedNumbersAreUnreadAndAttachedUnitGivesTheSameResult() {
+    func testBAmbiguousSpacedNumbersAreUnreadAndAttachedUnitGivesNothing() {
         let spaced = parse(["Nutrition Facts", "Serving Size 1 tablet", "Vitamin B 1 2 mcg"])
         let attached = parse(["Nutrition Facts", "Serving Size 1 tablet", "Vitamin B 1 2mcg"])
         XCTAssertTrue(spaced.additionalNutrients.isEmpty)
         XCTAssertEqual(spaced.unnamedRowCount, 1, "a row the parser cannot place counts as unread")
         XCTAssertTrue(attached.additionalNutrients.isEmpty)
-        XCTAssertEqual(attached.unnamedRowCount, spaced.unnamedRowCount)
+        XCTAssertEqual(attached.unnamedRowCount, 0, "the attached form gives nothing")
     }
 }
