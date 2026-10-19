@@ -62,6 +62,8 @@ public final class QuickAddViewModel: ObservableObject, Identifiable {
     @Published public var carbohydratesText = ""
     @Published public var fatText = ""
     @Published public var meal: MealLabel?
+    /// When the amounts were eaten. Defaults to now; a late meal is logged at its own time.
+    @Published public var occurredAt: Date
     @Published public private(set) var saveError: String?
 
     private let store: JournalStore
@@ -78,8 +80,14 @@ public final class QuickAddViewModel: ObservableObject, Identifiable {
         self.store = store
         self.meal = meal
         self.now = now
+        self.occurredAt = now()
         self.timeZoneIdentifier = timeZoneIdentifier
         self.makeID = makeID
+    }
+
+    /// True while every amount field is blank, so the screen can say what is missing.
+    public var hasNoAmountTyped: Bool {
+        Field.allCases.allSatisfy { text(for: $0).trimmingCharacters(in: .whitespaces).isEmpty }
     }
 
     public func text(for field: Field) -> String {
@@ -124,7 +132,7 @@ public final class QuickAddViewModel: ObservableObject, Identifiable {
         let identity = Self.snapshotIdentity(name: entryName, nutrients: nutrients)
         let date = now()
         let intake = Intake(
-            id: makeID(), category: ProductKind.food.rawValue, occurredAt: date,
+            id: makeID(), category: ProductKind.food.rawValue, occurredAt: occurredAt,
             timeZoneIdentifier: timeZoneIdentifier(), meal: meal?.rawValue)
         let component = IntakeComponent(
             componentID: Self.componentID, name: entryName, amount: 1, unit: .serving)

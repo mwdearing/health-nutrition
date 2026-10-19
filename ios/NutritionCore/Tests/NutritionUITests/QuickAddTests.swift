@@ -46,6 +46,30 @@ final class QuickAddTests: XCTestCase {
         XCTAssertEqual(day.total(for: "energy")?.value, .known(Decimal(250), .kcal))
     }
 
+    /// A late lunch is logged at the time it was eaten, not at the moment of saving.
+    func testAnEarlierWhenIsStoredAsTheTimeItWasEaten() throws {
+        let store = try makeStore()
+        let model = makeModel(store, meal: .lunch)
+        model.caloriesText = "400"
+        let eaten = now.addingTimeInterval(-3 * 3_600)
+        model.occurredAt = eaten
+
+        _ = try XCTUnwrap(model.save())
+        let intake = try XCTUnwrap(store.activeIntakes().first)
+        XCTAssertEqual(intake.occurredAt, eaten)
+    }
+
+    /// With nothing typed, the screen says what is missing; it is not a silent disabled button.
+    func testNothingTypedIsReportedAsNoAmount() {
+        let store = try! makeStore()
+        let model = makeModel(store)
+        XCTAssertTrue(model.hasNoAmountTyped)
+        model.caloriesText = "  "
+        XCTAssertTrue(model.hasNoAmountTyped)
+        model.caloriesText = "10"
+        XCTAssertFalse(model.hasNoAmountTyped)
+    }
+
     /// A field left empty is not stated at all, so it reads as unknown and never as zero.
     func testAnEmptyFieldIsUnknownRatherThanZero() throws {
         let store = try makeStore()

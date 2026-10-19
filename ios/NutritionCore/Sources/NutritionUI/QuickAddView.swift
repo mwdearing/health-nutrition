@@ -26,6 +26,7 @@ public struct QuickAddView: View {
                 Text("Fill in what you know. An empty field stays unknown rather than counting as zero.")
             }
             Section {
+                DatePicker("When", selection: $model.occurredAt)
                 Picker("Meal", selection: $model.meal) {
                     Text("None").tag(MealLabel?.none)
                     ForEach(MealLabel.allCases, id: \.self) { label in
@@ -45,6 +46,11 @@ public struct QuickAddView: View {
         .navigationTitle("Amounts only")
         .safeAreaInset(edge: .bottom) {
             VStack(alignment: .leading, spacing: DesignSpacing.s) {
+                if model.hasNoAmountTyped {
+                    Text("Enter calories or another amount above zero.")
+                        .font(.footnote)
+                        .foregroundStyle(TokenColors.textSecondary)
+                }
                 if let message = model.saveError {
                     InlineNotice(message, tone: .failed)
                 }
@@ -70,7 +76,6 @@ public struct QuickAddView: View {
             .font(.body)
             .decimalAmountKeyboard()
             .focused(focus)
-            .accessibilityHint(self.model.error(for: field) ?? "")
         }
     }
 }
