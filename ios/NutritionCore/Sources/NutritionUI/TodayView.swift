@@ -186,7 +186,7 @@ public struct TodayView: View {
                     .accessibilityLabel(model.quickWaterAccessibilityLabel)
                     .accessibilityHint("Adds one water entry. You can undo it for 10 seconds.")
                     if model.isUndoAvailable(now: now()), model.undo?.isDelete != true {
-                        QuietCapsule("Undo") {
+                        QuietCapsule("Undo water") {
                             model.undoLastQuickAdd(now: now())
                         }
                         .accessibilityLabel("Undo last water")
@@ -277,11 +277,11 @@ public struct TodayView: View {
                     .accessibilityAddTraits(.isHeader)
                 if let kcal = section.energyKcal {
                     // A small positive amount must not round to "0 kcal", which reads as nothing logged.
-                    let figure = kcal > 0 && kcal < 1 ? "under 1" : BodyActivityViewModel.whole(kcal)
-                    Text("\(figure) Calories")
+                    let figure = kcal > 0 && kcal < 1 ? "less than 1 calorie" : energyCaption(kcal)
+                    Text(figure)
                         .font(.subheadline)
                         .foregroundStyle(TokenColors.textSecondary)
-                        .accessibilityLabel("\(figure) calories")
+                        .accessibilityLabel(figure)
                 }
                 Spacer()
             }
@@ -408,3 +408,9 @@ private struct SwipeToDeleteRow<Content: View>: View {
     }
 }
 
+/// The calorie figure beside a section's header. A whole calorie is singular; anything else is "Calories".
+@MainActor
+fileprivate func energyCaption(_ kcal: Decimal) -> String {
+    let number = BodyActivityViewModel.whole(kcal)
+    return number == "1" ? "1 calorie" : "\(number) Calories"
+}

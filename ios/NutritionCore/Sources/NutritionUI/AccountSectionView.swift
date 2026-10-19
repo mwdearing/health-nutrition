@@ -23,7 +23,7 @@ public struct AccountSectionView: View {
                     .disabled(!model.profileReady || model.isBusy)
                     .accessibilityHint("Shown with the labels you share. Up to \(AccountViewModel.nameLimit) characters.")
                 LabeledContent("Email", value: model.email)
-                Toggle("Share labels with the community", isOn: Binding(
+                Toggle("Share products with the community", isOn: Binding(
                     get: { model.shareLabels },
                     set: { on in Task { await model.setSharing(on) } }
                 ))

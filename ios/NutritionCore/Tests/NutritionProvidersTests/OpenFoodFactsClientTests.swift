@@ -70,7 +70,7 @@ final class OpenFoodFactsClientTests: XCTestCase {
         return product
     }
 
-    private func client(_ transport: StubTransport, environment: OpenFoodFactsEnvironment = .production, clock: TestClock = TestClock()) -> OpenFoodFactsClient {
+    private func client(_ transport: any OpenFoodFactsTransport, environment: OpenFoodFactsEnvironment = .production, clock: TestClock = TestClock()) -> OpenFoodFactsClient {
         OpenFoodFactsClient(environment: environment, transport: transport, appVersion: "1.0.0", now: { clock.now() }, monotonic: { clock.uptime() })
     }
 
@@ -356,4 +356,29 @@ final class OpenFoodFactsClientTests: XCTestCase {
             return XCTFail("expected transport, got \(outcome)")
         }
     }
+
+    func testNoConnectionIsOfflineOutcome() async throws {
+        let outcome = await client(ThrowingOpenFoodFactsTransport(error: URLError(.notConnectedToInternet)))
+            .lookup(barcode: foundCode)
+        XCTAssertEqual(outcome, .offline)
+    }
+
+    func testServerErrorIsTransportNotOffline() async throws {
+        let outcome = await client(StubTransport(status: 500, body: Data())).lookup(barcode: foundCode)
+        guard case .transport = outcome else {
+            return XCTFail("a server status is not connection loss, got \(outcome)")
+        }
+    }
+
+    func testTimeoutOnAWorkingConnectionIsNotOffline() async throws {
+        let outcome = await client(ThrowingOpenFoodFactsTransport(error: URLError(.timedOut))).lookup(barcode: foundCode)
+        guard case .transport = outcome else {
+            return XCTFail("a timeout is not 'no internet connection', got \(outcome)")
+        }
+    }
+}
+
+private struct ThrowingOpenFoodFactsTransport: OpenFoodFactsTransport {
+    let error: URLError
+    func get(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) { throw error }
 }

@@ -1802,4 +1802,24 @@ final class NutritionFactsParserTests: XCTestCase {
         let panel = parse(["Supplement Facts", "Serving size 1 softgel", "Vitamin D 3 25 mcg"])
         XCTAssertEqual(panel.unnamedRowCount, 0, "a vitamin D form digit is not the B1/B12 ambiguity")
     }
+
+    // MARK: Issue 495 (non-ASCII digits and fullwidth units). Tests first: the parser is not changed in this commit.
+
+    func testArabicIndicDigitsNeverReadAsZero() {
+        let panel = parse(["Nutrition Facts", "Serving size 1 cup", "Calories ٥٠", "Protein 3g"])
+        // Arabic-Indic digits are not mapped, so the field has no value: unknown, never zero.
+        XCTAssertEqual(value(.calories, panel), .unknown, "an unread field has no value")
+    }
+
+    func testDevanagariDigitsNeverReadAsZero() {
+        let panel = parse(["Nutrition Facts", "Serving size 1 cup", "Sodium १००mg", "Protein 3g"])
+        // Devanagari digits are not mapped, so the field has no value: unknown, never zero.
+        XCTAssertEqual(value(.sodium, panel), .unknown, "an unread field has no value")
+    }
+
+    func testFullwidthAmountWithFullwidthUnitIsTheValueOrUnread() {
+        let panel = parse(["Nutrition Facts", "Serving size 1 cup", "Total Fat ２ｇ", "Protein 3g"])
+        // A fullwidth amount is the printed value in another width, so the row reads as 2 g: never zero, never a guessed unit.
+        XCTAssertEqual(value(.fat, panel), .known(2, .g))
+    }
 }
