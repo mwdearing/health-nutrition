@@ -1819,11 +1819,7 @@ final class NutritionFactsParserTests: XCTestCase {
 
     func testFullwidthAmountWithFullwidthUnitIsTheValueOrUnread() {
         let panel = parse(["Nutrition Facts", "Serving size 1 cup", "Total Fat ２ｇ", "Protein 3g"])
-        let fat = value(.fat, panel)
-        XCTAssertNotEqual(fat, .known(0, .g), "never zero")
-        if case .known(let amount, let unit) = fat {
-            XCTAssertEqual(amount, 2)
-            XCTAssertEqual(unit, .g, "the printed unit, never a guessed one")
-        }
+        // A fullwidth amount is the printed value in another width, so the row reads as 2 g: never zero, never a guessed unit.
+        XCTAssertEqual(value(.fat, panel), .known(2, .g))
     }
 }
