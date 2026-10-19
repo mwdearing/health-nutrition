@@ -2,6 +2,7 @@ import XCTest
 @testable import NutritionUI
 
 /// The selection line tells the person how many days Log will use, and the limit it checks against.
+@MainActor
 final class LogOnOtherDaysSelectionTests: XCTestCase {
     func testOneDayIsSingular() {
         XCTAssertEqual(LogOnOtherDaysSheet.selectionText(count: 1), "1 day selected, up to 14")
