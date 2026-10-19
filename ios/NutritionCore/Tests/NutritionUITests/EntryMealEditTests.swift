@@ -110,6 +110,18 @@ final class EntryMealEditTests: XCTestCase {
         XCTAssertNotNil(model.errorMessage)
     }
 
+    /// Log again copies the stored entry, so it is offered only when nothing is waiting to be saved.
+    func testLogAgainIsOfferedOnlyWhenNoEditIsUnsaved() throws {
+        let store = try makeStore()
+        try logEntry(store, meal: "breakfast")
+        let model = entryModel(store)
+        model.load(now: now)
+        XCTAssertTrue(model.canLogAgain)
+        let component = try XCTUnwrap(model.drafts.keys.first)
+        model.drafts[component] = "55"
+        XCTAssertFalse(model.canLogAgain)
+    }
+
     /// Choosing a meal reloads the screen, so it is refused while an amount or time edit is unsaved rather than
     /// quietly discarding it.
     func testAMealCannotBeChangedWhileAnEditIsUnsaved() throws {

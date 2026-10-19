@@ -40,7 +40,7 @@ public struct EntryDetailView: View {
         .navigationTitle("Entry")
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
-                if model.isDirty && !loggedAgain {
+                if model.isDirty {
                     Button("Save") {
                         if model.saveDrafts(now: now()) {
                             onSaved()
@@ -267,8 +267,11 @@ public struct EntryDetailView: View {
                     } label: {
                         Text("Log again").font(.headline)
                     }
+                    .disabled(!model.canLogAgain)
                     .accessibilityLabel("Log this entry again")
-                    .accessibilityHint("Adds a new entry with the same amounts at the current time")
+                    .accessibilityHint(model.canLogAgain
+                        ? "Adds a new entry with the same amounts at the current time"
+                        : "Save your changes first.")
                     LogOnOtherDaysButton(model: model, now: now, onFinished: onFinished)
                     Button(role: .destructive) {
                         confirmingDelete = true
