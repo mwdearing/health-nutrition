@@ -70,6 +70,8 @@ public actor OpenFoodFactsClient {
             (data, response) = try await transport.get(request)
         } catch BoundedResponseError.responseTooLarge {
             return .transport("response exceeded the local size limit")
+        } catch let error as URLError where isNetworkLoss(error) {
+            return .offline
         } catch {
             return .transport(String(describing: error))
         }
@@ -298,4 +300,15 @@ func parseRetryAfter(_ raw: String, now: Date) -> TimeInterval? {
         return nil
     }
     return min(max(0, date.timeIntervalSince(now)), maxRetryAfter)
+}
+
+/// Connection loss: the device has no network, or the network dropped. A timeout or an unreachable host can
+/// happen on a working connection (a slow or down service), so it keeps the transport outcome, never "no internet".
+func isNetworkLoss(_ error: URLError) -> Bool {
+    switch error.code {
+    case .notConnectedToInternet, .networkConnectionLost, .dataNotAllowed:
+        return true
+    default:
+        return false
+    }
 }

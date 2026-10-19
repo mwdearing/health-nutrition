@@ -132,6 +132,8 @@ public enum OpenFoodFactsOutcome: Sendable, Equatable {
     case rateLimited(retryAfter: TimeInterval?)
     case invalidBarcode
     case transport(String)
+    /// The request could not reach the service: no connection, or a dropped or timed-out network.
+    case offline
 }
 
 // MARK: - Decoding

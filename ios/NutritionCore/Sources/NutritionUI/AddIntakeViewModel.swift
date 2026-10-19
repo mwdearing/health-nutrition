@@ -65,6 +65,8 @@ public enum BarcodeLookupState: Sendable, Equatable {
     /// How long the source asked the caller to wait, when it said.
     case rateLimited(retryAfterSeconds: Int?)
     case failed(String)
+    /// The request could not reach the source: no connection, or a network that dropped it.
+    case offline
 
     public var isLoading: Bool {
         if case .loading = self { return true }
@@ -599,6 +601,8 @@ public final class AddIntakeViewModel: ObservableObject {
             return Self.rateLimitMessage(retryAfterSeconds: retryAfterSeconds)
         case .failed:
             return "The lookup did not finish. Try again in a moment."
+        case .offline:
+            return "No internet connection. Try again when you're online."
         }
     }
 
@@ -725,6 +729,9 @@ public final class AddIntakeViewModel: ObservableObject {
         case .failed(let reason):
             invalidateLookup()
             lookupState = .failed(reason)
+        case .offline:
+            invalidateLookup()
+            lookupState = .offline
         }
     }
 
