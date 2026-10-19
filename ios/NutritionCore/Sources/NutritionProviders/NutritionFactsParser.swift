@@ -1321,6 +1321,8 @@ public enum NutritionFactsParser {
         _ words: ArraySlice<(text: String, range: Range<String.Index>)>
     ) -> (name: String, nutrient: PanelRow?)? {
         guard !words.isEmpty, words.count <= 4 else { return nil }
+        // A lone vitamin D form ("D3" after "Vitamin") belongs to the named vitamin D row, never to an extra.
+        if words.count == 1, ["d", "d2", "d3"].contains(words.first?.text.lowercased() ?? "") { return nil }
         // A hyphen inside a known nutrient name is a line-break artifact, so matching ignores it. This runs before the
         // word checks, so "Total-Fat" (whose part "total" is a panel word) still reaches its field. Spaces are ignored
         // too, so "Saturated-Fat" matches the alias "saturated fat"; the field reads its canonical name ("Sodium").
