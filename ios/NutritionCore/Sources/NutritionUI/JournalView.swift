@@ -63,7 +63,7 @@ public struct JournalView: View {
                         actionTitle: onAdd == nil ? nil : AddIntakeAction.title,
                         action: onAdd)
                 }
-                ForEach(model.sections) { section in
+                ForEach(model.diarySections) { section in
                     daySection(section)
                 }
                 if let skipped = model.skippedText {

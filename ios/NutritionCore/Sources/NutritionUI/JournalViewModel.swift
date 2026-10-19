@@ -125,6 +125,11 @@ public struct JournalWeekSummary: Equatable {
 @MainActor
 public final class JournalViewModel: ObservableObject {
     @Published public private(set) var sections: [JournalDaySection] = []
+    /// Today's section when it has no entries of its own; nil otherwise. The Diary lists it above `sections`.
+    @Published public private(set) var todaySection: JournalDaySection?
+
+    /// Every section the Diary lists, today first when it is empty.
+    public var diarySections: [JournalDaySection] { (todaySection.map { [$0] } ?? []) + sections }
     /// Intakes left out because their time zone identifier is invalid or their record could not be read.
     @Published public private(set) var skippedCount: Int = 0
     /// How many times the journal has finished loading. The screen watches it to drop state tied to an earlier load.
@@ -246,15 +251,15 @@ public final class JournalViewModel: ObservableObject {
             let queried = tracked.contains(Self.energyKey) ? tracked : tracked + [Self.energyKey]
             // The same choice as Today: a goal switched off there gets no bar in the day header either.
             let hiddenGoals = hiddenTodayGoals(in: preferences)
-            // Once the journal has a readable entry, today gets a section even with none of its own, so its meal cards
-            // and add rows show. An empty journal keeps its empty state and its "Nothing logged yet." sentence.
+            // Once the journal has a readable entry, today is built even with none of its own, so the Diary can show its
+            // meal cards and add rows. It is kept apart from `sections`, which keeps its entry-day contract.
+            let todayKey = Self.dayKey(now, zone: dayZone)
             var sectionKeys = Set(groups.keys)
             if !groups.isEmpty {
-                let todayKey = Self.dayKey(now, zone: dayZone)
                 if titles[todayKey] == nil { titles[todayKey] = Self.dayTitle(now, zone: dayZone, locale: locale, now: now) }
                 sectionKeys.insert(todayKey)
             }
-            sections = try sectionKeys.sorted(by: >).map { key in
+            let built = try sectionKeys.sorted(by: >).map { key in
                 let totals = try DailyTotalsBuilder.totals(
                     for: intakesByDay[key] ?? [], store: store, lookup: lookup, nutrients: queried)
                 let rows = (groups[key] ?? []).sorted { $0.occurredAt > $1.occurredAt }
@@ -273,6 +278,8 @@ public final class JournalViewModel: ObservableObject {
                     },
                     entryCountText: Self.entryCountText(rows.count))
             }
+            todaySection = built.first { $0.id == todayKey && $0.rows.isEmpty }
+            sections = built.filter { !($0.id == todayKey && $0.rows.isEmpty) }
             weekSummary = Self.makeWeekSummary(
                 sections: sections, now: now,
                 zone: TimeZone(identifier: journalZoneID()) ?? TimeZone.current,

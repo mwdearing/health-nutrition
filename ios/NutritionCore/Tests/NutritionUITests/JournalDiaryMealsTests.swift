@@ -140,10 +140,13 @@ final class JournalDiaryMealsTests: XCTestCase {
         let journal = JournalViewModel(store: store, timeZoneIdentifier: "UTC", locale: Locale(identifier: "en_US"))
         journal.load(now: now)
 
-        let today = try XCTUnwrap(journal.sections.first { $0.id == "2023-11-15" })
+        let today = try XCTUnwrap(journal.diarySections.first)
+        XCTAssertEqual(today.id, "2023-11-15")
         XCTAssertEqual(today.mealGroups.map(\.title), ["Breakfast", "Lunch", "Dinner", "Snack"])
         XCTAssertTrue(today.mealGroups.allSatisfy { $0.rows.isEmpty })
         XCTAssertFalse(today.isCollapsedByDefault)
         XCTAssertTrue(journal.showsAddRow(sectionID: today.id, now: now))
+        // The section list the jump, copy and collapse code reads is unchanged: today is not in it.
+        XCTAssertFalse(journal.sections.contains { $0.id == "2023-11-15" })
     }
 }
