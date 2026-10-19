@@ -42,9 +42,12 @@ public struct EntryDetailView: View {
         // Closing with unsaved changes asks first, and an interactive swipe-down follows the same rule.
         .interactiveDismissDisabled(model.closeAsksFirst)
         .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Close") {
-                    if model.closeAsksFirst { confirmingClose = true } else { onFinished() }
+            // A deleted entry shows its own Close in the empty state, so the toolbar one is left out there.
+            if !model.isDeleted {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") {
+                        if model.closeAsksFirst { confirmingClose = true } else { onFinished() }
+                    }
                 }
             }
         }

@@ -89,6 +89,7 @@ public struct RecipeEditorView: View {
         .navigationTitle("Recipe")
         // Changes are only at risk once the person has made them: a changed recipe asks before leaving.
         .navigationBarBackButtonHidden(model.hasTypedInput)
+        .blocksEdgeSwipeBack(while: model.hasTypedInput)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel") {

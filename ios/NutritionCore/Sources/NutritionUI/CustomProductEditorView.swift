@@ -120,6 +120,7 @@ public struct CustomProductEditorView: View {
         .navigationTitle("Product editor")
         // Changes are only at risk once made: a changed product asks before leaving.
         .navigationBarBackButtonHidden(model.hasTypedInput)
+        .blocksEdgeSwipeBack(while: model.hasTypedInput)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel") {
