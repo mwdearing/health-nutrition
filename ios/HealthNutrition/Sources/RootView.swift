@@ -33,6 +33,8 @@ struct RootView: View {
     /// for here and shown when the first has finished going away.
     @State private var settingsAfterWelcome = false
     @State private var settingsAfterAdding = false
+    /// Sign-in opened over Find products, so the query and results stay on screen after signing in.
+    @State private var presentSignInOverSearch = false
     @State private var welcomeAfterSettings = false
     /// Confirms a save whose screen has closed, on the tab bar or on the screen the person lands on.
     @State private var saveNotice: SaveNotice?
@@ -563,11 +565,14 @@ struct RootView: View {
                 CommunityProductSearchView(model: search,
                     onSelect: { self.openProductDetails($0, home: home) },
                     onLegacy: { self.openProductEditor(home: home, legacy: $0) },
-                    onSignIn: { self.settingsAfterAdding = true; self.finishAdding() },
+                    onSignIn: { self.presentSignInOverSearch = true },
                     onOpenFoodFacts: { self.addNavigation.openLookedUp($0, kind: $1, home: home) },
                     library: self.services.library, onPick: { self.openTemplate($0, home: home) },
                     focusSearchOnAppear: true,
                     onSaved: { self.confirmInAddCover(SaveLabels.productSaved) })
+                .sheet(isPresented: $presentSignInOverSearch) {
+                    if let account = self.services.account { SignInSheet(model: account) }
+                }
                     .overlay(alignment: .bottom) {
                         if let message = self.addFlowError { InlineNotice(message, tone: .failed) }
                     }

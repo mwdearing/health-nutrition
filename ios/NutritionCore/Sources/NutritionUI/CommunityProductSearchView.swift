@@ -42,26 +42,11 @@ public struct CommunityProductSearchView: View {
                     ForEach(ProductKind.allCases, id: \.self) { Text($0.displayName).tag(Optional($0)) }
                 }
                 Button("Search", action: search)
+                if query.trimmingCharacters(in: .whitespaces).count >= 2 {
+                    Button("Search food databases", action: search)
+                }
             } footer: {
                 Text("Your foods and products on this phone narrow as you type. Public food databases and shared products are searched only when you tap Search or press Return.")
-            }
-            // A saved meal can mix foods, drinks and supplements, so meals are offered only under All kinds; a
-            // warning about entries a failed log left behind shows under any kind.
-            if let savedMeals = library?.savedMeals, onPick != nil {
-                SavedMealSections(model: savedMeals, query: query, showsMeals: kind == nil, onLog: { mealToLog = $0 })
-            }
-            if let library, let onPick { LibrarySearchSections(library: library, query: query, kind: kind, onPick: onPick) }
-            Section("On this phone") {
-                if model.localError { Text("Could not read local products.") }
-                else if model.localResults.isEmpty { Text("No matching local products.") }
-                ForEach(model.localResults, id: \.localProductID) { product in
-                    Button { onSelect(product) } label: {
-                        VStack(alignment: .leading) {
-                            Text(product.content.name)
-                            Text(product.content.kind.displayName).font(.footnote)
-                        }
-                    }.accessibilityHint("Opens intake details without logging or sharing")
-                }
             }
             if kind != .supplement { Section(header: Text("Food databases"), footer: Text("The words you search for are sent to public food databases (USDA FoodData Central and Open Food Facts). Nothing else from this phone is sent.")) {
                 openFoodFactsStatus
@@ -81,6 +66,24 @@ public struct CommunityProductSearchView: View {
                     }
                 }
             } }
+            // A saved meal can mix foods, drinks and supplements, so meals are offered only under All kinds; a
+            // warning about entries a failed log left behind shows under any kind.
+            if let savedMeals = library?.savedMeals, onPick != nil {
+                SavedMealSections(model: savedMeals, query: query, showsMeals: kind == nil, onLog: { mealToLog = $0 })
+            }
+            if let library, let onPick { LibrarySearchSections(library: library, query: query, kind: kind, onPick: onPick) }
+            Section("On this phone") {
+                if model.localError { Text("Could not read local products.") }
+                else if model.localResults.isEmpty { Text("No matching local products.") }
+                ForEach(model.localResults, id: \.localProductID) { product in
+                    Button { onSelect(product) } label: {
+                        VStack(alignment: .leading) {
+                            Text(product.content.name)
+                            Text(product.content.kind.displayName).font(.footnote)
+                        }
+                    }.accessibilityHint("Opens intake details without logging or sharing")
+                }
+            }
             Section("Shared products") {
                 sharedState
                 ForEach(model.sharedResults, id: \.productID) { product in
