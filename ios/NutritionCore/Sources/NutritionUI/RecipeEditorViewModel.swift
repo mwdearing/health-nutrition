@@ -121,6 +121,19 @@ public final class RecipeEditorViewModel: ObservableObject {
         } else {
             addIngredient()
         }
+        openedWith = fingerprint
+    }
+
+    /// What the form held when it opened. Anything else typed since then is unsaved.
+    private var openedWith = ""
+
+    /// Whether the person has changed the recipe since it opened. Leaving then asks first.
+    public var hasTypedInput: Bool { fingerprint != openedWith }
+
+    private var fingerprint: String {
+        let yield = [yieldKind == .servings ? "servings" : "amount", yieldAmountText, yieldUnitSymbol]
+        let rows = ingredients.flatMap { [$0.name, $0.amountText, $0.unitSymbol, $0.densityText] }
+        return ([title, notes] + yield + rows).joined(separator: "\u{1F}")
     }
 
     public func addIngredient() {
