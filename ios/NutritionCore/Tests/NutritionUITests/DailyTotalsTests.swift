@@ -1010,8 +1010,39 @@ final class DailyTotalsTests: XCTestCase {
         XCTAssertEqual(totals.knownSum(for: "protein"), .known(2, .g))
     }
 
-    /// A supplement with a negative stated vitamin D and positive components: vitamin D is unknown, and the
-    /// nutrients it does not stand against stay known and not partial.
+    /// A per-100 g product with a negative protein is distrusted for every nutrient, so energy is unknown too.
+    func testANegativeNutrientOnAProductDistrustsItsOtherNutrientsToo() throws {
+        let store = try makeStore()
+        let product = ProductDefinition(
+            snapshotID: "snapshot-mixed", productID: "product-mixed", name: "Mixed",
+            labelBasis: "per 100 g", catalogOrigin: "test", catalogVersion: "1",
+            nutrients: ["energyKcal": .known(Decimal(200), .kcal), "protein": .known(Decimal(-1), .g)])
+        try addFood(store, name: "Mixed", id: "mixed", at: when, amount: 100, product: product)
+        let totals = try DailyTotalsBuilder.totals(
+            for: try store.activeIntakes(), store: store, lookup: SnapshotOnlyFacts(),
+            nutrients: ["energyKcal", "protein"])
+        XCTAssertEqual(totals.total(for: "energyKcal")?.value, .unknown)
+        XCTAssertEqual(totals.total(for: "protein")?.value, .unknown)
+    }
+
+    /// A no-product food whose lookup answers a negative protein is unknown for energy whichever nutrients the
+    /// caller asks for, so the meal section and the day total cannot disagree.
+    func testTheSameFoodGivesTheSameAnswerWhicheverNutrientsTheCallerAsksFor() throws {
+        let store = try makeStore()
+        try addFood(store, name: "Lookup food", id: "lookupfood", at: when, amount: 100)
+        let facts = NutrientFacts(values: [
+            "lookupfood": ["energyKcal": .known(Decimal(200), .kcal), "protein": .known(Decimal(-1), .g)],
+        ])
+        let energyOnly = try DailyTotalsBuilder.totals(
+            for: try store.activeIntakes(), store: store, lookup: facts, nutrients: ["energyKcal"])
+        let both = try DailyTotalsBuilder.totals(
+            for: try store.activeIntakes(), store: store, lookup: facts, nutrients: ["energyKcal", "protein"])
+        XCTAssertEqual(energyOnly.total(for: "energyKcal")?.value, .unknown)
+        XCTAssertEqual(both.total(for: "energyKcal")?.value, .unknown)
+    }
+
+    /// A supplement with a negative stated vitamin D declares a second nutrient too: both are unknown, while energy
+    /// and protein from another entry stay known and not partial.
     func testANegativeStatedSupplementValueIsUnknownForWhatItDeclaresOnly() throws {
         let store = try makeStore()
         let supplement = ProductDefinition(
@@ -1019,14 +1050,19 @@ final class DailyTotalsTests: XCTestCase {
             labelBasis: "per serving", catalogOrigin: "test", catalogVersion: "1", kind: .supplement,
             nutrients: [
                 "vitaminD": .known(Decimal(-10), .mcg),
-                "energyKcal": .known(Decimal(380), .kcal),
-                "protein": .known(Decimal(13), .g),
+                "magnesium": .known(Decimal(50), .mg),
             ])
+        let oats = ProductDefinition(
+            snapshotID: "snapshot-oats-2", productID: "product-oats-2", name: "Oats",
+            labelBasis: "per 100 g", catalogOrigin: "test", catalogVersion: "1",
+            nutrients: ["energyKcal": .known(Decimal(380), .kcal), "protein": .known(Decimal(13), .g)])
         try addFood(store, name: "Vitamin D", id: "negvitd", at: when, amount: 1, unit: .serving, product: supplement)
+        try addFood(store, name: "Oats", id: "oats2", at: when, amount: 100, product: oats)
         let totals = try DailyTotalsBuilder.totals(
             for: try store.activeIntakes(), store: store, lookup: SnapshotOnlyFacts(),
-            nutrients: ["vitaminD", "energyKcal", "protein"])
+            nutrients: ["vitaminD", "magnesium", "energyKcal", "protein"])
         XCTAssertEqual(totals.total(for: "vitaminD")?.value, .unknown)
+        XCTAssertEqual(totals.total(for: "magnesium")?.value, .unknown)
         XCTAssertEqual(totals.total(for: "energyKcal")?.value, .known(380, .kcal))
         XCTAssertEqual(totals.total(for: "protein")?.value, .known(13, .g))
         XCTAssertEqual(totals.total(for: "energyKcal")?.coverage.hasUnknown, false)

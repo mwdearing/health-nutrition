@@ -95,20 +95,9 @@ public enum DailyTotalsBuilder {
             let snapshot = Self.snapshot(of: current, in: &snapshots, using: store)
             entries.append((current.components, snapshot, intake.category))
         }
-        // A no-product entry whose lookup answers a negative value for any nutrient of the day is distrusted for
-        // every nutrient of that entry, so the rule is the same whether the number comes from the log or the lookup.
-        var lookupNegative = [Bool](repeating: false, count: entries.count)
-        for (index, entry) in entries.enumerated() where entry.snapshot == nil {
-            for nutrient in nutrients {
-                for component in entry.components {
-                    if case .known(let stated, _) = Self.value(
-                        for: component, snapshot: nil, nutrient: nutrient, lookup: lookup), stated < 0
-                    {
-                        lookupNegative[index] = true
-                    }
-                }
-            }
-        }
+        // Decided once per entry over a fixed universe of nutrients, so the answer does not depend on which nutrients
+        // a caller asks for. Every caller, the meal section included, gets the same answer for the same entry.
+        let distrustedEntries = entries.map { Self.isDistrusted($0, lookup: lookup) }
         var totals: [String: NutrientTotal] = [:]
         var knownSums: [String: NutrientValue] = [:]
         var missingCounts: [String: Int] = [:]
@@ -117,7 +106,7 @@ public enum DailyTotalsBuilder {
             var missing = 0
             for (index, entry) in entries.enumerated() {
                 let contribution = contributions(
-                    of: entry, nutrient: nutrient, lookup: lookup, negativeLookup: lookupNegative[index])
+                    of: entry, nutrient: nutrient, lookup: lookup, distrusted: distrustedEntries[index])
                 // An entry counts as missing when one of its values is unknown, which is exactly the case the sum
                 // leaves out. A supplement with an undeclared nutrient contributes nothing, so it is not counted;
                 // one whose label basis cannot be scaled does contribute unknown, and is counted.
@@ -131,6 +120,39 @@ public enum DailyTotalsBuilder {
             }
         }
         return DailyTotals(totals: totals, knownSums: knownSums, missingCounts: missingCounts)
+    }
+
+    /// The nutrients a negative value is looked for under, whatever the caller asks for: the reference table,
+    /// the Health mapping keys, and water.
+    static let distrustUniverse: [String] = {
+        var keys = Set(ReferenceIntakes.nutrients)
+        keys.insert(waterKey)
+        for mapping in HealthKitWritePlanner.mappings { keys.formUnion(mapping.acceptedKeys) }
+        return keys.sorted()
+    }()
+
+    /// Whether one entry is distrusted: any logged amount, stated value, or lookup value that is negative.
+    static func isDistrusted(
+        _ entry: (components: [IntakeComponent], snapshot: ProductDefinition?, category: String),
+        lookup: NutrientFactsLookup
+    ) -> Bool {
+        if entry.components.contains(where: { $0.amount < 0 }) { return true }
+        if let snapshot = entry.snapshot {
+            return snapshot.nutrients.values.contains { value in
+                if case .known(let stated, _) = value { return stated < 0 }
+                return false
+            }
+        }
+        for nutrient in distrustUniverse {
+            for component in entry.components {
+                if case .known(let stated, _) = Self.value(for: component, snapshot: nil, nutrient: nutrient, lookup: lookup),
+                    stated < 0
+                {
+                    return true
+                }
+            }
+        }
+        return false
     }
 
     /// A drink's water: each volume component times its share (its own, else the drink default). Non-volume
@@ -151,7 +173,7 @@ public enum DailyTotalsBuilder {
         of entry: (components: [IntakeComponent], snapshot: ProductDefinition?, category: String),
         nutrient: String,
         lookup: NutrientFactsLookup,
-        negativeLookup: Bool = false
+        distrusted: Bool = false
     ) -> [NutrientValue] {
         if entry.category == waterCategory {
             // Water is dietary water only for a drink. A food can carry a volume component, and
@@ -164,20 +186,11 @@ public enum DailyTotalsBuilder {
         // answers unknown there — a snapshot states no water unless the product states water — and a
         // day holding one food makes the day's water unknown rather than what was actually drunk.
         // The one exception is a stored water share, which counts toward the day's water as Today shows it.
-        // One rule decides a row that carries a negative number: a negative logged amount, or a negative stated value
-        // the product gives for this nutrient. Neither can be added up, so the row is distrusted as a whole. For a
-        // food entry, or one with no product, every nutrient is unknown and the partial note says so. For a
-        // supplement, only the nutrients it declares are unknown; an undeclared nutrient contributes nothing, as on a
-        // healthy supplement. A zero is a known zero. Water is handled below.
-        let negativeLogged = entry.components.contains(where: { $0.amount < 0 })
-        var negativeStated = false
-        if let snapshot = entry.snapshot, let component = entry.components.first,
-            case .known(let stated, _) = Self.value(for: component, snapshot: snapshot, nutrient: nutrient, lookup: lookup),
-            stated < 0
-        {
-            negativeStated = true
-        }
-        if negativeLogged || negativeStated || negativeLookup {
+        // One decision per entry, made in totals() from every value the entry carries: a negative logged amount,
+        // a negative stated value, or a negative lookup value on any nutrient. A distrusted food row is unknown for
+        // every nutrient. A distrusted supplement row is unknown for the nutrients it declares, and undeclared ones
+        // still contribute nothing, as on a healthy supplement. A zero is a known zero.
+        if distrusted {
             guard let snapshot = entry.snapshot, snapshot.kind == .supplement,
                 let component = entry.components.first
             else { return [.unknown] }
