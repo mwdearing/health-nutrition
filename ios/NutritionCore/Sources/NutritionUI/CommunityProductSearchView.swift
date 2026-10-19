@@ -256,7 +256,8 @@ struct SavedMealSections: View {
                         }
                     }
                     .accessibilityHint("Asks which meal to log it under")
-                    .swipeActions {
+                    // No full swipe: removing a meal is one tap on Remove, and Undo is offered for ten seconds.
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                         Button("Remove", role: .destructive) { model.remove(saved) }
                     }
                 }
@@ -274,7 +275,14 @@ struct SavedMealSections: View {
 struct SavedMealUndoBar: View {
     @ObservedObject var model: SavedMealsModel
     var body: some View {
-        if let token = model.undoToken {
+        if let removal = model.removalUndo {
+            UndoToast(removal.message) { model.undoRemove() }
+                .padding(DesignSpacing.m)
+                .task(id: removal.id) {
+                    do { try await Task.sleep(for: .seconds(10)) } catch { return }
+                    model.expireRemoval(removal)
+                }
+        } else if let token = model.undoToken {
             UndoToast(token.message) { model.undo(now: Date()) }
                 .padding(DesignSpacing.m)
                 .task(id: token.id) {

@@ -206,6 +206,15 @@ public struct SavedMealBook {
         }
     }
 
+    /// Puts back a meal `remove` took out, at the position it had. A meal already listed is left as it is.
+    public func restore(_ saved: SavedMeal, at index: Int) throws {
+        try store.update { list in
+            guard !list.contains(where: { $0.id == saved.id }) else { return }
+            guard list.count < Self.maximumMeals else { throw SavedMealError.tooManyMeals }
+            list.insert(saved, at: min(max(index, 0), list.count))
+        }
+    }
+
     private static func validName(_ name: String, among meals: [SavedMeal], excluding id: String?) throws -> String {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw SavedMealError.emptyName }

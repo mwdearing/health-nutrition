@@ -106,6 +106,44 @@ final class SavedMealsModelTests: XCTestCase {
         return intake
     }
 
+    // MARK: Removing
+
+    /// Remove on a saved meal offers Undo, and Undo puts the meal back where it was in the list.
+    func testUndoPutsARemovedSavedMealBackInItsPlace() throws {
+        let journal = try makeJournal()
+        let milk = try addEntry(journal, "Milk", at: now.addingTimeInterval(-60))
+        let oats = try addEntry(journal, "Oats", at: now.addingTimeInterval(-120))
+        let model = SavedMealsModel(store: UserDefaultsSavedMealStore(defaults: makeDefaults()), journal: journal)
+        XCTAssertTrue(model.save(name: "First", meal: .breakfast, intakes: [milk]))
+        XCTAssertTrue(model.save(name: "Second", meal: .lunch, intakes: [oats]))
+        XCTAssertTrue(model.save(name: "Third", meal: .dinner, intakes: [milk]))
+        let before = model.meals.map(\.id)
+
+        model.remove(model.meals[1])
+        XCTAssertEqual(model.meals.map(\.name), ["Third", "First"])
+        XCTAssertEqual(model.removalUndo?.message, "Removed Second.")
+
+        XCTAssertTrue(model.undoRemove())
+        XCTAssertEqual(model.meals.map(\.id), before)
+        XCTAssertNil(model.removalUndo)
+    }
+
+    /// Once the Undo window has passed, the removal stays and Undo has nothing to put back.
+    func testExpiredRemovalCannotBeUndone() throws {
+        let journal = try makeJournal()
+        let milk = try addEntry(journal, "Milk", at: now.addingTimeInterval(-60))
+        let model = SavedMealsModel(store: UserDefaultsSavedMealStore(defaults: makeDefaults()), journal: journal)
+        XCTAssertTrue(model.save(name: "Only", meal: nil, intakes: [milk]))
+
+        model.remove(model.meals[0])
+        let removal = try XCTUnwrap(model.removalUndo)
+        model.expireRemoval(removal)
+
+        XCTAssertNil(model.removalUndo)
+        XCTAssertFalse(model.undoRemove())
+        XCTAssertTrue(model.meals.isEmpty)
+    }
+
     // MARK: Saving
 
     func testSaveKeepsTheEntriesInTheOrderTheyWereEaten() throws {

@@ -49,6 +49,8 @@ public struct LogOnOtherDaysSheet: View {
                     #else
                     Text("Choosing days needs the iPhone calendar.")
                     #endif
+                    Text(Self.selectionText(count: days.count))
+                        .foregroundStyle(days.count > IntakeMultiDayLogger.maximumDays ? TokenColors.error : TokenColors.textSecondary)
                 } footer: {
                     Text("Adds a new entry on each day, at the same time of day and with the same amounts and meal. This entry's own day and times still to come are skipped. Up to \(IntakeMultiDayLogger.maximumDays) days at once.")
                 }
@@ -85,6 +87,11 @@ public struct LogOnOtherDaysSheet: View {
                 }
             }
         }
+    }
+
+    /// "3 days selected, up to 14": the count Log checks, shown while days are picked so a greyed Log has a reason.
+    public static func selectionText(count: Int) -> String {
+        "\(count) \(count == 1 ? "day" : "days") selected, up to \(IntakeMultiDayLogger.maximumDays)"
     }
 
     /// "Logged on 2 days. Skipped Nov 10 (this entry's day) and Nov 15 (in the future)." Nil when no day
