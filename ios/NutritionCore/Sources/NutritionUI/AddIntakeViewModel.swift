@@ -280,6 +280,8 @@ public final class AddIntakeViewModel: ObservableObject {
     /// stays `.unknown` and is never stored as zero.
     @Published public private(set) var prefilledNutrients: [String: NutrientValue] = [:]
     @Published public private(set) var lookupBasis: BarcodeLookupBasis?
+    /// The basis of a label the camera captured, so the amount preview can scale it like a looked-up product.
+    @Published private(set) var capturedPanelBasis: BarcodeLookupBasis?
     /// What one serving is, when the values are per serving.
     @Published public private(set) var serving: ServingDefinition?
     /// The attribution the source requires next to its values.
@@ -783,6 +785,17 @@ public final class AddIntakeViewModel: ObservableObject {
         labelValues = product
         prefilledFromCapture = fromLabelCapture
         fillProductValues(product)
+        // The captured panel's serving and basis feed the Servings control and the amount preview, the same
+        // as a looked-up product's. Form state only; the stored values are not changed.
+        servingOption = Self.capturedServing(of: product)
+        capturedPanelBasis = Self.capturedBasis(of: product)
+    }
+
+    /// The basis a captured panel states, read from its stored label basis ("per 100 g", "per serving (30 g)").
+    static func capturedBasis(of product: ProductDefinition) -> BarcodeLookupBasis? {
+        BarcodeLookupBasis.allCases.first { basis in
+            product.labelBasis == basis.label || product.labelBasis.hasPrefix(basis.label + " (")
+        }
     }
 
     /// Prefills a Library product without changing its saved snapshot identity.
@@ -869,6 +882,7 @@ public final class AddIntakeViewModel: ObservableObject {
         lookedUp = nil
         // A serving from an earlier product must not stay on the Servings control or count the next entry.
         servingOption = nil
+        capturedPanelBasis = nil
         listedPortions = [:]
         portionsAsked = false
         portionsLoaded = false
@@ -1036,7 +1050,8 @@ public final class AddIntakeViewModel: ObservableObject {
     /// mass or the values are not per 100 g; per-serving values are not scaled here.
     public var amountPreview: AmountPreview? {
         AmountPreview.make(
-            nutrients: prefilledNutrients, basis: lookupBasis ?? lookedUp?.basis, amountText: amountText, unit: unit)
+            nutrients: prefilledNutrients, basis: lookupBasis ?? lookedUp?.basis ?? capturedPanelBasis,
+            amountText: amountText, unit: unit)
     }
 
     /// The "Save to Library" switch. It starts on every time the form opens, so no earlier choice carries over.
