@@ -619,11 +619,13 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         // the file they chose did nothing.
         defer { isErasing = false }
         importTask?.cancel()
-        clearImport()
         // A restore flag left behind would let the next import of that file put back favorites the person is
         // erasing, so it goes before any store is touched and before the import is cancelled. A flag that cannot be
         // removed stops the erase with nothing erased and no import cancelled, and the screen offers Retry.
         guard clearRestoreFlagOrStop() else { return false }
+        // The import state from *before* the erase goes now, once the erase is known to be going ahead, so a failed
+        // flag clear leaves the import on screen as it was.
+        clearImport()
         // Anything an in-flight import publishes afterwards is about a journal that is about to be deleted.
         importGeneration += 1
         importTask?.cancel()
