@@ -170,6 +170,8 @@ public final class AddIntakeViewModel: ObservableObject {
     private let portionLookup: (any HouseholdPortionLookup)?
     /// Whether the picked food's measures have been asked for, so focusing the amount again sends nothing new.
     private var portionsAsked = false
+    /// Whether the asked-for measures have come back, or the request has failed.
+    private var portionsLoaded = false
     /// True while the amount is the one a count of servings set, so an emptied Servings field can clear it.
     private var amountFromServings = false
     /// Why a typed amount was cleared when a pick came in with a unit it cannot total in. Nil otherwise; it
@@ -453,10 +455,19 @@ public final class AddIntakeViewModel: ObservableObject {
         guard let lookup = portionLookup, let picked = lookedUp, picked.basis == .per100g,
               let sourceID = picked.sourceID, let fdcId = Int(sourceID)
         else { return }
+        // Settled however the request ends, so the density notes wait for it and then say what is true.
+        defer { if lookedUp?.sourceID == sourceID { portionsLoaded = true } }
         let portions = await lookup.listedPortions(fdcId: fdcId)
         // A later pick may have replaced this food while the request ran; its portions are not this food's.
         guard lookedUp?.sourceID == sourceID else { return }
         listedPortions = portions
+    }
+
+    /// True while a USDA food's listed measures are still being asked for. The density notes wait for it, so
+    /// they never say a cup cannot be measured when the food does list one.
+    private var portionsPending: Bool {
+        portionLookup != nil && lookedUp?.basis == .per100g && lookedUp?.sourceID != nil
+            && portionsAsked && !portionsLoaded
     }
 
     /// Clears the attempted save and the per-field history, for when the form is reset.
@@ -477,7 +488,7 @@ public final class AddIntakeViewModel: ObservableObject {
     /// whose density gave them. Nil when no conversion applies.
     public var densityNote: String? {
         // A measure the food lists converts through its own gram weight, so no density is described for it.
-        guard listedPortions[unit] == nil, let conversion = volumeToMass else { return nil }
+        guard listedPortions[unit] == nil, !portionsPending, let conversion = volumeToMass else { return nil }
         return "About \(DecimalFormatting.text(conversion.grams)) g, using a typical density for "
             + "\(conversion.ingredientName)."
     }
@@ -485,7 +496,7 @@ public final class AddIntakeViewModel: ObservableObject {
     /// The line shown when a volume is chosen for a food the catalog does not name, so the amount is saved in
     /// milliliters. Nil for a mass, or for a volume the density rule does not reach.
     public var densityUnavailableNote: String? {
-        guard listedPortions[unit] == nil, UnitSelection.typedVolumes.contains(unit), densityApplies,
+        guard listedPortions[unit] == nil, !portionsPending, UnitSelection.typedVolumes.contains(unit), densityApplies,
             !typedName.isEmpty, IngredientDensityCatalog.match(typedName) == nil
         else { return nil }
         return "No typical density is known for this food, so it is saved in mL."
@@ -853,6 +864,7 @@ public final class AddIntakeViewModel: ObservableObject {
         servingOption = nil
         listedPortions = [:]
         portionsAsked = false
+        portionsLoaded = false
         unitNotice = nil
         servingCount = ""
         amountFromServings = false
