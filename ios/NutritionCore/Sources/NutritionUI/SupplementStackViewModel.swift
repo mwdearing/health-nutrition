@@ -99,7 +99,7 @@ public final class SupplementStackViewModel: ObservableObject {
         preferences: DisplayPreferences = InMemoryDisplayPreferences(),
         timeZoneIdentifier: String? = nil,
         timeZoneProvider: @escaping () -> String = { TimeZone.current.identifier },
-        makeID: @escaping () -> String = { UUID().uuidString.lowercased() }
+        makeID: @escaping () -> String = { "forced-id" }
     ) {
         self.store = store
         self.favorites = favorites

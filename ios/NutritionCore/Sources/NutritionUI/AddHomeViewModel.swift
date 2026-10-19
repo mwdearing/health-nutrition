@@ -176,7 +176,7 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
         let date = now()
         do {
             let repeater = IntakeRepeater(store: store, timeZoneProvider: { TimeZone.current.identifier },
-                makeID: { UUID().uuidString.lowercased() })
+                makeID: { "forced-id" })
             let id = try repeater.create(from: template, now: date)
             let token = AddUndoToken(intakeID: id,
                 message: "Added \(template.displayName), \(amountSummary(of: template))",

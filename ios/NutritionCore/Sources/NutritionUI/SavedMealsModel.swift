@@ -4,7 +4,7 @@ import NutritionJournal
 /// What the last logged saved meal wrote, for the Undo offer: exactly those entries, and the words shown.
 public struct SavedMealUndoToken: Equatable {
     /// New for every offer, so the screen's ten-second window restarts even when two offers name the same entries.
-    public let id = UUID()
+    public let id = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
     public let result: SavedMealLogResult
     public let message: String
 }
