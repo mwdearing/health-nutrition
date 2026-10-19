@@ -160,6 +160,7 @@ final class TodayTests: XCTestCase {
         let model = TodayViewModel(store: StubJournalStore(intakes: [], components: [:]), timeZoneIdentifier: "UTC")
 
         XCTAssertNil(model.waterTotalMilliliters)
+        XCTAssertFalse(model.showsEmptyState, "no read yet is not an empty day")
         XCTAssertTrue(model.waterIsUnknown)
         XCTAssertEqual(model.waterDisplayText, "–")
         XCTAssertEqual(model.waterCardAccessibilityValue, "Water not available")

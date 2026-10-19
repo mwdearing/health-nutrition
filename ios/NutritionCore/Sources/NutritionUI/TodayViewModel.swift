@@ -570,10 +570,10 @@ public final class TodayViewModel: ObservableObject {
 
     /// The water total in the unit the reader chose, as it is shown on screen.
     /// The empty state is shown only for a read that succeeded and found nothing.
-    public var showsEmptyState: Bool { rows.isEmpty && !journalReadFailed }
+    public var showsEmptyState: Bool { lastLoadedAt != nil && rows.isEmpty && !journalReadFailed }
 
     /// A failed read has no water total, so the water value is unknown rather than zero.
-    public var waterIsUnknown: Bool { journalReadFailed }
+    public var waterIsUnknown: Bool { journalReadFailed || waterTotalMilliliters == nil }
 
     /// Try again shows only when the journal read failed; it reloads the same day.
     public var showsTryAgain: Bool { journalReadFailed }
