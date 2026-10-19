@@ -21,6 +21,19 @@ private struct SnapshotOnlyFacts: NutrientFactsLookup {
     }
 }
 
+/// Answers each component, for each nutrient, with the value given for its id and nutrient.
+private struct NutrientFacts: NutrientFactsLookup {
+    let values: [String: [String: NutrientValue]]
+
+    func value(for component: IntakeComponent, nutrient: String) -> NutrientValue {
+        values[component.componentID]?[nutrient] ?? .unknown
+    }
+
+    func value(for component: IntakeComponent, snapshot: ProductDefinition?, nutrient: String) -> NutrientValue {
+        values[component.componentID]?[nutrient] ?? .unknown
+    }
+}
+
 /// Answers each component with the value given for its id, so a test can state any unit it needs.
 private struct ComponentFacts: NutrientFactsLookup {
     let values: [String: NutrientValue]
@@ -974,6 +987,27 @@ final class DailyTotalsTests: XCTestCase {
             nutrients: ["energyKcal", "protein"])
         XCTAssertEqual(totals.total(for: "energyKcal")?.value, .unknown)
         XCTAssertEqual(totals.total(for: "protein")?.value, .unknown)
+    }
+
+    /// A lookup that answers a negative value for a food with no product distrusts that food for every nutrient,
+    /// so the day's energy is partial, never a complete figure that leaves the food out.
+    func testANegativeLookupValueForAFoodWithNoProductIsUnknownForEveryNutrient() throws {
+        let store = try makeStore()
+        try addFood(store, name: "Oats", id: "oats", at: when, amount: 40)
+        try addFood(store, name: "Rice", id: "rice", at: when, amount: 150)
+        let facts = NutrientFacts(values: [
+            "oats": ["energyKcal": .known(Decimal(-10), .kcal), "protein": .known(Decimal(5), .g)],
+            "rice": ["energyKcal": .known(Decimal(200), .kcal), "protein": .known(Decimal(2), .g)],
+        ])
+        let totals = try DailyTotalsBuilder.totals(
+            for: try store.activeIntakes(), store: store, lookup: facts, nutrients: ["energyKcal", "protein"])
+        // Energy is partial: the known part is rice alone, and the oats entry is one missing entry.
+        XCTAssertEqual(totals.total(for: "energyKcal")?.value, .unknown)
+        XCTAssertEqual(totals.knownSum(for: "energyKcal"), .known(200, .kcal))
+        XCTAssertEqual(totals.missingCount(for: "energyKcal"), 1)
+        // The other nutrient of the same food is distrusted too.
+        XCTAssertEqual(totals.total(for: "protein")?.value, .unknown)
+        XCTAssertEqual(totals.knownSum(for: "protein"), .known(2, .g))
     }
 
     /// A supplement with a negative stated vitamin D and positive components: vitamin D is unknown, and the

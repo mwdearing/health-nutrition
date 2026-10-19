@@ -95,14 +95,29 @@ public enum DailyTotalsBuilder {
             let snapshot = Self.snapshot(of: current, in: &snapshots, using: store)
             entries.append((current.components, snapshot, intake.category))
         }
+        // A no-product entry whose lookup answers a negative value for any nutrient of the day is distrusted for
+        // every nutrient of that entry, so the rule is the same whether the number comes from the log or the lookup.
+        var lookupNegative = [Bool](repeating: false, count: entries.count)
+        for (index, entry) in entries.enumerated() where entry.snapshot == nil {
+            for nutrient in nutrients {
+                for component in entry.components {
+                    if case .known(let stated, _) = Self.value(
+                        for: component, snapshot: nil, nutrient: nutrient, lookup: lookup), stated < 0
+                    {
+                        lookupNegative[index] = true
+                    }
+                }
+            }
+        }
         var totals: [String: NutrientTotal] = [:]
         var knownSums: [String: NutrientValue] = [:]
         var missingCounts: [String: Int] = [:]
         for nutrient in nutrients {
             var values: [NutrientValue] = []
             var missing = 0
-            for entry in entries {
-                let contribution = contributions(of: entry, nutrient: nutrient, lookup: lookup)
+            for (index, entry) in entries.enumerated() {
+                let contribution = contributions(
+                    of: entry, nutrient: nutrient, lookup: lookup, negativeLookup: lookupNegative[index])
                 // An entry counts as missing when one of its values is unknown, which is exactly the case the sum
                 // leaves out. A supplement with an undeclared nutrient contributes nothing, so it is not counted;
                 // one whose label basis cannot be scaled does contribute unknown, and is counted.
@@ -135,7 +150,8 @@ public enum DailyTotalsBuilder {
     private static func contributions(
         of entry: (components: [IntakeComponent], snapshot: ProductDefinition?, category: String),
         nutrient: String,
-        lookup: NutrientFactsLookup
+        lookup: NutrientFactsLookup,
+        negativeLookup: Bool = false
     ) -> [NutrientValue] {
         if entry.category == waterCategory {
             // Water is dietary water only for a drink. A food can carry a volume component, and
@@ -161,7 +177,7 @@ public enum DailyTotalsBuilder {
         {
             negativeStated = true
         }
-        if negativeLogged || negativeStated {
+        if negativeLogged || negativeStated || negativeLookup {
             guard let snapshot = entry.snapshot, snapshot.kind == .supplement,
                 let component = entry.components.first
             else { return [.unknown] }
