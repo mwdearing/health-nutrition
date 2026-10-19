@@ -1196,8 +1196,8 @@ final class NutritionFactsParserTests: XCTestCase {
         }
     }
 
-    /// A number joins a name only after a letter. "Vitamin B 1 2 mcg" reads "1" as part of the name and "2 mcg"
-    /// as the amount: the row is the extra "Vitamin B 1", not a known field, so the second number is never a name.
+    /// A number joins a name only after a letter, so a second number is never part of a name. "Vitamin B 1 2 mcg"
+    /// is ambiguous and gives nothing: no extra and no known field.
     func testSecondNumberIsNotPartOfAName() throws {
         let panel = parse(["Nutrition Facts", "Total Fat 8g", "Vitamin B 1 2 mcg"])
 
@@ -1261,6 +1261,16 @@ final class NutritionFactsParserTests: XCTestCase {
         if case .known = panel.value(for: .fat) { XCTFail("Saturated-Fat must not set total fat") }
     }
 
+    /// A hyphen joins the word before it, so a hyphenated total-form label still lands on its known field.
+    func testHyphenatedTotalFormsLandOnTheirFields() throws {
+        let panel = parse(["Nutrition Facts", "Total-Fat 5g", "Total-Sugars 10g", "Dietary-Fiber 3g"])
+
+        XCTAssertEqual(try amount(.fat, panel), dec("5"))
+        XCTAssertEqual(try amount(.sugars, panel), dec("10"))
+        XCTAssertEqual(try amount(.fiber, panel), dec("3"))
+        XCTAssertTrue(panel.additionalNutrients.isEmpty)
+    }
+
     /// A hyphenated supplement name that is not a known nutrient stays an extra with its printed hyphen.
     func testHyphenatedUnknownNameStaysAnExtra() throws {
         let panel = parse(["Supplement Facts", "Serving size 1 tablet", "Vitamin-C 60mg"])
@@ -1278,6 +1288,7 @@ final class NutritionFactsParserTests: XCTestCase {
     func testVitaminDFormDigitsLandOnVitaminD() throws {
         func vitaminD(_ line: String) throws -> (Decimal, MeasureUnit) {
             let panel = parse(["Nutrition Facts", "Total Fat 8g", line])
+            XCTAssertTrue(panel.additionalNutrients.isEmpty, "\(line) is vitamin D, not an extra")
             guard case .known(let value, let unit) = panel.value(for: .vitaminD) else {
                 XCTFail("\(line) should read as vitamin D")
                 return (0, .mcg)
