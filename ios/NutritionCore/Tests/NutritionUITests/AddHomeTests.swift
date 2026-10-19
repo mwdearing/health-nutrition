@@ -130,6 +130,38 @@ final class AddHomeTests: XCTestCase {
         XCTAssertEqual(try store.activeIntakes().count, 1)
     }
 
+    /// A one-tap Recent with Meal set to None keeps the meal the item was logged under.
+    func testQuickAddFromRecentWithNoMealKeepsTheItemsOwnMeal() throws {
+        let store = try makeStore()
+        let seed = AddIntakeViewModel(store: store, now: now, timeZoneIdentifier: "UTC")
+        seed.name = "Oats"
+        seed.amountText = "40"
+        seed.meal = .breakfast
+        XCTAssertTrue(seed.save(now: now))
+        let home = AddHomeViewModel(store: store, meal: nil, now: { self.now })
+        home.load()
+        let recent = try XCTUnwrap(home.recents.first)
+        let token = try XCTUnwrap(home.quickAdd(recent))
+        let added = try XCTUnwrap(store.activeIntakes().first { $0.id == token.intakeID })
+        XCTAssertEqual(added.meal, "breakfast")
+    }
+
+    /// A one-tap Recent with Meal chosen on Add home is logged under the chosen meal.
+    func testQuickAddFromRecentWithAChosenMealUsesThatMeal() throws {
+        let store = try makeStore()
+        let seed = AddIntakeViewModel(store: store, now: now, timeZoneIdentifier: "UTC")
+        seed.name = "Oats"
+        seed.amountText = "40"
+        seed.meal = .breakfast
+        XCTAssertTrue(seed.save(now: now))
+        let home = AddHomeViewModel(store: store, meal: .dinner, now: { self.now })
+        home.load()
+        let recent = try XCTUnwrap(home.recents.first)
+        let token = try XCTUnwrap(home.quickAdd(recent))
+        let added = try XCTUnwrap(store.activeIntakes().first { $0.id == token.intakeID })
+        XCTAssertEqual(added.meal, "dinner")
+    }
+
     func testScannedBarcodeStartsTheLookupButTypingDoesNot() async throws {
         let home = AddHomeViewModel(store: try makeStore(), lookup: MissingProductLookup())
         let typed = home.makeDetails(now: now)
