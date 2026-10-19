@@ -239,7 +239,17 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         }
     }
     /// The quick-water amount as typed, in the unit the screen is showing.
-    @Published public var quickWaterText: String
+    @Published public var quickWaterText: String {
+        didSet {
+            // Any change not made by showing the stored amount is the person's own, so the stored figure is no
+            // longer what the field stands for (issue 389).
+            if !isShowingStoredQuickWater { quickWaterEditedSinceStored = true }
+        }
+    }
+    /// True while the field is shown from the stored milliliters and nothing has been typed since. A unit switch
+    /// or a Save then must not rewrite the stored value from the rounded figure.
+    private var quickWaterEditedSinceStored = false
+    private var isShowingStoredQuickWater = false
     /// Why the typed quick-water amount was refused, or nil when it is acceptable.
     @Published public private(set) var quickWaterError: String?
     /// True while the screen is taking its published values FROM the preference store rather than from
@@ -356,14 +366,27 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// or the digests.
     @discardableResult
     public func saveQuickWaterAmount() -> Bool {
+        // Untouched since it was shown from the stored amount: nothing to write, and the stored value stays exact.
+        if !quickWaterEditedSinceStored {
+            quickWaterError = nil
+            return true
+        }
         guard let amount = AmountParser.parseTyped(quickWaterText) else {
             quickWaterError = Self.quickWaterInvalidMessage
             return false
         }
         preferences.setQuickWaterMilliliters(milliliters(for: amount, in: quickWaterUnit))
         quickWaterError = nil
-        quickWaterText = DecimalFormatting.text(quickWaterDraftAmount)
+        showStoredQuickWater()
         return true
+    }
+
+    /// Shows the stored amount in the unit the screen is showing, and remembers that it does.
+    private func showStoredQuickWater() {
+        isShowingStoredQuickWater = true
+        quickWaterText = DecimalFormatting.text(quickWaterDraftAmount)
+        isShowingStoredQuickWater = false
+        quickWaterEditedSinceStored = false
     }
 
     /// The unit the quick-water field is read in: fluid ounces under the US system, milliliters under
@@ -474,6 +497,11 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// Nothing happens to an amount that is not a number: a half-typed entry has no value to convert,
     /// and the field's own error already says what is wrong with it.
     private func convertQuickWaterText(from oldSystem: UnitSystem) {
+        // Still the stored amount, untouched: show it again in the new unit, from the exact stored value.
+        if !quickWaterEditedSinceStored {
+            showStoredQuickWater()
+            return
+        }
         guard let typed = AmountParser.parseTyped(quickWaterText) else { return }
         let milliliters = milliliters(
             for: typed, in: AmountDisplay.volumeUnit(for: oldSystem))
@@ -640,7 +668,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         (preferences as? WaterGoalDefaultPreferences)?.markWaterGoalSeeded()
         isPublishingStoredPreference = true
         unitSystem = preferences.unitSystem
-        quickWaterText = DecimalFormatting.text(quickWaterDraftAmount)
+        showStoredQuickWater()
         quickWaterError = nil
         isPublishingStoredPreference = false
     }
