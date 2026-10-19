@@ -118,6 +118,7 @@ final class TodayTests: XCTestCase {
         XCTAssertFalse(model.showsEmptyState, "a failed read is not an empty day")
         XCTAssertTrue(model.waterIsUnknown, "a failed read has no water total to show")
         XCTAssertEqual(model.waterUnknownSpokenValue, "Water not available")
+        XCTAssertTrue(model.showsTryAgain, "a failed read offers Try again")
     }
 
     /// Nothing built from a failed read is 0 or a full goal: the calorie summary, goal bars and water bar are all absent.
@@ -162,9 +163,12 @@ final class TodayTests: XCTestCase {
         model.load(now: now)
         XCTAssertTrue(model.waterIsUnknown)
 
+        XCTAssertTrue(model.showsTryAgain)
+
         store.failReadsForTesting = false
         model.load(now: now)
 
+        XCTAssertFalse(model.showsTryAgain, "a successful reload removes Try again")
         XCTAssertNil(model.errorMessage)
         XCTAssertTrue(model.showsEmptyState)
         XCTAssertFalse(model.waterIsUnknown)

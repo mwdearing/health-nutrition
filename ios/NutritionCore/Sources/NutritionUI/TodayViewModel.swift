@@ -126,7 +126,7 @@ public final class TodayViewModel: ObservableObject {
     @Published public private(set) var undo: UndoHandle?
     @Published public private(set) var errorMessage: String?
     /// True when the last journal read failed. A failed read is never an empty day and never zero water.
-    public private(set) var journalReadFailed = false
+    @Published public private(set) var journalReadFailed = false
 
     private let store: JournalStore
     private let lookup: NutrientFactsLookup
@@ -574,6 +574,9 @@ public final class TodayViewModel: ObservableObject {
 
     /// A failed read has no water total, so the water value is unknown rather than zero.
     public var waterIsUnknown: Bool { journalReadFailed }
+
+    /// Try again shows only when the journal read failed; it reloads the same day.
+    public var showsTryAgain: Bool { journalReadFailed }
 
     /// The spoken water value while the water total is unknown. Not dated: Today can show other days.
     public var waterUnknownSpokenValue: String { "Water not available" }

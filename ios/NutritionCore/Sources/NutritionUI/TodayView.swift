@@ -122,7 +122,7 @@ public struct TodayView: View {
         if let message = model.errorMessage {
             InlineNotice(message, tone: .failed)
         }
-        if model.journalReadFailed {
+        if model.showsTryAgain {
             Button("Try again") { model.load(now: now()) }
         }
         if model.skippedIntakeCount > 0 {
