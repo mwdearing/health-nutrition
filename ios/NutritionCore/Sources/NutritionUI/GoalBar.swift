@@ -129,7 +129,7 @@ public struct GoalBarModel: Equatable, Identifiable {
 
     /// The nutrient's name inside a sentence: lower case, except a name that is all capitals.
     private static func inSentence(_ label: String) -> String {
-        label == label.uppercased() ? label : label.lowercased()
+        MissingValueWording.inSentence(label)
     }
 
     private static func reasonText(
@@ -142,15 +142,9 @@ public struct GoalBarModel: Equatable, Identifiable {
             }
             return "Some entries can't be added up for \(name)"
         }
-        return Self.missingValueNote(count: missingCount, name: name) ?? "Some entries can't be added up for \(name)"
+        return MissingValueWording.note(count: missingCount, name: name)
     }
 
-    /// "1 entry has no energy value", "2 entries have no energy value", or nil when no entry is missing a value.
-    static func missingValueNote(count: Int, name: String) -> String? {
-        if count == 1 { return "1 entry has no \(name) value" }
-        if count > 1 { return "\(count) entries have no \(name) value" }
-        return nil
-    }
 }
 
 /// A labeled bar: the nutrient and its figure above a capsule track. One accessibility element, so
@@ -239,5 +233,21 @@ struct HatchLines: Shape {
             x += 6
         }
         return path
+    }
+}
+
+/// The one source for the missing-value wording shared by the goal rows and the calorie summary: the name in a
+/// sentence, the count note, and the fallback for a partial line with no missing entry.
+enum MissingValueWording {
+    /// Lower case unless the label is all capitals, so a name reads the same wherever it sits in a sentence.
+    static func inSentence(_ label: String) -> String {
+        label == label.uppercased() ? label : label.lowercased()
+    }
+
+    /// "1 entry has no energy value" and "2 entries have no energy value"; the fallback when no entry is missing.
+    static func note(count: Int, name: String) -> String {
+        if count == 1 { return "1 entry has no \(name) value" }
+        if count > 1 { return "\(count) entries have no \(name) value" }
+        return "Some entries can't be added up for \(name)"
     }
 }

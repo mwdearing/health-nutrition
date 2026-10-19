@@ -51,11 +51,8 @@ public struct CalorieRemaining: Equatable, Sendable {
             goal: goal, food: food, isPartial: partial, partialNote: note, burned: burned, remaining: remaining)
     }
 
-    /// The partial note in the goal rows' own wording. A partial line with no missing entry (a below-threshold
-    /// amount) gets the rows' fallback wording, so the summary never shows a partial day without a note.
+    /// The partial note in the goal rows' own wording, from the one shared source.
     static func missingNote(missingCount: Int, label: String) -> String {
-        // The same casing rule as the goal rows: lower case unless the name is all capitals.
-        let name = label == label.uppercased() ? label : label.lowercased()
-        return GoalBarModel.missingValueNote(count: missingCount, name: name) ?? "Some entries can't be added up for \(name)"
+        MissingValueWording.note(count: missingCount, name: MissingValueWording.inSentence(label))
     }
 }
