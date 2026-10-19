@@ -90,8 +90,6 @@ struct RootView: View {
         case journal
         case library
         case trends
-        /// Not a screen: choosing it opens the settings sheet and returns to the tab the person was on.
-        case settings
         #if DEBUG
         case spike
         #endif
@@ -175,12 +173,6 @@ struct RootView: View {
                 .tabItem { Label("Trends", systemImage: "chart.bar") }
                 .tag(AppTab.trends)
 
-            // The mockup's fourth tab. The settings sheet keeps every existing entry point (goals, the
-            // welcome, erase), so this tab only opens it and puts the selection back.
-            Color.clear
-                .tabItem { Label("Settings", systemImage: "gearshape") }
-                .tag(AppTab.settings)
-
             #if DEBUG
             // Debug builds only: the real HealthKit delivery driver, then the spike that measured how
             // HealthKit resolves a repeated sync identifier. Not in the screenshots.
@@ -196,13 +188,6 @@ struct RootView: View {
                 .tag(AppTab.spike)
             }
             #endif
-        }
-        .onChange(of: selection) { previous, current in
-            let outcome = SettingsTabRedirect.resolve(
-                previous: previous, current: current, settings: .settings, fallback: .today)
-            guard outcome.opensSettings else { return }
-            selection = outcome.selection
-            openSettings(goals: false)
         }
         .background {
             PrivacyShieldWindowAttachment(controller: privacyShield, phase: scenePhase)
