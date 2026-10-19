@@ -308,6 +308,18 @@ final class SupplementStackTests: XCTestCase {
         XCTAssertTrue(model.candidates.isEmpty)
     }
 
+    /// Guards the read order: a full supplement load makes exactly 3 logged-unit reads and shows no error (#415).
+    func testFullSupplementLoadReadsLoggedUnitsExactlyThreeTimes() throws {
+        let store = UnitReadCountingStore(inner: try makeStore())
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        try saveFavorite(favorites)
+        let model = makeModel(store: store, favorites: favorites, schedules: schedules)
+        model.load(now: now)
+        XCTAssertEqual(store.unitReadCalls, 3)
+        XCTAssertNil(model.errorMessage)
+    }
+
     /// The supplement load reads the logged units 3 times when nothing fails. This test fails call 2, the read in
     /// makeCandidates (line 371), so call 1 succeeds and the load stops at 2 reads (#415).
     func testSupplementCandidatesShowNothingWhenTheirOwnUnitReadFails() throws {

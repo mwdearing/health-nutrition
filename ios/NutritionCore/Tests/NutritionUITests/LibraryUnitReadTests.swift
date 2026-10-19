@@ -9,6 +9,20 @@ import XCTest
 /// RecentItemsProvider (recents, foods, frequents), and call 4 is the read this test fails (#415).
 @MainActor
 final class LibraryUnitReadTests: XCTestCase {
+    /// Guards the read order: a full Library load makes exactly 4 logged-unit reads and shows no error (#415).
+    func testFullLibraryLoadReadsLoggedUnitsExactlyFourTimes() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let inner = try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
+        let store = UnitReadCountingStore(inner: inner)
+        let favorites = try SwiftDataFavoritesStore(url: directory.appendingPathComponent("favorites.store"))
+        let model = LibraryViewModel(store: store, favorites: favorites, timeZoneIdentifier: "UTC")
+        model.load()
+        XCTAssertEqual(store.unitReadCalls, 4)
+        XCTAssertNil(model.errorMessage)
+    }
+
     func testLibraryShowsNothingWhenItsOwnUnitReadFails() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
