@@ -110,7 +110,9 @@ public struct LibraryView: View {
         switch model.segment {
         case .favorites, .recent, .products:
             if model.segment == .products { standaloneRows }
-            if model.visibleItems.isEmpty && (model.segment != .products || model.filteredProducts.isEmpty) {
+            if model.isSearchEmpty && (model.segment != .products || model.filteredProducts.isEmpty) {
+                ContentUnavailableView.search(text: model.searchText)
+            } else if model.visibleItems.isEmpty && (model.segment != .products || model.filteredProducts.isEmpty) {
                 emptyState(for: model.segment)
             } else {
                 ForEach(model.visibleItems) { item in
