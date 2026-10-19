@@ -47,7 +47,7 @@ final class CalorieRemainingTests: XCTestCase {
     /// The partial note is the shipped wording, one entry or several, with the goal on and with it off, and the
     /// flag and the note come from the same count, so a whole day has neither.
     func testPartialNoteIsTheShippedWordingWithGoalOnAndOff() {
-        for goal: Decimal? in [2000, nil] {
+        for goal in [Decimal?(2000), nil] {
             let one = CalorieRemaining.make(goal: goal, food: 1500, partial: true, missingCount: 1, burned: nil, energyLabel: "Energy")
             XCTAssertEqual(one.partialNote, "1 entry has no energy value")
             XCTAssertTrue(one.isPartial)
