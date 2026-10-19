@@ -27,10 +27,10 @@ final class StoredShareCountingTests: XCTestCase {
         return id
     }
 
-    func todayWater(_ store: SwiftDataJournalStore) -> Decimal {
+    func todayWater(_ store: SwiftDataJournalStore) throws -> Decimal {
         let today = TodayViewModel(store: store, timeZoneIdentifier: "UTC")
         today.load(now: now)
-        return today.waterTotalMilliliters ?? 0
+        return try XCTUnwrap(today.waterTotalMilliliters, "a read with no total is not zero water")
     }
 
     func dailyWater(_ store: SwiftDataJournalStore) throws -> NutrientValue? {
@@ -49,7 +49,7 @@ final class StoredShareCountingTests: XCTestCase {
         let store = try makeStore()
         let id = try log(store, category: "other", amount: 200, share: 90)
 
-        XCTAssertEqual(todayWater(store), 180)
+        XCTAssertEqual(try todayWater(store), 180)
         XCTAssertEqual(try dailyWater(store), .known(180, .mL))
         let health = try await healthWater(store, id)
         XCTAssertEqual(health, .known(180, .mL))
@@ -60,7 +60,7 @@ final class StoredShareCountingTests: XCTestCase {
         let store = try makeStore()
         let id = try log(store, category: "other", amount: 200, share: nil)
 
-        XCTAssertEqual(todayWater(store), 0)
+        XCTAssertEqual(try todayWater(store), 0)
         XCTAssertEqual(try dailyWater(store), .unknown)
         let health = try await healthWater(store, id)
         XCTAssertNil(health)
@@ -71,7 +71,7 @@ final class StoredShareCountingTests: XCTestCase {
         let store = try makeStore()
         let id = try log(store, category: "water", amount: 200, share: nil)
 
-        XCTAssertEqual(todayWater(store), 200)
+        XCTAssertEqual(try todayWater(store), 200)
         XCTAssertEqual(try dailyWater(store), .known(200, .mL))
         let health = try await healthWater(store, id)
         XCTAssertEqual(health, .known(200, .mL))
@@ -83,7 +83,7 @@ final class StoredShareCountingTests: XCTestCase {
         let store = try makeStore()
         let id = try log(store, category: "other", amount: 200, share: 50)
 
-        XCTAssertEqual(todayWater(store), 100)
+        XCTAssertEqual(try todayWater(store), 100)
         XCTAssertEqual(try dailyWater(store), .known(100, .mL))
         let health = try await healthWater(store, id)
         XCTAssertEqual(health, .known(100, .mL))
@@ -96,7 +96,7 @@ extension StoredShareCountingTests {
         let store = try makeStore()
         let id = try log(store, category: "water", amount: 200, share: 50)
 
-        XCTAssertEqual(todayWater(store), 100)
+        XCTAssertEqual(try todayWater(store), 100)
         XCTAssertEqual(try dailyWater(store), .known(100, .mL))
         let health = try await healthWater(store, id)
         XCTAssertEqual(health, .known(100, .mL))

@@ -81,7 +81,7 @@ struct WatchTodayWidgetView: View {
                 }
                 .privacySensitive()
         case .accessoryInline:
-            if snapshot?.hasEntries == false {
+            if WidgetSnapshot.showsNothingLogged(snapshot, now: entry.date) {
                 Text("Nothing logged today")
             } else if let remaining = snapshot?.remainingInlineText {
                 Text("Calories remaining \(remaining)").accessibilityLabel(spoken).privacySensitive()
@@ -89,7 +89,7 @@ struct WatchTodayWidgetView: View {
                 Text("\(snapshot?.foodText ?? "—") Food").accessibilityLabel(spoken).privacySensitive()
             }
         default:
-            if snapshot?.hasEntries == false {
+            if WidgetSnapshot.showsNothingLogged(snapshot, now: entry.date) {
                 VStack(alignment: .leading) {
                     Text("Today").font(.headline)
                     Text("Nothing logged today").font(.footnote)

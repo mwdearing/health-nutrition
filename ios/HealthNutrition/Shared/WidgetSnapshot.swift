@@ -31,8 +31,11 @@ struct WidgetSnapshot: Codable, Equatable {
     func isPartial(_ figure: String) -> Bool { partialFigures?.contains(figure) == true }
 
     /// What VoiceOver says for one widget row: its figure when known, otherwise "<name> not available".
-    static func rowSpoken(_ name: String, figure: String, known: Bool) -> String {
-        known ? "\(name) \(figure)" : "\(name) not available"
+    /// A partial figure is read "at least", as the calorie figure is.
+    static func rowSpoken(_ name: String, figure: String, known: Bool, partial: Bool = false) -> String {
+        guard known else { return "\(name) not available" }
+        let plain = figure.replacingOccurrences(of: "+", with: "")
+        return partial ? "\(name) at least \(plain)" : "\(name) \(plain)"
     }
 
     /// "Nothing logged today" is said only by a summary for today that has no entries. No summary means nothing is known.

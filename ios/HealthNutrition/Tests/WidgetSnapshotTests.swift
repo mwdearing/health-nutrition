@@ -26,6 +26,7 @@ final class WidgetSnapshotTests: XCTestCase {
     func testAnUnknownRowIsSpokenAsNotAvailable() {
         XCTAssertEqual(WidgetSnapshot.rowSpoken("Protein", figure: "—", known: false), "Protein not available")
         XCTAssertEqual(WidgetSnapshot.rowSpoken("Protein", figure: "12 g", known: true), "Protein 12 g")
+        XCTAssertEqual(WidgetSnapshot.rowSpoken("Protein", figure: "12+ g", known: true, partial: true), "Protein at least 12 g")
     }
 
     /// "Nothing logged today" is shown only for a summary for today with no entries, never for a missing summary.

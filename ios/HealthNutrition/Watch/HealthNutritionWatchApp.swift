@@ -67,13 +67,13 @@ struct WatchTodayView: View {
     var body: some View {
         // Redrawn every minute, so the day changing drops yesterday's figures to dashes without any new data.
         TimelineView(.periodic(from: .now, by: 60)) { context in
-            content(for: snapshot.flatMap { $0.isCurrent(on: context.date) ? $0 : nil })
+            content(for: snapshot.flatMap { $0.isCurrent(on: context.date) ? $0 : nil }, now: context.date)
         }
     }
 
-    private func content(for snapshot: WidgetSnapshot?) -> some View {
+    private func content(for snapshot: WidgetSnapshot?, now: Date) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            if snapshot?.hasEntries == false {
+            if WidgetSnapshot.showsNothingLogged(snapshot, now: now) {
                 Text("Today").font(.headline)
                 Text("Nothing logged today").font(.footnote).foregroundStyle(.secondary)
             } else {
