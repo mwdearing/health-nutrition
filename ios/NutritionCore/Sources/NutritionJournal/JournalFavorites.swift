@@ -271,6 +271,8 @@ public final class SwiftDataFavoritesStore: FavoritesStore, FavoritesRestoreTarg
 
     // MARK: Erasing
 
+    public var erasureName: String { "favorites" }
+
     /// Removes every favorite. A favorite is a template copied from what was eaten, and it carries that
     /// entry's amounts, so it is part of what the erase action removes.
     ///

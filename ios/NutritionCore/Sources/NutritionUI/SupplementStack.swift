@@ -320,6 +320,9 @@ public final class UserDefaultsSupplementStackStore: SupplementStackStoring, Jou
         defaults.set(try encoder.encode(marks), forKey: Self.takenKey)
     }
 
+
+    public var erasureName: String { "supplements" }
+
     public func eraseAll() throws {
         defaults.removeObject(forKey: Self.key)
         defaults.removeObject(forKey: Self.takenKey)

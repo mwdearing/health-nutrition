@@ -98,6 +98,8 @@ public final class SwiftDataGoalStore: GoalStore, JournalErasing, @unchecked Sen
         try context.save()
     }
 
+    public var erasureName: String { "goals" }
+
     /// Removes every target. A target is the person's own number, so it goes with everything else on
     /// "Erase all data"; the rows are deleted one at a time rather than with the batch delete, which
     /// runs against the persistent store immediately and so cannot be rolled back with the save. The

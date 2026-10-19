@@ -154,8 +154,16 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         + "reminders, plus any export file it wrote. A copy you already shared or saved elsewhere — in Files, in mail, in cloud storage "
         + "or in another app — is not erased: delete it there yourself. Data this app wrote to Apple Health stays there too: delete it in the Health app. Erasing signs you out on this phone; "
         + "your community account and any shared labels remain on the server."
-    public static let eraseFailedMessage =
-        "Some stored data could not be erased. Quit and reopen the app, then try again."
+    /// Shown when the erase stopped before any store was touched, so nothing has been erased yet.
+    public static let eraseNothingErasedMessage = "Nothing was erased. Tap Retry to try again."
+    /// Names what is still on the phone after an erase, in the order the erase ran. `names` is never empty.
+    public static func eraseLeftBehindMessage(_ names: [String]) -> String {
+        "Erase didn't finish. Still on this phone: \(naturalList(names)). Tap Retry to erase them."
+    }
+    private static func naturalList(_ names: [String]) -> String {
+        guard names.count > 1, let last = names.last else { return names.joined() }
+        return names.dropLast().joined(separator: ", ") + " and " + last
+    }
     /// The names the exporter writes, as `fileName(exportedAt:)` builds them. The erase sweeps the
     /// temporary directory for these, so an export left behind by a session that ended without the
     /// screen tidying up is still removed.
@@ -201,6 +209,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     @Published public private(set) var exportFileName: String?
     @Published public private(set) var entryCount = 0
     @Published public private(set) var errorMessage: String?
+    /// True when `errorMessage` describes an erase that did not finish, so the screen offers Retry.
+    @Published public private(set) var eraseRetryAvailable = false
     @Published public private(set) var importState: ConnectionsPrivacyImportState = .idle
     @Published public private(set) var isImporting = false
     /// Main-actor count of restores whose outcomes have not yet reached `apply`. The store-write gate is
@@ -600,6 +610,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         guard !isErasing else { return false }
         beforeErase()
         isErasing = true
+        eraseRetryAvailable = false
         deferredImportEffectsDuringErase.removeAll()
         // The import state from *before* the erase goes now, as the screen enters its erasing state: "Imported
         // 3 entries" describes a journal that is about to stop existing. It is cleared here rather than at
@@ -617,14 +628,26 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         }
         defer { isErasing = false }
 
-        var failed = false
+        // A restore flag left behind would let the next import of that file put back favorites the person is
+        // erasing, so it goes first, before any store is touched. A flag that cannot be removed stops the erase
+        // with nothing erased, and the screen offers Retry.
+        do {
+            try (store as? JournalRestoreProgress)?.clearRestoreInProgress()
+        } catch {
+            errorMessage = Self.eraseNothingErasedMessage
+            eraseRetryAvailable = true
+            return false
+        }
+
+        // Every store and export file that is still on the phone afterwards is named, in the order the erase ran,
+        // so the person knows exactly what to retry. One failure never stops the rest.
+        var leftBehind: [String] = []
         var journalEraseSucceeded = false
-        // The community session is forgotten locally only. This never calls the server, and a failure is
-        // reported like a store's while the rest of the erase still runs.
+        // The community session is forgotten locally only. This never calls the server.
         do {
             try await eraseLocalAccount()
         } catch {
-            failed = true
+            leftBehind.append("community sign-in")
         }
         let journalEraser = store as? JournalErasing
         for eraser in erasers {
@@ -634,12 +657,13 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
                     journalEraseSucceeded = true
                 }
             } catch {
-                failed = true
+                leftBehind.append(eraser.erasureName)
             }
         }
         // Every export file this app wrote goes, not only the one this model remembers: the app can be
         // killed after an export, and the next session's model starts with no URL to delete.
-        if !removeEveryExportFile() { failed = true }
+        if !removeEveryExportFile() { leftBehind.append("export files") }
+        let failed = !leftBehind.isEmpty
         // The handle this screen was holding is one of those files, or is already gone. Clearing it
         // cannot fail: the sweep above has removed whatever was still there.
         forgetExportFile()
@@ -649,7 +673,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         forgetDisplayPreferences()
         entryCount = 0
         exportState = .idle
-        errorMessage = failed ? Self.eraseFailedMessage : nil
+        errorMessage = failed ? Self.eraseLeftBehindMessage(leftBehind) : nil
+        eraseRetryAvailable = failed
         resolveDeferredImportEffectsAfterErase(journalEraseSucceeded: journalEraseSucceeded)
         eraseGeneration += 1
         if !failed { afterSuccessfulErase() }

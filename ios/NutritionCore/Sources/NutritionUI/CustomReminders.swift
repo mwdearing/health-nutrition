@@ -246,6 +246,9 @@ public final class CustomReminderEraser: JournalErasing, @unchecked Sendable {
         self.erasures = erasures
     }
 
+
+    public var erasureName: String { "reminders" }
+
     public func eraseAll() throws {
         erasures.record()
         let ids = store.reminders.map(\.id)
