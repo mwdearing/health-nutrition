@@ -106,9 +106,6 @@ public struct AddHomeView: View {
                 if let onNewProduct {
                     plainRow("Create product", help: "Save product facts without logging an intake. A name is enough to start.", action: onNewProduct)
                 }
-                plainRow("Amounts only", help: "Log calories and macros without choosing a food.") {
-                    self.quickAdd = self.model.makeQuickAdd()
-                }
                 if let message = model.errorMessage { InlineNotice(message, tone: .failed) }
             }
             .padding(DesignSpacing.m)
