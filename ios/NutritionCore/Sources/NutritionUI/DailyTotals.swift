@@ -127,6 +127,8 @@ public enum DailyTotalsBuilder {
     static let distrustUniverse: [String] = {
         var keys = Set(ReferenceIntakes.nutrients)
         keys.insert(waterKey)
+        keys.formUnion(NutrientGoalChoices.keys)
+        keys.formUnion(TodayViewModel.defaultTrackedNutrients)
         for mapping in HealthKitWritePlanner.mappings { keys.formUnion(mapping.acceptedKeys) }
         return keys.sorted()
     }()
@@ -175,6 +177,10 @@ public enum DailyTotalsBuilder {
         lookup: NutrientFactsLookup,
         distrusted: Bool = false
     ) -> [NutrientValue] {
+        // A distrusted drink row is unknown for water and contributes nothing to any other nutrient, as a drink does.
+        if distrusted && entry.category == waterCategory {
+            return nutrient == waterKey ? [.unknown] : []
+        }
         if entry.category == waterCategory {
             // Water is dietary water only for a drink. A food can carry a volume component, and
             // that is not a glass of water the person drank, so a non-drink contributes no water.

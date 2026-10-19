@@ -1069,6 +1069,37 @@ final class DailyTotalsTests: XCTestCase {
         XCTAssertEqual(totals.total(for: "protein")?.coverage.hasUnknown, false)
     }
 
+    /// A drink row with a positive and a negative volume is distrusted as a whole: its water is unknown, and the
+    /// known 250 mL does not survive as a partial sum.
+    func testAMixedDrinkRowWithANegativeVolumeIsUnknownWaterNotPartlyKnown() throws {
+        let store = try makeStore()
+        let intake = Intake(id: UUID().uuidString.lowercased(), category: "water", occurredAt: when, timeZoneIdentifier: "UTC")
+        try store.create(
+            intake, components: [
+                IntakeComponent(componentID: "drink", name: "Drink", amount: 250, unit: .mL, hydrationPercent: 100),
+                IntakeComponent(componentID: "drink", name: "Drink", amount: -50, unit: .mL, hydrationPercent: 100),
+            ], product: nil, now: when)
+        let totals = try DailyTotalsBuilder.totals(
+            for: try store.activeIntakes(), store: store, lookup: SnapshotOnlyFacts(),
+            nutrients: [DailyTotalsBuilder.waterKey])
+        XCTAssertEqual(totals.total(for: DailyTotalsBuilder.waterKey)?.value, .unknown)
+        XCTAssertNil(totals.knownSum(for: DailyTotalsBuilder.waterKey))
+        XCTAssertEqual(totals.missingCount(for: DailyTotalsBuilder.waterKey), 1)
+    }
+
+    /// A lookup's negative value for a nutrient the caller did not ask for still distrusts the food, so the energy
+    /// total does not depend on which nutrients were requested.
+    func testANegativeLookupForAnUnrequestedNutrientStillDistrustsTheFood() throws {
+        let store = try makeStore()
+        try addFood(store, name: "Lookup food", id: "lookupfood2", at: when, amount: 100)
+        let facts = NutrientFacts(values: [
+            "lookupfood2": ["energyKcal": .known(Decimal(200), .kcal), "carbohydrate": .known(Decimal(-3), .g)],
+        ])
+        let energyOnly = try DailyTotalsBuilder.totals(
+            for: try store.activeIntakes(), store: store, lookup: facts, nutrients: ["energyKcal"])
+        XCTAssertEqual(energyOnly.total(for: "energyKcal")?.value, .unknown)
+    }
+
     /// A food row with a negative volume and a 100% water share must not lower the day's water.
     func testANegativeVolumeWithAWaterShareIsUnknownWaterNotDrunk() throws {
         let store = try makeStore()
