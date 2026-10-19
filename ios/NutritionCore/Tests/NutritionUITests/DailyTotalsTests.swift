@@ -967,11 +967,36 @@ final class DailyTotalsTests: XCTestCase {
         let product = ProductDefinition(
             snapshotID: "snapshot-negstated", productID: "product-negstated", name: "Stated",
             labelBasis: "per 100 g", catalogOrigin: "test", catalogVersion: "1",
-            nutrients: ["energyKcal": .known(Decimal(-10), .kcal)])
+            nutrients: ["energyKcal": .known(Decimal(-10), .kcal), "protein": .known(Decimal(-1), .g)])
         try addFood(store, name: "Stated", id: "stated", at: when, amount: 100, product: product)
         let totals = try DailyTotalsBuilder.totals(
-            for: try store.activeIntakes(), store: store, lookup: SnapshotOnlyFacts(), nutrients: ["energyKcal"])
+            for: try store.activeIntakes(), store: store, lookup: SnapshotOnlyFacts(),
+            nutrients: ["energyKcal", "protein"])
         XCTAssertEqual(totals.total(for: "energyKcal")?.value, .unknown)
+        XCTAssertEqual(totals.total(for: "protein")?.value, .unknown)
+    }
+
+    /// A supplement with a negative stated vitamin D and positive components: vitamin D is unknown, and the
+    /// nutrients it does not stand against stay known and not partial.
+    func testANegativeStatedSupplementValueIsUnknownForWhatItDeclaresOnly() throws {
+        let store = try makeStore()
+        let supplement = ProductDefinition(
+            snapshotID: "snapshot-negvitd", productID: "product-negvitd", name: "Vitamin D",
+            labelBasis: "per serving", catalogOrigin: "test", catalogVersion: "1", kind: .supplement,
+            nutrients: [
+                "vitaminD": .known(Decimal(-10), .mcg),
+                "energyKcal": .known(Decimal(380), .kcal),
+                "protein": .known(Decimal(13), .g),
+            ])
+        try addFood(store, name: "Vitamin D", id: "negvitd", at: when, amount: 1, unit: .serving, product: supplement)
+        let totals = try DailyTotalsBuilder.totals(
+            for: try store.activeIntakes(), store: store, lookup: SnapshotOnlyFacts(),
+            nutrients: ["vitaminD", "energyKcal", "protein"])
+        XCTAssertEqual(totals.total(for: "vitaminD")?.value, .unknown)
+        XCTAssertEqual(totals.total(for: "energyKcal")?.value, .known(380, .kcal))
+        XCTAssertEqual(totals.total(for: "protein")?.value, .known(13, .g))
+        XCTAssertEqual(totals.total(for: "energyKcal")?.coverage.hasUnknown, false)
+        XCTAssertEqual(totals.total(for: "protein")?.coverage.hasUnknown, false)
     }
 
     /// A food row with a negative volume and a 100% water share must not lower the day's water.

@@ -148,13 +148,23 @@ public enum DailyTotalsBuilder {
         // answers unknown there — a snapshot states no water unless the product states water — and a
         // day holding one food makes the day's water unknown rather than what was actually drunk.
         // The one exception is a stored water share, which counts toward the day's water as Today shows it.
-        // A negative logged amount cannot be added up, so the row is distrusted as a whole. For a food entry, or
-        // one with no product, every nutrient is unknown and the partial note says so. For a supplement, only the
-        // nutrients it declares are unknown; an undeclared nutrient contributes nothing, as on a healthy supplement.
-        // A zero amount is a known zero. Water is handled above.
-        if entry.components.contains(where: { $0.amount < 0 }) {
-            guard let snapshot = entry.snapshot, snapshot.kind == .supplement else { return [.unknown] }
-            guard let component = entry.components.first(where: { $0.amount < 0 }) else { return [.unknown] }
+        // One rule decides a row that carries a negative number: a negative logged amount, or a negative stated value
+        // the product gives for this nutrient. Neither can be added up, so the row is distrusted as a whole. For a
+        // food entry, or one with no product, every nutrient is unknown and the partial note says so. For a
+        // supplement, only the nutrients it declares are unknown; an undeclared nutrient contributes nothing, as on a
+        // healthy supplement. A zero is a known zero. Water is handled below.
+        let negativeLogged = entry.components.contains(where: { $0.amount < 0 })
+        var negativeStated = false
+        if let snapshot = entry.snapshot, let component = entry.components.first,
+            case .known(let stated, _) = Self.value(for: component, snapshot: snapshot, nutrient: nutrient, lookup: lookup),
+            stated < 0
+        {
+            negativeStated = true
+        }
+        if negativeLogged || negativeStated {
+            guard let snapshot = entry.snapshot, snapshot.kind == .supplement,
+                let component = entry.components.first
+            else { return [.unknown] }
             if case .unknown = Self.value(for: component, snapshot: snapshot, nutrient: nutrient, lookup: lookup) {
                 return []
             }
@@ -174,9 +184,6 @@ public enum DailyTotalsBuilder {
             // An undeclared nutrient supplies no contribution; it does not invalidate food totals.
             if snapshot.kind == .supplement, case .unknown = value { return [] }
             guard case .known(let amount, let unit) = value else { return [value] }
-            // The stated value is read from the product, not from the logged components, so a negative stated
-            // value is distrusted here as well as a negative logged amount: it is never summed as a negative number.
-            if amount < 0 { return [.unknown] }
             // The stated value is for the amount the basis names; it has to be scaled to the amount
             // actually logged before it can be summed with anything else.
             guard let factor = Self.scalingFactor(
