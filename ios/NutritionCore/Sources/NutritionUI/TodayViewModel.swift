@@ -83,7 +83,6 @@ public final class TodayViewModel: ObservableObject {
     public static let waterAmountInvalidMessage = "Enter a water amount above zero."
 
     @Published public private(set) var rows: [TodayRow] = []
-    /// Water today in mL, an exact decimal.
     /// The day's water in millilitres, or nil when the journal could not be read: a failed read has no total, never 0.
     @Published public private(set) var waterTotalMilliliters: Decimal? = nil
     /// Water components skipped because their unit is not a volume (never counted as zero).
@@ -568,7 +567,6 @@ public final class TodayViewModel: ObservableObject {
         return true
     }
 
-    /// The water total in the unit the reader chose, as it is shown on screen.
     /// The empty state is shown only for a read that succeeded and found nothing.
     public var showsEmptyState: Bool { lastLoadedAt != nil && rows.isEmpty && !journalReadFailed }
 
@@ -588,6 +586,7 @@ public final class TodayViewModel: ObservableObject {
     public var waterCardAccessibilityValue: String { waterIsUnknown ? waterUnknownSpokenValue : waterAccessibilityValue }
 
     /// The water total as a display, or nil while the total is unknown: a missing total is never shown as 0.
+    /// The water total in the unit the reader chose, as it is shown on screen.
     public var waterTotalDisplay: DisplayAmount? {
         waterTotalMilliliters.map { AmountDisplay.water($0, system: self.preferences.unitSystem) }
     }

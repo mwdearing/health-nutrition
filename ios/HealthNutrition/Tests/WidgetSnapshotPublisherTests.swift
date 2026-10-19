@@ -91,7 +91,7 @@ final class WidgetSnapshotPublisherTests: XCTestCase {
 
         XCTAssertNil(snapshot.waterMilliliters, "no read means no water total, not zero")
         XCTAssertEqual(WidgetFigure.water(snapshot.waterMilliliters, usUnits: false), "— mL")
-        XCTAssertEqual(WidgetFigure.water(snapshot.waterMilliliters, usUnits: true), "— fl oz")
+        XCTAssertEqual(WidgetFigure.water(snapshot.waterMilliliters, usUnits: true), "—")
     }
 
     /// A journal read that fails writes no widget summary, so yesterday's or an empty day is never shown as today.

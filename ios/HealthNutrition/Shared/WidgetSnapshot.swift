@@ -31,7 +31,10 @@ struct WidgetSnapshot: Codable, Equatable {
     func isPartial(_ figure: String) -> Bool { partialFigures?.contains(figure) == true }
 
     /// "Nothing logged today" is said only by a summary for today that has no entries. No summary means nothing is known.
-    static func showsNothingLogged(_ snapshot: WidgetSnapshot?) -> Bool { snapshot?.hasEntries == false }
+    static func showsNothingLogged(_ snapshot: WidgetSnapshot?, now: Date, calendar: Calendar = .current) -> Bool {
+        guard let snapshot, snapshot.isCurrent(on: now, calendar: calendar) else { return false }
+        return snapshot.hasEntries == false
+    }
 
     /// A summary with nothing in it: no entries and no figures, as after Erase all data.
     static func empty(at time: Date) -> WidgetSnapshot {
@@ -128,7 +131,7 @@ enum WidgetFigure {
     /// value is missing or cannot be shown.
     static func water(_ milliliters: Double?, usUnits: Bool?) -> String {
         if usUnits == true {
-            guard let milliliters, milliliters.isFinite else { return "— fl oz" }
+            guard let milliliters, milliliters.isFinite else { return "—" }
             let ounces = milliliters / millilitersPerUSFluidOunce
             // A sip is still water: under half an ounce it reads "<1" rather than a rounded 0.
             if ounces > 0, ounces < 0.5 { return "<1 fl oz" }

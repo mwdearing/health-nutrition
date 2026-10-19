@@ -28,8 +28,10 @@ final class WidgetSnapshotTests: XCTestCase {
         let current = WidgetSnapshot.empty(at: now)
 
         XCTAssertTrue(current.isCurrent(on: now))
-        XCTAssertTrue(WidgetSnapshot.showsNothingLogged(current))
-        XCTAssertFalse(WidgetSnapshot.showsNothingLogged(nil), "no summary says nothing about the day")
+        XCTAssertTrue(WidgetSnapshot.showsNothingLogged(current, now: now))
+        XCTAssertFalse(WidgetSnapshot.showsNothingLogged(nil, now: now), "no summary says nothing about the day")
+        let tomorrow = now.addingTimeInterval(24 * 60 * 60)
+        XCTAssertFalse(WidgetSnapshot.showsNothingLogged(current, now: tomorrow), "yesterday's empty summary is not today's")
     }
 
     func testTheAppGroupIsNamedAfterTheAppAndTheExtensionResolvesToTheSameGroup() {
