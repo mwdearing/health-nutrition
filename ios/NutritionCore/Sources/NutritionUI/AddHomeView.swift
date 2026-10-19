@@ -15,6 +15,7 @@ public struct AddHomeView: View {
     /// Opens the details form for a Recent row (long-press or the Details action). Nothing is logged there.
     private let onOpen: ((RepeatTemplate) -> Void)?
     @State private var quickAdd: QuickAddViewModel?
+    @State private var confirmDiscardQuickAdd = false
 
     public init(model: AddHomeViewModel, onBarcode: @escaping () -> Void,
         onLabel: @escaping () -> Void, onLibrary: @escaping () -> Void,
@@ -117,10 +118,17 @@ public struct AddHomeView: View {
                 }
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") { self.quickAdd = nil }
+                        Button("Cancel") {
+                            if form.hasTypedInput { self.confirmDiscardQuickAdd = true } else { self.quickAdd = nil }
+                        }
                     }
                 }
+                .confirmationDialog("Discard this entry?", isPresented: $confirmDiscardQuickAdd, titleVisibility: .visible) {
+                    Button("Discard", role: .destructive) { self.quickAdd = nil }
+                }
             }
+            // Swipe-down asks too, while typed input would be lost.
+            .interactiveDismissDisabled(form.hasTypedInput)
         }
         .onAppear { self.model.load() }
         .safeAreaInset(edge: .bottom) {

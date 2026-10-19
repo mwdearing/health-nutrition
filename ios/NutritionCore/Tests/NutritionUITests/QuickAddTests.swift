@@ -20,6 +20,27 @@ final class QuickAddTests: XCTestCase {
         QuickAddViewModel(store: store, meal: meal, now: { self.now }, timeZoneIdentifier: { "UTC" })
     }
 
+    func testFreshQuickAddHasNoTypedInput() throws {
+        XCTAssertFalse(makeModel(try makeStore()).hasTypedInput)
+    }
+
+    func testTypedAmountOrNameCountsAsTypedInput() throws {
+        let amount = makeModel(try makeStore())
+        amount.caloriesText = "250"
+        XCTAssertTrue(amount.hasTypedInput)
+
+        let name = makeModel(try makeStore())
+        name.name = "Toast"
+        XCTAssertTrue(name.hasTypedInput)
+    }
+
+    func testBlankNameAndAmountIsNotTypedInput() throws {
+        let model = makeModel(try makeStore())
+        model.name = "   "
+        model.caloriesText = " "
+        XCTAssertFalse(model.hasTypedInput)
+    }
+
     private func totals(_ store: SwiftDataJournalStore) throws -> DailyTotals {
         try DailyTotalsBuilder.totals(
             for: store.activeIntakes(), store: store, lookup: SnapshotNutrientFacts(), nutrients: tracked)
