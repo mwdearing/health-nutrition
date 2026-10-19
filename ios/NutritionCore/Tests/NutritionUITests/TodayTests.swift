@@ -11,7 +11,6 @@ private struct FixedFacts: NutrientFactsLookup {
     }
 }
 
-/// Serves canned intakes so tests can hold stored values the real store would refuse to create.
 private final class ThrowingGoalStore: GoalStore, @unchecked Sendable {
     private struct Failure: Error {}
     func goals() throws -> [NutrientGoal] { throw Failure() }
@@ -21,6 +20,7 @@ private final class ThrowingGoalStore: GoalStore, @unchecked Sendable {
     func close() {}
 }
 
+/// Serves canned intakes so tests can hold stored values the real store would refuse to create.
 private final class StubJournalStore: JournalStore, @unchecked Sendable {
     var failNextSaveForTesting = false
     let intakes: [Intake]

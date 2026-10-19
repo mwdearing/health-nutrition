@@ -37,6 +37,17 @@ final class WidgetSnapshotPublisherTests: XCTestCase {
         WidgetSnapshotStore(directory: directory.appendingPathComponent("group", isDirectory: true))
     }
 
+    /// A Today model that has not read the journal has no water total, so the snapshot writes nil, never 0, and the
+    /// widget draws a dash for it.
+    func testAModelWithoutAReadWritesNilWaterAndTheWidgetShowsADash() throws {
+        let today = try makeToday()
+
+        let snapshot = WidgetSnapshotPublisher.snapshot(from: today, now: loadedAt)
+
+        XCTAssertNil(snapshot.waterMilliliters, "no read means no water total, not zero")
+        XCTAssertEqual(WidgetFigure.water(snapshot.waterMilliliters, usUnits: false), "— mL")
+    }
+
     func testItWritesForTheLoadOnScreen() throws {
         let today = try makeToday()
         today.load(now: loadedAt)
