@@ -472,6 +472,12 @@ public final class AddIntakeViewModel: ObservableObject {
             && portionsAsked && !portionsLoaded
     }
 
+    /// Whether the person has typed or changed anything worth keeping. Leaving the form then asks first.
+    public var hasTypedInput: Bool {
+        !name.trimmingCharacters(in: .whitespaces).isEmpty
+            || !amountText.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
     /// Clears the attempted save and the per-field history, for when the form is reset.
     public func resetFieldErrors() {
         hasAttemptedSave = false
