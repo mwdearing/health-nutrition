@@ -1253,6 +1253,14 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertTrue(panel.additionalNutrients.isEmpty)
     }
 
+    /// A hyphen joins the word before it: "Saturated-Fat 3g" is saturated fat only, not total fat as well.
+    func testHyphenatedSubrowDoesNotFillTotalFat() throws {
+        let panel = parse(["Nutrition Facts", "Saturated-Fat 3g"])
+
+        XCTAssertEqual(try amount(.saturatedFat, panel), dec("3"))
+        if case .known = panel.value(for: .fat) { XCTFail("Saturated-Fat must not set total fat") }
+    }
+
     /// A hyphenated supplement name that is not a known nutrient stays an extra with its printed hyphen.
     func testHyphenatedUnknownNameStaysAnExtra() throws {
         let panel = parse(["Supplement Facts", "Serving size 1 tablet", "Vitamin-C 60mg"])
