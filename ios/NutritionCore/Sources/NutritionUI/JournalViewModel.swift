@@ -426,12 +426,13 @@ public final class JournalViewModel: ObservableObject {
     @discardableResult
     public func undoCopy(now: Date = Date()) -> Bool {
         guard !copiedIDs.isEmpty else { return false }
-        // The copy notice is kept across the reload, so the Undo control stays on screen while copies remain.
+        // The copy notice is kept on a failed undo, so the Undo control stays on screen while copies remain. A
+        // successful undo leaves nothing to say, so the notice goes.
         let notice = copyNotice
-        defer { copyNotice = notice }
         // A copy the person already deleted by hand is not active any more: it is skipped, not counted as a failure.
         guard let active = try? Set(store.activeIntakes().map(\.id)) else {
             load(now: now)
+            copyNotice = notice
             return false
         }
         var succeeded = true
@@ -446,6 +447,7 @@ public final class JournalViewModel: ObservableObject {
             copiedIDs.removeFirst()
         }
         load(now: now)
+        copyNotice = succeeded ? nil : notice
         return succeeded
     }
 

@@ -325,6 +325,7 @@ final class JournalLibraryTests: XCTestCase {
         let activeIDs = Set(try store.activeIntakes().map(\.id))
         XCTAssertTrue(activeIDs.isDisjoint(with: result.createdIDs))
         XCTAssertEqual(activeIDs, Set([first, second]))
+        XCTAssertNil(model.copyNotice, "a successful undo leaves no stale 'Copied' notice")
         XCTAssertFalse(model.undoCopy(), "an undo offer is taken once")
     }
 
