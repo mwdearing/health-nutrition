@@ -335,6 +335,8 @@ struct SupplementScheduleEditor: View {
                             } label: {
                                 Image(systemName: "minus.circle").accessibilityHidden(true)
                             }
+                            .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(Rectangle())
                             .buttonStyle(.borderless)
                             .accessibilityLabel("Remove \(SupplementStackText.time(item.time))")
                         }

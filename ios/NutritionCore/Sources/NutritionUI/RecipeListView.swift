@@ -45,6 +45,8 @@ public struct RecipeListView: View {
                                 .foregroundStyle(TokenColors.error)
                                 .accessibilityHidden(true)
                         }
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
                         .buttonStyle(.borderless)
                         .accessibilityLabel(RecipeLabels.delete(title: item.title))
                     }

@@ -100,6 +100,8 @@ struct ReferenceGoalHintLine: View {
                 Button("Use") { model.useReferenceGoal(for: nutrient) }
                     .font(.footnote)
                     // Only the button takes the tap, not the whole row it sits in.
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
                     .buttonStyle(.borderless)
                     .accessibilityLabel("Use \(hint.text) as the daily target for \(model.displayName(for: nutrient))")
             }
