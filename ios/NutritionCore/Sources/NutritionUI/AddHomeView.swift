@@ -49,22 +49,15 @@ public struct AddHomeView: View {
                     .accessibilityIdentifier("addSearchRow")
                     .accessibilityHint("Opens product search on this phone, public food databases and shared foods.")
                 }
-                Picker("Meal", selection: $model.meal) {
+                Picker(selection: $model.meal) {
                     Text("None").tag(MealLabel?.none)
                     ForEach(MealLabel.allCases, id: \.self) { meal in
                         Text(meal.displayName).tag(Optional(meal))
                     }
+                } label: {
+                    Text(Self.mealRowTitle(model.meal))
                 }
                 .tint(TokenColors.accent)
-                tile("Scan barcode", help: model.scannerAvailability.barcode
-                    ? "Read the code on the package." : model.scannerAvailability.barcodeExplanation,
-                    available: model.scannerAvailability.barcode, action: onBarcode)
-                tile("Scan label", help: model.scannerAvailability.label
-                    ? "Read and check the nutrition values." : model.scannerAvailability.labelExplanation,
-                    available: model.scannerAvailability.label, action: onLabel)
-                tile("From Library", help: "Choose a favorite, recent item or recipe.", action: onLibrary)
-                if let onNewProduct { tile("Create product", help: "Save product facts without logging an intake. A name is enough to start.", action: onNewProduct) }
-                tile("Type it in", help: "Enter a name and amount yourself.", action: onType)
                 HStack {
                     Text("Recent").font(.headline).accessibilityAddTraits(.isHeader)
                     Spacer()
@@ -99,9 +92,20 @@ public struct AddHomeView: View {
                         }
                     }
                 }
-                Text("More ways").font(.headline).accessibilityAddTraits(.isHeader)
-                tile("Amounts only", help: "Log calories and macros without choosing a food.") {
-                    self.quickAdd = self.model.makeQuickAdd()
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: DesignSpacing.s) { ForEach(quickActions) { quickActionButton($0) } }
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: DesignSpacing.s) {
+                        ForEach(quickActions) { quickActionButton($0) }
+                    }
+                }
+                // Why a quick action is off is shown in words, not only in its hint.
+                ForEach(quickActions.filter { !$0.available && !$0.explanation.isEmpty }) { action in
+                    Text("\(action.title): \(action.explanation)")
+                        .font(.subheadline).foregroundStyle(TokenColors.textSecondary)
+                }
+                plainRow("From Library", help: "Choose a favorite, recent item or recipe.", action: onLibrary)
+                if let onNewProduct {
+                    plainRow("Create product", help: "Save product facts without logging an intake. A name is enough to start.", action: onNewProduct)
                 }
                 if let message = model.errorMessage { InlineNotice(message, tone: .failed) }
             }
@@ -139,8 +143,50 @@ public struct AddHomeView: View {
         }
     }
 
-    private func tile(_ title: String, help: String, available: Bool = true,
-        action: @escaping () -> Void) -> some View {
+    /// The Meal row's label names the current choice, so the value is visible without opening the picker.
+    public static func mealRowTitle(_ meal: MealLabel?) -> String {
+        "Meal: \(meal?.displayName ?? "None")"
+    }
+
+    /// The four quick actions in one compact row; a row too narrow for four wraps them into two columns.
+    private var quickActions: [QuickAction] {
+        [
+            QuickAction(id: "barcode", title: "Barcode", icon: "barcode.viewfinder",
+                help: "Read the code on the package.",
+                available: model.scannerAvailability.barcode,
+                explanation: model.scannerAvailability.barcodeExplanation, action: onBarcode),
+            QuickAction(id: "label", title: "Label", icon: "text.viewfinder",
+                help: "Read and check the nutrition values.",
+                available: model.scannerAvailability.label,
+                explanation: model.scannerAvailability.labelExplanation, action: onLabel),
+            QuickAction(id: "type", title: "Type it in", icon: "keyboard",
+                help: "Enter a name and amount yourself.",
+                available: true, explanation: "", action: onType),
+            QuickAction(id: "amounts", title: "Amounts only", icon: "slider.horizontal.3",
+                help: "Log calories and macros without choosing a food.",
+                available: true, explanation: "", action: { self.quickAdd = self.model.makeQuickAdd() }),
+        ]
+    }
+
+    private func quickActionButton(_ action: QuickAction) -> some View {
+        Button(action: action.action) {
+            VStack(spacing: DesignSpacing.xs) {
+                Image(systemName: action.icon).font(.title3)
+                Text(action.title).font(.subheadline).multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .padding(DesignSpacing.s)
+            .background(TokenColors.surface, in: RoundedRectangle(cornerRadius: DesignRadius.control, style: .continuous))
+            .foregroundStyle(TokenColors.textPrimary)
+        }
+        .buttonStyle(.plain)
+        .disabled(!action.available)
+        .accessibilityLabel(action.title)
+        .accessibilityHint(action.available ? action.help : action.explanation)
+    }
+
+    /// A full-width row for the actions that need a line of help, such as From Library.
+    private func plainRow(_ title: String, help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Card {
                 VStack(alignment: .leading, spacing: DesignSpacing.s) {
@@ -150,7 +196,16 @@ public struct AddHomeView: View {
             }
         }
         .buttonStyle(.plain)
-        .disabled(!available)
         .accessibilityElement(children: .combine)
     }
+}
+
+private struct QuickAction: Identifiable {
+    let id: String
+    let title: String
+    let icon: String
+    let help: String
+    let available: Bool
+    let explanation: String
+    let action: () -> Void
 }

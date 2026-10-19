@@ -325,14 +325,18 @@ final class ScreenshotCaptureTests: XCTestCase {
         let services = try makeSeededServices()
         let home = AddHomeViewModel(store: services.journalStore, meal: .lunch,
                                     lookup: services.barcodeLookup, preferences: services.displayPreferences)
-        try capture("AddHomeView") {
-            NavigationStack {
-                AddHomeView(model: home, onBarcode: {}, onLabel: {}, onLibrary: {}, onType: {}, onChanged: {},
-                            onSearchProducts: {})
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) { Button("Cancel") {} }
-                    }
-            }
+        try capture("AddHomeView") { addHomePage(home) }
+        // The quick actions at the largest accessibility size, where they wrap to two columns.
+        try capture("AddHomeView-accessibility", dynamicType: .accessibility3) { addHomePage(home) }
+    }
+
+    private func addHomePage(_ home: AddHomeViewModel) -> some View {
+        NavigationStack {
+            AddHomeView(model: home, onBarcode: {}, onLabel: {}, onLibrary: {}, onType: {}, onChanged: {},
+                        onSearchProducts: {})
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") {} }
+                }
         }
     }
 

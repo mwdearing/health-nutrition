@@ -130,6 +130,12 @@ final class AddHomeTests: XCTestCase {
         XCTAssertEqual(try store.activeIntakes().count, 1)
     }
 
+    /// The Meal row names the current choice, so the value shows without opening the picker.
+    func testMealRowNamesTheCurrentMeal() {
+        XCTAssertEqual(AddHomeView.mealRowTitle(nil), "Meal: None")
+        XCTAssertEqual(AddHomeView.mealRowTitle(.breakfast), "Meal: Breakfast")
+    }
+
     /// The Recent row subtitle shows the item's meal after its amounts, the same as the Library row.
     func testRecentSubtitleShowsTheMealAfterTheAmounts() throws {
         let store = try makeStore()
