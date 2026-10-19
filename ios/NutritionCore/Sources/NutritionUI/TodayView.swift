@@ -208,9 +208,7 @@ public struct TodayView: View {
                             .multilineTextAlignment(.trailing)
                             .focused(focus)
                             .accessibilityLabel(self.model.otherWaterFieldLabel)
-                            #if os(iOS)
-                            .keyboardType(.decimalPad)
-                            #endif
+                            .decimalAmountKeyboard()
                         }
                         Text(self.model.otherWaterUnitSymbol)
                             .foregroundStyle(TokenColors.textSecondary)
