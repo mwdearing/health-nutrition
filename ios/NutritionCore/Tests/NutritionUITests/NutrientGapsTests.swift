@@ -294,9 +294,9 @@ final class NutrientGapsTests: XCTestCase {
         let intake = Intake(id: UUID().uuidString.lowercased(), category: "food", occurredAt: noon, timeZoneIdentifier: "UTC")
         try store.create(
             intake, components: [
-                IntakeComponent(componentID: "d3drops", name: "Drops", amount: 400, unit: .internationalUnit),
+                IntakeComponent(componentID: "d3drops", name: "Drops", amount: 400, unit: .iu),
             ], product: nil, now: noon)
-        let lookup = GapsComponentFacts(values: ["d3drops": ["vitaminD": .known(400, .internationalUnit)]])
+        let lookup = GapsComponentFacts(values: ["d3drops": ["vitaminD": .known(400, .iu)]])
         let model = NutrientGapsViewModel(store: store, lookup: lookup)
         model.load(now: noon)
         let vitaminD = try XCTUnwrap(model.rows.first { $0.nutrient == "vitaminD" })
