@@ -315,7 +315,7 @@ public struct JournalView: View {
             }
             if model.isExpanded(section) {
                 // Each meal is its own row in its own card, so the List still lays out and recycles rows per meal.
-                ForEach(JournalViewModel.diaryMealGroups(for: section.rows)) { group in
+                ForEach(JournalViewModel.visibleMealGroups(section.mealGroups, sectionID: section.id, now: now())) { group in
                     Card {
                         VStack(alignment: .leading, spacing: DesignSpacing.m) {
                             mealHeader(group, in: section)

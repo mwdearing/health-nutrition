@@ -254,7 +254,7 @@ public final class JournalViewModel: ObservableObject {
                     id: key, title: titles[key] ?? key, rows: rows, totals: totals,
                     totalsText: Self.totalsText(
                         totals: totals, tracked: tracked, goals: storedGoals, unitSystem: self.preferences.unitSystem),
-                    mealGroups: Self.mealGroups(for: rows),
+                    mealGroups: Self.diaryMealGroups(for: rows),
                     headerBars: Self.headerBars(
                         totals: totals, goals: storedGoals, hasFoodEntries: Self.hasFoodEntries(rows),
                         unitSystem: self.preferences.unitSystem, hidden: hiddenGoals),
@@ -532,23 +532,8 @@ public final class JournalViewModel: ObservableObject {
         return found
     }
 
-    /// The day's entries grouped by meal. A meal that is not one of the four named ones, or none at
-    /// all, is "Other"; water with no meal lands there too. Rows keep the order they are given.
-    static func mealGroups(for rows: [JournalRow]) -> [JournalMealGroup] {
-        let named = MealLabel.allCases.map(\.displayName)
-        var buckets: [String: [JournalRow]] = [:]
-        for row in rows {
-            let title = row.meal.flatMap { named.contains($0) ? $0 : nil } ?? "Other"
-            buckets[title, default: []].append(row)
-        }
-        return (named + ["Other"]).compactMap { title in
-            buckets[title].map { JournalMealGroup(id: title, title: title, rows: $0) }
-        }
-    }
-
-    /// The meals a Diary day lists: the four named meals in their fixed order, empty ones included so each can
-    /// take an add, then "Other" only when an entry has no named meal. Today keeps `mealGroups(for:)`, which hides
-    /// empty meals.
+    /// The meals a Diary day lists: the four named meals in their fixed order, empty ones included, then "Other"
+    /// only when an entry has no named meal. Which of them a day shows is decided by `visibleMealGroups`.
     static func diaryMealGroups(for rows: [JournalRow]) -> [JournalMealGroup] {
         let named = MealLabel.allCases.map(\.displayName)
         var buckets: [String: [JournalRow]] = [:]
@@ -565,6 +550,13 @@ public final class JournalViewModel: ObservableObject {
     /// entry is stamped with. Section ids are each intake's own local day, so the comparison uses the same zone.
     static func isAddDay(_ sectionID: String, now: Date, zone: TimeZone = .current) -> Bool {
         sectionID == dayKey(now, zone: zone)
+    }
+
+    /// The meal groups a Diary day shows. Today's day shows every named meal, so each can take an add. A past day
+    /// shows only the meals that have entries, because an add there would log to now, not to that day.
+    static func visibleMealGroups(_ groups: [JournalMealGroup], sectionID: String, now: Date) -> [JournalMealGroup] {
+        guard !isAddDay(sectionID, now: now) else { return groups }
+        return groups.filter { !$0.rows.isEmpty }
     }
 
     /// The meal an add opens with for a group: the named meal, or nil for "Other", which has no add of its own.
