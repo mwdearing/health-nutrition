@@ -1,6 +1,7 @@
 import XCTest
 @testable import NutritionUI
 
+@MainActor
 final class LibrarySearchEmptyTests: XCTestCase {
     /// A typed search with no match is a search empty state, not the segment's "No favorites yet".
     func testSearchWithNoMatchIsASearchEmptyState() {
