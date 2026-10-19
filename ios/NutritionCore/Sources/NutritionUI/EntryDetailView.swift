@@ -40,7 +40,7 @@ public struct EntryDetailView: View {
         .navigationTitle("Entry")
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
-                if model.isDirty {
+                if model.isDirty && !loggedAgain {
                     Button("Save") {
                         if model.saveDrafts(now: now()) {
                             onSaved()
