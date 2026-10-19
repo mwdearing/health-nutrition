@@ -1300,4 +1300,23 @@ extension DailyGoalsTests {
         XCTAssertNil(model.calorieRemaining.remaining)
         XCTAssertEqual(model.calorieRemaining.food, 400)
     }
+
+    /// #521 item 5: a stored goal for a key outside NutrientGoalChoices still loads, and a day with no value for
+    /// that key shows it as unknown, never as a zero against the target.
+    func testAGoalForAKeyOutsideTheChoicesReadsAsUnknownNeverZero() throws {
+        let journal = try makeJournalStore()
+        let goals = try makeGoalStore()
+        let key = "creatine-test-only"
+        XCTAssertFalse(NutrientGoalChoices.keys.contains(key))
+        try goals.setGoal(NutrientGoal(nutrient: key, target: Decimal(5), unit: .g))
+        try logOats(journal, grams: 40)
+
+        let model = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts())
+        model.load(now: when)
+
+        XCTAssertTrue(try goals.goals().contains { $0.nutrient == key }, "the stored goal still loads")
+        let progress = try XCTUnwrap(model.progress.first { $0.nutrient == key })
+        XCTAssertTrue(progress.hasGoal)
+        XCTAssertFalse((progress.text ?? "").hasPrefix("0"), "an unknown value is not shown as zero")
+    }
 }
