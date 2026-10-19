@@ -263,6 +263,22 @@ final class DailyGoalsTests: XCTestCase {
         XCTAssertNil(model.clearedGoal)
     }
 
+    /// Undo covers only the latest action: a goal saved for another nutrient ends the Undo offer.
+    func testSavingAnotherGoalEndsThePendingUndo() throws {
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+        XCTAssertTrue(model.clearTarget(for: "protein"))
+        model.draftText["carbohydrate"] = "200"
+        XCTAssertTrue(model.commitTarget(for: "carbohydrate"))
+
+        XCTAssertNil(model.clearedGoal)
+        XCTAssertFalse(model.undoClear())
+        XCTAssertNil(try goals.goal(for: "protein"))
+    }
+
     /// Clearing a nutrient that has no goal removes nothing, so it must not end a pending Undo for another goal.
     func testClearingAnEmptyRowKeepsAPendingUndoForAnotherGoal() throws {
         let goals = try makeGoalStore()

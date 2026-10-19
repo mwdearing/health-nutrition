@@ -600,8 +600,8 @@ public final class GoalsViewModel: ObservableObject {
                 .map { NutrientGoal(nutrient: nutrient, target: $0.value, unit: $0.unit) }
         }
         guard setTarget(text, for: nutrient, unit: writtenUnit) else { return false }
-        // A goal saved for this nutrient after a Clear is the newer value, so the Undo offer ends.
-        if clearedGoal?.nutrient == nutrient { clearedGoal = nil }
+        // Undo covers only the latest action: any saved goal after a Clear ends the Undo offer.
+        clearedGoal = nil
         draftText[nutrient] = DecimalFormatting.text(target)
         if nutrient == DailyTotalsBuilder.waterKey {
             selectedUnits[nutrient] = writtenUnit
