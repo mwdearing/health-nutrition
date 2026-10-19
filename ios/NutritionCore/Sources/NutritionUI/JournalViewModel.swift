@@ -125,6 +125,11 @@ public struct JournalWeekSummary: Equatable {
 @MainActor
 public final class JournalViewModel: ObservableObject {
     @Published public private(set) var sections: [JournalDaySection] = []
+    /// Today's section when it has no entries of its own; nil otherwise. The Diary lists it above `sections`.
+    @Published public private(set) var todaySection: JournalDaySection?
+
+    /// Every section the Diary lists, today first when it is empty.
+    public var diarySections: [JournalDaySection] { (todaySection.map { [$0] } ?? []) + sections }
     /// Intakes left out because their time zone identifier is invalid or their record could not be read.
     @Published public private(set) var skippedCount: Int = 0
     /// How many times the journal has finished loading. The screen watches it to drop state tied to an earlier load.
@@ -246,7 +251,15 @@ public final class JournalViewModel: ObservableObject {
             let queried = tracked.contains(Self.energyKey) ? tracked : tracked + [Self.energyKey]
             // The same choice as Today: a goal switched off there gets no bar in the day header either.
             let hiddenGoals = hiddenTodayGoals(in: preferences)
-            sections = try groups.keys.sorted(by: >).map { key in
+            // Once the journal has a readable entry, today is built even with none of its own, so the Diary can show its
+            // meal cards and add rows. It is kept apart from `sections`, which keeps its entry-day contract.
+            let todayKey = Self.dayKey(now, zone: dayZone)
+            var sectionKeys = Set(groups.keys)
+            if !groups.isEmpty {
+                if titles[todayKey] == nil { titles[todayKey] = Self.dayTitle(now, zone: dayZone, locale: locale, now: now) }
+                sectionKeys.insert(todayKey)
+            }
+            let built = try sectionKeys.sorted(by: >).map { key in
                 let totals = try DailyTotalsBuilder.totals(
                     for: intakesByDay[key] ?? [], store: store, lookup: lookup, nutrients: queried)
                 let rows = (groups[key] ?? []).sorted { $0.occurredAt > $1.occurredAt }
@@ -259,12 +272,14 @@ public final class JournalViewModel: ObservableObject {
                         totals: totals, goals: storedGoals, hasFoodEntries: Self.hasFoodEntries(rows),
                         unitSystem: self.preferences.unitSystem, hidden: hiddenGoals),
                     energyText: Self.energyText(totals: totals),
-                    isCollapsedByDefault: rows.allSatisfy { row in
+                    isCollapsedByDefault: !rows.isEmpty && rows.allSatisfy { row in
                         let zone = TimeZone(identifier: row.timeZoneIdentifier) ?? TimeZone.current
                         return Self.isMoreThanAWeekBefore(Self.dayKey(row.occurredAt, zone: zone), now: now, zone: zone)
                     },
                     entryCountText: Self.entryCountText(rows.count))
             }
+            todaySection = built.first { $0.id == todayKey && $0.rows.isEmpty }
+            sections = built.filter { !($0.id == todayKey && $0.rows.isEmpty) }
             weekSummary = Self.makeWeekSummary(
                 sections: sections, now: now,
                 zone: TimeZone(identifier: journalZoneID()) ?? TimeZone.current,
@@ -275,6 +290,7 @@ public final class JournalViewModel: ObservableObject {
             goalsErrorMessage = goalsReadFailed ? GoalsViewModel.readFailedMessage : nil
             hasLoaded = true
         } catch {
+            todaySection = nil
             errorMessage = "Could not read the journal."
         }
     }
@@ -599,8 +615,8 @@ public final class JournalViewModel: ObservableObject {
         return found
     }
 
-    /// The day's entries grouped by meal. A meal that is not one of the four named ones, or none at
-    /// all, is "Other"; water with no meal lands there too. Rows keep the order they are given.
+    /// The day's entries grouped by meal, as the Journal's section list has always carried them: only the meals
+    /// with entries, then "Other". The Diary adds the empty named meals itself through `diaryMealGroups`.
     static func mealGroups(for rows: [JournalRow]) -> [JournalMealGroup] {
         let named = MealLabel.allCases.map(\.displayName)
         var buckets: [String: [JournalRow]] = [:]
@@ -611,6 +627,52 @@ public final class JournalViewModel: ObservableObject {
         return (named + ["Other"]).compactMap { title in
             buckets[title].map { JournalMealGroup(id: title, title: title, rows: $0) }
         }
+    }
+
+    /// The meals a Diary day lists: the four named meals in their fixed order, empty ones included, then "Other"
+    /// only when an entry has no named meal. Which of them a day shows is decided by `visibleMealGroups`.
+    static func diaryMealGroups(for rows: [JournalRow]) -> [JournalMealGroup] {
+        let named = MealLabel.allCases.map(\.displayName)
+        var buckets: [String: [JournalRow]] = [:]
+        for row in rows {
+            let title = row.meal.flatMap { named.contains($0) ? $0 : nil } ?? "Other"
+            buckets[title, default: []].append(row)
+        }
+        let namedGroups = named.map { JournalMealGroup(id: $0, title: $0, rows: buckets[$0] ?? []) }
+        guard let other = buckets["Other"] else { return namedGroups }
+        return namedGroups + [JournalMealGroup(id: "Other", title: "Other", rows: other)]
+    }
+
+    /// Whether a section is the day an add flow logs to: today in the device's own zone, which is the zone a new
+    /// entry is stamped with. Section ids are each intake's own local day, so the comparison uses the same zone.
+    static func isAddDay(_ sectionID: String, now: Date, zone: TimeZone = .current) -> Bool {
+        sectionID == addDayID(now: now, zone: zone)
+    }
+
+    /// The section id an entry added now would get: the same day key every section uses, read in the zone the add
+    /// flow stamps new entries with. Section ids come from each intake's own zone, so for a new entry this is the device zone.
+    static func addDayID(now: Date, zone: TimeZone = .current) -> String {
+        dayKey(now, zone: zone)
+    }
+
+    /// The meal groups a Diary day shows. Today's day shows every named meal, so each can take an add. A past day
+    /// shows only the meals that have entries, because an add there would log to now, not to that day.
+    static func visibleMealGroups(
+        _ groups: [JournalMealGroup], sectionID: String, now: Date, zone: TimeZone = .current
+    ) -> [JournalMealGroup] {
+        guard !isAddDay(sectionID, now: now, zone: zone) else { return groups }
+        return groups.filter { !$0.rows.isEmpty }
+    }
+
+    /// Whether a day's section offers the add row: the day an add made now lands in, judged in this journal's zone,
+    /// the same zone the arrows and Copy to today use. The view asks this rather than comparing zones itself.
+    public func showsAddRow(sectionID: String, now: Date) -> Bool {
+        Self.isAddDay(sectionID, now: now, zone: dayZone)
+    }
+
+    /// The meal an add opens with for a group: the named meal, or nil for "Other", which has no add of its own.
+    static func addMeal(forGroupTitle title: String) -> MealLabel? {
+        MealLabel.allCases.first { $0.displayName == title }
     }
 
     /// A day counts as logged when it holds a food or drink entry. Water and supplements do not count.
