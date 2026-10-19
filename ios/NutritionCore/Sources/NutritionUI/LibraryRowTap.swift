@@ -5,7 +5,7 @@ import Foundation
 public enum LibraryRowTap: Equatable {
     case openDetails
 
-    public static func forRow(pickMode: Bool) -> LibraryRowTap {
+    public static func forRow() -> LibraryRowTap {
         .openDetails
     }
 }

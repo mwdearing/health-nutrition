@@ -187,6 +187,16 @@ final class JournalLibraryTests: XCTestCase {
         }
     }
 
+    /// The amounts stay in the accessibility value of a row and its Log control (#503).
+    func testRowAndLogControlStateTheAmountsAsTheirValue() {
+        let template = RepeatTemplate(displayName: "Oats", category: "food",
+            components: [IntakeComponent(componentID: "oats", name: "Oats", amount: 40, unit: .g)])
+        let item = LibraryItem(id: "oats", title: "Oats", detail: "40 g",
+            isFavorite: false, template: template, kind: .food)
+        XCTAssertEqual(item.accessibilityValue, "40 g")
+        XCTAssertEqual(item.logAccessibilityLabel, "Log Oats")
+    }
+
     func testLogRowLabelKeepsAmountAndSupplementMark() {
         let template = RepeatTemplate(displayName: "Ipamorelin", category: "supplement",
             components: [IntakeComponent(componentID: "ipa", name: "Ipamorelin", amount: 2, unit: .mg)])
@@ -217,10 +227,9 @@ final class JournalLibraryTests: XCTestCase {
 
     func testRowTapRoutesByMode() {
         // A row tap opens details in every mode and never logs (#503). Logging is the row's own Log control.
-        XCTAssertEqual(LibraryRowTap.forRow(pickMode: true), .openDetails)
-        XCTAssertEqual(LibraryRowTap.forRow(pickMode: false), .openDetails, "a row tap never logs (#503)")
+        // Fails on a build where a row tap logs: main's forRow returns .logOnce outside pick mode (#503).
+        XCTAssertEqual(LibraryRowTap.forRow(), .openDetails, "a row tap never logs (#503)")
     }
-
 
     // MARK: Journal
 

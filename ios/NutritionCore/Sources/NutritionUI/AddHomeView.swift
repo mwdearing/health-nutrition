@@ -93,6 +93,8 @@ public struct AddHomeView: View {
                                 if self.model.quickAdd(recent) != nil { self.onChanged() }
                             }
                             .accessibilityLabel("Log \(recent.template.displayName)")
+                            .accessibilityValue(model.amountSummary(of: recent.template))
+                            .accessibilityHint("Logs once. You can undo for 10 seconds.")
                         }
                     }
                 }

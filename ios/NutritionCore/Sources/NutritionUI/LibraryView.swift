@@ -165,7 +165,7 @@ public struct LibraryView: View {
         // row's end, which logs once with Undo.
         HStack {
             Button {
-                switch LibraryRowTap.forRow(pickMode: onPick != nil) {
+                switch LibraryRowTap.forRow() {
                 case .openDetails:
                     if let onPick { onPick(item.template) } else { onOpen?(item.template) }
                 }
@@ -185,6 +185,7 @@ public struct LibraryView: View {
             }
             .buttonStyle(.borderless)
             .accessibilityLabel(item.accessibilityLabel(forPick: true))
+            .accessibilityValue(item.accessibilityValue)
             .accessibilityHint("Opens details without adding an entry")
             Spacer()
             if let onLegacyProduct, model.canCompleteProduct(item) {
@@ -203,6 +204,8 @@ public struct LibraryView: View {
                     if self.model.quickAdd(item, now: self.now()) { self.onAdded() }
                 }
                 .accessibilityLabel(item.logAccessibilityLabel)
+                .accessibilityValue(item.accessibilityValue)
+                .accessibilityHint("Logs once. You can undo for 10 seconds.")
             }
             Button {
                 if item.isFavorite { self.model.removeFavorite(item) } else { self.model.addFavorite(item) }
