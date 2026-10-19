@@ -396,8 +396,7 @@ struct RootView: View {
         let services = self.services
         return AddHomeViewModel(
             store: services.journalStore, meal: meal,
-            scannerAvailability: AddScannerAvailability(
-                barcode: BarcodeScanner.isAvailable, label: LabelTextScanner.isAvailable),
+            scannerAvailability: AddScannerAvailability.forSupport(BarcodeScanner.isSupported),
             lookup: services.barcodeLookup, preferences: services.displayPreferences,
             labelSubmitter: services.community,
             portionLookup: services.householdPortions,

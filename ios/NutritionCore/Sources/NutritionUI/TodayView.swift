@@ -140,6 +140,8 @@ public struct TodayView: View {
                         Button("Edit goals") { onEditGoals() }
                             .font(.subheadline)
                             .foregroundStyle(TokenColors.accent)
+                            .frame(minHeight: 44)
+                            .contentShape(Rectangle())
                             .accessibilityHint("Opens the daily goals")
                     }
                 }
