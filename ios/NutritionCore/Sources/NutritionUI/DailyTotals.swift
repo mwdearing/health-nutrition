@@ -174,6 +174,9 @@ public enum DailyTotalsBuilder {
             // An undeclared nutrient supplies no contribution; it does not invalidate food totals.
             if snapshot.kind == .supplement, case .unknown = value { return [] }
             guard case .known(let amount, let unit) = value else { return [value] }
+            // The stated value is read from the product, not from the logged components, so a negative stated
+            // value is distrusted here as well as a negative logged amount: it is never summed as a negative number.
+            if amount < 0 { return [.unknown] }
             // The stated value is for the amount the basis names; it has to be scaled to the amount
             // actually logged before it can be summed with anything else.
             guard let factor = Self.scalingFactor(

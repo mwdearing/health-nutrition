@@ -961,6 +961,19 @@ final class DailyTotalsTests: XCTestCase {
     /// A negative logged amount makes its entry unknown on every path, so the known sum is what the positive
     /// entries alone add up to. Each lookup below returns the same value whatever the amount, so a negative
     /// entry that reached the sum would change the total.
+    /// A product whose stated value is negative is distrusted even when the logged amount is positive.
+    func testANegativeStatedValueIsUnknownEvenWithAPositiveLoggedAmount() throws {
+        let store = try makeStore()
+        let product = ProductDefinition(
+            snapshotID: "snapshot-negstated", productID: "product-negstated", name: "Stated",
+            labelBasis: "per 100 g", catalogOrigin: "test", catalogVersion: "1",
+            nutrients: ["energyKcal": .known(Decimal(-10), .kcal)])
+        try addFood(store, name: "Stated", id: "stated", at: when, amount: 100, product: product)
+        let totals = try DailyTotalsBuilder.totals(
+            for: try store.activeIntakes(), store: store, lookup: SnapshotOnlyFacts(), nutrients: ["energyKcal"])
+        XCTAssertEqual(totals.total(for: "energyKcal")?.value, .unknown)
+    }
+
     /// A food row with a negative volume and a 100% water share must not lower the day's water.
     func testANegativeVolumeWithAWaterShareIsUnknownWaterNotDrunk() throws {
         let store = try makeStore()
@@ -979,8 +992,8 @@ final class DailyTotalsTests: XCTestCase {
     func testANegativeSupplementRowIsUnknownOnlyForWhatItDeclares() throws {
         let store = try makeStore()
         let vitaminD = ProductDefinition(
-            snapshotID: "snapshot-vitd", productID: "product-vitd", name: "Vitamin D", kind: .supplement,
-            labelBasis: "per serving", catalogOrigin: "test", catalogVersion: "1",
+            snapshotID: "snapshot-vitd", productID: "product-vitd", name: "Vitamin D",
+            labelBasis: "per serving", catalogOrigin: "test", catalogVersion: "1", kind: .supplement,
             nutrients: ["vitaminD": .known(Decimal(10), .mcg)])
         let oats = ProductDefinition(
             snapshotID: "snapshot-oats", productID: "product-oats", name: "Oats",
