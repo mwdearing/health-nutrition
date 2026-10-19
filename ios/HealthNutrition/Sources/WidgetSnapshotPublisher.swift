@@ -76,7 +76,9 @@ final class WidgetSnapshotPublisher {
     func publish(from today: TodayViewModel, loadedAt: Date, generation: Int) {
         // Only the load whose totals are on screen is written: a pending write from an earlier load, or one whose
         // successor failed part way (lastLoadedAt is nil then), is dropped.
-        guard let store, !isErasing(), erasure.accepts(generation: generation), today.lastLoadedAt == loadedAt
+        // A failed read leaves no rows and no totals to summarise, so it is never written as an empty day.
+        guard let store, !isErasing(), erasure.accepts(generation: generation), today.lastLoadedAt == loadedAt,
+              !today.journalReadFailed
         else { return }
         // Reading the totals here, on the main actor, while `lastLoadedAt` still names this load (checked above),
         // is reading what that load produced.

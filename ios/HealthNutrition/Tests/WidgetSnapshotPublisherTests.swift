@@ -48,6 +48,15 @@ final class WidgetSnapshotPublisherTests: XCTestCase {
         XCTAssertEqual(WidgetFigure.water(snapshot.waterMilliliters, usUnits: false), "— mL")
     }
 
+    /// A model that never read the journal is not an empty day: the publisher writes nothing for it.
+    func testItWritesNothingBeforeAnyRead() throws {
+        let today = try makeToday()
+        let store = makeStore()
+        let publisher = WidgetSnapshotPublisher(store: store, erasure: WidgetSnapshotErasure(), watch: nil)
+        publisher.publish(from: today, loadedAt: loadedAt, generation: 0)
+        XCTAssertNil(store.read(), "no read means no summary, so no empty day is written")
+    }
+
     func testItWritesForTheLoadOnScreen() throws {
         let today = try makeToday()
         today.load(now: loadedAt)
