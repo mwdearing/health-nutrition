@@ -1691,6 +1691,11 @@ public enum NutritionFactsParser {
         if range.lowerBound != lower.startIndex {
             let before = lower[lower.index(before: range.lowerBound)]
             if before.isLetter || before.isNumber { return false }
+            // A hyphen joins the word before it ("Saturated-Fat"), so the alias after it is part of that name.
+            if before == "-", range.lowerBound != lower.startIndex, lower.index(before: range.lowerBound) != lower.startIndex,
+               lower[lower.index(lower.index(before: range.lowerBound), offsetBy: -1)].isLetter {
+                return false
+            }
         }
         if range.upperBound != lower.endIndex {
             let after = lower[range.upperBound]
