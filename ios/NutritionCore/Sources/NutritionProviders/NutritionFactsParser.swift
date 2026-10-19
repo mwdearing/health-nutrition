@@ -1773,7 +1773,10 @@ public enum NutritionFactsParser {
         // digit inside a name ("Vitamin B１２") is left as printed, so the name is not read as a row.
         line.split(whereSeparator: \.isWhitespace).map { word -> String in
             guard let first = word.first, ("\u{FF10}"..."\u{FF19}").contains(first) else { return String(word) }
-            return String(word).applyingTransform(StringTransform("Fullwidth-Halfwidth"), reverse: false) ?? String(word)
+            // Each fullwidth digit maps to its ASCII digit by code point, so no transform can fail and fall back.
+            return String(String.UnicodeScalarView(word.unicodeScalars.map { scalar -> Unicode.Scalar in
+                (0xFF10...0xFF19).contains(scalar.value) ? Unicode.Scalar(scalar.value - 0xFF10 + 0x30)! : scalar
+            }))
         }.joined(separator: " ")
     }
 }
