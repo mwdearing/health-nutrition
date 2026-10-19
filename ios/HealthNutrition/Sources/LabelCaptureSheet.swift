@@ -414,7 +414,9 @@ struct LabelCaptureDataScanner: UIViewControllerRepresentable {
             _ dataScanner: DataScannerViewController,
             becameUnavailableWithError error: DataScannerViewController.ScanningUnavailable
         ) {
-            report("The camera stopped, so the panel was not read. Try again in a moment.")
+            report(CameraAccessNotice.stoppedMessage(
+                access: CameraAccess.current(), sheet: .label,
+                fallback: "The camera stopped, so the panel was not read. Try again in a moment."))
         }
 
         /// Replaces the held lines with what the scanner recognizes now, so Capture submits the frame

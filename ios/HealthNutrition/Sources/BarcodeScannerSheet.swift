@@ -210,7 +210,9 @@ struct BarcodeDataScanner: UIViewControllerRepresentable {
             becameUnavailableWithError error: DataScannerViewController.ScanningUnavailable
         ) {
             guard !hasDelivered else { return }
-            report("Scanning stopped, so the barcode was not read. Type the digits instead.")
+            report(CameraAccessNotice.stoppedMessage(
+                access: CameraAccess.current(), sheet: .barcode,
+                fallback: "Scanning stopped, so the barcode was not read. Type the digits instead."))
         }
 
         /// Hands the barcode over once and stops the camera. Set before the callback, so the same

@@ -88,4 +88,22 @@ final class CameraAccessNoticeTests: XCTestCase {
         XCTAssertNil(CameraAccessNotice.unavailableMessage(isSupported: true, access: .authorized, isAvailable: true, sheet: .barcode))
         XCTAssertNil(CameraAccessNotice.unavailableMessage(isSupported: true, access: .notDetermined, isAvailable: true, sheet: .label))
     }
+
+    func testRestrictedWithScannerAvailableShowsRestricted() {
+        XCTAssertEqual(
+            CameraAccessNotice.unavailableMessage(isSupported: true, access: .restricted, isAvailable: true, sheet: .barcode),
+            "Camera access is restricted on this phone. Type the digits instead.")
+    }
+
+    func testStoppedMidSessionShowsAccessOffOnlyWhenAccessIsOff() {
+        XCTAssertEqual(
+            CameraAccessNotice.stoppedMessage(access: .denied, sheet: .barcode, fallback: "Scanning stopped."),
+            "Camera access is off. Turn it on in Settings to scan, or type the digits instead.")
+        XCTAssertEqual(
+            CameraAccessNotice.stoppedMessage(access: .restricted, sheet: .label, fallback: "The camera stopped."),
+            "Camera access is restricted on this phone.")
+        XCTAssertEqual(
+            CameraAccessNotice.stoppedMessage(access: .authorized, sheet: .label, fallback: "The camera stopped."),
+            "The camera stopped.")
+    }
 }

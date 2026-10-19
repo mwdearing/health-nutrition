@@ -47,6 +47,12 @@ public enum CameraAccessNotice {
         access == .denied
     }
 
+    /// The message for a scanner that stops mid-session. Access that is off gets its access message; any other
+    /// stop keeps the sheet's existing text, passed in as `fallback`.
+    public static func stoppedMessage(access: CameraAccessState, sheet: CameraSheet, fallback: String) -> String {
+        access == .denied || access == .restricted ? failureMessage(for: access, sheet: sheet) : fallback
+    }
+
     /// The message a sheet shows before it tries to start the camera, or nil when the camera can start.
     /// Order: unsupported hardware first, then access that is denied, then restricted access, then the scanner
     /// reporting itself unavailable (which, on a device with access off, is why the access checks come first).
