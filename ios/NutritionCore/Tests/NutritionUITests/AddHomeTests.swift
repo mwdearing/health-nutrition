@@ -159,6 +159,23 @@ final class AddHomeTests: XCTestCase {
         XCTAssertEqual(home.recentSubtitle(of: recent.template), home.amountSummary(of: recent.template))
     }
 
+    /// Logging the same Recent twice gives two offers with the same text and different intake ids, so each offer is a
+    /// new undo token the toast can key on and announce.
+    func testRepeatingTheSameRecentGivesTwoOffersWithDifferentIds() throws {
+        let store = try makeStore()
+        let seed = AddIntakeViewModel(store: store, now: now, timeZoneIdentifier: "UTC")
+        seed.name = "Oats"
+        seed.amountText = "40"
+        XCTAssertTrue(seed.save(now: now))
+        let home = AddHomeViewModel(store: store, meal: .lunch, now: { self.now })
+        home.load()
+        let recent = try XCTUnwrap(home.recents.first)
+        let first = try XCTUnwrap(home.quickAdd(recent))
+        let second = try XCTUnwrap(home.quickAdd(recent))
+        XCTAssertEqual(first.message, second.message)
+        XCTAssertNotEqual(first.intakeID, second.intakeID)
+    }
+
     /// A one-tap Recent with Meal set to None keeps the meal the item was logged under.
     func testQuickAddFromRecentWithNoMealKeepsTheItemsOwnMeal() throws {
         let store = try makeStore()

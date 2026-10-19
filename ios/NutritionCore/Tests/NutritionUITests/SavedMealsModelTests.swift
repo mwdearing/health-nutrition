@@ -106,6 +106,23 @@ final class SavedMealsModelTests: XCTestCase {
         return intake
     }
 
+    /// Logging the same saved meal twice gives two offers with the same text and different ids, so the toast keys
+    /// each offer on its own id.
+    func testLoggingTheSameSavedMealTwiceGivesTwoOffersWithDifferentIds() throws {
+        let journal = try makeJournal()
+        let milk = try addEntry(journal, "Milk", at: now.addingTimeInterval(-60))
+        let model = SavedMealsModel(store: UserDefaultsSavedMealStore(defaults: makeDefaults()), journal: journal)
+        XCTAssertTrue(model.save(name: "Usual", meal: .breakfast, intakes: [milk]))
+        let saved = try XCTUnwrap(model.meals.first)
+
+        XCTAssertTrue(model.log(saved, as: .breakfast, now: now))
+        let first = try XCTUnwrap(model.undoToken)
+        XCTAssertTrue(model.log(saved, as: .breakfast, now: now))
+        let second = try XCTUnwrap(model.undoToken)
+        XCTAssertEqual(first.message, second.message)
+        XCTAssertNotEqual(first.id, second.id)
+    }
+
     // MARK: Saving
 
     func testSaveKeepsTheEntriesInTheOrderTheyWereEaten() throws {

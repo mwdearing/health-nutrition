@@ -128,6 +128,7 @@ public struct AddHomeView: View {
                 UndoToast(token.message) {
                     if self.model.undo() { self.onChanged() }
                 }
+                .id(token.intakeID)
                 .padding(DesignSpacing.m)
                 .task(id: token.intakeID) {
                     do { try await Task.sleep(for: .seconds(10)) } catch { return }

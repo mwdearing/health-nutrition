@@ -79,6 +79,7 @@ public struct LibraryView: View {
                 UndoToast(token.message) {
                     if self.model.undo(now: self.now()) { self.onAdded() }
                 }
+                .id(token.intakeID)
                 .padding(DesignSpacing.m)
                 .task(id: token.intakeID) {
                     do { try await Task.sleep(for: .seconds(10)) } catch { return }
