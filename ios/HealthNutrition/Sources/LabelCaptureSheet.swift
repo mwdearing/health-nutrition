@@ -11,19 +11,6 @@ import UIKit
 import Vision
 import VisionKit
 
-/// Whether this device can read a Nutrition Facts panel with the camera right now. `isSupported` is
-/// a build-time answer, `isAvailable` the runtime one: a device may support the scanner and still
-/// have it unavailable (no camera, or the camera in use by something else). Both have to hold;
-/// Add home keeps an unavailable tile visible with an explanation.
-enum LabelTextScanner {
-    // Both properties are main-actor isolated, so this is too. It is read from the form's Scan label
-    // action, which runs on the main actor like the rest of the view.
-    @MainActor
-    static var isAvailable: Bool {
-        DataScannerViewController.isSupported && DataScannerViewController.isAvailable
-    }
-}
-
 /// Holds the lines the camera can see right now, so the Capture button can ask for them.
 ///
 /// Only text is kept, never an image: each frame's recognized items replace the previous frame's, so
