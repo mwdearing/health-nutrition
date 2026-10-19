@@ -89,7 +89,7 @@ struct BarcodeScannerSheet: View {
                     if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
                 }
                 .font(.headline)
-                .accessibilityHint("Opens this app's settings, where camera access is turned on")
+                .accessibilityHint(CameraAccessNotice.openSettingsHint)
             }
         }
         .padding()

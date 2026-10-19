@@ -2,18 +2,27 @@ import XCTest
 @testable import NutritionUI
 
 final class CameraAccessNoticeTests: XCTestCase {
-    func testDeniedAccessSaysToTurnItOnInSettingsOnBothSheets() {
-        for sheet in [CameraSheet.barcode, .label] {
-            XCTAssertEqual(
-                CameraAccessNotice.failureMessage(for: .denied, sheet: sheet),
-                "Camera access is off. Turn it on in Settings to scan.")
-        }
+    func testBarcodeAccessOffAlsoOffersTyping() {
+        XCTAssertEqual(
+            CameraAccessNotice.failureMessage(for: .denied, sheet: .barcode),
+            "Camera access is off. Turn it on in Settings to scan, or type the digits instead.")
         XCTAssertTrue(CameraAccessNotice.offersOpenSettings(for: .denied))
     }
 
-    func testRestrictedAccessIsTheSameAsDenied() {
+    func testLabelAccessOffSaysToTurnItOnInSettings() {
         XCTAssertEqual(
-            CameraAccessNotice.failureMessage(for: .restricted, sheet: .barcode), CameraAccessNotice.accessOffMessage)
+            CameraAccessNotice.failureMessage(for: .denied, sheet: .label),
+            "Camera access is off. Turn it on in Settings to scan.")
+        XCTAssertTrue(CameraAccessNotice.offersOpenSettings(for: .denied))
+    }
+
+    func testRestrictedAccessIsTheSameAsDeniedPerSheet() {
+        XCTAssertEqual(
+            CameraAccessNotice.failureMessage(for: .restricted, sheet: .barcode),
+            CameraAccessNotice.barcodeAccessOffMessage)
+        XCTAssertEqual(
+            CameraAccessNotice.failureMessage(for: .restricted, sheet: .label),
+            CameraAccessNotice.labelAccessOffMessage)
         XCTAssertTrue(CameraAccessNotice.offersOpenSettings(for: .restricted))
     }
 
