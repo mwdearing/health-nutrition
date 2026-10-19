@@ -26,6 +26,28 @@ final class UnitReadFailureTests: XCTestCase {
         XCTAssertTrue(model.progress.isEmpty)
     }
 
+    /// A failed Today reload after a good one must clear the earlier rows, progress, goal bars and water bar.
+    func testTodayDropsEarlierRowsAndBarsWhenALaterUnitReadFails() throws {
+        let store = try makeJournal()
+        let seed = AddIntakeViewModel(store: store, now: now, timeZoneIdentifier: "UTC")
+        seed.name = "Oats"
+        seed.amountText = "40"
+        XCTAssertTrue(seed.save(now: now))
+        store.failsUnitReads = false
+        let model = TodayViewModel(store: store, timeZoneIdentifier: "UTC")
+        model.load(now: now)
+        XCTAssertNil(model.errorMessage)
+        XCTAssertFalse(model.rows.isEmpty)
+
+        store.failsUnitReads = true
+        model.load(now: now)
+        XCTAssertEqual(model.errorMessage, "Could not read the journal.")
+        XCTAssertTrue(model.rows.isEmpty)
+        XCTAssertTrue(model.progress.isEmpty)
+        XCTAssertTrue(model.goalBars.isEmpty)
+        XCTAssertNil(model.waterBar)
+    }
+
     /// The journal's day reads the logged units with its entries; a failed read shows no day.
     func testJournalShowsNoDayWhenTheUnitReadFails() throws {
         let model = JournalViewModel(store: try makeJournal(), timeZoneIdentifier: "UTC")
