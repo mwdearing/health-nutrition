@@ -1076,10 +1076,10 @@ final class DailyTotalsTests: XCTestCase {
         let intake = Intake(id: UUID().uuidString.lowercased(), category: "water", occurredAt: when, timeZoneIdentifier: "UTC")
         try store.create(
             intake, components: [
-                IntakeComponent(componentID: "drinkA", name: "Drink", amount: 250, unit: .mL, hydrationPercent: 100),
-                IntakeComponent(componentID: "drinkB", name: "Drink", amount: 50, unit: .mL, hydrationPercent: 100),
+                IntakeComponent(componentID: "drinka", name: "Drink", amount: 250, unit: .mL, hydrationPercent: 100),
+                IntakeComponent(componentID: "drinkb", name: "Drink", amount: 50, unit: .mL, hydrationPercent: 100),
             ], product: nil, now: when)
-        try store.seedLegacyAmountsForTesting(intakeID: intake.id, amountsByComponent: ["drinkB": "-50"])
+        try store.seedLegacyAmountsForTesting(intakeID: intake.id, amountsByComponent: ["drinkb": "-50"])
         let totals = try DailyTotalsBuilder.totals(
             for: try store.activeIntakes(), store: store, lookup: SnapshotOnlyFacts(),
             nutrients: [DailyTotalsBuilder.waterKey])
