@@ -1789,7 +1789,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     /// person cannot tell which half is gone.
     ///
     /// The store file is then deleted and reopened empty, so the store reads empty and accepts new entries
-    /// afterwards, and no erased row survives in the write-ahead file.
+    /// afterwards. The erased rows are removed from the store file when both companion files were deleted.
     public func eraseAll() throws {
         // The restore flag goes first so a re-import cannot put erased favorites back. Clearing it twice is harmless.
         try clearRestoreInProgress()
