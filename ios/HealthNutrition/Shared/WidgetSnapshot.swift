@@ -145,6 +145,9 @@ enum WidgetFigure {
             if ounces > 0, ounces < 0.5 { return "<1 fl oz" }
             return (wholeNumber(ounces) ?? "—") + " fl oz"
         }
+        guard let milliliters, milliliters.isFinite else { return "—" }
+        // A sip is still water: under half a millilitre reads "<1" rather than a rounded 0.
+        if milliliters > 0, milliliters < 0.5 { return "<1 mL" }
         guard let whole = wholeNumber(milliliters) else { return "—" }
         return whole + " mL"
     }

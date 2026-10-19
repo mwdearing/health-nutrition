@@ -7,7 +7,6 @@ import XCTest
 @testable import HealthNutrition
 
 private final class ReadFailingStoreStub: JournalStore, @unchecked Sendable {
-    var failNextSaveForTesting = false
     let intakes: [Intake]
     let components: [String: [IntakeComponent]]
 
@@ -30,7 +29,7 @@ private final class ReadFailingStoreStub: JournalStore, @unchecked Sendable {
 
     func editRemovingUnits(
         intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
-        now: Date, occurredAt: Date? = nil, timeZoneIdentifier: String? = nil, unitRemovals: [String])throws -> IntakeRevision {
+        now: Date, occurredAt: Date? = nil, timeZoneIdentifier: String? = nil, unitRemovals: [String]) throws -> IntakeRevision {
         throw Unsupported()
     }
     func delete(intakeID: String, now: Date) throws { throw Unsupported() }
