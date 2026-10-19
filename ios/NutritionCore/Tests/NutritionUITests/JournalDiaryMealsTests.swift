@@ -142,8 +142,10 @@ final class JournalDiaryMealsTests: XCTestCase {
 
         let today = try XCTUnwrap(journal.diarySections.first)
         XCTAssertEqual(today.id, "2023-11-15")
-        XCTAssertEqual(today.mealGroups.map(\.title), ["Breakfast", "Lunch", "Dinner", "Snack"])
-        XCTAssertTrue(today.mealGroups.allSatisfy { $0.rows.isEmpty })
+        // The Diary builds the four named meals for a day from its rows; the section's own list keeps its contract.
+        let diary = JournalViewModel.diaryMealGroups(for: today.rows)
+        XCTAssertEqual(diary.map(\.title), ["Breakfast", "Lunch", "Dinner", "Snack"])
+        XCTAssertTrue(diary.allSatisfy { $0.rows.isEmpty })
         XCTAssertFalse(today.isCollapsedByDefault)
         XCTAssertTrue(journal.showsAddRow(sectionID: today.id, now: now))
         // The section list the jump, copy and collapse code reads is unchanged: today is not in it.
