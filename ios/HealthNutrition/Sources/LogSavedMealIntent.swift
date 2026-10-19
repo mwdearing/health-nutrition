@@ -46,8 +46,8 @@ enum SavedMealShortcut {
     /// The whole run in order: the busy check first, then the reads, then the write, then the reload. The busy
     /// check comes before any read or write, so an erase or import running gains nothing (#480).
     static func run(id: String?, meal: MealLabel?, now: Date, effects: Effects) -> RunOutcome {
-        if let busy = busyReply(isBusy: effects.isBusy()) { return .reply(busy) }
         let read = effects.readMeals()
+        if let busy = busyReply(isBusy: effects.isBusy()) { return .reply(busy) }
         // A list that cannot be read is said to be unreadable, not that there are no saved meals.
         if let error = read.loadError { return .reply(error) }
         if needsSavedMeal(id: id, meals: read.meals) { return .needsSavedMeal }
