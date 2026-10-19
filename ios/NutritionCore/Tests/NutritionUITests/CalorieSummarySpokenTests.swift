@@ -22,4 +22,13 @@ final class CalorieSummarySpokenTests: XCTestCase {
             NourishTodayHeader.spokenSummary(calories, partial: "Some entries have no calories", footnote: nil),
             "\(remaining) calories remaining, Food, \(food) calories, Some entries have no calories")
     }
+
+    /// The partial note appears only when the day is partial, and then reads the goal bar's reason.
+    func testPartialLineGatesOnTheDaysFlag() throws {
+        let whole = CalorieRemaining(goal: 2000, food: 500, isPartial: false, burned: nil, remaining: 1500)
+        let partial = CalorieRemaining(goal: 2000, food: 500, isPartial: true, burned: nil, remaining: 1500)
+        XCTAssertNil(NourishTodayHeader.partialLine(whole, reason: "Some entries have no calories"))
+        XCTAssertEqual(NourishTodayHeader.partialLine(partial, reason: "Some entries have no calories"), "Some entries have no calories")
+        XCTAssertNil(NourishTodayHeader.partialLine(partial, reason: nil))
+    }
 }
