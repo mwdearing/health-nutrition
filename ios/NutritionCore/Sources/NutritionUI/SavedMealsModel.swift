@@ -197,6 +197,7 @@ public final class SavedMealsModel: ObservableObject {
     /// Drops any Undo offer, for when the screen showing it goes away.
     public func clearUndo() {
         undoToken = nil
+        removalUndo = nil
     }
 
     public func remove(_ saved: SavedMeal) {

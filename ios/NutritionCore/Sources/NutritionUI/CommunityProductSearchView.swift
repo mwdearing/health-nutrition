@@ -279,6 +279,7 @@ struct SavedMealUndoBar: View {
         VStack(spacing: DesignSpacing.s) {
             if let token = model.undoToken {
                 UndoToast(token.message) { model.undo(now: Date()) }
+                    .padding(DesignSpacing.m)
                     .task(id: token.id) {
                         do { try await Task.sleep(for: .seconds(10)) } catch { return }
                         model.expireUndo(token)
@@ -286,13 +287,13 @@ struct SavedMealUndoBar: View {
             }
             if let removal = model.removalUndo {
                 UndoToast(removal.message) { model.undoRemove() }
+                    .padding(DesignSpacing.m)
                     .task(id: removal.id) {
                         do { try await Task.sleep(for: .seconds(10)) } catch { return }
                         model.expireRemoval(removal)
                     }
             }
         }
-        .padding(DesignSpacing.m)
     }
 }
 
