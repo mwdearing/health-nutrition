@@ -150,10 +150,14 @@ public enum DailyTotalsBuilder {
         }
         for nutrient in distrustUniverse {
             for component in entry.components {
-                if case .known(let stated, _) = Self.value(for: component, snapshot: nil, nutrient: nutrient, lookup: lookup),
-                    stated < 0
-                {
-                    return true
+                // Every key the nutrient may be stored under, not only the first one that answers: a negative alias
+                // distrusts the entry even when its canonical key states a positive value (#521 item 6).
+                for key in HealthKitWritePlanner.acceptedKeys(for: nutrient) {
+                    if case .known(let stated, _) = lookup.value(for: component, snapshot: nil, nutrient: key),
+                        stated < 0
+                    {
+                        return true
+                    }
                 }
             }
         }
