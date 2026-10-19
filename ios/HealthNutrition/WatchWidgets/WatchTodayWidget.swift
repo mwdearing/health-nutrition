@@ -51,6 +51,7 @@ struct WatchTodayWidgetView: View {
     var body: some View {
         switch family {
         case .accessoryCircular:
+            Group {
             if let fraction = snapshot?.energyFraction {
                 Gauge(value: fraction) {
                     Image(systemName: "fork.knife")
@@ -66,6 +67,7 @@ struct WatchTodayWidgetView: View {
                     Text(headline)
                 }
                 .accessibilityLabel(spoken)
+            }
             }
             .privacySensitive()
         case .accessoryCorner:
