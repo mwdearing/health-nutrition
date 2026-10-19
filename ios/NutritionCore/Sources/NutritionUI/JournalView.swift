@@ -362,13 +362,13 @@ public struct JournalView: View {
         }
     }
 
-    /// The add row under an empty meal, labelled with the shared add action. Only today's section offers it,
-    /// since the add flow logs to now, and a past
-    /// day's add belongs to the add owner's routing work.
+    /// The add row under an empty meal, labelled with the shared add action. Only today's section offers it, since
+    /// the add flow logs to now, and a past day's add belongs to the add owner's routing work.
     @ViewBuilder
     private func addFoodRow(_ group: JournalMealGroup, in section: JournalDaySection) -> some View {
         if let onAddToMeal, let meal = JournalViewModel.addMeal(forGroupTitle: group.title),
-           JournalViewModel.isAddDay(section.id, now: now(), zone: model.dayZone) {
+           model.showsAddRow(sectionID: section.id, now: now()) {
+            // The add flow stamps new entries with TimeZone.current, which the journal zone defaults to.
             Button { onAddToMeal(meal) } label: {
                 Label(AddIntakeAction.title, systemImage: "plus").font(.subheadline)
             }

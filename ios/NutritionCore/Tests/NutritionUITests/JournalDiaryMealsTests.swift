@@ -87,12 +87,39 @@ final class JournalDiaryMealsTests: XCTestCase {
         XCTAssertFalse(JournalViewModel.isAddDay("2023-11-14", now: nearMidnight, zone: utc))
     }
 
-    /// The row's own call uses the default zone, the device zone the add flow stamps. It must agree with the
-    /// explicit device zone, so a regression in the default would fail here.
+    /// The default argument of the day helpers is the device zone the add flow stamps. The view's row goes through
+    /// `showsAddRow`, which is covered below.
     func testAddRowDefaultZoneIsTheDeviceZone() {
         let nearMidnight = Date(timeIntervalSince1970: 1_700_012_400)
         let deviceID = JournalViewModel.addDayID(now: nearMidnight, zone: TimeZone.current)
         XCTAssertEqual(JournalViewModel.addDayID(now: nearMidnight), deviceID)
         XCTAssertTrue(JournalViewModel.isAddDay(deviceID, now: nearMidnight))
+    }
+
+    /// The model decides the add row in its own journal zone, so the row cannot drift from the arrows and Copy to today.
+    func testShowsAddRowFollowsTheJournalZone() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let store = try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
+        let nearMidnight = Date(timeIntervalSince1970: 1_700_012_400)  // 2023-11-15 01:40 UTC
+
+        let losAngeles = JournalViewModel(store: store, timeZoneIdentifier: "America/Los_Angeles", locale: Locale(identifier: "en_US"))
+        XCTAssertTrue(losAngeles.showsAddRow(sectionID: "2023-11-14", now: nearMidnight))
+        XCTAssertFalse(losAngeles.showsAddRow(sectionID: "2023-11-15", now: nearMidnight))
+
+        let utc = JournalViewModel(store: store, timeZoneIdentifier: "UTC", locale: Locale(identifier: "en_US"))
+        XCTAssertTrue(utc.showsAddRow(sectionID: "2023-11-15", now: nearMidnight))
+        XCTAssertFalse(utc.showsAddRow(sectionID: "2023-11-14", now: nearMidnight))
+    }
+
+    /// The journal's production default zone is the device zone, the zone the add flow stamps new entries with.
+    func testJournalDefaultZoneIsTheDeviceZone() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let store = try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
+        let journal = JournalViewModel(store: store, locale: Locale(identifier: "en_US"))
+        XCTAssertEqual(journal.dayZone.identifier, TimeZone.current.identifier)
     }
 }

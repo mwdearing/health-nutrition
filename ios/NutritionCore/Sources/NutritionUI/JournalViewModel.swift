@@ -567,6 +567,12 @@ public final class JournalViewModel: ObservableObject {
         return groups.filter { !$0.rows.isEmpty }
     }
 
+    /// Whether a day's section offers the add row: the day an add made now lands in, judged in this journal's zone,
+    /// the same zone the arrows and Copy to today use. The view asks this rather than comparing zones itself.
+    public func showsAddRow(sectionID: String, now: Date) -> Bool {
+        Self.isAddDay(sectionID, now: now, zone: dayZone)
+    }
+
     /// The meal an add opens with for a group: the named meal, or nil for "Other", which has no add of its own.
     static func addMeal(forGroupTitle title: String) -> MealLabel? {
         MealLabel.allCases.first { $0.displayName == title }
