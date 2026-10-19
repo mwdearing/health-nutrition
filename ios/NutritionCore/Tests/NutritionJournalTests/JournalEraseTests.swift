@@ -111,6 +111,21 @@ final class JournalEraseTests: XCTestCase {
         XCTAssertEqual(try again.activeIntakes().map(\.id), [intakeID])
     }
 
+    /// The erase replaces the store file itself, not only the rows in it: the file is deleted and created again,
+    /// so its creation date moves. An erase that only deleted rows would keep the original file.
+    func testEraseReplacesTheStoreFileItself() throws {
+        let directory = try makeDirectory()
+        let url = directory.appendingPathComponent("journal.store")
+        let store = try SwiftDataJournalStore(url: url)
+        try store.create(sampleIntake(), components: [oats()], product: product(), now: when)
+        let before = try XCTUnwrap(FileManager.default.attributesOfItem(atPath: url.path)[.creationDate] as? Date)
+
+        try store.eraseAll()
+
+        let after = try XCTUnwrap(FileManager.default.attributesOfItem(atPath: url.path)[.creationDate] as? Date)
+        XCTAssertNotEqual(before, after)
+    }
+
     func testEraseRemovesEveryFavorite() throws {
         let store = try SwiftDataFavoritesStore(url: try makeDirectory().appendingPathComponent("favorites.store"))
         try store.add(sampleFavorite("fav-1"))
