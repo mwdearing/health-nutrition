@@ -425,16 +425,24 @@ public final class JournalViewModel: ObservableObject {
     @discardableResult
     public func undoCopy(now: Date = Date()) -> Bool {
         guard !copiedIDs.isEmpty else { return false }
-        let ids = copiedIDs
-        copiedIDs = []
-        do {
-            for id in ids { try store.delete(intakeID: id, now: now) }
-        } catch {
+        // A copy the person already deleted by hand is not active any more: it is skipped, not counted as a failure.
+        guard let active = try? Set(store.activeIntakes().map(\.id)) else {
             load(now: now)
             return false
         }
+        var succeeded = true
+        // An id leaves copiedIDs only once it is gone, so a failed delete keeps the rest for a retry.
+        while let id = copiedIDs.first {
+            if active.contains(id) {
+                do { try store.delete(intakeID: id, now: now) } catch {
+                    succeeded = false
+                    break
+                }
+            }
+            copiedIDs.removeFirst()
+        }
         load(now: now)
-        return true
+        return succeeded
     }
 
     /// Copies one meal group of a past day to now. "Other" copies the entries with no named meal.
