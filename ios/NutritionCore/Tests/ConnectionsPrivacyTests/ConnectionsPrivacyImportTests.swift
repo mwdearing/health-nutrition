@@ -17,6 +17,7 @@ private final class ImportStubStore: JournalStore, JournalTombstoneSource, Journ
     JournalErasing, @unchecked Sendable
 {
     struct Unsupported: Error {}
+    let erasureName = "journal"
 
     var failNextSaveForTesting = false
     var failUndoForTesting = false
@@ -107,6 +108,7 @@ private final class ImportStubStore: JournalStore, JournalTombstoneSource, Journ
 }
 
 private final class ImportStubFavorites: FavoritesStore, FavoritesRestoreTarget, JournalErasing, @unchecked Sendable {
+    let erasureName = "favorites"
     var items: [FavoriteTemplate] = []
     var failRestoreForTesting = false
 
@@ -124,6 +126,7 @@ private final class ImportStubFavorites: FavoritesStore, FavoritesRestoreTarget,
 
 private final class FailingAncillaryEraser: JournalErasing, @unchecked Sendable {
     struct Failure: Error {}
+    let erasureName = "reminders"
     func eraseAll() throws { throw Failure() }
 }
 
@@ -505,6 +508,8 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         var model: ConnectionsPrivacyViewModel?
         var data: Data?
 
+        let erasureName = "journal"
+
         func eraseAll() throws {
             // The erase runs on the main actor, so this is the main actor: exactly the moment an import must
             // not be allowed to start.
@@ -593,7 +598,9 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         let erased = await model.eraseAllData()
 
         XCTAssertFalse(erased)
-        XCTAssertEqual(model.errorMessage, ConnectionsPrivacyViewModel.eraseFailedMessage)
+        XCTAssertEqual(
+            model.errorMessage,
+            ConnectionsPrivacyViewModel.eraseLeftBehindMessage(["community sign-in", "journal"]))
         XCTAssertEqual(model.incompleteRestoreWarning, ConnectionsPrivacyViewModel.partialRestoreWarningMessage)
         XCTAssertEqual(model.journalRestoreGeneration, 1)
         XCTAssertEqual(try journal.activeIntakes().map(\.id), [entryID])
@@ -626,7 +633,7 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         await release.value
 
         XCTAssertFalse(erased, "the unrelated ancillary eraser still fails the overall operation")
-        XCTAssertEqual(model.errorMessage, ConnectionsPrivacyViewModel.eraseFailedMessage)
+        XCTAssertEqual(model.errorMessage, ConnectionsPrivacyViewModel.eraseLeftBehindMessage(["reminders"]))
         XCTAssertNil(model.incompleteRestoreWarning)
         XCTAssertEqual(model.journalRestoreGeneration, 0)
         XCTAssertTrue(try journal.activeIntakes().isEmpty)
