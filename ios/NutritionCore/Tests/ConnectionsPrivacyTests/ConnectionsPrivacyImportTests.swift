@@ -594,6 +594,7 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         XCTAssertEqual(model.errorMessage, ConnectionsPrivacyViewModel.eraseNothingErasedMessage)
         XCTAssertTrue(model.eraseRetryAvailable)
         XCTAssertTrue(model.isImporting, "the failed erase must not cancel the import")
+        XCTAssertFalse(model.importIsCancelledForTesting, "the failed erase must not cancel the import")
 
         journal.resumeRestoreBeforeWriteForTesting.signal()
         for _ in 0..<200 where model.isImporting {
