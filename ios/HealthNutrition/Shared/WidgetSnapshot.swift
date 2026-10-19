@@ -125,7 +125,7 @@ enum WidgetFigure {
     /// value is missing or cannot be shown.
     static func water(_ milliliters: Double?, usUnits: Bool?) -> String {
         if usUnits == true {
-            guard let milliliters, milliliters.isFinite else { return "—" }
+            guard let milliliters, milliliters.isFinite else { return "— fl oz" }
             let ounces = milliliters / millilitersPerUSFluidOunce
             // A sip is still water: under half an ounce it reads "<1" rather than a rounded 0.
             if ounces > 0, ounces < 0.5 { return "<1 fl oz" }

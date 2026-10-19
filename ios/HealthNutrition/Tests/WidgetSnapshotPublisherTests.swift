@@ -46,6 +46,7 @@ final class WidgetSnapshotPublisherTests: XCTestCase {
 
         XCTAssertNil(snapshot.waterMilliliters, "no read means no water total, not zero")
         XCTAssertEqual(WidgetFigure.water(snapshot.waterMilliliters, usUnits: false), "— mL")
+        XCTAssertEqual(WidgetFigure.water(snapshot.waterMilliliters, usUnits: true), "— fl oz")
     }
 
     /// A model that never read the journal is not an empty day: the publisher writes nothing for it.
