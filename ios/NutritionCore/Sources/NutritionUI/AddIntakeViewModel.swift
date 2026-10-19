@@ -787,8 +787,6 @@ public final class AddIntakeViewModel: ObservableObject {
         fillProductValues(product)
         // The captured panel's serving and basis feed the Servings control and the amount preview, the same
         // as a looked-up product's. Form state only; the stored values are not changed.
-        servingOption = Self.capturedServing(of: product)
-        capturedLabelBasis = product.labelBasis
     }
 
     /// Prefills a Library product without changing its saved snapshot identity.
