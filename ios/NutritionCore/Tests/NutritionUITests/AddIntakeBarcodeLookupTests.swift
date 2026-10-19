@@ -699,16 +699,18 @@ final class AddIntakeBarcodeLookupTests: XCTestCase {
     }
 
     /// No connection says so, and is not the generic failure.
-    func testOfflineLookupSaysNoInternetConnection() throws {
-        let model = try makeModel(nil)
-        model.lookupState = .offline
+    func testOfflineLookupSaysNoInternetConnection() async throws {
+        let model = try makeModel(FakeBarcodeLookup(result: .offline))
+        model.barcode = validBarcode
+        await model.lookUpBarcode()
         XCTAssertEqual(model.lookupMessage, "No internet connection. Try again when you're online.")
     }
 
     /// Any other failure keeps its current wording.
-    func testGenericFailureKeepsItsWording() throws {
-        let model = try makeModel(nil)
-        model.lookupState = .failed("HTTP 500")
+    func testGenericFailureKeepsItsWording() async throws {
+        let model = try makeModel(FakeBarcodeLookup(result: .failed("HTTP 500")))
+        model.barcode = validBarcode
+        await model.lookUpBarcode()
         XCTAssertEqual(model.lookupMessage, "The lookup did not finish. Try again in a moment.")
     }
 }
