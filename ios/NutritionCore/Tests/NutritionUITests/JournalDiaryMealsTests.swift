@@ -50,7 +50,8 @@ final class JournalDiaryMealsTests: XCTestCase {
     /// Today's day shows all four named meals, so an empty meal keeps its card and its add row.
     func testTodayShowsEmptyMealCards() {
         let groups = JournalViewModel.diaryMealGroups(for: [row("a", meal: "Lunch")])
-        let visible = JournalViewModel.visibleMealGroups(groups, sectionID: "2023-11-14", now: when)
+        let utc = TimeZone(identifier: "UTC")!
+        let visible = JournalViewModel.visibleMealGroups(groups, sectionID: "2023-11-14", now: when, zone: utc)
         XCTAssertEqual(visible.map(\.title), ["Breakfast", "Lunch", "Dinner", "Snack"])
         XCTAssertEqual(visible.map { $0.rows.count }, [0, 1, 0, 0])
     }
@@ -58,7 +59,7 @@ final class JournalDiaryMealsTests: XCTestCase {
     /// A past day shows only meals with entries; an empty meal's card is gone there.
     func testPastDayShowsOnlyMealsWithEntries() {
         let groups = JournalViewModel.diaryMealGroups(for: [row("a", meal: "Lunch")])
-        let visible = JournalViewModel.visibleMealGroups(groups, sectionID: "2023-11-13", now: when)
+        let visible = JournalViewModel.visibleMealGroups(groups, sectionID: "2023-11-13", now: when, zone: TimeZone(identifier: "UTC")!)
         XCTAssertEqual(visible.map(\.title), ["Lunch"])
         XCTAssertEqual(visible.first?.rows.count, 1)
     }
@@ -66,6 +67,7 @@ final class JournalDiaryMealsTests: XCTestCase {
     /// A past day with no entries shows no meal cards at all.
     func testPastDayWithNoEntriesShowsNothing() {
         let groups = JournalViewModel.diaryMealGroups(for: [])
-        XCTAssertEqual(JournalViewModel.visibleMealGroups(groups, sectionID: "2023-11-13", now: when).count, 0)
+        XCTAssertEqual(
+            JournalViewModel.visibleMealGroups(groups, sectionID: "2023-11-13", now: when, zone: TimeZone(identifier: "UTC")!).count, 0)
     }
 }

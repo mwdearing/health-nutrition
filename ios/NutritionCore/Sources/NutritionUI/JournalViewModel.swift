@@ -554,8 +554,10 @@ public final class JournalViewModel: ObservableObject {
 
     /// The meal groups a Diary day shows. Today's day shows every named meal, so each can take an add. A past day
     /// shows only the meals that have entries, because an add there would log to now, not to that day.
-    static func visibleMealGroups(_ groups: [JournalMealGroup], sectionID: String, now: Date) -> [JournalMealGroup] {
-        guard !isAddDay(sectionID, now: now) else { return groups }
+    static func visibleMealGroups(
+        _ groups: [JournalMealGroup], sectionID: String, now: Date, zone: TimeZone = .current
+    ) -> [JournalMealGroup] {
+        guard !isAddDay(sectionID, now: now, zone: zone) else { return groups }
         return groups.filter { !$0.rows.isEmpty }
     }
 
