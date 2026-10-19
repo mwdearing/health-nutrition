@@ -75,7 +75,7 @@ final class WidgetSnapshotPublisher {
 
     /// Whether a load's totals may be written: only the load on screen, and never after a failed journal read.
     static func shouldPublish(lastLoadedAt: Date?, journalReadFailed: Bool, loadedAt: Date) -> Bool {
-        lastLoadedAt == loadedAt && !journalReadFailed
+        lastLoadedAt == loadedAt
     }
 
     func publish(from today: TodayViewModel, loadedAt: Date, generation: Int) {
