@@ -292,6 +292,17 @@ final class SupplementStackTests: XCTestCase {
         XCTAssertNotEqual(first.intakeID, second.intakeID)
     }
 
+    func testDiagSupplementLoad() throws {
+        let store = UnitReadLogStore(inner: try makeStore())
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        try saveFavorite(favorites)
+        print("DIAG_SUPP_LOAD_BEGIN")
+        let model = makeModel(store: store, favorites: favorites, schedules: schedules)
+        model.load(now: now)
+        print("DIAG_SUPP_END calls=\(store.unitReadCalls) error=\(model.errorMessage ?? "nil")")
+    }
+
     func testTakenLogsTheFavoriteWithItsLabelSnapshotAndUndoUnmarksIt() throws {
         let store = try makeStore()
         let favorites = try makeFavorites()
