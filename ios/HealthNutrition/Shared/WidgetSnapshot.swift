@@ -34,7 +34,8 @@ struct WidgetSnapshot: Codable, Equatable {
     /// A partial figure is read "at least", as the calorie figure is.
     static func rowSpoken(_ name: String, figure: String, known: Bool, partial: Bool = false) -> String {
         guard known else { return "\(name) not available" }
-        let plain = figure.replacingOccurrences(of: "+", with: "")
+        // A sip shows as "<1 mL": spoken as "less than 1 mL", since "<" is not a spoken form.
+        let plain = figure.replacingOccurrences(of: "+", with: "").replacingOccurrences(of: "<", with: "less than ")
         return partial ? "\(name) at least \(plain)" : "\(name) \(plain)"
     }
 

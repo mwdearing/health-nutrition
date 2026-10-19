@@ -123,6 +123,8 @@ final class WidgetSnapshotPublisherTests: XCTestCase {
                        "no completed load")
         XCTAssertFalse(WidgetSnapshotPublisher.shouldPublish(lastLoadedAt: loadedAt.addingTimeInterval(1), journalReadFailed: false, loadedAt: loadedAt),
                        "a later load is on screen")
+        XCTAssertFalse(WidgetSnapshotPublisher.shouldPublish(lastLoadedAt: loadedAt.addingTimeInterval(1), journalReadFailed: true, loadedAt: loadedAt),
+                       "a later load that failed is never written")
     }
 
     /// A model that never read the journal is not an empty day: the publisher writes nothing for it.
