@@ -41,7 +41,7 @@ public struct InsightsView: View {
                                         Capsule().fill(TokenColors.track).frame(height: 96)
                                         if day.entryCount > 0 {
                                             Capsule()
-                                                .fill(TokenColors.mint)
+                                                .fill(TokenColors.accent)
                                                 .frame(height: max(8, 96 * week.barFraction(for: day)))
                                         }
                                     }
