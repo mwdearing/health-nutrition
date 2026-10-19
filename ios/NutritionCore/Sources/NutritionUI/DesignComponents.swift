@@ -320,7 +320,7 @@ public struct UndoToast: View {
         .padding(DesignSpacing.m)
         .background(TokenColors.accentTint, in: RoundedRectangle(cornerRadius: DesignRadius.control, style: .continuous))
         // VoiceOver hears the toast's own message when it appears. It is announced again when the toast is shown
-        // again, such as navigating back inside its offer window: the person returns to a live offer, so repeating it is intended (#555).
+        // again, such as navigating back inside its offer window: the person returns to a live offer, so repeating it is intended.
         .onAppear { AccessibilityNotification.Announcement(message).post() }
     }
 }
