@@ -198,7 +198,7 @@ public final class JournalViewModel: ObservableObject {
             var intakesByDay: [String: [Intake]] = [:]
             // One snapshot is read once per load, however many entries name it.
             var snapshots: [String: ProductDefinition?] = [:]
-            let loggedUnits = LoggedUnitIndex.load(from: store)
+            let loggedUnits = try LoggedUnitIndex.loadOrThrow(from: store)
             for intake in try store.activeIntakes() where intake.lifecycle == .active {
                 guard let zone = TimeZone(identifier: intake.timeZoneIdentifier) else {
                     skipped += 1
