@@ -409,13 +409,14 @@ public final class JournalViewModel: ObservableObject {
     }
 
     /// The entries the latest copy created, held so Undo can remove exactly them. A new copy replaces them.
-    private var copiedIDs: [String] = []
+    @Published private(set) var copiedIDs: [String] = []
 
     /// Whether the latest copy can still be undone.
     public var canUndoCopy: Bool { !copiedIDs.isEmpty }
 
     /// Counts each copy, so the Undo control restarts its window when a new copy lands.
     @Published public private(set) var copyCount = 0
+
 
     /// Ends the Undo window for the latest copy without undoing it.
     public func expireCopyUndo() { copiedIDs = [] }
@@ -425,6 +426,9 @@ public final class JournalViewModel: ObservableObject {
     @discardableResult
     public func undoCopy(now: Date = Date()) -> Bool {
         guard !copiedIDs.isEmpty else { return false }
+        // The copy notice is kept across the reload, so the Undo control stays on screen while copies remain.
+        let notice = copyNotice
+        defer { copyNotice = notice }
         // A copy the person already deleted by hand is not active any more: it is skipped, not counted as a failure.
         guard let active = try? Set(store.activeIntakes().map(\.id)) else {
             load(now: now)

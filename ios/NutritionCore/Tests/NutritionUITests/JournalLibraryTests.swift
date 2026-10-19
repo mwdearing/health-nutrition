@@ -346,6 +346,9 @@ final class JournalLibraryTests: XCTestCase {
         store.failDeleteAt = 2
         XCTAssertFalse(model.undoCopy())
         XCTAssertTrue(model.canUndoCopy, "the copies not yet removed stay undoable")
+        XCTAssertNotNil(model.copyNotice, "the notice, and so the Undo control, stays after a failed undo")
+        // The first copy was removed; the other two copies are still there.
+        XCTAssertEqual(Set(try store.activeIntakes().map(\.id)), Set(sources).union(result.createdIDs.dropFirst()))
 
         store.failDeleteAt = nil
         XCTAssertTrue(model.undoCopy())
