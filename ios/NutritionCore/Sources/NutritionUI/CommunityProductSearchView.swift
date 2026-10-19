@@ -6,7 +6,8 @@ public struct CommunityProductSearchView: View {
     @ObservedObject private var model: CommunityProductSearchViewModel
     private let onSelect: (CustomProductRevision) -> Void
     private let onLegacy: (LegacyCustomProductDraft) -> Void
-    private let onSignIn: () -> Void
+    /// Nil when this build has no account to sign in to; the Sign in control is then not offered.
+    private let onSignIn: (() -> Void)?
     private let onSaved: () -> Void
     private let onOpenFoodFacts: (LookedUpProduct, ProductKind?) -> Void
     /// The person's own favorites and recents, listed above the products. Both must be given, or the
@@ -22,7 +23,7 @@ public struct CommunityProductSearchView: View {
     @FocusState private var searchFocused: Bool
     /// Focus is taken once per screen. Going Back from a result must not raise the keyboard over it.
     @State private var didAutoFocus = false
-    public init(model: CommunityProductSearchViewModel, onSelect: @escaping (CustomProductRevision) -> Void, onLegacy: @escaping (LegacyCustomProductDraft) -> Void, onSignIn: @escaping () -> Void, onOpenFoodFacts: @escaping (LookedUpProduct, ProductKind?) -> Void = { _, _ in },
+    public init(model: CommunityProductSearchViewModel, onSelect: @escaping (CustomProductRevision) -> Void, onLegacy: @escaping (LegacyCustomProductDraft) -> Void, onSignIn: (() -> Void)?, onOpenFoodFacts: @escaping (LookedUpProduct, ProductKind?) -> Void = { _, _ in },
                 library: LibraryViewModel? = nil, onPick: ((RepeatTemplate) -> Void)? = nil,
                 focusSearchOnAppear: Bool = false, onSaved: @escaping () -> Void = {}) {
         self.onSaved = onSaved
@@ -212,7 +213,7 @@ public struct CommunityProductSearchView: View {
         case .empty: Text("No shared products match this search.")
         case .signInRequired:
             Text("Sign in to search shared products. Local products are available above.")
-            Button("Sign in", action: onSignIn)
+            if let onSignIn { Button("Sign in", action: onSignIn) }
         case .unsupported: Text("Shared product search is unavailable on this server.")
         case .unavailable:
             Text("Shared products are temporarily unavailable.")

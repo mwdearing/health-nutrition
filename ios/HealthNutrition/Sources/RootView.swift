@@ -565,7 +565,7 @@ struct RootView: View {
                 CommunityProductSearchView(model: search,
                     onSelect: { self.openProductDetails($0, home: home) },
                     onLegacy: { self.openProductEditor(home: home, legacy: $0) },
-                    onSignIn: { if self.services.account != nil { self.presentSignInOverSearch = true } },
+                    onSignIn: self.services.account == nil ? nil : { self.presentSignInOverSearch = true },
                     onOpenFoodFacts: { self.addNavigation.openLookedUp($0, kind: $1, home: home) },
                     library: self.services.library, onPick: { self.openTemplate($0, home: home) },
                     focusSearchOnAppear: true,
