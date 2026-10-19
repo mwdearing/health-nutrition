@@ -276,6 +276,7 @@ struct SavedMealUndoBar: View {
     var body: some View {
         if let token = model.undoToken {
             UndoToast(token.message) { model.undo(now: Date()) }
+            .id(token.id)
                 .padding(DesignSpacing.m)
                 .task(id: token.id) {
                     do { try await Task.sleep(for: .seconds(10)) } catch { return }
