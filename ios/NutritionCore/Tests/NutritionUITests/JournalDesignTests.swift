@@ -191,7 +191,8 @@ final class JournalDesignTests: XCTestCase {
         let model = makeModel(journal)
         model.load(now: designNow)
 
-        let section = try XCTUnwrap(model.sections.first)
+        // Today's empty section now sits first; the old day is the section with the entries.
+        let section = try XCTUnwrap(model.sections.first { !$0.rows.isEmpty })
         XCTAssertTrue(section.isCollapsedByDefault)
         XCTAssertEqual(section.entryCountText, "2 entries")
     }
@@ -357,16 +358,17 @@ final class JournalDesignTests: XCTestCase {
         try addEntry(mixed, at: utcInstant(2023, 10, 31, 22), zone: "Pacific/Kiritimati")
         let mixedModel = makeModel(mixed)
         mixedModel.load(now: now)
-        XCTAssertEqual(mixedModel.sections.map(\.id), ["2023-11-01"])
-        XCTAssertFalse(try XCTUnwrap(mixedModel.sections.first).isCollapsedByDefault)
+        // Today (11-08) is listed first now that the journal has entries; the old day keeps its own zone's day.
+        XCTAssertEqual(mixedModel.sections.map(\.id), ["2023-11-08", "2023-11-01"])
+        XCTAssertFalse(try XCTUnwrap(mixedModel.sections.first { $0.id == "2023-11-01" }).isCollapsedByDefault)
 
         let bothOld = try makeJournalStore()
         try addEntry(bothOld, at: utcInstant(2023, 10, 31, 23), zone: "Pacific/Pago_Pago")
         try addEntry(bothOld, at: utcInstant(2023, 10, 30, 22), zone: "Pacific/Kiritimati")
         let bothOldModel = makeModel(bothOld)
         bothOldModel.load(now: now)
-        XCTAssertEqual(bothOldModel.sections.map(\.id), ["2023-10-31"])
-        XCTAssertTrue(try XCTUnwrap(bothOldModel.sections.first).isCollapsedByDefault)
+        XCTAssertEqual(bothOldModel.sections.map(\.id), ["2023-11-08", "2023-10-31"])
+        XCTAssertTrue(try XCTUnwrap(bothOldModel.sections.first { $0.id == "2023-10-31" }).isCollapsedByDefault)
     }
 
     /// A goal store whose every read fails, as a store that cannot be opened would.

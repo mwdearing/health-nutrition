@@ -133,7 +133,7 @@ final class JournalDiaryMealsTests: XCTestCase {
         let now = Date(timeIntervalSince1970: 1_700_012_400)  // 2023-11-15 01:40 UTC
         let yesterday = now.addingTimeInterval(-86_400)
         try store.create(
-            Intake(id: "yesterday-lunch", category: "food", occurredAt: yesterday, timeZoneIdentifier: "UTC", meal: "Lunch"),
+            Intake(id: UUID().uuidString.lowercased(), category: "food", occurredAt: yesterday, timeZoneIdentifier: "UTC", meal: "Lunch"),
             components: [IntakeComponent(componentID: "example-oats", name: "Example oats", amount: 40, unit: .g)],
             product: nil, now: yesterday)
 

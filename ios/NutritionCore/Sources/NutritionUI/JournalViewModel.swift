@@ -246,10 +246,14 @@ public final class JournalViewModel: ObservableObject {
             let queried = tracked.contains(Self.energyKey) ? tracked : tracked + [Self.energyKey]
             // The same choice as Today: a goal switched off there gets no bar in the day header either.
             let hiddenGoals = hiddenTodayGoals(in: preferences)
-            // Today always gets a section, even with no entries, so its meal cards and add rows show.
-            let todayKey = Self.dayKey(now, zone: dayZone)
-            if titles[todayKey] == nil { titles[todayKey] = Self.dayTitle(now, zone: dayZone, locale: locale, now: now) }
-            let sectionKeys = Set(groups.keys).union([todayKey])
+            // Once the journal has a readable entry, today gets a section even with none of its own, so its meal cards
+            // and add rows show. An empty journal keeps its empty state and its "Nothing logged yet." sentence.
+            var sectionKeys = Set(groups.keys)
+            if !groups.isEmpty {
+                let todayKey = Self.dayKey(now, zone: dayZone)
+                if titles[todayKey] == nil { titles[todayKey] = Self.dayTitle(now, zone: dayZone, locale: locale, now: now) }
+                sectionKeys.insert(todayKey)
+            }
             sections = try sectionKeys.sorted(by: >).map { key in
                 let totals = try DailyTotalsBuilder.totals(
                     for: intakesByDay[key] ?? [], store: store, lookup: lookup, nutrients: queried)
