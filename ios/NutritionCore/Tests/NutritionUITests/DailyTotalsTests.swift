@@ -1071,7 +1071,6 @@ final class DailyTotalsTests: XCTestCase {
 
     /// A drink row with a positive and a negative volume is distrusted as a whole: its water is unknown, and the
     /// known 250 mL does not survive as a partial sum.
-#if DEBUG
     func testAMixedDrinkRowWithANegativeVolumeIsUnknownWaterNotPartlyKnown() throws {
         let store = try makeStore()
         let intake = Intake(id: UUID().uuidString.lowercased(), category: "water", occurredAt: when, timeZoneIdentifier: "UTC")
@@ -1088,7 +1087,6 @@ final class DailyTotalsTests: XCTestCase {
         XCTAssertNil(totals.knownSum(for: DailyTotalsBuilder.waterKey))
         XCTAssertEqual(totals.missingCount(for: DailyTotalsBuilder.waterKey), 1)
     }
-#endif
 
     /// A lookup's negative value for a nutrient the caller did not ask for still distrusts the food, so the energy
     /// total does not depend on which nutrients were requested.
@@ -1104,7 +1102,6 @@ final class DailyTotalsTests: XCTestCase {
     }
 
     /// A legacy negative row seeded into the store reads back through the normal read path with its amount intact.
-#if DEBUG
     func testASeededNegativeRowReadsBackThroughTheNormalReadPath() throws {
         let store = try makeStore()
         let id = try addFood(store, name: "Oats", id: "oats", at: when, amount: 40)
@@ -1112,7 +1109,6 @@ final class DailyTotalsTests: XCTestCase {
         let revision = try XCTUnwrap(try store.revisions(of: id).last)
         XCTAssertEqual(revision.components.first?.amount, -40)
     }
-#endif
 
     /// A distrusted food with no water share contributes nothing to water, so a day's 1000 mL of water stays known.
     func testANegativeFoodRowDoesNotMakeTheDaysWaterUnknown() throws {
@@ -1140,7 +1136,6 @@ final class DailyTotalsTests: XCTestCase {
     }
 
     /// A food row with a negative volume and a 100% water share must not lower the day's water.
-#if DEBUG
     func testANegativeVolumeWithAWaterShareIsUnknownWaterNotDrunk() throws {
         let store = try makeStore()
         let intake = Intake(id: UUID().uuidString.lowercased(), category: "food", occurredAt: when, timeZoneIdentifier: "UTC")
@@ -1154,10 +1149,8 @@ final class DailyTotalsTests: XCTestCase {
             nutrients: [DailyTotalsBuilder.waterKey])
         XCTAssertEqual(totals.total(for: DailyTotalsBuilder.waterKey)?.value, .unknown)
     }
-#endif
 
     /// A negative supplement row is unknown for what it declares, and an undeclared nutrient still does not count.
-#if DEBUG
     func testANegativeSupplementRowIsUnknownOnlyForWhatItDeclares() throws {
         let store = try makeStore()
         let vitaminD = ProductDefinition(
@@ -1180,9 +1173,7 @@ final class DailyTotalsTests: XCTestCase {
         XCTAssertEqual(totals.total(for: "energyKcal")?.value, .known(380, .kcal))
         XCTAssertEqual(totals.total(for: "protein")?.value, .known(13, .g))
     }
-#endif
 
-#if DEBUG
     func testANegativeEntryIsUnknownOnEveryPath() throws {
         let facts = ComponentFacts(values: ["oats": .known(10, .kcal), "rice": .known(10, .kcal)])
         // No product snapshot: the lookup answers each component directly. The negative oats row is distrusted and
@@ -1234,5 +1225,4 @@ final class DailyTotalsTests: XCTestCase {
             XCTAssertEqual(NSDecimalNumber(decimal: kcal).doubleValue, 20, accuracy: 0.001, "count path")
         }
     }
-#endif
 }
