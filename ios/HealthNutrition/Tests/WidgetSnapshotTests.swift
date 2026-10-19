@@ -58,7 +58,7 @@ final class WidgetSnapshotTests: XCTestCase {
         XCTAssertEqual(WidgetFigure.water(15, usUnits: true), "1 fl oz")
         XCTAssertEqual(WidgetFigure.water(nil, usUnits: true), "—")
         XCTAssertEqual(WidgetFigure.water(.infinity, usUnits: true), "—")
-        XCTAssertEqual(WidgetFigure.water(nil, usUnits: nil), "— mL")
+        XCTAssertEqual(WidgetFigure.water(nil, usUnits: nil), "—")
     }
 
     func testASummaryWithoutTheCalorieFieldsDecodesAndTheNewFieldsRoundTrip() throws {
