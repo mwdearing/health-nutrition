@@ -70,7 +70,7 @@ final class OpenFoodFactsClientTests: XCTestCase {
         return product
     }
 
-    private func client(_ transport: StubTransport, environment: OpenFoodFactsEnvironment = .production, clock: TestClock = TestClock()) -> OpenFoodFactsClient {
+    private func client(_ transport: any OpenFoodFactsTransport, environment: OpenFoodFactsEnvironment = .production, clock: TestClock = TestClock()) -> OpenFoodFactsClient {
         OpenFoodFactsClient(environment: environment, transport: transport, appVersion: "1.0.0", now: { clock.now() }, monotonic: { clock.uptime() })
     }
 
