@@ -145,7 +145,7 @@ public struct CommunityProductSearchView: View {
                 }
             }
         }
-        .navigationTitle("Find products")
+        .navigationTitle("Search foods")
         .task { if model.state == .idle { await model.search(query: query, kind: kind) } }
         // Focus after the push animation. Setting focus during the transition can be dropped.
         .task {
@@ -235,7 +235,7 @@ public struct CommunityProductSearchView: View {
     }
 }
 
-/// The saved meals on Find products, narrowed by name as the person types. A tap asks which meal to log it
+/// The saved meals on Search foods, narrowed by name as the person types. A tap asks which meal to log it
 /// under; nothing is logged until one is chosen.
 struct SavedMealSections: View {
     @ObservedObject var model: SavedMealsModel
@@ -301,7 +301,7 @@ struct SavedMealUndoBar: View {
     }
 }
 
-/// The person's own favorites and recents on Find products, narrowed as they type. Built from the Library's
+/// The person's own favorites and recents on Search foods, narrowed as they type. Built from the Library's
 /// last load: nothing here reads the network or sends the query anywhere, and a tap opens details only.
 struct LibrarySearchSections: View {
     @ObservedObject var library: LibraryViewModel

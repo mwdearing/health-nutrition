@@ -32,7 +32,7 @@ final class AppServices {
     let connections: ConnectionsPrivacyViewModel
     /// The Daily goals screen, reached from the Library screen's Connections section.
     let goals: GoalsViewModel
-    /// Saved meals, saved from the Journal and logged from Find products. Kept in the defaults domain and
+    /// Saved meals, saved from the Journal and logged from Search foods. Kept in the defaults domain and
     /// erased with everything else.
     let savedMeals: SavedMealsModel
     /// The first-day checklist on Today. It reads the journal and the goals, and the display settings
@@ -68,7 +68,7 @@ final class AppServices {
     /// same builds as `account`, and then no catalog call is made.
     let community: CommunityClient?
     let productService: (any CommunityProductServicing)?
-    /// Name search for Find products over USDA and Open Food Facts. Nil in builds that make no network calls at all.
+    /// Name search for Search foods over USDA and Open Food Facts. Nil in builds that make no network calls at all.
     var productNameSearch: (any ProductNameSearching)? = nil
     /// Cup, tablespoon and teaspoon weights a picked USDA food lists. Nil when the build has no USDA key.
     var householdPortions: (any HouseholdPortionLookup)? = nil
@@ -244,7 +244,7 @@ final class AppServices {
             connectivityMonitor = monitor
             monitor.start(queue: DispatchQueue(label: "product-sharing-connectivity"))
         }
-        // Set once every stored property is, so the Journal and Find products can reach saved meals.
+        // Set once every stored property is, so the Journal and Search foods can reach saved meals.
         library.savedMeals = savedMeals
         journal.savedMeals = savedMeals
         // A restore writes the saved meals list as well as the journal, so the list is read again once its

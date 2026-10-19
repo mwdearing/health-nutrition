@@ -33,7 +33,7 @@ struct RootView: View {
     /// for here and shown when the first has finished going away.
     @State private var settingsAfterWelcome = false
     @State private var settingsAfterAdding = false
-    /// Sign-in opened over Find products, so the query and results stay on screen after signing in.
+    /// Sign-in opened over Search foods, so the query and results stay on screen after signing in.
     @State private var presentSignInOverSearch = false
     @State private var welcomeAfterSettings = false
     /// Confirms a save whose screen has closed, on the tab bar or on the screen the person lands on.
@@ -495,11 +495,11 @@ struct RootView: View {
 
     /// Opens the details form prefilled from a favorite or recent picked in Add. Nothing is logged until Save.
     private func openTemplate(_ template: RepeatTemplate, home: AddHomeViewModel) {
-        // The picker and Find products share this message: one screen's failure must not show on the other.
+        // The picker and Search foods share this message: one screen's failure must not show on the other.
         self.addFlowError = nil
         do {
             let model = try home.makeDetails(prefill: template, now: Date())
-            // A meal chosen on Add wins. With none chosen (Find products opened from the Library tab starts
+            // A meal chosen on Add wins. With none chosen (Search foods opened from the Library tab starts
             // with none), the item keeps the meal it was logged under, as a tap in the Library does.
             if home.meal == nil { model.meal = LibraryViewModel.mealLabel(for: template) }
             self.addIntakeModel = model

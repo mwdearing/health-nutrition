@@ -34,7 +34,7 @@ even when label sharing is off. See [the privacy statement](../PRIVACY.md) and
 authenticated community catalog, but Open Food Facts and an email sign-in
 challenge are separate requests to external services.
 
-A name search in Find products sends only the words the person typed (2 to 80
+A name search in Search foods sends only the words the person typed (2 to 80
 characters) to the Open Food Facts search service (`search.openfoodfacts.org`,
 `/search`) and, in builds that carry a USDA key, to USDA FoodData Central
 (`api.nal.usda.gov`, `/fdc/v1/foods/search`) when they submit the field, and

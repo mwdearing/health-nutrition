@@ -528,7 +528,7 @@ final class SavedMealsModelTests: XCTestCase {
         XCTAssertTrue(model.saveMeal(day.id, groupID: "Breakfast", name: "Usual breakfast"))
         XCTAssertEqual(savedMeals.meals.first?.items.map(\.displayName), ["Oats", "Milk"])
         XCTAssertEqual(savedMeals.meals.first?.meal, .breakfast)
-        XCTAssertEqual(model.copyNotice, "Saved Usual breakfast. Log it again from Add, in Find products.")
+        XCTAssertEqual(model.copyNotice, "Saved Usual breakfast. Log it again from Add, in Search foods.")
         XCTAssertFalse(model.copyFailed)
 
         XCTAssertFalse(model.saveMeal(day.id, groupID: "Dinner", name: "Usual breakfast"))
