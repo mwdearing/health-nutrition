@@ -549,7 +549,13 @@ public final class JournalViewModel: ObservableObject {
     /// Whether a section is the day an add flow logs to: today in the device's own zone, which is the zone a new
     /// entry is stamped with. Section ids are each intake's own local day, so the comparison uses the same zone.
     static func isAddDay(_ sectionID: String, now: Date, zone: TimeZone = .current) -> Bool {
-        sectionID == dayKey(now, zone: zone)
+        sectionID == addDayID(now: now, zone: zone)
+    }
+
+    /// The section id an entry added now would get: the same day key every section uses, read in the zone the add
+    /// flow stamps new entries with. Section ids come from each intake's own zone, so for a new entry this is the device zone.
+    static func addDayID(now: Date, zone: TimeZone = .current) -> String {
+        dayKey(now, zone: zone)
     }
 
     /// The meal groups a Diary day shows. Today's day shows every named meal, so each can take an add. A past day

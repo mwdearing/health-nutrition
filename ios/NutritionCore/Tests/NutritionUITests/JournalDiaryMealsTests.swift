@@ -70,4 +70,20 @@ final class JournalDiaryMealsTests: XCTestCase {
         XCTAssertEqual(
             JournalViewModel.visibleMealGroups(groups, sectionID: "2023-11-13", now: when, zone: TimeZone(identifier: "UTC")!).count, 0)
     }
+
+    /// Near midnight, the add row must sit on the section an entry added now lands in, in the zone the add flow
+    /// stamps. Here it is 01:30 UTC on the 15th, which is 17:30 on the 14th in Los Angeles: the add lands on the 14th
+    /// there, so the row sits on the 14th and not on the neighbouring 15th.
+    func testAddRowSitsOnTheSectionAnAddNowLandsIn() {
+        let nearMidnight = Date(timeIntervalSince1970: 1_700_012_400)  // 2023-11-15 01:40 UTC
+        let utc = TimeZone(identifier: "UTC")!
+        let losAngeles = TimeZone(identifier: "America/Los_Angeles")!
+
+        XCTAssertEqual(JournalViewModel.addDayID(now: nearMidnight, zone: utc), "2023-11-15")
+        XCTAssertEqual(JournalViewModel.addDayID(now: nearMidnight, zone: losAngeles), "2023-11-14")
+        XCTAssertTrue(JournalViewModel.isAddDay("2023-11-14", now: nearMidnight, zone: losAngeles))
+        XCTAssertFalse(JournalViewModel.isAddDay("2023-11-15", now: nearMidnight, zone: losAngeles))
+        XCTAssertTrue(JournalViewModel.isAddDay("2023-11-15", now: nearMidnight, zone: utc))
+        XCTAssertFalse(JournalViewModel.isAddDay("2023-11-14", now: nearMidnight, zone: utc))
+    }
 }
