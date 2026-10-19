@@ -11,6 +11,12 @@ public struct AddScannerAvailability {
         self.barcode = barcode
         self.label = label
     }
+
+    /// The Add tiles follow hardware support only. A denied or restricted camera stays reachable so its message
+    /// and Open Settings action can show; a busy camera is handled by the sheet's own start failure.
+    public static func forSupport(_ isSupported: Bool) -> AddScannerAvailability {
+        AddScannerAvailability(barcode: isSupported, label: isSupported)
+    }
 }
 
 public struct AddUndoToken: Equatable {
