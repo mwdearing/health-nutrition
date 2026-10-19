@@ -309,6 +309,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
 
     /// The restore in flight, so an erase can ask it to stop and wait for it. Nil when nothing is running.
     private var importTask: Task<Void, Never>?
+    /// Whether the in-flight import has been cancelled, so a test can tell a cancelled import from a running one.
+    var importIsCancelledForTesting: Bool { importTask?.isCancelled ?? false }
     /// Whether a restore is running right now, and how to wait for it. A lock rather than an actor,
     /// because the two sides of that wait are on different actors: the restore finishes on a background
     /// thread and the erase waits here, on the main actor, so they have to meet somewhere both can reach.
@@ -631,6 +633,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         importTask?.cancel()
         guard importGate.wait(upTo: Self.eraseWaitsForImportSeconds) else {
             errorMessage = Self.eraseWaitTimedOutMessage
+            eraseRetryAvailable = true
             return false
         }
         // An import that was running when the flag was first cleared may have written a new one before it stopped.
