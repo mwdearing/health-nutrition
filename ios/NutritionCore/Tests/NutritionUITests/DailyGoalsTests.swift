@@ -1127,6 +1127,8 @@ final class DailyGoalsTests: XCTestCase {
         XCTAssertTrue(model.commitTarget(for: "protein"))
         XCTAssertEqual(try goals.goal(for: "protein")?.target, 60)
 
+        // Leaving the blank field showed the stored goal again; Return removes only an empty field.
+        model.draftText["protein"] = ""
         XCTAssertTrue(model.submitTarget(for: "protein"))
         XCTAssertNil(try goals.goal(for: "protein"))
         XCTAssertEqual(model.sections[0].rows.first { $0.nutrient == "protein" }?.targetText, "None")
