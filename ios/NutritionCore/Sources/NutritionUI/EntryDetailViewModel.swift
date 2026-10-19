@@ -360,9 +360,6 @@ public final class EntryDetailViewModel: ObservableObject {
 
     /// Whether the screen holds a change the person has not saved: an amount draft that differs from
     /// the one the entry states, or a time that differs from the stored one. Save is offered only then.
-    /// Whether Close must ask first: unsaved changes would be lost by closing the entry.
-    public var closeAsksFirst: Bool { isDirty }
-
     public var isDirty: Bool {
         if kind == .drink, waterSharePercent != loadedWaterSharePercent { return true }
         for id in Set(drafts.keys).union(loadedDrafts.keys)
@@ -372,6 +369,9 @@ public final class EntryDetailViewModel: ObservableObject {
         guard let storedOccurredAt else { return false }
         return occurredAt != storedOccurredAt
     }
+
+    /// Whether Close must ask first: unsaved changes would be lost by closing the entry.
+    public var closeAsksFirst: Bool { isDirty }
 
     /// Whether two amount texts state the same amount. Both are trimmed; when both parse, the decimals
     /// decide, so "40.0" and " 40 " match a stored 40. Otherwise the trimmed text decides. The loaded text

@@ -84,12 +84,12 @@ public final class QuickAddViewModel: ObservableObject, Identifiable {
         self.makeID = makeID
     }
 
-    /// True while every amount field is blank, so the screen can say what is missing.
     /// Whether a name or an amount has been typed. Closing the sheet then asks before dropping it.
     public var hasTypedInput: Bool {
         !name.trimmingCharacters(in: .whitespaces).isEmpty || !hasNoAmountTyped
     }
 
+    /// True while every amount field is blank, so the screen can say what is missing.
     public var hasNoAmountTyped: Bool {
         Field.allCases.allSatisfy { text(for: $0).trimmingCharacters(in: .whitespaces).isEmpty }
     }
