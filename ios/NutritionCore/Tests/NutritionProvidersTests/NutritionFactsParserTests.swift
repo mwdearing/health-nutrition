@@ -1261,6 +1261,13 @@ final class NutritionFactsParserTests: XCTestCase {
         if case .known = panel.value(for: .fat) { XCTFail("Saturated-Fat must not set total fat") }
     }
 
+    /// The ambiguous line gives nothing on a supplement panel either: "Vitamin B 1 2 mcg" is no extra.
+    func testAmbiguousBVitaminLineIsNoSupplementExtra() throws {
+        let panel = parse(["Supplement Facts", "Serving size 1 capsule", "Vitamin B 1 2 mcg"])
+
+        XCTAssertTrue(panel.additionalNutrients.isEmpty, "an ambiguous line is not an extra")
+    }
+
     /// A hyphen joins the word before it, so a hyphenated total-form label still lands on its known field.
     func testHyphenatedTotalFormsLandOnTheirFields() throws {
         let panel = parse(["Nutrition Facts", "Total-Fat 5g", "Total-Sugars 10g", "Dietary-Fiber 3g"])
