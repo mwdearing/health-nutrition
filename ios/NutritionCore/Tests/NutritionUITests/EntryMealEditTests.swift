@@ -83,9 +83,7 @@ final class EntryMealEditTests: XCTestCase {
 
         let journal = JournalViewModel(store: store, timeZoneIdentifier: "UTC", locale: Locale(identifier: "en_US"))
         journal.load(now: now)
-        // The Diary list keeps every named meal, empty ones too; the view decides which a day shows.
-        XCTAssertEqual(journal.sections.first?.mealGroups.map(\.title), ["Breakfast", "Lunch", "Dinner", "Snack"])
-        XCTAssertEqual(journal.sections.first?.mealGroups.map { $0.rows.count }, [0, 0, 1, 0])
+        XCTAssertEqual(journal.sections.first?.mealGroups.map(\.title), ["Dinner"])
     }
 
     func testAnEntryWithANonVocabularyMealIsShownAsWrittenAndCannotBeChangedFromHere() throws {

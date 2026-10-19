@@ -214,9 +214,8 @@ final class JournalDesignTests: XCTestCase {
         model.load(now: designNow)
 
         let section = try XCTUnwrap(model.sections.first)
-        // The Diary list keeps every named meal, empty ones too, then "Other" for the entries with no named meal.
-        XCTAssertEqual(section.mealGroups.map(\.title), ["Breakfast", "Lunch", "Dinner", "Snack", "Other"])
-        XCTAssertEqual(section.mealGroups.map { $0.rows.map(\.id) }, [[breakfast], [], [dinner], [], [water, food]])
+        XCTAssertEqual(section.mealGroups.map(\.title), ["Breakfast", "Dinner", "Other"])
+        XCTAssertEqual(section.mealGroups.map { $0.rows.map(\.id) }, [[breakfast], [dinner], [water, food]])
     }
 
     // MARK: Empty journal

@@ -267,7 +267,7 @@ public final class JournalViewModel: ObservableObject {
                     id: key, title: titles[key] ?? key, rows: rows, totals: totals,
                     totalsText: Self.totalsText(
                         totals: totals, tracked: tracked, goals: storedGoals, unitSystem: self.preferences.unitSystem),
-                    mealGroups: Self.diaryMealGroups(for: rows),
+                    mealGroups: Self.mealGroups(for: rows),
                     headerBars: Self.headerBars(
                         totals: totals, goals: storedGoals, hasFoodEntries: Self.hasFoodEntries(rows),
                         unitSystem: self.preferences.unitSystem, hidden: hiddenGoals),
@@ -290,6 +290,7 @@ public final class JournalViewModel: ObservableObject {
             goalsErrorMessage = goalsReadFailed ? GoalsViewModel.readFailedMessage : nil
             hasLoaded = true
         } catch {
+            todaySection = nil
             errorMessage = "Could not read the journal."
         }
     }
@@ -545,6 +546,20 @@ public final class JournalViewModel: ObservableObject {
         let found = try? store.product(snapshotID: id)
         cache[id] = found
         return found
+    }
+
+    /// The day's entries grouped by meal, as the Journal's section list has always carried them: only the meals
+    /// with entries, then "Other". The Diary adds the empty named meals itself through `diaryMealGroups`.
+    static func mealGroups(for rows: [JournalRow]) -> [JournalMealGroup] {
+        let named = MealLabel.allCases.map(\.displayName)
+        var buckets: [String: [JournalRow]] = [:]
+        for row in rows {
+            let title = row.meal.flatMap { named.contains($0) ? $0 : nil } ?? "Other"
+            buckets[title, default: []].append(row)
+        }
+        return (named + ["Other"]).compactMap { title in
+            buckets[title].map { JournalMealGroup(id: title, title: title, rows: $0) }
+        }
     }
 
     /// The meals a Diary day lists: the four named meals in their fixed order, empty ones included, then "Other"
