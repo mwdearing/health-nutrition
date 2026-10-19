@@ -89,6 +89,7 @@ public struct JournalView: View {
                 } else if let copied = model.copyNotice {
                     if model.canUndoCopy(now: now()) {
                         UndoToast(copied) { _ = model.undoCopy(now: now()) }
+                            .id(model.copyCount)
                             .padding(DesignSpacing.m)
                             .task(id: model.copyCount) {
                                 do { try await Task.sleep(for: .seconds(10)) } catch { return }
