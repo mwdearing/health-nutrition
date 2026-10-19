@@ -9,6 +9,8 @@ public struct CustomProductEditorView: View {
     private let sharing: CustomProductSharingModel?
     private let onSaved: (CustomProductRevision, Bool) -> Void
     @State private var openDetails = false
+    @Environment(\.dismiss) private var dismiss
+    @State private var confirmDiscard = false
     public init(model: CustomProductEditorViewModel, sharing: CustomProductSharingModel? = nil, onSaved: @escaping (CustomProductRevision, Bool) -> Void) {
         self.model = model; self.sharing = sharing; self.onSaved = onSaved
     }
@@ -116,6 +118,19 @@ public struct CustomProductEditorView: View {
             if let item = model.revision, let sharing { CustomProductSharingSection(item: item, model: sharing) }
         }
         .navigationTitle("Product editor")
+        .onAppear { model.markShown() }
+        // Changes are only at risk once made: a changed product asks before leaving.
+        .navigationBarBackButtonHidden(model.hasTypedInput)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel") {
+                    if model.hasTypedInput { confirmDiscard = true } else { dismiss() }
+                }
+            }
+        }
+        .confirmationDialog("Discard changes?", isPresented: $confirmDiscard, titleVisibility: .visible) {
+            Button("Discard", role: .destructive) { dismiss() }
+        }
     }
 }
 

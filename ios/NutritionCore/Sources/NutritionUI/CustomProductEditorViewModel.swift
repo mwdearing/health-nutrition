@@ -135,6 +135,16 @@ public struct NutrientKeyChoice: Identifiable, Equatable {
     @Published public var servingUnit: MeasureUnit = .serving
     @Published public var servingText = ""
     @Published public var facts: [ProductFactInput] = []
+    /// What the form held when it was first shown. Anything else changed since is unsaved.
+    private var shownWith: String?
+    /// Whether the person changed the product since it was first shown. Leaving then asks first.
+    public var hasTypedInput: Bool { shownWith != nil && fingerprint != shownWith }
+    public func markShown() { if shownWith == nil { shownWith = fingerprint } }
+    private var fingerprint: String {
+        let head = [name, brand, barcode, servingQuantity, servingText, servingUnit.symbol]
+        let rows = facts.flatMap { [$0.key, $0.displayName, $0.amount, $0.unit?.symbol ?? ""] }
+        return (head + rows).joined(separator: "\u{1F}")
+    }
     @Published public var errorMessage: String?
     @Published public private(set) var revision: CustomProductRevision?
     private let store: any CustomProductStore
