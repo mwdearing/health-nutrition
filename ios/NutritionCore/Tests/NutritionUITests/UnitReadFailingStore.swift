@@ -32,7 +32,7 @@ final class UnitReadFailingStore: JournalStore, JournalLoggedUnits, @unchecked S
 
     func editRemovingUnits(
         intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
-        now: Date, occurredAt: Date?, timeZoneIdentifier: String?, unitRemovals: [String])throws -> IntakeRevision {
+        now: Date, occurredAt: Date?, timeZoneIdentifier: String?, unitRemovals: [String]) throws -> IntakeRevision {
         try inner.editRemovingUnits(
             intakeID: intakeID, components: components, product: product, changeReason: changeReason, now: now,
             occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier, unitRemovals: unitRemovals)
