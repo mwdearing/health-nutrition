@@ -1486,8 +1486,9 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
         guard let record = try context.fetch(FetchDescriptor<IntakeRecord>(
             predicate: #Predicate<IntakeRecord> { $0.intakeID == intakeID })).first
         else { throw JournalError.unknownIntake(intakeID) }
+        let current = record.currentRevision
         let revisions = try context.fetch(FetchDescriptor<RevisionRecord>(
-            predicate: #Predicate<RevisionRecord> { $0.intakeID == intakeID && $0.number == record.currentRevision }))
+            predicate: #Predicate<RevisionRecord> { $0.intakeID == intakeID && $0.number == current }))
         guard let revision = revisions.first else {
             throw JournalError.unknownIntake(intakeID)
         }

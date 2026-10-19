@@ -123,7 +123,7 @@ public enum DailyTotalsBuilder {
     }
 
     /// The nutrients a negative value is looked for under, whatever the caller asks for: the reference table,
-    /// the Health mapping keys, and water.
+    /// the Health mapping keys, water, every goal choice, and the default tracked nutrients.
     static let distrustUniverse: [String] = {
         var keys = Set(ReferenceIntakes.nutrients)
         keys.insert(waterKey)
@@ -197,7 +197,8 @@ public enum DailyTotalsBuilder {
         // The one exception is a stored water share, which counts toward the day's water as Today shows it.
         // One decision per entry, made in totals() from every value the entry carries: a negative logged amount,
         // a negative stated value, or a negative lookup value on any nutrient. A distrusted food row is unknown for
-        // every nutrient. A distrusted supplement row is unknown for the nutrients it declares, and undeclared ones
+        // every nutrient, except that a food with no water share contributes nothing to water. A distrusted supplement
+        // row is unknown for the nutrients it declares, and undeclared ones
         // still contribute nothing, as on a healthy supplement. A zero is a known zero.
         if distrusted {
             // A food with no water share never contributed to water, so a distrusted food still contributes nothing

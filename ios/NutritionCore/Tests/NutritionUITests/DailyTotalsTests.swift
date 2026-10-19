@@ -1175,12 +1175,14 @@ final class DailyTotalsTests: XCTestCase {
     }
 
     func testANegativeEntryIsUnknownOnEveryPath() throws {
-        let facts = ComponentFacts(values: ["oats": .known(10, .kcal)])
-        // No product snapshot: the lookup answers each component directly.
+        let facts = ComponentFacts(values: ["oats": .known(10, .kcal), "rice": .known(10, .kcal)])
+        // No product snapshot: the lookup answers each component directly. The negative oats row is distrusted and
+        // unknown; the positive rice row is the only known amount, so the known sum is its 10 kcal.
         do {
             let store = try makeStore()
             let oatsID = try addFood(store, name: "Oats", id: "oats", at: when, amount: 40, unit: .g)
             try store.seedLegacyAmountsForTesting(intakeID: oatsID, amountsByComponent: ["oats": "-40"])
+            try addFood(store, name: "Rice", id: "rice", at: when, amount: 150, unit: .g)
             let totals = try DailyTotalsBuilder.totals(
                 for: try store.activeIntakes(), store: store, lookup: facts, nutrients: ["energyKcal"])
             XCTAssertEqual(totals.total(for: "energyKcal")?.value, .unknown, "no-snapshot path")
