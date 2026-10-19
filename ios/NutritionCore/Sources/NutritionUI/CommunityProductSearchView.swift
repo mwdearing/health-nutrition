@@ -275,21 +275,24 @@ struct SavedMealSections: View {
 struct SavedMealUndoBar: View {
     @ObservedObject var model: SavedMealsModel
     var body: some View {
-        if let removal = model.removalUndo {
-            UndoToast(removal.message) { model.undoRemove() }
-                .padding(DesignSpacing.m)
-                .task(id: removal.id) {
-                    do { try await Task.sleep(for: .seconds(10)) } catch { return }
-                    model.expireRemoval(removal)
-                }
-        } else if let token = model.undoToken {
-            UndoToast(token.message) { model.undo(now: Date()) }
-                .padding(DesignSpacing.m)
-                .task(id: token.id) {
-                    do { try await Task.sleep(for: .seconds(10)) } catch { return }
-                    model.expireUndo(token)
-                }
+        // Both offers can be up at once: a removal does not hide the Undo of a meal just logged.
+        VStack(spacing: DesignSpacing.s) {
+            if let token = model.undoToken {
+                UndoToast(token.message) { model.undo(now: Date()) }
+                    .task(id: token.id) {
+                        do { try await Task.sleep(for: .seconds(10)) } catch { return }
+                        model.expireUndo(token)
+                    }
+            }
+            if let removal = model.removalUndo {
+                UndoToast(removal.message) { model.undoRemove() }
+                    .task(id: removal.id) {
+                        do { try await Task.sleep(for: .seconds(10)) } catch { return }
+                        model.expireRemoval(removal)
+                    }
+            }
         }
+        .padding(DesignSpacing.m)
     }
 }
 
