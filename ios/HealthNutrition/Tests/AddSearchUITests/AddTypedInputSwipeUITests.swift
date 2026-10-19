@@ -39,4 +39,33 @@ final class AddTypedInputSwipeUITests: XCTestCase {
         XCTAssertTrue(askedFirst || stillThere,
                       "the edge swipe popped the details form and lost the typed name without asking")
     }
+
+    /// The gate must switch off only while there is typed input: on a clean details form the edge drag
+    /// still pops back to Add, so the gesture is known to work again once the form is clean.
+    func testEdgeSwipeBackStillWorksOnACleanDetailsForm() throws {
+        let app = XCUIApplication()
+        app.launch()
+
+        let getStarted = app.buttons["Get started"]
+        if getStarted.waitForExistence(timeout: 5) { getStarted.tap() }
+
+        let addCandidates = app.buttons.matching(NSPredicate(format: "label == %@", "Add food, drink, or supplement"))
+        let deadline = Date().addingTimeInterval(15)
+        while Date() < deadline, !addCandidates.allElementsBoundByIndex.contains(where: { $0.exists && $0.isHittable }) {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        }
+        addCandidates.allElementsBoundByIndex.first(where: { $0.exists && $0.isHittable })?.tap()
+
+        let typeIt = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Type it in")).firstMatch
+        XCTAssertTrue(typeIt.waitForExistence(timeout: 10), "the Type it in tile is not on Add")
+        typeIt.tap()
+
+        XCTAssertTrue(app.navigationBars["Log entry"].waitForExistence(timeout: 10), "the details form did not open")
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5))
+        let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5))
+        start.press(forDuration: 0.1, thenDragTo: end)
+
+        XCTAssertTrue(app.buttons["Type it in"].waitForExistence(timeout: 5) || !app.navigationBars["Log entry"].exists,
+                      "a clean details form did not pop back on an edge swipe, so the gesture stayed off")
+    }
 }
