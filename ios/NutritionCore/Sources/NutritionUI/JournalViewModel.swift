@@ -403,29 +403,46 @@ public final class JournalViewModel: ObservableObject {
     @discardableResult
     public func copyDayToToday(_ sectionID: String, now: Date) -> IntakeCopyResult? {
         let result = runCopy(now: now) { try copier.copyDay(dayKey: sectionID, now: now) }
-        copiedIDs = result?.createdIDs ?? []
-        copyCount += 1
+        setCopyUndo(result, now: now)
         return result
     }
 
     /// The entries the latest copy created, held so Undo can remove exactly them. A new copy replaces them.
     @Published private(set) var copiedIDs: [String] = []
 
-    /// Whether the latest copy can still be undone.
-    public var canUndoCopy: Bool { !copiedIDs.isEmpty }
+    /// The moment the latest copy's Undo window closes: ten seconds after the copy. Held in the model, so the window
+    /// holds whether or not the toast is on screen.
+    private var copyUndoDeadline: Date?
+    private static let copyUndoWindow: TimeInterval = 10
+
+    /// Records the latest copy as the one Undo can take back, until its deadline.
+    private func setCopyUndo(_ result: IntakeCopyResult?, now: Date) {
+        copiedIDs = result?.createdIDs ?? []
+        copyUndoDeadline = result == nil ? nil : now.addingTimeInterval(Self.copyUndoWindow)
+        copyCount += 1
+    }
+
+    /// Whether the latest copy can still be undone at `now`: it has ids left and its window is open.
+    public func canUndoCopy(now: Date) -> Bool {
+        guard !copiedIDs.isEmpty, let deadline = copyUndoDeadline else { return false }
+        return now < deadline
+    }
 
     /// Counts each copy, so the Undo control restarts its window when a new copy lands.
     @Published public private(set) var copyCount = 0
 
 
     /// Ends the Undo window for the latest copy without undoing it.
-    public func expireCopyUndo() { copiedIDs = [] }
+    public func expireCopyUndo() {
+        copiedIDs = []
+        copyUndoDeadline = nil
+    }
 
     /// Removes exactly the entries the latest copy created, and nothing else. Taken once: a second call finds
     /// nothing to undo.
     @discardableResult
     public func undoCopy(now: Date = Date()) -> Bool {
-        guard !copiedIDs.isEmpty else { return false }
+        guard canUndoCopy(now: now) else { return false }
         // The copy notice is kept on a failed undo, so the Undo control stays on screen while copies remain. A
         // successful undo leaves nothing to say, so the notice goes.
         let notice = copyNotice
@@ -456,8 +473,7 @@ public final class JournalViewModel: ObservableObject {
     public func copyMealToToday(_ sectionID: String, groupID: String, now: Date) -> IntakeCopyResult? {
         let selector = MealLabel.allCases.first { $0.displayName == groupID }.map(MealSelector.named) ?? .other
         let result = runCopy(now: now) { try copier.copyMeal(selector, dayKey: sectionID, now: now) }
-        copiedIDs = result?.createdIDs ?? []
-        copyCount += 1
+        setCopyUndo(result, now: now)
         return result
     }
 

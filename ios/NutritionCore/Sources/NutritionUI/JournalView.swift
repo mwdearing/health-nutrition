@@ -82,7 +82,7 @@ public struct JournalView: View {
                         .padding(DesignSpacing.m)
                         .background(TokenColors.background)
                 } else if let copied = model.copyNotice {
-                    if model.canUndoCopy {
+                    if model.canUndoCopy(now: now()) {
                         UndoToast(copied) { _ = model.undoCopy(now: now()) }
                             .padding(DesignSpacing.m)
                             .task(id: model.copyCount) {

@@ -346,7 +346,7 @@ final class JournalLibraryTests: XCTestCase {
 
         store.failDeleteAt = 2
         XCTAssertFalse(model.undoCopy())
-        XCTAssertTrue(model.canUndoCopy, "the copies not yet removed stay undoable")
+        XCTAssertTrue(model.canUndoCopy(now: now), "the copies not yet removed stay undoable")
         XCTAssertNotNil(model.copyNotice, "the notice, and so the Undo control, stays after a failed undo")
         // The first copy was removed; the other two copies are still there.
         XCTAssertEqual(Set(try store.activeIntakes().map(\.id)), Set(sources).union(result.createdIDs.dropFirst()))
@@ -375,6 +375,25 @@ final class JournalLibraryTests: XCTestCase {
 
         let activeIDs = Set(try store.activeIntakes().map(\.id))
         XCTAssertEqual(activeIDs, Set([first, second]))
+    }
+
+    /// Undo is not offered after its ten-second window, even if the toast was hidden the whole time.
+    func testUndoCopyIsNotOfferedAfterItsWindowEvenIfTheToastWasHidden() throws {
+        let store = try makeStore()
+        let yesterday = now.addingTimeInterval(-86_400)
+        let source = try addFood(store, name: "Oats", at: yesterday, product: product("snap-a"))
+        let model = JournalViewModel(store: store, timeZoneIdentifier: "UTC")
+        model.load(now: now)
+        let past = try XCTUnwrap(model.sections.first { $0.id != JournalViewModel.dayKey(now, zone: TimeZone(identifier: "UTC")!) })
+        let result = try XCTUnwrap(model.copyDayToToday(past.id, now: now))
+        let later = now.addingTimeInterval(11)
+
+        XCTAssertFalse(model.canUndoCopy(now: later))
+        XCTAssertFalse(model.undoCopy(now: later))
+
+        let activeIDs = Set(try store.activeIntakes().map(\.id))
+        XCTAssertTrue(activeIDs.contains(result.createdIDs[0]), "a copy past its window is kept")
+        XCTAssertTrue(activeIDs.contains(source))
     }
 
     func testCopyMealToTodayCopiesOnlyThatMeal() throws {
