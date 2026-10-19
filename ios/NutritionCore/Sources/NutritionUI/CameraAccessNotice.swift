@@ -10,18 +10,26 @@ public enum CameraAccessState: Sendable, Equatable {
 
 /// What a camera sheet says when the camera cannot start. Access that is off gets its own message and a way to
 /// the Settings app; any other failure keeps the message the sheets already showed.
+/// Which camera sheet is asking, so each keeps its own fallback: the barcode sheet can be typed in, the label
+/// sheet's values are read from the photo and have no digits to type.
+public enum CameraSheet: Sendable, Equatable {
+    case barcode
+    case label
+}
+
 public enum CameraAccessNotice {
     public static let accessOffMessage = "Camera access is off. Turn it on in Settings to scan."
-    public static let startFailureMessage = "The camera could not be started. Type the digits instead."
+    public static let barcodeStartFailureMessage = "The camera could not be started. Type the digits instead."
+    public static let labelStartFailureMessage = "The camera could not be started. Type the values in instead."
     public static let openSettingsTitle = "Open Settings"
 
-    /// The message for a camera that did not start, given what the system says about access.
-    public static func failureMessage(for access: CameraAccessState) -> String {
+    /// The message for a camera that did not start, given what the system says about access and which sheet asks.
+    public static func failureMessage(for access: CameraAccessState, sheet: CameraSheet) -> String {
         switch access {
         case .denied, .restricted:
             return accessOffMessage
         case .authorized, .notDetermined:
-            return startFailureMessage
+            return sheet == .barcode ? barcodeStartFailureMessage : labelStartFailureMessage
         }
     }
 
