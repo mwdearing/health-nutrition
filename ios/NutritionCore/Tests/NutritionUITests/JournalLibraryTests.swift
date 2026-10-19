@@ -182,7 +182,7 @@ final class JournalLibraryTests: XCTestCase {
             let label = item.accessibilityLabel(forPick: true)
             XCTAssertFalse(label.hasPrefix("Add"))
             XCTAssertTrue(label.contains("Oats"))
-            XCTAssertTrue(label.contains("opens details"))
+            XCTAssertTrue(label.hasPrefix("Opens "))
             XCTAssertTrue(item.accessibilityLabel(forPick: false).hasPrefix("Add Oats"))
         }
     }
@@ -192,13 +192,13 @@ final class JournalLibraryTests: XCTestCase {
             components: [IntakeComponent(componentID: "ipa", name: "Ipamorelin", amount: 2, unit: .mg)])
         let supplement = LibraryItem(id: "ipa", title: "Ipamorelin", detail: "2 mg",
             isFavorite: false, template: template, kind: .supplement)
-        XCTAssertEqual(supplement.logAccessibilityLabel, "Log Ipamorelin now, 2 mg, Supplement")
+        XCTAssertEqual(supplement.logAccessibilityLabel, "Log Ipamorelin")
         let food = LibraryItem(id: "oats", title: "Oats", detail: "40 g",
             isFavorite: false, template: template, kind: .food)
-        XCTAssertEqual(food.logAccessibilityLabel, "Log Oats now, 40 g")
+        XCTAssertEqual(food.logAccessibilityLabel, "Log Oats")
         let bare = LibraryItem(id: "bare", title: "Oats", detail: "",
             isFavorite: false, template: template, kind: .food)
-        XCTAssertEqual(bare.logAccessibilityLabel, "Log Oats now")
+        XCTAssertEqual(bare.logAccessibilityLabel, "Log Oats")
     }
 
     func testTapLogsOnceAndOffersUndo() throws {
@@ -216,9 +216,9 @@ final class JournalLibraryTests: XCTestCase {
     }
 
     func testRowTapRoutesByMode() {
-        // Pick mode only ever opens details; it never logs. Normal mode only ever logs.
+        // A row tap opens details in every mode and never logs (#503). Logging is the row's own Log control.
         XCTAssertEqual(LibraryRowTap.forRow(pickMode: true), .openDetails)
-        XCTAssertEqual(LibraryRowTap.forRow(pickMode: false), .openDetails, "a row never logs by itself (#503)")
+        XCTAssertEqual(LibraryRowTap.forRow(pickMode: false), .openDetails, "a row tap never logs (#503)")
     }
 
 

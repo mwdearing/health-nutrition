@@ -86,7 +86,7 @@ public struct AddHomeView: View {
                                 }
                             }
                             .buttonStyle(.borderless)
-                            .accessibilityLabel("\(recent.template.displayName), opens details")
+                            .accessibilityLabel("Opens \(recent.template.displayName)")
                             .accessibilityHint("Opens details without adding an entry")
                             Spacer()
                             QuietCapsule("Add") {

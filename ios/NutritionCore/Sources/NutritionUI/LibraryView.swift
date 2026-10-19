@@ -202,7 +202,7 @@ public struct LibraryView: View {
                 QuietCapsule("Add") {
                     if self.model.quickAdd(item, now: self.now()) { self.onAdded() }
                 }
-                .accessibilityLabel("Log \(item.title)")
+                .accessibilityLabel(item.logAccessibilityLabel)
             }
             Button {
                 if item.isFavorite { self.model.removeFavorite(item) } else { self.model.addFavorite(item) }
@@ -217,4 +217,3 @@ public struct LibraryView: View {
     }
 }
 
-/// The details hint, set only when the row's tap really opens details. Otherwise no hint is set at all.

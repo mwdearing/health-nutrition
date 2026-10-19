@@ -196,13 +196,13 @@ public struct LibraryItem: Equatable, Identifiable {
 
     public func accessibilityLabel(forPick: Bool) -> String {
         guard forPick else { return accessibilityLabel }
-        let label = "\(title), opens details"
+        let label = "Opens \(title)"
         return kind == .supplement ? label + ", " + kind.displayName : label
     }
 
     /// The label for a tap that logs at once: the name, the amounts and, for a supplement, its kind.
     public var logAccessibilityLabel: String {
-        let label = detail.isEmpty ? "Log \(title) now" : "Log \(title) now, \(detail)"
+        let label = "Log \(title)"
         return kind == .supplement ? label + ", " + kind.displayName : label
     }
 
