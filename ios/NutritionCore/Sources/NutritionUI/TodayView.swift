@@ -191,7 +191,7 @@ public struct TodayView: View {
                     Spacer(minLength: DesignSpacing.s)
                 }
                 HStack(spacing: DesignSpacing.m) {
-                    QuietCapsule("Other amount") {
+                    QuietCapsule("Type an amount") {
                         self.otherWaterOpen.toggle()
                         self.otherWaterFocused = self.otherWaterOpen
                     }
@@ -208,9 +208,7 @@ public struct TodayView: View {
                             .multilineTextAlignment(.trailing)
                             .focused(focus)
                             .accessibilityLabel(self.model.otherWaterFieldLabel)
-                            #if os(iOS)
-                            .keyboardType(.decimalPad)
-                            #endif
+                            .decimalAmountKeyboard()
                         }
                         Text(self.model.otherWaterUnitSymbol)
                             .foregroundStyle(TokenColors.textSecondary)
@@ -354,6 +352,7 @@ private struct SwipeToDeleteRow<Content: View>: View {
     let onDelete: () -> Void
     @ViewBuilder let content: () -> Content
     @State private var offset: CGFloat = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var settled: CGFloat = 0
     private let revealWidth: CGFloat = 84
 
@@ -366,8 +365,8 @@ private struct SwipeToDeleteRow<Content: View>: View {
                     .font(.title3)
                     .frame(width: revealWidth)
                     .frame(maxHeight: .infinity)
-                    .foregroundStyle(.white)
-                    .background(TokenColors.error, in: RoundedRectangle(cornerRadius: DesignRadius.control))
+                    .foregroundStyle(TokenColors.background)
+                    .background(TokenColors.error, in: RoundedRectangle(cornerRadius: DesignRadius.control, style: .continuous))
             }
             .accessibilityLabel(accessibilityName)
             .opacity(offset < 0 ? 1 : 0)
@@ -388,7 +387,7 @@ private struct SwipeToDeleteRow<Content: View>: View {
                             offset = min(0, max(-revealWidth, settled + value.translation.width))
                         }
                         .onEnded { _ in
-                            withAnimation(.snappy) {
+                            withAnimation(reduceMotion ? nil : .snappy) {
                                 settled = offset < -revealWidth / 2 ? -revealWidth : 0
                                 offset = settled
                             }
@@ -399,7 +398,7 @@ private struct SwipeToDeleteRow<Content: View>: View {
 
     /// Both paths close the row before deleting, so a failed delete does not leave it revealed.
     private func closeAndDelete() {
-        withAnimation(.snappy) { offset = 0; settled = 0 }
+        withAnimation(reduceMotion ? nil : .snappy) { offset = 0; settled = 0 }
         onDelete()
     }
 }

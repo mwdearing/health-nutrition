@@ -127,6 +127,16 @@ final class ConnectionsPrivacyPreferenceTests: XCTestCase {
         XCTAssertEqual(model.quickWaterEquivalenceText, "= 12 fl oz")
     }
 
+    /// Issue 389: switching units and saving without typing must keep the exact stored milliliters.
+    func testSwitchingUnitsAndSavingWithoutTypingKeepsTheExactStoredMilliliters() throws {
+        let preferences = InMemoryDisplayPreferences(quickWaterMilliliters: Decimal(string: "400.55")!)
+        let model = ConnectionsPrivacyViewModel(store: try makeStore(), preferences: preferences)
+        model.unitSystem = .usCustomary
+        model.unitSystem = .metric
+        XCTAssertTrue(model.saveQuickWaterAmount())
+        XCTAssertEqual(preferences.quickWaterMilliliters, Decimal(string: "400.55")!)
+    }
+
     /// Switching the unit system restates a typed amount rather than leaving it to be read as a
     /// different measure: the same glass, in the unit the field is now labeled in.
     func testQuickWaterUnitConversionFollowsTheUnitSystemChange() throws {
@@ -136,25 +146,13 @@ final class ConnectionsPrivacyPreferenceTests: XCTestCase {
 
         model.unitSystem = .usCustomary
         XCTAssertEqual(model.quickWaterText, "8.45")
-        // Saving without touching the field stores the same glass of water, not 8.45 mL. The figure goes
-        // through the digits the field can show, so what is stored is what 8.45 fl oz stands for and not
-        // exactly the 250 mL it started as: 250 mL is 8.4535... fl oz, and the field carries two digits.
+        // Saving without touching the field stores the same figure it started with, exactly. The field only
+        // shows a rounded figure; switching units must not write that rounding back into the stored value.
         XCTAssertTrue(model.saveQuickWaterAmount())
-        XCTAssertEqual(
-            preferences.quickWaterMilliliters,
-            Decimal(string: "249.896324803125", locale: AmountParser.locale))
-        XCTAssertNotEqual(preferences.quickWaterMilliliters, Decimal(string: "8.45", locale: AmountParser.locale))
-        // Close enough to the original glass to be that glass, at the precision the field shows.
-        XCTAssertEqual(
-            DisplayRounding.rounded(preferences.quickWaterMilliliters, fractionDigits: 0), Decimal(250))
-
-        // And back under metric the field states that stored figure rather than the 250 it began as,
-        // because the round trip went through a rounded figure and rounding is not undone by switching.
+        XCTAssertEqual(preferences.quickWaterMilliliters, Decimal(250))
+        // Back under metric the field states the stored figure, 250 mL.
         model.unitSystem = .metric
-        XCTAssertEqual(
-            AmountParser.parse(model.quickWaterText), preferences.quickWaterMilliliters,
-            "the field states the stored milliliters, not the 250 mL the round trip started from")
-        XCTAssertNotEqual(model.quickWaterText, "250")
+        XCTAssertEqual(model.quickWaterText, "250")
     }
 
     /// The helper line answers for the figure in the field, not for the one last saved: a glass typed

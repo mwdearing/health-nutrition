@@ -35,7 +35,7 @@ public struct CommunityProductSearchView: View {
         List {
             Section {
                 LabeledField("Search foods and products", focus: $searchFocused) { focus in
-                    TextField("Search foods and products", text: $query).focused(focus)
+                    TextField("Search foods and products", text: $query).focused(focus).submitLabel(.search)
                 }.onSubmit { search() }
                 Picker("Kind", selection: $kind) {
                     Text("All kinds").tag(ProductKind?.none)

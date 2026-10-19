@@ -196,13 +196,16 @@ public struct LibraryItem: Equatable, Identifiable {
 
     public func accessibilityLabel(forPick: Bool) -> String {
         guard forPick else { return accessibilityLabel }
-        let label = "\(title), opens details"
+        let label = "Opens \(title)"
         return kind == .supplement ? label + ", " + kind.displayName : label
     }
 
     /// The label for a tap that logs at once: the name, the amounts and, for a supplement, its kind.
+    /// The amounts a row or its Log control reads as the accessibility value, so VoiceOver still states them (#503).
+    public var accessibilityValue: String { detail }
+
     public var logAccessibilityLabel: String {
-        let label = detail.isEmpty ? "Log \(title) now" : "Log \(title) now, \(detail)"
+        let label = "Log \(title)"
         return kind == .supplement ? label + ", " + kind.displayName : label
     }
 
@@ -442,6 +445,16 @@ public final class LibraryViewModel: ObservableObject {
         guard let id = item.template.productSnapshotID, let product = try store.product(snapshotID: id) else { throw IntakeRepeatError.productUnavailable }
         return try CustomProductMapping.legacyDraft(from: product)
     }
+    /// True when a search has no match: the list is empty only because of the typed text, so the empty state names
+    /// the search rather than the segment (a typo must not read as "no favorites").
+    public var isSearchEmpty: Bool {
+        Self.isSearchEmpty(visibleCount: visibleItems.count, searchText: searchText)
+    }
+
+    static func isSearchEmpty(visibleCount: Int, searchText: String) -> Bool {
+        visibleCount == 0 && !searchText.isEmpty
+    }
+
     public var visibleItems: [LibraryItem] {
         segmentItems.filter { searchText.isEmpty || $0.title.localizedCaseInsensitiveContains(searchText) }
     }

@@ -183,6 +183,11 @@ public struct GoalSetupView: View {
                     }
                 }
             } else {
+                if model.step == .about, let notice = model.aboutMissingNotice {
+                    Text(notice)
+                        .font(.footnote)
+                        .foregroundStyle(TokenColors.textSecondary)
+                }
                 PrimaryCapsule("Next") { model.next() }
                     .disabled(!model.canGoNext)
             }

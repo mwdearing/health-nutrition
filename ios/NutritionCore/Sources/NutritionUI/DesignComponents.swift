@@ -123,6 +123,8 @@ public struct PrimaryCapsule: View {
         self.action = action
     }
 
+    @Environment(\.isEnabled) private var isEnabled
+
     public var body: some View {
         Button(action: action) {
             HStack(spacing: DesignSpacing.s) {
@@ -134,6 +136,8 @@ public struct PrimaryCapsule: View {
             .foregroundStyle(TokenColors.onMint)
             .frame(maxWidth: .infinity, minHeight: 50)
             .background(TokenColors.mint, in: Capsule())
+            // A disabled capsule looks disabled: the fixed colours alone read as tappable.
+            .opacity(isEnabled ? 1 : 0.5)
         }
         .buttonStyle(.plain)
     }
@@ -299,6 +303,6 @@ public struct UndoToast: View {
         }
         .foregroundStyle(TokenColors.textPrimary)
         .padding(DesignSpacing.m)
-        .background(TokenColors.accentTint, in: RoundedRectangle(cornerRadius: DesignRadius.control))
+        .background(TokenColors.accentTint, in: RoundedRectangle(cornerRadius: DesignRadius.control, style: .continuous))
     }
 }

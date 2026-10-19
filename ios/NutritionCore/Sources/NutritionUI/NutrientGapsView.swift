@@ -138,7 +138,10 @@ struct NutrientGapRowView: View {
                 Capsule().fill(TokenColors.track)
                 HStack(spacing: 0) {
                     Rectangle().fill(TokenColors.accent).frame(width: food)
-                    Rectangle().fill(TokenColors.mint).frame(width: min(supplements, max(width - food, 0)))
+                    // Supplements are hatched on the accent fill, so the two parts differ without colour alone.
+                    Rectangle().fill(TokenColors.accent)
+                        .overlay(HatchLines().stroke(TokenColors.background, lineWidth: 1))
+                        .frame(width: min(supplements, max(width - food, 0)))
                 }
                 .clipShape(Capsule())
                 if let marker = row.referenceMarker {

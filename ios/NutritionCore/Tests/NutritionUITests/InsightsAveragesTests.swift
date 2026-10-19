@@ -37,6 +37,24 @@ final class InsightsAveragesTests: XCTestCase {
         XCTAssertEqual(result.lines.map(\.text), ["Protein: average 30 g a day over 1 logged day"])
     }
 
+    /// A partly logged day counts with its known sum, and the line says the average is a minimum (#510).
+    func testPartlyLoggedDaysCountAsMinimums() {
+        let partial = InsightsAverages.Day(
+            key: "2023-11-14",
+            totals: DailyTotals(
+                totals: ["protein": NutrientTotal(value: .unknown, coverage: Coverage(
+                    knownCount: 1, totalCount: 2, hasBelowReportingThreshold: false, hasUnknown: true))],
+                knownSums: ["protein": .known(30, .g)], missingCounts: ["protein": 1]))
+        let result = make([day("2023-11-15", protein: 60), partial])
+        XCTAssertEqual(result.lines.map(\.text), ["Protein: at least 45 g a day over 2 logged days"])
+    }
+
+    /// A day with nothing known for the nutrient is left out of its count, never counted as 0.
+    func testAWhollyUnknownDayIsLeftOutOfTheCount() {
+        let result = make([day("2023-11-15", protein: 60), day("2023-11-14", protein: nil)])
+        XCTAssertEqual(result.lines.map(\.text), ["Protein: average 60 g a day over 1 logged day"])
+    }
+
     func testNothingKnownGivesNoLineRatherThanAZero() {
         XCTAssertTrue(make([day("2023-11-15", protein: nil)]).lines.isEmpty)
         XCTAssertTrue(make([]).lines.isEmpty)

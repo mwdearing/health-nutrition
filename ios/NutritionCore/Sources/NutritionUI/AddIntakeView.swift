@@ -3,6 +3,9 @@ import NutritionDomain
 import NutritionJournal
 import NutritionProviders
 import SwiftUI
+#if os(iOS)
+import UIKit
+#endif
 
 public struct AddIntakeView: View {
     @ObservedObject var model: AddIntakeViewModel
@@ -337,6 +340,14 @@ extension View {
     func decimalAmountKeyboard() -> some View {
         #if os(iOS)
         self.keyboardType(.decimalPad)
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") {
+                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                    }
+                }
+            }
         #else
         self
         #endif
