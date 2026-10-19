@@ -165,6 +165,13 @@ public final class AddIntakeViewModel: ObservableObject {
     private var isSettingServings = false
     /// The separator a typed count is read with: the device's, unless a test sets another.
     private let countDecimalSeparator: String?
+    /// Grams for one cup, tablespoon or teaspoon, as the picked food's own record lists them. Empty when none is listed.
+    @Published public private(set) var listedPortions: [MeasureUnit: Decimal] = [:]
+    private let portionLookup: (any HouseholdPortionLookup)?
+    /// Whether the picked food's measures have been asked for, so focusing the amount again sends nothing new.
+    private var portionsAsked = false
+    /// Whether the asked-for measures have come back, or the request has failed.
+    private var portionsLoaded = false
     /// True while the amount is the one a count of servings set, so an emptied Servings field can clear it.
     private var amountFromServings = false
     /// Why a typed amount was cleared when a pick came in with a unit it cannot total in. Nil otherwise; it
@@ -304,7 +311,7 @@ public final class AddIntakeViewModel: ObservableObject {
     /// dimension it is stated in; a "serving" or a count logged against it saves unknown values for the day.
     public var unitOptions: [MeasureUnit] {
         switch lookedUp?.basis {
-        case .per100g?: return units.filter { $0.dimension == .mass }
+        case .per100g?: return units.filter { $0.dimension == .mass || listedPortions[$0] != nil }
         case .per100ml?: return units.filter { $0.dimension == .volume }
         default: return units
         }
@@ -338,10 +345,12 @@ public final class AddIntakeViewModel: ObservableObject {
         labelScannerAvailable: Bool = true,
         labelSubmitter: CommunityLabelSubmitting? = nil,
         isSharingAllowed: @escaping @MainActor () -> Bool = { false },
-        countDecimalSeparator: String? = Locale.current.decimalSeparator
+        countDecimalSeparator: String? = Locale.current.decimalSeparator,
+        portionLookup: (any HouseholdPortionLookup)? = nil
     ) {
         self.store = store
         self.countDecimalSeparator = countDecimalSeparator
+        self.portionLookup = portionLookup
         self.occurredAt = now
         self.timeZoneIdentifier = timeZoneIdentifier
         self.makeID = makeID
@@ -433,6 +442,32 @@ public final class AddIntakeViewModel: ObservableObject {
     public func fieldDidBegin(_ field: AddIntakeField) {
         objectWillChange.send()
         leftFields.remove(field)
+        // The household measures are asked for only once the person starts an amount, not when a food is picked.
+        if field == .amount, !portionsAsked, portionLookup != nil {
+            portionsAsked = true
+            Task { await loadListedPortions() }
+        }
+    }
+
+    /// Asks the source for the cup, tablespoon and teaspoon weights a USDA food lists. A failed or slow request
+    /// means those units are not offered; nothing else waits on it.
+    public func loadListedPortions() async {
+        guard let lookup = portionLookup, let picked = lookedUp, picked.basis == .per100g,
+              let sourceID = picked.sourceID, let fdcId = Int(sourceID)
+        else { return }
+        // Settled however the request ends, so the density notes wait for it and then say what is true.
+        defer { if lookedUp?.sourceID == sourceID { portionsLoaded = true } }
+        let portions = await lookup.listedPortions(fdcId: fdcId)
+        // A later pick may have replaced this food while the request ran; its portions are not this food's.
+        guard lookedUp?.sourceID == sourceID else { return }
+        listedPortions = portions
+    }
+
+    /// True while a USDA food's listed measures are still being asked for. The density notes wait for it, so
+    /// they never say a cup cannot be measured when the food does list one.
+    private var portionsPending: Bool {
+        portionLookup != nil && lookedUp?.basis == .per100g && lookedUp?.sourceID != nil
+            && portionsAsked && !portionsLoaded
     }
 
     /// Clears the attempted save and the per-field history, for when the form is reset.
@@ -452,7 +487,8 @@ public final class AddIntakeViewModel: ObservableObject {
     /// The line under the amount when a typical density converts the volume: the grams and the food
     /// whose density gave them. Nil when no conversion applies.
     public var densityNote: String? {
-        guard let conversion = volumeToMass else { return nil }
+        // A measure the food lists converts through its own gram weight, so no density is described for it.
+        guard listedPortions[unit] == nil, !portionsPending, let conversion = volumeToMass else { return nil }
         return "About \(DecimalFormatting.text(conversion.grams)) g, using a typical density for "
             + "\(conversion.ingredientName)."
     }
@@ -460,8 +496,8 @@ public final class AddIntakeViewModel: ObservableObject {
     /// The line shown when a volume is chosen for a food the catalog does not name, so the amount is saved in
     /// milliliters. Nil for a mass, or for a volume the density rule does not reach.
     public var densityUnavailableNote: String? {
-        guard UnitSelection.typedVolumes.contains(unit), densityApplies, !typedName.isEmpty,
-            IngredientDensityCatalog.match(typedName) == nil
+        guard listedPortions[unit] == nil, !portionsPending, UnitSelection.typedVolumes.contains(unit), densityApplies,
+            !typedName.isEmpty, IngredientDensityCatalog.match(typedName) == nil
         else { return nil }
         return "No typical density is known for this food, so it is saved in mL."
     }
@@ -496,6 +532,10 @@ public final class AddIntakeViewModel: ObservableObject {
         // An amount shown rounded in the reader's unit and left alone is saved as the exact stored quantity.
         if let backing = prefillBacking, backing.shownAmount == amount, backing.shownUnit == unit {
             return (backing.storedAmount, backing.storedUnit)
+        }
+        // A household measure the food lists converts through its own gram weight, which wins over any density.
+        if let gramsPerUnit = listedPortions[unit] {
+            return (amount * gramsPerUnit, .g)
         }
         if let conversion = densityConversion(amount: amount, unit: unit, name: name) {
             return (conversion.grams, .g)
@@ -822,6 +862,9 @@ public final class AddIntakeViewModel: ObservableObject {
         lookedUp = nil
         // A serving from an earlier product must not stay on the Servings control or count the next entry.
         servingOption = nil
+        listedPortions = [:]
+        portionsAsked = false
+        portionsLoaded = false
         unitNotice = nil
         servingCount = ""
         amountFromServings = false
@@ -1219,4 +1262,10 @@ extension String {
     var nilIfEmpty: String? {
         isEmpty ? nil : self
     }
+}
+
+/// Asks a food source for the cup, tablespoon and teaspoon gram weights a food lists. Implemented by the app
+/// target over the USDA client, so the form never holds a key or a network client.
+public protocol HouseholdPortionLookup: Sendable {
+    func listedPortions(fdcId: Int) async -> [MeasureUnit: Decimal]
 }

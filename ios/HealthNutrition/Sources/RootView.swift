@@ -413,6 +413,7 @@ struct RootView: View {
                 barcode: BarcodeScanner.isAvailable, label: LabelTextScanner.isAvailable),
             lookup: services.barcodeLookup, preferences: services.displayPreferences,
             labelSubmitter: services.community,
+            portionLookup: services.householdPortions,
             isSharingAllowed: { services.account?.sharingAllowed ?? false })
     }
 

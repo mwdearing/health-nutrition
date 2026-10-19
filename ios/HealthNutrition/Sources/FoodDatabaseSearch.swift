@@ -58,6 +58,8 @@ struct FoodDatabaseSearch: ProductNameSearching {
     }
 }
 
+extension USDAFoodDataClient: HouseholdPortionLookup {}
+
 /// Adapts the USDA client to the name-search protocol. USDA has no barcodes, so rows carry an empty barcode,
 /// which the draft stores as none.
 struct USDAProductNameSearch: ProductNameSearching {
@@ -99,6 +101,7 @@ struct USDAProductNameSearch: ProductNameSearching {
             // per 100 g internally.
             serving: food.servingGrams.map { ServingDefinition(quantity: $0 / Self.gramsPerOunce, unit: .oz, text: food.servingText) }
                 ?? food.servingText.map { ServingDefinition(quantity: nil, unit: nil, text: $0) },
-            version: nil)
+            version: nil,
+            sourceID: String(food.fdcId))
     }
 }

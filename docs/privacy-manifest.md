@@ -44,6 +44,11 @@ Food Facts, read from the words. Opening one of the results sends nothing: the
 form is filled from the reply already received. It works signed out and is
 limited to six Open Food Facts searches a minute.
 The screen says so beside the results; supplements are not searched there.
+When you start entering an amount for a USDA food, the app asks USDA for that food's
+cup, tablespoon and teaspoon weights (`api.nal.usda.gov`, `/fdc/v1/food/{fdcId}`).
+The request includes the food's USDA ID, not the amount you enter. The USDA key
+travels in a request header, and a failed request only means those units are not
+offered.
 
 The HealthRelay destination is unavailable in this version. After the person
 connects Apple Health in Settings and allows it, nutrients from

@@ -70,6 +70,8 @@ final class AppServices {
     let productService: (any CommunityProductServicing)?
     /// Name search for Find products over USDA and Open Food Facts. Nil in builds that make no network calls at all.
     var productNameSearch: (any ProductNameSearching)? = nil
+    /// Cup, tablespoon and teaspoon weights a picked USDA food lists. Nil when the build has no USDA key.
+    var householdPortions: (any HouseholdPortionLookup)? = nil
     let productSharing: ProductShareCoordinator?
     private var connectivityMonitor: NWPathMonitor?
     /// Keeps the supplement list in step with the journal: the app's reloads reread it while the list is on
@@ -180,9 +182,11 @@ final class AppServices {
         let usdaKey = (Bundle.main.object(forInfoDictionaryKey: "USDA_FDC_API_KEY") as? String)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         // An unexpanded build setting reads as the literal "$(USDA_FDC_API_KEY)"; that is no key.
-        let usda = usdaKey.flatMap { key -> USDAProductNameSearch? in
-            key.isEmpty || key.contains("$(") ? nil : USDAProductNameSearch(client: USDAFoodDataClient(apiKey: key))
+        let usdaClient = usdaKey.flatMap { key -> USDAFoodDataClient? in
+            key.isEmpty || key.contains("$(") ? nil : USDAFoodDataClient(apiKey: key)
         }
+        householdPortions = usdaClient
+        let usda = usdaClient.map { USDAProductNameSearch(client: $0) }
         productNameSearch = FoodDatabaseSearch(openFoodFacts: openFoodFacts, usda: usda)
         let totals = JournalSnapshotTotals(store: journalStore)
         let healthKitDelivery = HealthKitDeliveryWorker(

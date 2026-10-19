@@ -112,11 +112,13 @@ public struct LookedUpProduct: Sendable, Hashable {
     /// The source's own version or last-modified marker, stored with an entry so a later reader can
     /// tell how fresh the values were.
     public let version: String?
+    /// The source's own id for the food, when it has one (a USDA fdcId), used to ask for its listed measures.
+    public let sourceID: String?
 
     public init(
         barcode: String, name: String?, brand: String?, basis: BarcodeLookupBasis,
         nutrients: [String: NutrientValue], attribution: ProductAttribution? = nil,
-        serving: ServingDefinition? = nil, version: String? = nil
+        serving: ServingDefinition? = nil, version: String? = nil, sourceID: String? = nil
     ) {
         self.barcode = barcode
         self.name = name
@@ -125,6 +127,7 @@ public struct LookedUpProduct: Sendable, Hashable {
         self.attribution = attribution
         self.serving = serving
         self.version = version
+        self.sourceID = sourceID
         var complete: [String: NutrientValue] = [:]
         for key in Self.standardKeys where nutrients[key] == nil {
             complete[key] = .unknown

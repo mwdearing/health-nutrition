@@ -33,6 +33,7 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
     private let preferences: DisplayPreferences
     private let now: () -> Date
     private let labelSubmitter: CommunityLabelSubmitting?
+    private let portionLookup: (any HouseholdPortionLookup)?
     private let isSharingAllowed: @MainActor () -> Bool
 
     public init(store: JournalStore, meal: MealLabel? = nil,
@@ -41,6 +42,7 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
         preferences: DisplayPreferences = InMemoryDisplayPreferences(),
         now: @escaping () -> Date = { Date() },
         labelSubmitter: CommunityLabelSubmitting? = nil,
+        portionLookup: (any HouseholdPortionLookup)? = nil,
         isSharingAllowed: @escaping @MainActor () -> Bool = { false }) {
         self.store = store
         self.meal = meal
@@ -49,6 +51,7 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
         self.preferences = preferences
         self.now = now
         self.labelSubmitter = labelSubmitter
+        self.portionLookup = portionLookup
         self.isSharingAllowed = isSharingAllowed
     }
 
@@ -63,7 +66,8 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
         let model = AddIntakeViewModel(
             store: store, now: now, lookup: lookup, preferences: preferences,
             labelScannerAvailable: scannerAvailability.label,
-            labelSubmitter: labelSubmitter, isSharingAllowed: isSharingAllowed)
+            labelSubmitter: labelSubmitter, isSharingAllowed: isSharingAllowed,
+            portionLookup: portionLookup)
         model.meal = meal
         return model
     }
