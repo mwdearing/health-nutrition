@@ -19,7 +19,7 @@ public struct CustomProductEditorView: View {
             }
             if !model.historicalIntakeReference.isEmpty {
                 Section("Historical intake reference") {
-                    Text("These are consumed amounts, not product serving or label facts. Choose the product kind, facts basis and any stated facts below.")
+                    Text("Amounts you ate or drank, not the product's label values. Choose the product kind, facts basis and any stated facts below.")
                     ForEach(Array(model.historicalIntakeReference.enumerated()), id: \.offset) { _, text in Text(text) }
                 }
             }

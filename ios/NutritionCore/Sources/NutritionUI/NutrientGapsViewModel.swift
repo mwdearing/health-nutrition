@@ -485,22 +485,24 @@ public final class NutrientGapsViewModel: ObservableObject {
             if intake.category != DailyTotalsBuilder.waterCategory { logged.insert(day.date) }
             let snapshot = current.productSnapshotID.flatMap { try? store.product(snapshotID: $0) }
             let isSupplement = snapshot?.kind == .supplement
-            let byComponent = snapshot == nil && intake.category != DailyTotalsBuilder.waterCategory
-            var totals: DailyTotals?
-            if !byComponent {
-                totals = try DailyTotalsBuilder.totals(for: [intake], store: store, lookup: lookup, nutrients: nutrients)
-            }
+            // Every entry goes through the one totals path, so the negative-amount rule and the partial sums
+            // are the same here as on Today. The known part of a partial entry is kept; the entry counts once
+            // as missing for each nutrient it leaves unknown.
+            let totals = try DailyTotalsBuilder.totals(for: [intake], store: store, lookup: lookup, nutrients: nutrients)
             for nutrient in nutrients {
-                let values: [NutrientValue]
-                if let totals {
-                    guard let total = totals.total(for: nutrient), total.coverage.totalCount > 0 else { continue }
-                    values = [total.value]
+                guard let total = totals.total(for: nutrient), total.coverage.totalCount > 0 else { continue }
+                // A fully known entry is its total. Otherwise the known part comes from the same totals value Today
+                // uses, and a bound or an unknown adds only the missing note. A bound never zeroes a known part.
+                var values: [NutrientValue] = []
+                if total.coverage.hasUnknown || total.coverage.hasBelowReportingThreshold {
+                    if total.coverage.knownCount > 0, let known = totals.knownSum(for: nutrient) {
+                        values.append(known)
+                    }
+                    values.append(.unknown)
                 } else {
-                    values = current.components.map {
-                        DailyTotalsBuilder.value(for: $0, snapshot: nil, nutrient: nutrient, lookup: lookup)
-                    }.filter { $0 != .notApplicable }
-                    guard !values.isEmpty else { continue }
+                    values = [total.value]
                 }
+                guard !values.isEmpty else { continue }
                 let unit = Self.unit(for: nutrient)
                 var amount = Decimal(0)
                 var anyKnown = false

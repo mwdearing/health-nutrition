@@ -140,8 +140,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     public static let eraseButtonTitle = "Erase all data"
     /// The confirmation the button is guarded by. It names what goes and says the erase cannot be undone.
     public static let eraseConfirmationMessage =
-        "Every entry, favorite, saved meal, recipe, supplement and daily goal this app stores on this device is deleted, and the daily reminder "
-        + "is switched off, along with any export file it wrote. This cannot be undone. A copy you already shared or saved elsewhere — in Files, "
+        "Every entry, favorite, saved meal, recipe, supplement and daily goal this app stores on this device is deleted, and the daily, water and supplement reminders "
+        + "are switched off, along with any export file it wrote. This cannot be undone. A copy you already shared or saved elsewhere — in Files, "
         + "in mail, in cloud storage or in another app — is not erased: the app cannot reach it, so delete "
         + "it there yourself. Nutrition and water data this app wrote to Apple Health stays there: delete it in the Health app. "
         + "Erasing also signs you out on this phone; your community account and any "
@@ -150,8 +150,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// Sits under the erase button, so the cost of the action is read before it is tapped rather than
     /// only in the dialog that follows.
     public static let eraseFooterMessage =
-        "Erases the journal, favorites, saved meals, recipes, your supplement list and daily goals this app stores on this device and switches off the daily "
-        + "reminder, plus any export file it wrote. A copy you already shared or saved elsewhere — in Files, in mail, in cloud storage "
+        "Erases the journal, favorites, saved meals, recipes, your supplement list and daily goals this app stores on this device and switches off the daily, water and supplement "
+        + "reminders, plus any export file it wrote. A copy you already shared or saved elsewhere — in Files, in mail, in cloud storage "
         + "or in another app — is not erased: delete it there yourself. Data this app wrote to Apple Health stays there too: delete it in the Health app. Erasing signs you out on this phone; "
         + "your community account and any shared labels remain on the server."
     public static let eraseFailedMessage =

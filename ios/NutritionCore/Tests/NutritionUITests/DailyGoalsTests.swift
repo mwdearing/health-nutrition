@@ -184,6 +184,148 @@ final class DailyGoalsTests: XCTestCase {
         XCTAssertEqual(try goals.goal(for: "water")?.unit, .mL)
     }
 
+    /// Clearing the field and tapping away must not delete the stored goal. Removal is an explicit
+    /// clear (issue #506), so an empty field on focus loss puts the stored target back.
+    func testEmptyingAGoalFieldAndLeavingItKeepsTheStoredGoal() throws {
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+        model.draftText["protein"] = ""
+
+        XCTAssertTrue(model.commitTarget(for: "protein"))
+
+        XCTAssertEqual(try goals.goal(for: "protein")?.target, Decimal(60))
+        XCTAssertEqual(model.draftText["protein"], "60")
+        XCTAssertNil(model.rowError["protein"])
+    }
+
+    /// The explicit clear removes the goal and says so; the undo path restores it through `setTarget`.
+    func testClearingAGoalRemovesItExplicitly() throws {
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+
+        XCTAssertTrue(model.clearTarget(for: "protein"))
+
+        XCTAssertNil(try goals.goal(for: "protein"))
+        XCTAssertEqual(model.draftText["protein"], "")
+    }
+
+    /// Clear removes the goal, and Undo puts back the same goal (issue #506).
+    func testClearThenUndoRestoresTheGoal() throws {
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+
+        XCTAssertTrue(model.clearTarget(for: "protein"))
+        XCTAssertNil(try goals.goal(for: "protein"))
+        XCTAssertEqual(model.clearedGoal?.nutrient, "protein")
+
+        XCTAssertTrue(model.undoClear())
+        XCTAssertEqual(try goals.goal(for: "protein")?.target, Decimal(60))
+        XCTAssertEqual(model.draftText["protein"], "60")
+        XCTAssertNil(model.clearedGoal)
+    }
+
+    /// Return on an empty field removes the goal the same way Clear does, and Undo restores it.
+    func testReturnOnAnEmptyFieldRemovesTheGoalAndUndoRestoresIt() throws {
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+        model.draftText["protein"] = ""
+
+        XCTAssertTrue(model.submitTarget(for: "protein"))
+        XCTAssertNil(try goals.goal(for: "protein"))
+
+        XCTAssertTrue(model.undoClear())
+        XCTAssertEqual(try goals.goal(for: "protein")?.target, Decimal(60))
+    }
+
+    /// Return on a filled field commits it and removes nothing.
+    func testReturnOnAFilledFieldCommitsWithoutRemoving() throws {
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+        model.draftText["protein"] = "75"
+
+        XCTAssertTrue(model.submitTarget(for: "protein"))
+        XCTAssertEqual(try goals.goal(for: "protein")?.target, Decimal(75))
+        XCTAssertNil(model.clearedGoal)
+    }
+
+    /// Undo covers only the latest action: a goal saved for another nutrient ends the Undo offer.
+    func testSavingAnotherGoalEndsThePendingUndo() throws {
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+        XCTAssertTrue(model.clearTarget(for: "protein"))
+        model.draftText["carbohydrate"] = "200"
+        XCTAssertTrue(model.commitTarget(for: "carbohydrate"))
+
+        XCTAssertNil(model.clearedGoal)
+        XCTAssertFalse(model.undoClear())
+        XCTAssertNil(try goals.goal(for: "protein"))
+    }
+
+    /// Clearing a nutrient that has no goal removes nothing, so it must not end a pending Undo for another goal.
+    func testClearingAnEmptyRowKeepsAPendingUndoForAnotherGoal() throws {
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+        XCTAssertTrue(model.clearTarget(for: "protein"))
+        model.draftText["carbohydrate"] = ""
+
+        XCTAssertTrue(model.submitTarget(for: "carbohydrate"))
+        XCTAssertEqual(model.clearedGoal?.nutrient, "protein")
+        XCTAssertTrue(model.undoClear())
+        XCTAssertEqual(try goals.goal(for: "protein")?.target, Decimal(60))
+    }
+
+    /// A goal saved after a Clear is the person's newer value, so Undo must not overwrite it.
+    func testUndoAfterANewerGoalWasSavedKeepsTheNewerGoal() throws {
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+        XCTAssertTrue(model.clearTarget(for: "protein"))
+        model.draftText["protein"] = "80"
+        XCTAssertTrue(model.commitTarget(for: "protein"))
+
+        XCTAssertFalse(model.undoClear())
+        XCTAssertEqual(try goals.goal(for: "protein")?.target, Decimal(80))
+        XCTAssertNil(model.clearedGoal)
+    }
+
+    /// When the stored goal cannot be read, Clear must not remove it: Undo could not put it back.
+    func testClearDoesNotRemoveAGoalItCannotRead() throws {
+        let goals = SpyGoalStore()
+        try goals.writeBehind(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+        goals.failsGoalReads = true
+
+        XCTAssertFalse(model.clearTarget(for: "protein"))
+        goals.failsGoalReads = false
+        XCTAssertEqual(try goals.goal(for: "protein")?.target, Decimal(60))
+        XCTAssertNil(model.clearedGoal)
+    }
+
     /// Metric display, water typed in fl oz: 8 fl oz is stored as 236.588 mL and shown as 237, so the
     /// field text never matches the read. An outside change must still be followed, not written back.
     func testAWaterGoalTypedInAnotherUnitFollowsAnOutsideChange() throws {
@@ -884,7 +1026,7 @@ final class DailyGoalsTests: XCTestCase {
 
         for text in ["", "  ", "abc", "0", "-3", "1,5,0", "1e3", "1.2.3", "12g", "."] {
             XCTAssertFalse(model.setTarget(text, for: "protein"), text)
-            XCTAssertEqual(model.errorMessage, "Enter a target above zero.", text)
+            XCTAssertEqual(model.errorMessage, "Enter a number above zero.", text)
         }
 
         XCTAssertTrue(try goals.goals().isEmpty)
@@ -974,7 +1116,8 @@ final class DailyGoalsTests: XCTestCase {
         XCTAssertEqual(model.sections[4].rows.first?.detail, "Added by a scanned label")
     }
 
-    func testBlankTargetRemovesTheGoal() throws {
+    /// Leaving a blank field keeps the goal (#506). Return on a blank field removes it, through `submitTarget`.
+    func testBlankTargetKeepsTheGoalOnLeavingAndRemovesItOnReturn() throws {
         let goals = InMemoryGoalStore(goals: [
             NutrientGoal(nutrient: "protein", target: 60, unit: .g),
         ])
@@ -982,6 +1125,11 @@ final class DailyGoalsTests: XCTestCase {
         model.load()
         model.draftText["protein"] = "  "
         XCTAssertTrue(model.commitTarget(for: "protein"))
+        XCTAssertEqual(try goals.goal(for: "protein")?.target, 60)
+
+        // Leaving the blank field showed the stored goal again; Return removes only an empty field.
+        model.draftText["protein"] = ""
+        XCTAssertTrue(model.submitTarget(for: "protein"))
         XCTAssertNil(try goals.goal(for: "protein"))
         XCTAssertEqual(model.sections[0].rows.first { $0.nutrient == "protein" }?.targetText, "None")
     }

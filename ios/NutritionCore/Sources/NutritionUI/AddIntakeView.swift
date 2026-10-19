@@ -229,7 +229,7 @@ public struct AddIntakeView: View {
         }
         .scrollContentBackground(.hidden)
         .background(TokenColors.background)
-        .navigationTitle("Add")
+        .navigationTitle("Log entry")
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: DesignSpacing.s) {
                 if let message = model.saveError {
@@ -244,7 +244,7 @@ public struct AddIntakeView: View {
                 if model.canChooseLibrary {
                     Toggle("Save to Library", isOn: $model.savesToLibrary)
                         .accessibilityHint("Scanned and searched products are kept in Library, or only this entry is logged")
-                    Text("Scanned and searched products are kept in Library > Products. Turn this off to leave this product out.")
+                    Text("Also keep this product in Library.")
                         .font(.footnote)
                         .foregroundStyle(TokenColors.textSecondary)
                 }

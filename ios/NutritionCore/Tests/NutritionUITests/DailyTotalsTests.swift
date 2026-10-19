@@ -21,6 +21,19 @@ private struct SnapshotOnlyFacts: NutrientFactsLookup {
     }
 }
 
+/// Answers each component, for each nutrient, with the value given for its id and nutrient.
+private struct NutrientFacts: NutrientFactsLookup {
+    let values: [String: [String: NutrientValue]]
+
+    func value(for component: IntakeComponent, nutrient: String) -> NutrientValue {
+        values[component.componentID]?[nutrient] ?? .unknown
+    }
+
+    func value(for component: IntakeComponent, snapshot: ProductDefinition?, nutrient: String) -> NutrientValue {
+        values[component.componentID]?[nutrient] ?? .unknown
+    }
+}
+
 /// Answers each component with the value given for its id, so a test can state any unit it needs.
 private struct ComponentFacts: NutrientFactsLookup {
     let values: [String: NutrientValue]
@@ -956,5 +969,260 @@ final class DailyTotalsTests: XCTestCase {
             for: try store.activeIntakes(), store: store, lookup: SnapshotOnlyFacts(), nutrients: ["water"])
 
         XCTAssertEqual(totals.total(for: "water")?.value, .unknown)
+    }
+
+    /// A negative logged amount makes its entry unknown on every path, so the known sum is what the positive
+    /// entries alone add up to. Each lookup below returns the same value whatever the amount, so a negative
+    /// entry that reached the sum would change the total.
+    /// A product whose stated value is negative is distrusted even when the logged amount is positive.
+    func testANegativeStatedValueIsUnknownEvenWithAPositiveLoggedAmount() throws {
+        let store = try makeStore()
+        let product = ProductDefinition(
+            snapshotID: "snapshot-negstated", productID: "product-negstated", name: "Stated",
+            labelBasis: "per 100 g", catalogOrigin: "test", catalogVersion: "1",
+            nutrients: ["energyKcal": .known(Decimal(-10), .kcal), "protein": .known(Decimal(-1), .g)])
+        try addFood(store, name: "Stated", id: "stated", at: when, amount: 100, product: product)
+        let totals = try DailyTotalsBuilder.totals(
+            for: try store.activeIntakes(), store: store, lookup: SnapshotOnlyFacts(),
+            nutrients: ["energyKcal", "protein"])
+        XCTAssertEqual(totals.total(for: "energyKcal")?.value, .unknown)
+        XCTAssertEqual(totals.total(for: "protein")?.value, .unknown)
+    }
+
+    /// A lookup that answers a negative value for a food with no product distrusts that food for every nutrient,
+    /// so the day's energy is partial, never a complete figure that leaves the food out.
+    func testANegativeLookupValueForAFoodWithNoProductIsUnknownForEveryNutrient() throws {
+        let store = try makeStore()
+        try addFood(store, name: "Oats", id: "oats", at: when, amount: 40)
+        try addFood(store, name: "Rice", id: "rice", at: when, amount: 150)
+        let facts = NutrientFacts(values: [
+            "oats": ["energyKcal": .known(Decimal(-10), .kcal), "protein": .known(Decimal(5), .g)],
+            "rice": ["energyKcal": .known(Decimal(200), .kcal), "protein": .known(Decimal(2), .g)],
+        ])
+        let totals = try DailyTotalsBuilder.totals(
+            for: try store.activeIntakes(), store: store, lookup: facts, nutrients: ["energyKcal", "protein"])
+        // Energy is partial: the known part is rice alone, and the oats entry is one missing entry.
+        XCTAssertEqual(totals.total(for: "energyKcal")?.value, .unknown)
+        XCTAssertEqual(totals.knownSum(for: "energyKcal"), .known(200, .kcal))
+        XCTAssertEqual(totals.missingCount(for: "energyKcal"), 1)
+        // The other nutrient of the same food is distrusted too.
+        XCTAssertEqual(totals.total(for: "protein")?.value, .unknown)
+        XCTAssertEqual(totals.knownSum(for: "protein"), .known(2, .g))
+    }
+
+    /// A per-100 g product with a negative protein is distrusted for every nutrient, so energy is unknown too.
+    func testANegativeNutrientOnAProductDistrustsItsOtherNutrientsToo() throws {
+        let store = try makeStore()
+        let product = ProductDefinition(
+            snapshotID: "snapshot-mixed", productID: "product-mixed", name: "Mixed",
+            labelBasis: "per 100 g", catalogOrigin: "test", catalogVersion: "1",
+            nutrients: ["energyKcal": .known(Decimal(200), .kcal), "protein": .known(Decimal(-1), .g)])
+        try addFood(store, name: "Mixed", id: "mixed", at: when, amount: 100, product: product)
+        let totals = try DailyTotalsBuilder.totals(
+            for: try store.activeIntakes(), store: store, lookup: SnapshotOnlyFacts(),
+            nutrients: ["energyKcal", "protein"])
+        XCTAssertEqual(totals.total(for: "energyKcal")?.value, .unknown)
+        XCTAssertEqual(totals.total(for: "protein")?.value, .unknown)
+    }
+
+    /// A no-product food whose lookup answers a negative protein is unknown for energy whichever nutrients the
+    /// caller asks for, so the meal section and the day total cannot disagree.
+    func testTheSameFoodGivesTheSameAnswerWhicheverNutrientsTheCallerAsksFor() throws {
+        let store = try makeStore()
+        try addFood(store, name: "Lookup food", id: "lookupfood", at: when, amount: 100)
+        let facts = NutrientFacts(values: [
+            "lookupfood": ["energyKcal": .known(Decimal(200), .kcal), "protein": .known(Decimal(-1), .g)],
+        ])
+        let energyOnly = try DailyTotalsBuilder.totals(
+            for: try store.activeIntakes(), store: store, lookup: facts, nutrients: ["energyKcal"])
+        let both = try DailyTotalsBuilder.totals(
+            for: try store.activeIntakes(), store: store, lookup: facts, nutrients: ["energyKcal", "protein"])
+        XCTAssertEqual(energyOnly.total(for: "energyKcal")?.value, .unknown)
+        XCTAssertEqual(both.total(for: "energyKcal")?.value, .unknown)
+    }
+
+    /// A supplement with a negative stated vitamin D declares a second nutrient too: both are unknown, while energy
+    /// and protein from another entry stay known and not partial.
+    func testANegativeStatedSupplementValueIsUnknownForWhatItDeclaresOnly() throws {
+        let store = try makeStore()
+        let supplement = ProductDefinition(
+            snapshotID: "snapshot-negvitd", productID: "product-negvitd", name: "Vitamin D",
+            labelBasis: "per serving", catalogOrigin: "test", catalogVersion: "1", kind: .supplement,
+            nutrients: [
+                "vitaminD": .known(Decimal(-10), .mcg),
+                "magnesium": .known(Decimal(50), .mg),
+            ])
+        let oats = ProductDefinition(
+            snapshotID: "snapshot-oats-2", productID: "product-oats-2", name: "Oats",
+            labelBasis: "per 100 g", catalogOrigin: "test", catalogVersion: "1",
+            nutrients: ["energyKcal": .known(Decimal(380), .kcal), "protein": .known(Decimal(13), .g)])
+        try addFood(store, name: "Vitamin D", id: "negvitd", at: when, amount: 1, unit: .serving, product: supplement)
+        try addFood(store, name: "Oats", id: "oats2", at: when, amount: 100, product: oats)
+        let totals = try DailyTotalsBuilder.totals(
+            for: try store.activeIntakes(), store: store, lookup: SnapshotOnlyFacts(),
+            nutrients: ["vitaminD", "magnesium", "energyKcal", "protein"])
+        XCTAssertEqual(totals.total(for: "vitaminD")?.value, .unknown)
+        XCTAssertEqual(totals.total(for: "magnesium")?.value, .unknown)
+        XCTAssertEqual(totals.total(for: "energyKcal")?.value, .known(380, .kcal))
+        XCTAssertEqual(totals.total(for: "protein")?.value, .known(13, .g))
+        XCTAssertEqual(totals.total(for: "energyKcal")?.coverage.hasUnknown, false)
+        XCTAssertEqual(totals.total(for: "protein")?.coverage.hasUnknown, false)
+    }
+
+    /// A drink row with a positive and a negative volume is distrusted as a whole: its water is unknown, and the
+    /// known 250 mL does not survive as a partial sum.
+    func testAMixedDrinkRowWithANegativeVolumeIsUnknownWaterNotPartlyKnown() throws {
+        let store = try makeStore()
+        let intake = Intake(id: UUID().uuidString.lowercased(), category: "water", occurredAt: when, timeZoneIdentifier: "UTC")
+        try store.create(
+            intake, components: [
+                IntakeComponent(componentID: "drinka", name: "Drink", amount: 250, unit: .mL, hydrationPercent: 100),
+                IntakeComponent(componentID: "drinkb", name: "Drink", amount: 50, unit: .mL, hydrationPercent: 100),
+            ], product: nil, now: when)
+        try store.seedLegacyAmountsForTesting(intakeID: intake.id, amountsByComponent: ["drinkb": "-50"])
+        let totals = try DailyTotalsBuilder.totals(
+            for: try store.activeIntakes(), store: store, lookup: SnapshotOnlyFacts(),
+            nutrients: [DailyTotalsBuilder.waterKey])
+        XCTAssertEqual(totals.total(for: DailyTotalsBuilder.waterKey)?.value, .unknown)
+        XCTAssertNil(totals.knownSum(for: DailyTotalsBuilder.waterKey))
+        XCTAssertEqual(totals.missingCount(for: DailyTotalsBuilder.waterKey), 1)
+    }
+
+    /// A lookup's negative value for a nutrient the caller did not ask for still distrusts the food, so the energy
+    /// total does not depend on which nutrients were requested.
+    func testANegativeLookupForAnUnrequestedNutrientStillDistrustsTheFood() throws {
+        let store = try makeStore()
+        try addFood(store, name: "Lookup food", id: "lookupfood2", at: when, amount: 100)
+        let facts = NutrientFacts(values: [
+            "lookupfood2": ["energyKcal": .known(Decimal(200), .kcal), "carbohydrate": .known(Decimal(-3), .g)],
+        ])
+        let energyOnly = try DailyTotalsBuilder.totals(
+            for: try store.activeIntakes(), store: store, lookup: facts, nutrients: ["energyKcal"])
+        XCTAssertEqual(energyOnly.total(for: "energyKcal")?.value, .unknown)
+    }
+
+    /// A legacy negative row seeded into the store reads back through the normal read path with its amount intact.
+    func testASeededNegativeRowReadsBackThroughTheNormalReadPath() throws {
+        let store = try makeStore()
+        let id = try addFood(store, name: "Oats", id: "oats", at: when, amount: 40)
+        try store.seedLegacyAmountsForTesting(intakeID: id, amountsByComponent: ["oats": "-40"])
+        let revision = try XCTUnwrap(try store.revisions(of: id).last)
+        XCTAssertEqual(revision.components.first?.amount, -40)
+    }
+
+    /// A distrusted food with no water share contributes nothing to water, so a day's 1000 mL of water stays known.
+    func testANegativeFoodRowDoesNotMakeTheDaysWaterUnknown() throws {
+        let store = try makeStore()
+        let drink = Intake(id: UUID().uuidString.lowercased(), category: "water", occurredAt: when, timeZoneIdentifier: "UTC")
+        try store.create(
+            drink, components: [IntakeComponent(componentID: "water1", name: "Water", amount: 1000, unit: .mL)],
+            product: nil, now: when)
+        let product = ProductDefinition(
+            snapshotID: "snapshot-protein", productID: "product-protein", name: "Protein food",
+            labelBasis: "per 100 g", catalogOrigin: "test", catalogVersion: "1",
+            nutrients: ["energyKcal": .known(Decimal(100), .kcal), "protein": .known(Decimal(-1), .g)])
+        let foodID = try addFood(store, name: "Protein food", id: "proteinfood", at: when, amount: 100, product: product)
+        _ = foodID
+        let totals = try DailyTotalsBuilder.totals(
+            for: try store.activeIntakes(), store: store, lookup: SnapshotOnlyFacts(),
+            nutrients: [DailyTotalsBuilder.waterKey, "energyKcal", "protein"])
+        guard case .known(let ml, _) = totals.total(for: DailyTotalsBuilder.waterKey)?.value else {
+            return XCTFail("the day's water must stay known")
+        }
+        XCTAssertEqual(NSDecimalNumber(decimal: ml).doubleValue, 1000, accuracy: 0.001)
+        XCTAssertEqual(totals.total(for: DailyTotalsBuilder.waterKey)?.coverage.hasUnknown, false)
+        XCTAssertEqual(totals.total(for: "protein")?.value, .unknown)
+        XCTAssertEqual(totals.total(for: "energyKcal")?.value, .unknown)
+    }
+
+    /// A food row with a negative volume and a 100% water share must not lower the day's water.
+    func testANegativeVolumeWithAWaterShareIsUnknownWaterNotDrunk() throws {
+        let store = try makeStore()
+        let intake = Intake(id: UUID().uuidString.lowercased(), category: "food", occurredAt: when, timeZoneIdentifier: "UTC")
+        try store.create(
+            intake, components: [IntakeComponent(
+                componentID: "soup", name: "Soup", amount: 250, unit: .mL, hydrationPercent: 100)],
+            product: nil, now: when)
+        try store.seedLegacyAmountsForTesting(intakeID: intake.id, amountsByComponent: ["soup": "-250"])
+        let totals = try DailyTotalsBuilder.totals(
+            for: try store.activeIntakes(), store: store, lookup: SnapshotOnlyFacts(),
+            nutrients: [DailyTotalsBuilder.waterKey])
+        XCTAssertEqual(totals.total(for: DailyTotalsBuilder.waterKey)?.value, .unknown)
+    }
+
+    /// A negative supplement row is unknown for what it declares, and an undeclared nutrient still does not count.
+    func testANegativeSupplementRowIsUnknownOnlyForWhatItDeclares() throws {
+        let store = try makeStore()
+        let vitaminD = ProductDefinition(
+            snapshotID: "snapshot-vitd", productID: "product-vitd", name: "Vitamin D",
+            labelBasis: "per serving", catalogOrigin: "test", catalogVersion: "1", kind: .supplement,
+            nutrients: ["vitaminD": .known(Decimal(10), .mcg)])
+        let oats = ProductDefinition(
+            snapshotID: "snapshot-oats", productID: "product-oats", name: "Oats",
+            labelBasis: "per 100 g", catalogOrigin: "test", catalogVersion: "1",
+            nutrients: ["energyKcal": .known(Decimal(380), .kcal), "protein": .known(Decimal(13), .g)])
+        let vitDID = try addFood(store, name: "Vitamin D", id: "vitd", at: when, amount: 1, unit: .serving, product: vitaminD)
+        try store.seedLegacyAmountsForTesting(intakeID: vitDID, amountsByComponent: ["vitd": "-1"])
+        try addFood(store, name: "Oats", id: "oats", at: when, amount: 100, product: oats)
+        let totals = try DailyTotalsBuilder.totals(
+            for: try store.activeIntakes(), store: store, lookup: SnapshotOnlyFacts(),
+            nutrients: ["vitaminD", "energyKcal", "protein"])
+        XCTAssertEqual(totals.total(for: "vitaminD")?.value, .unknown)
+        XCTAssertEqual(totals.total(for: "energyKcal")?.coverage.hasUnknown, false)
+        XCTAssertEqual(totals.total(for: "protein")?.coverage.hasUnknown, false)
+        XCTAssertEqual(totals.total(for: "energyKcal")?.value, .known(380, .kcal))
+        XCTAssertEqual(totals.total(for: "protein")?.value, .known(13, .g))
+    }
+
+    func testANegativeEntryIsUnknownOnEveryPath() throws {
+        let facts = ComponentFacts(values: ["oats": .known(10, .kcal), "rice": .known(10, .kcal)])
+        // No product snapshot: the lookup answers each component directly. The negative oats row is distrusted and
+        // unknown; the positive rice row is the only known amount, so the known sum is its 10 kcal.
+        do {
+            let store = try makeStore()
+            let oatsID = try addFood(store, name: "Oats", id: "oats", at: when, amount: 40, unit: .g)
+            try store.seedLegacyAmountsForTesting(intakeID: oatsID, amountsByComponent: ["oats": "-40"])
+            try addFood(store, name: "Rice", id: "rice", at: when, amount: 150, unit: .g)
+            let totals = try DailyTotalsBuilder.totals(
+                for: try store.activeIntakes(), store: store, lookup: facts, nutrients: ["energyKcal"])
+            XCTAssertEqual(totals.total(for: "energyKcal")?.value, .unknown, "no-snapshot path")
+            XCTAssertEqual(totals.knownSum(for: "energyKcal"), .known(10, .kcal), "no-snapshot path")
+        }
+        // Mass snapshot: the stated 10 kcal per 100 g is scaled by the logged grams.
+        do {
+            let store = try makeStore()
+            let product = ProductDefinition(
+                snapshotID: "mass-snap", productID: "search-mass", name: "Oats", brand: nil,
+                barcode: "", labelBasis: "per 100 g", catalogOrigin: "usda-fdc", catalogVersion: "unknown",
+                nutrients: ["energyKcal": .known(Decimal(10), .kcal)])
+            try addFood(store, name: "Oats", id: "oats", at: when, amount: 40, unit: .g, product: product)
+            let oatsID = try addFood(store, name: "Oats", id: "oats", at: when, amount: 40, unit: .g, product: product)
+            try store.seedLegacyAmountsForTesting(intakeID: oatsID, amountsByComponent: ["oats": "-40"])
+            let totals = try DailyTotalsBuilder.totals(
+                for: try store.activeIntakes(), store: store, lookup: SnapshotOnlyFacts(), nutrients: ["energyKcal"])
+            XCTAssertEqual(totals.total(for: "energyKcal")?.value, .unknown, "mass path")
+            guard case .known(let kcal, _) = totals.knownSum(for: "energyKcal") else {
+                return XCTFail("the positive mass entry must still sum to known energy")
+            }
+            XCTAssertEqual(NSDecimalNumber(decimal: kcal).doubleValue, 4, accuracy: 0.001, "mass path")
+        }
+        // Counted serving: one serving of 10 kcal, logged as two servings and minus two servings.
+        do {
+            let store = try makeStore()
+            let product = ProductDefinition(
+                snapshotID: "count-snap", productID: "search-count", name: "Gummy", brand: nil,
+                barcode: "", labelBasis: "per serving", catalogOrigin: "usda-fdc", catalogVersion: "unknown",
+                nutrients: ["energyKcal": .known(Decimal(10), .kcal)])
+            try addFood(store, name: "Gummy", id: "gummy", at: when, amount: 2, unit: .serving, product: product)
+            let gummyID = try addFood(store, name: "Gummy", id: "gummy", at: when, amount: 2, unit: .serving, product: product)
+            try store.seedLegacyAmountsForTesting(intakeID: gummyID, amountsByComponent: ["gummy": "-2"])
+            let totals = try DailyTotalsBuilder.totals(
+                for: try store.activeIntakes(), store: store, lookup: SnapshotOnlyFacts(), nutrients: ["energyKcal"])
+            XCTAssertEqual(totals.total(for: "energyKcal")?.value, .unknown, "count path")
+            guard case .known(let kcal, _) = totals.knownSum(for: "energyKcal") else {
+                return XCTFail("the positive count entry must still sum to known energy")
+            }
+            XCTAssertEqual(NSDecimalNumber(decimal: kcal).doubleValue, 20, accuracy: 0.001, "count path")
+        }
     }
 }

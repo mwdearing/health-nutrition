@@ -125,6 +125,11 @@ public struct JournalWeekSummary: Equatable {
 @MainActor
 public final class JournalViewModel: ObservableObject {
     @Published public private(set) var sections: [JournalDaySection] = []
+    /// Today's section when it has no entries of its own; nil otherwise. The Diary lists it above `sections`.
+    @Published public private(set) var todaySection: JournalDaySection?
+
+    /// Every section the Diary lists, today first when it is empty.
+    public var diarySections: [JournalDaySection] { (todaySection.map { [$0] } ?? []) + sections }
     /// Intakes left out because their time zone identifier is invalid or their record could not be read.
     @Published public private(set) var skippedCount: Int = 0
     /// How many times the journal has finished loading. The screen watches it to drop state tied to an earlier load.
@@ -246,7 +251,15 @@ public final class JournalViewModel: ObservableObject {
             let queried = tracked.contains(Self.energyKey) ? tracked : tracked + [Self.energyKey]
             // The same choice as Today: a goal switched off there gets no bar in the day header either.
             let hiddenGoals = hiddenTodayGoals(in: preferences)
-            sections = try groups.keys.sorted(by: >).map { key in
+            // Once the journal has a readable entry, today is built even with none of its own, so the Diary can show its
+            // meal cards and add rows. It is kept apart from `sections`, which keeps its entry-day contract.
+            let todayKey = Self.dayKey(now, zone: dayZone)
+            var sectionKeys = Set(groups.keys)
+            if !groups.isEmpty {
+                if titles[todayKey] == nil { titles[todayKey] = Self.dayTitle(now, zone: dayZone, locale: locale, now: now) }
+                sectionKeys.insert(todayKey)
+            }
+            let built = try sectionKeys.sorted(by: >).map { key in
                 let totals = try DailyTotalsBuilder.totals(
                     for: intakesByDay[key] ?? [], store: store, lookup: lookup, nutrients: queried)
                 let rows = (groups[key] ?? []).sorted { $0.occurredAt > $1.occurredAt }
@@ -259,12 +272,14 @@ public final class JournalViewModel: ObservableObject {
                         totals: totals, goals: storedGoals, hasFoodEntries: Self.hasFoodEntries(rows),
                         unitSystem: self.preferences.unitSystem, hidden: hiddenGoals),
                     energyText: Self.energyText(totals: totals),
-                    isCollapsedByDefault: rows.allSatisfy { row in
+                    isCollapsedByDefault: !rows.isEmpty && rows.allSatisfy { row in
                         let zone = TimeZone(identifier: row.timeZoneIdentifier) ?? TimeZone.current
                         return Self.isMoreThanAWeekBefore(Self.dayKey(row.occurredAt, zone: zone), now: now, zone: zone)
                     },
                     entryCountText: Self.entryCountText(rows.count))
             }
+            todaySection = built.first { $0.id == todayKey && $0.rows.isEmpty }
+            sections = built.filter { !($0.id == todayKey && $0.rows.isEmpty) }
             weekSummary = Self.makeWeekSummary(
                 sections: sections, now: now,
                 zone: TimeZone(identifier: journalZoneID()) ?? TimeZone.current,
@@ -275,6 +290,7 @@ public final class JournalViewModel: ObservableObject {
             goalsErrorMessage = goalsReadFailed ? GoalsViewModel.readFailedMessage : nil
             hasLoaded = true
         } catch {
+            todaySection = nil
             errorMessage = "Could not read the journal."
         }
     }
@@ -402,14 +418,79 @@ public final class JournalViewModel: ObservableObject {
     /// Copies every entry of a past day to now, as new entries. The day's own entries are untouched.
     @discardableResult
     public func copyDayToToday(_ sectionID: String, now: Date) -> IntakeCopyResult? {
-        runCopy(now: now) { try copier.copyDay(dayKey: sectionID, now: now) }
+        let result = runCopy(now: now) { try copier.copyDay(dayKey: sectionID, now: now) }
+        setCopyUndo(result, now: now)
+        return result
+    }
+
+    /// The entries the latest copy created, held so Undo can remove exactly them. A new copy replaces them.
+    @Published private(set) var copiedIDs: [String] = []
+
+    /// The moment the latest copy's Undo window closes: ten seconds after the copy. Held in the model, so the window
+    /// holds whether or not the toast is on screen.
+    private var copyUndoDeadline: Date?
+    private static let copyUndoWindow: TimeInterval = 10
+
+    /// Records the latest copy as the one Undo can take back, until its deadline.
+    private func setCopyUndo(_ result: IntakeCopyResult?, now: Date) {
+        copiedIDs = result?.createdIDs ?? []
+        copyUndoDeadline = result == nil ? nil : now.addingTimeInterval(Self.copyUndoWindow)
+        copyCount += 1
+    }
+
+    /// Whether the latest copy can still be undone at `now`: it has ids left and its window is open.
+    public func canUndoCopy(now: Date) -> Bool {
+        guard !copiedIDs.isEmpty, let deadline = copyUndoDeadline else { return false }
+        return now < deadline
+    }
+
+    /// Counts each copy, so the Undo control restarts its window when a new copy lands.
+    @Published public private(set) var copyCount = 0
+
+
+    /// Ends the Undo window for the latest copy without undoing it.
+    public func expireCopyUndo() {
+        copiedIDs = []
+        copyUndoDeadline = nil
+    }
+
+    /// Removes exactly the entries the latest copy created, and nothing else. Taken once: a second call finds
+    /// nothing to undo.
+    @discardableResult
+    public func undoCopy(now: Date) -> Bool {
+        guard canUndoCopy(now: now) else { return false }
+        // The copy notice is kept on a failed undo, so the Undo control stays on screen while copies remain. A
+        // successful undo leaves nothing to say, so the notice goes.
+        let notice = copyNotice
+        // A copy the person already deleted by hand is not active any more: it is skipped, not counted as a failure.
+        guard let active = try? Set(store.activeIntakes().map(\.id)) else {
+            load(now: now)
+            copyNotice = notice
+            return false
+        }
+        var succeeded = true
+        // An id leaves copiedIDs only once it is gone, so a failed delete keeps the rest for a retry.
+        while let id = copiedIDs.first {
+            if active.contains(id) {
+                do { try store.delete(intakeID: id, now: now) } catch {
+                    succeeded = false
+                    break
+                }
+            }
+            copiedIDs.removeFirst()
+        }
+        load(now: now)
+        copyNotice = succeeded ? nil : notice
+        return succeeded
     }
 
     /// Copies one meal group of a past day to now. "Other" copies the entries with no named meal.
     @discardableResult
     public func copyMealToToday(_ sectionID: String, groupID: String, now: Date) -> IntakeCopyResult? {
         let selector = MealLabel.allCases.first { $0.displayName == groupID }.map(MealSelector.named) ?? .other
-        return runCopy(now: now) { try copier.copyMeal(selector, dayKey: sectionID, now: now) }
+        let result = runCopy(now: now) { try copier.copyMeal(selector, dayKey: sectionID, now: now) }
+        setCopyUndo(result, now: now)
+        return result
     }
 
     /// The saved meals "Save as meal" writes to. Set once by the app; nil leaves the action out.
@@ -421,6 +502,8 @@ public final class JournalViewModel: ObservableObject {
     @discardableResult
     public func saveMeal(_ sectionID: String, groupID: String, name: String) -> Bool {
         guard let savedMeals else { return false }
+        // Saving a meal is a newer action than the copy, so the copy's Undo is no longer offered.
+        expireCopyUndo()
         let label = MealLabel.allCases.first { $0.displayName == groupID }
         let selector = label.map(MealSelector.named) ?? .other
         let intakes: [Intake]
@@ -532,8 +615,8 @@ public final class JournalViewModel: ObservableObject {
         return found
     }
 
-    /// The day's entries grouped by meal. A meal that is not one of the four named ones, or none at
-    /// all, is "Other"; water with no meal lands there too. Rows keep the order they are given.
+    /// The day's entries grouped by meal, as the Journal's section list has always carried them: only the meals
+    /// with entries, then "Other". The Diary adds the empty named meals itself through `diaryMealGroups`.
     static func mealGroups(for rows: [JournalRow]) -> [JournalMealGroup] {
         let named = MealLabel.allCases.map(\.displayName)
         var buckets: [String: [JournalRow]] = [:]
@@ -544,6 +627,52 @@ public final class JournalViewModel: ObservableObject {
         return (named + ["Other"]).compactMap { title in
             buckets[title].map { JournalMealGroup(id: title, title: title, rows: $0) }
         }
+    }
+
+    /// The meals a Diary day lists: the four named meals in their fixed order, empty ones included, then "Other"
+    /// only when an entry has no named meal. Which of them a day shows is decided by `visibleMealGroups`.
+    static func diaryMealGroups(for rows: [JournalRow]) -> [JournalMealGroup] {
+        let named = MealLabel.allCases.map(\.displayName)
+        var buckets: [String: [JournalRow]] = [:]
+        for row in rows {
+            let title = row.meal.flatMap { named.contains($0) ? $0 : nil } ?? "Other"
+            buckets[title, default: []].append(row)
+        }
+        let namedGroups = named.map { JournalMealGroup(id: $0, title: $0, rows: buckets[$0] ?? []) }
+        guard let other = buckets["Other"] else { return namedGroups }
+        return namedGroups + [JournalMealGroup(id: "Other", title: "Other", rows: other)]
+    }
+
+    /// Whether a section is the day an add flow logs to: today in the device's own zone, which is the zone a new
+    /// entry is stamped with. Section ids are each intake's own local day, so the comparison uses the same zone.
+    static func isAddDay(_ sectionID: String, now: Date, zone: TimeZone = .current) -> Bool {
+        sectionID == addDayID(now: now, zone: zone)
+    }
+
+    /// The section id an entry added now would get: the same day key every section uses, read in the zone the add
+    /// flow stamps new entries with. Section ids come from each intake's own zone, so for a new entry this is the device zone.
+    static func addDayID(now: Date, zone: TimeZone = .current) -> String {
+        dayKey(now, zone: zone)
+    }
+
+    /// The meal groups a Diary day shows. Today's day shows every named meal, so each can take an add. A past day
+    /// shows only the meals that have entries, because an add there would log to now, not to that day.
+    static func visibleMealGroups(
+        _ groups: [JournalMealGroup], sectionID: String, now: Date, zone: TimeZone = .current
+    ) -> [JournalMealGroup] {
+        guard !isAddDay(sectionID, now: now, zone: zone) else { return groups }
+        return groups.filter { !$0.rows.isEmpty }
+    }
+
+    /// Whether a day's section offers the add row: the day an add made now lands in, judged in this journal's zone,
+    /// the same zone the arrows and Copy to today use. The view asks this rather than comparing zones itself.
+    public func showsAddRow(sectionID: String, now: Date) -> Bool {
+        Self.isAddDay(sectionID, now: now, zone: dayZone)
+    }
+
+    /// The meal an add opens with for a group: the named meal, or nil for "Other", which has no add of its own.
+    static func addMeal(forGroupTitle title: String) -> MealLabel? {
+        MealLabel.allCases.first { $0.displayName == title }
     }
 
     /// A day counts as logged when it holds a food or drink entry. Water and supplements do not count.

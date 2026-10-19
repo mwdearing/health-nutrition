@@ -136,7 +136,9 @@ struct RootView: View {
             .tag(AppTab.today)
 
             NavigationStack {
-                JournalView(model: services.journal, onSelect: { selectedIntakeID = $0 })
+                JournalView(
+                    model: services.journal, onSelect: { selectedIntakeID = $0 },
+                    onAddToMeal: { meal in self.startAddingIntake(meal: meal) })
                     .toolbar { settingsToolbar }
             }
                 .safeAreaInset(edge: .bottom) { addCapsule }

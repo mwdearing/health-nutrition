@@ -33,6 +33,8 @@ struct OpenFoodFactsProductLookup: BarcodeProductLookup {
             return .failed("invalid barcode")
         case .transport(let reason):
             return .failed(reason)
+        case .offline:
+            return .offline
         }
     }
 

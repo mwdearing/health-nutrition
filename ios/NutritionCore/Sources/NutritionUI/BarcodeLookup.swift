@@ -211,6 +211,8 @@ public enum BarcodeLookupResult: Sendable, Equatable {
     case notFound
     case rateLimited(retryAfterSeconds: Int?)
     case failed(String)
+    /// The request could not reach the source: no connection, or a network that dropped it.
+    case offline
 }
 
 /// Digit, length and GS1 check digit check for the barcode field: EAN-8, UPC-A or EAN-13, nothing
