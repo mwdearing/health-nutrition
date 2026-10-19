@@ -1824,11 +1824,15 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
                 do {
                     try FileManager.default.removeItem(at: file)
                 } catch {
-                    removalError = error
-                    break
+                    removalError = removalError ?? error
                 }
             }
-            container = try Self.makeContainer(url: storeURL)
+            // A reopen failure is thrown only when no removal failed, so the removal error is the one reported.
+            do {
+                container = try Self.makeContainer(url: storeURL)
+            } catch {
+                throw removalError ?? error
+            }
             if let removalError { throw removalError }
         }
     }
