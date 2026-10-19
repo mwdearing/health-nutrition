@@ -166,12 +166,12 @@ public struct TodayView: View {
                         Text("Water")
                             .font(.headline)
                             .foregroundStyle(TokenColors.textPrimary)
+                            .accessibilityValue(model.waterCardAccessibilityValue)
                         Spacer(minLength: DesignSpacing.s)
                         Text(model.waterDisplayText)
                             .font(.title3)
                             .foregroundStyle(TokenColors.textPrimary)
-                            .accessibilityLabel(model.waterIsUnknown ? "Water" : model.waterDisplayText)
-                            .accessibilityValue(model.waterCardAccessibilityValue)
+                            .accessibilityHidden(true)
                     }
                     if model.waterSkippedCount > 0 {
                         InlineNotice(

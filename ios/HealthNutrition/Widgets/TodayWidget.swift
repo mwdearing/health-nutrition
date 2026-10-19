@@ -56,9 +56,10 @@ struct TodayWidgetView: View {
                     }
                     .gaugeStyle(.accessoryCircularCapacity)
                 } else {
+                    // No goal to draw a ring against: the known figure is shown, or a dash, never an empty ring.
                     ZStack {
                         Image(systemName: "fork.knife")
-                        Text("—")
+                        Text(snapshot?.gaugeHeadline ?? "—")
                     }
                 }
             }

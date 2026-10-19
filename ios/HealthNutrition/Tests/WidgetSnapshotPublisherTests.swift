@@ -96,6 +96,7 @@ final class WidgetSnapshotPublisherTests: XCTestCase {
 
     /// A journal read that fails writes no widget summary, so yesterday's or an empty day is never shown as today.
     func testItWritesNothingWhenTheJournalReadFails() throws {
+        _ = try makeToday()
         let store = ReadFailingStoreStub(intakes: [], components: [:])
         store.failReadsForTesting = true
         let today = TodayViewModel(store: store, timeZoneIdentifier: "UTC")
