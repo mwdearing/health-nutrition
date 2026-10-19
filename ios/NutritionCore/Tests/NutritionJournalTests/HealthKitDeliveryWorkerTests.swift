@@ -345,30 +345,46 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         XCTAssertEqual(totals.requested.map(\.revision), [1, 2])
     }
 
-    /// The stale sample has to go: revision 2 plans no protein, so nothing would replace what revision 1
-    /// wrote and Health would keep showing it.
-    /// An edit down to a 0% share removes the earlier water sample: the new revision states no water, so the
-    /// stale deletion retracts it, and no water sample is saved for that revision.
+    /// An edit down to a 0% share retracts the earlier water sample, through the real totals path: the new
+    /// revision states no water, so the stale deletion removes it and no water sample is saved.
     func testAnEditDownToAZeroShareRetractsTheEarlierWaterSample() async throws {
-        let (store, writer, totals, worker) = try makeWorker(totals: ["water": .known(dec("250"), .mL)])
-
-        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        let store = try makeStore(try makeDirectory(), enabled: [.healthKit, .relay])
+        let writer = FakeHealthSampleWriter()
+        for mapping in HealthKitWritePlanner.mappings {
+            writer.allow(mapping.quantityTypeIdentifier)
+        }
+        let real = JournalSnapshotTotals(store: store)
+        let worker = HealthKitDeliveryWorker(
+            store: store, writer: writer,
+            totals: { intakeID, revision in try await real.totals(intakeID: intakeID, revision: revision) })
+        let drink = ProductDefinition(
+            snapshotID: "snap-edit-zero", productID: "product-edit-zero", name: "Edit soda", brand: nil,
+            barcode: nil, labelBasis: "per serving", catalogOrigin: "sample", catalogVersion: "1", kind: .drink)
+        try store.create(
+            Intake(id: intakeID, category: "other", occurredAt: when, timeZoneIdentifier: "UTC"),
+            components: [IntakeComponent(
+                componentID: "soda", name: "Soda", amount: 250, unit: .mL, hydrationPercent: 50)],
+            product: drink, now: when)
         _ = await worker.runOnce(now: when)
-        XCTAssertEqual(writer.saved.map(\.syncIdentifier), [waterIdentifier(intakeID)], "revision 1 writes the water")
+        XCTAssertEqual(
+            writer.saved.map(\.syncIdentifier), [waterIdentifier(intakeID)], "revision 1 writes half of 250 mL")
 
-        totals.set([:])
         try store.edit(
-            intakeID: intakeID, components: [component(amount: 55)], product: nil,
-            changeReason: "share edited to 0%", now: when)
+            intakeID: intakeID,
+            components: [IntakeComponent(componentID: "soda", name: "Soda", amount: 250, unit: .mL, hydrationPercent: 0)],
+            product: drink, changeReason: "share set to 0%", now: when)
         writer.reset()
 
         _ = await worker.runOnce(now: when)
 
         XCTAssertTrue(writer.deleted.contains(waterIdentifier(intakeID)), "the earlier water sample is retracted")
-        XCTAssertFalse(writer.saved.contains { $0.syncIdentifier == waterIdentifier(intakeID) },
-                       "revision 2 states no water, so no water sample is saved")
+        XCTAssertFalse(
+            writer.saved.contains { $0.syncIdentifier == waterIdentifier(intakeID) },
+            "revision 2 states no water, so no water sample is saved")
     }
 
+    /// The stale sample has to go: revision 2 plans no protein, so nothing would replace what revision 1
+    /// wrote and Health would keep showing it.
     func testAnEditDeletesTheNutrientTheNewRevisionNoLongerStates() async throws {
         let (store, writer, totals, worker) = try makeWorker(
             totals: ["water": .known(dec("250"), .mL), "protein": .known(dec("13"), .g)])
