@@ -82,12 +82,27 @@ final class LogSavedMealShortcutTests: XCTestCase {
         XCTAssertFalse(wrote)
     }
 
+    /// While locked or busy the id still resolves, but the meal's name is held back.
+    func testALockedShortcutResolvesAMealWithoutItsName() {
+        let entities = SavedMealQuery.entities(for: ["meal-1", "gone"], in: [saved()], revealNames: false)
+        XCTAssertEqual(entities.map(\.id), ["meal-1", "gone"])
+        XCTAssertEqual(entities.map(\.name), [SavedMealPickerPolicy.standInTitle, SavedMealShortcut.unavailableMessage])
+    }
+
+    /// The picker lists saved meals only while the device is unlocked and no erase or import runs.
+    func testThePickerOffersNoMealsWhileLockedOrBusy() {
+        let meals = [saved()]
+        XCTAssertEqual(SavedMealPickerPolicy.enumerated(meals, isUnlocked: true, isBusy: false).map(\.id), ["meal-1"])
+        XCTAssertTrue(SavedMealPickerPolicy.enumerated(meals, isUnlocked: false, isBusy: false).isEmpty)
+        XCTAssertTrue(SavedMealPickerPolicy.enumerated(meals, isUnlocked: true, isBusy: true).isEmpty)
+    }
+
     func testAShortcutsDeletedSavedMealStillRunsAndSaysSo() {
-        let entities = SavedMealQuery.entities(for: ["meal-1", "gone"], in: [saved()])
+        let entities = SavedMealQuery.entities(for: ["meal-1", "gone"], in: [saved()], revealNames: true)
         XCTAssertEqual(entities.map(\.id), ["meal-1", "gone"])
         XCTAssertEqual(entities.map(\.name), ["Usual breakfast", SavedMealShortcut.unavailableMessage])
         // A list that cannot be read keeps the id too, so the action reports that rather than asking again.
-        XCTAssertEqual(SavedMealQuery.entities(for: ["meal-1"], in: nil).map(\.id), ["meal-1"])
+        XCTAssertEqual(SavedMealQuery.entities(for: ["meal-1"], in: nil, revealNames: true).map(\.id), ["meal-1"])
         // The deleted meal's id reaches the action, which answers instead of asking for another meal.
         XCTAssertFalse(SavedMealShortcut.needsSavedMeal(id: "gone", meals: [saved()]))
         XCTAssertEqual(

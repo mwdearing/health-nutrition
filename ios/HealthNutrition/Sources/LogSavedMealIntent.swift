@@ -2,6 +2,7 @@ import AppIntents
 import Foundation
 import NutritionJournal
 import NutritionUI
+import UIKit
 
 /// What logging a saved meal from a shortcut says back, kept apart from the intent so it can be tested.
 enum SavedMealShortcut {
@@ -75,27 +76,53 @@ struct SavedMealEntity: AppEntity {
     }
 }
 
+/// The saved-meal picker policy, kept apart from the query so it can be tested. The list is offered only while the
+/// device is unlocked and no erase or import runs; a locked phone gets no names, and a stored id still resolves.
+enum SavedMealPickerPolicy {
+    /// The title a shortcut shows while locked or busy: no meal name in it.
+    static let standInTitle = "Saved meal"
+
+    /// The entities for an enumeration: the meals while unlocked and not busy, nothing otherwise.
+    static func enumerated(_ meals: [SavedMeal], isUnlocked: Bool, isBusy: Bool) -> [SavedMeal] {
+        guard !isBusy, isUnlocked else { return [] }
+        return meals
+    }
+}
+
 /// Reads the saved meals straight from their store, so the list is there even before the app has opened.
 struct SavedMealQuery: EntityQuery {
     /// The title a shortcut shows for a saved meal deleted since it was set up; running it says the same.
     static let deletedTitle = SavedMealShortcut.unavailableMessage
 
+    @MainActor
+    static var isDeviceUnlocked: () -> Bool = { UIApplication.shared.isProtectedDataAvailable }
+
+    @MainActor
     func entities(for identifiers: [SavedMealEntity.ID]) async throws -> [SavedMealEntity] {
-        Self.entities(for: identifiers, in: try? UserDefaultsSavedMealStore().meals())
+        let meals = try? UserDefaultsSavedMealStore().meals()
+        let unlocked = Self.isDeviceUnlocked() && !AppServicesRegistry.isBusy
+        return Self.entities(for: identifiers, in: meals, revealNames: unlocked)
     }
 
+    @MainActor
     func suggestedEntities() async throws -> [SavedMealEntity] {
-        ((try? UserDefaultsSavedMealStore().meals()) ?? []).map { SavedMealEntity(id: $0.id, name: $0.name) }
+        SavedMealPickerPolicy
+            .enumerated(
+                (try? UserDefaultsSavedMealStore().meals()) ?? [],
+                isUnlocked: Self.isDeviceUnlocked(), isBusy: AppServicesRegistry.isBusy)
+            .map { SavedMealEntity(id: $0.id, name: $0.name) }
     }
 
     /// Every id a shortcut names gets an entity, so the action runs and answers for itself: a saved meal deleted
     /// since (or a list that cannot be read) stands in under `deletedTitle` rather than being dropped, which would
-    /// leave the shortcut asking for another meal. Only ids a shortcut already holds come here; the picker
-    /// offers saved meals as they are.
-    static func entities(for identifiers: [String], in meals: [SavedMeal]?) -> [SavedMealEntity] {
+    /// leave the shortcut asking for another meal. While locked or busy the real name is held back and the
+    /// stand-in title is used, so the shortcut still resolves without showing what was logged.
+    static func entities(for identifiers: [String], in meals: [SavedMeal]?, revealNames: Bool) -> [SavedMealEntity] {
         identifiers.map { id in
-            meals?.first { $0.id == id }.map { SavedMealEntity(id: $0.id, name: $0.name) }
-                ?? SavedMealEntity(id: id, name: deletedTitle)
+            guard let meal = meals?.first(where: { $0.id == id }) else {
+                return SavedMealEntity(id: id, name: deletedTitle)
+            }
+            return SavedMealEntity(id: meal.id, name: revealNames ? meal.name : SavedMealPickerPolicy.standInTitle)
         }
     }
 }
@@ -121,8 +148,9 @@ struct LogSavedMealIntent: AppIntent {
     static let title: LocalizedStringResource = "Log a saved meal"
     static let description = IntentDescription("Adds every item of one of your saved meals to today's diary, as new entries.")
     static let openAppWhenRun = true
-    /// Running the action, and so logging the meal, needs an unlocked device. Choosing the saved meal (the picker
-    /// and Siri's prompts) happens before this applies, so the saved meal names can still be listed while locked.
+    /// Running the action, and so logging the meal, needs an unlocked device. The saved meal names are not listed
+    /// while locked (SavedMealPickerPolicy and SavedMealQuery); a stored id still resolves and then reaches this
+    /// requirement, so the system asks for the unlock before anything is read or written.
     static let authenticationPolicy: IntentAuthenticationPolicy = .requiresLocalDeviceAuthentication
 
     /// Optional, so the action runs when there are no saved meals, or the one a shortcut names was deleted, and
