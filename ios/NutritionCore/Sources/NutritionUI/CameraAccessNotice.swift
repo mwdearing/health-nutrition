@@ -8,8 +8,6 @@ public enum CameraAccessState: Sendable, Equatable {
     case restricted
 }
 
-/// What a camera sheet says when the camera cannot start. Access that is off gets its own message and a way to
-/// the Settings app; any other failure keeps the message the sheets already showed.
 /// Which camera sheet is asking, so each keeps its own fallback: the barcode sheet can be typed in, the label
 /// sheet's values are read from the photo and have no digits to type.
 public enum CameraSheet: Sendable, Equatable {
