@@ -59,7 +59,8 @@ public struct InsightsAverages: Equatable {
             var unit: MeasureUnit?
             for day in inWindow {
                 // A fully known day counts as it is. A partly logged day counts with the sum of its known entries,
-                // which is a minimum (#510). A day with nothing known for this nutrient is left out, never counted as 0.
+                // which is a minimum (#510). A day with nothing known for this nutrient is left out, never counted as
+                // 0.
                 let value: NutrientValue
                 let isPartial: Bool
                 if let total = day.totals.total(for: nutrient), case .known = total.value {
