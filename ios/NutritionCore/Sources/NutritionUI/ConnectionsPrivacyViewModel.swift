@@ -630,6 +630,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         importTask?.cancel()
         guard importGate.wait(upTo: Self.eraseWaitsForImportSeconds) else {
             errorMessage = Self.eraseWaitTimedOutMessage
+            eraseRetryAvailable = true
             return false
         }
         // An import that was running when the flag was first cleared may have written a new one before it stopped.
