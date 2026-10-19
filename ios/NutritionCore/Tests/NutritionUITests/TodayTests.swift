@@ -62,7 +62,10 @@ private final class StubJournalStore: JournalStore, @unchecked Sendable {
     func projections(of intakeID: String) throws -> [DestinationProjection] { [] }
     func pendingOutbox() throws -> [OutboxOperation] { [] }
     func product(snapshotID: String) throws -> ProductDefinition? { nil }
-    func activeIntakesFromBackground() async throws -> [Intake] { intakes }
+    func activeIntakesFromBackground() async throws -> [Intake] {
+        if failReadsForTesting { throw Unsupported() }
+        return intakes
+    }
     func close() {}
 }
 
