@@ -214,7 +214,7 @@ public struct SavedMealBook {
         try store.update { list in
             guard !list.contains(where: { $0.id == saved.id }) else { return }
             guard list.count < Self.maximumMeals else { throw SavedMealError.tooManyMeals }
-            list.insert(saved, at: min(max(index, 0), list.count))
+            list.insert(saved, at: 0)
             restored = true
         }
         return restored
