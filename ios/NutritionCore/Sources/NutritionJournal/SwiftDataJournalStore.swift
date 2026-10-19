@@ -1812,13 +1812,15 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
 
     /// Deletes the store file with its write-ahead and shared-memory files, then opens an empty store at the
     /// same place. The rows the commit deleted are still on disk in pages and the write-ahead file until these
-    /// files are gone. The companion files go first, so no write-ahead frame can outlive the main file. The store
-    /// reopens even when a removal fails, so it stays open, and the failure is then thrown and the erase reports it.
+    /// files are gone. The main file goes last, and only once both companion files are gone: a write-ahead file
+    /// left beside a new main file could replay pages from before the erase. The store reopens even when a
+    /// removal fails, and the removal error is then thrown so the erase reports it.
     private func removeStoreFiles() throws {
         try lock.withLock {
             container = nil
             var removalError: Error?
             for suffix in ["-shm", "-wal", ""] {
+                if suffix.isEmpty, removalError != nil { break }
                 let file = URL(fileURLWithPath: storeURL.path + suffix)
                 guard FileManager.default.fileExists(atPath: file.path) else { continue }
                 do {
