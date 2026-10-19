@@ -97,6 +97,11 @@ public struct AddHomeView: View {
                         ForEach(quickActions) { quickActionButton($0) }
                     }
                 }
+                // Why a quick action is off is shown in words, not only in its hint.
+                ForEach(quickActions.filter { !$0.available && !$0.explanation.isEmpty }) { action in
+                    Text("\(action.title): \(action.explanation)")
+                        .font(.subheadline).foregroundStyle(TokenColors.textSecondary)
+                }
                 plainRow("From Library", help: "Choose a favorite, recent item or recipe.", action: onLibrary)
                 if let onNewProduct {
                     plainRow("Create product", help: "Save product facts without logging an intake. A name is enough to start.", action: onNewProduct)
@@ -149,14 +154,18 @@ public struct AddHomeView: View {
     private var quickActions: [QuickAction] {
         [
             QuickAction(id: "barcode", title: "Barcode", icon: "barcode.viewfinder",
+                help: "Read the code on the package.",
                 available: model.scannerAvailability.barcode,
                 explanation: model.scannerAvailability.barcodeExplanation, action: onBarcode),
             QuickAction(id: "label", title: "Label", icon: "text.viewfinder",
+                help: "Read and check the nutrition values.",
                 available: model.scannerAvailability.label,
                 explanation: model.scannerAvailability.labelExplanation, action: onLabel),
             QuickAction(id: "type", title: "Type it in", icon: "keyboard",
+                help: "Enter a name and amount yourself.",
                 available: true, explanation: "", action: onType),
             QuickAction(id: "amounts", title: "Amounts only", icon: "slider.horizontal.3",
+                help: "Log calories and macros without choosing a food.",
                 available: true, explanation: "", action: { self.quickAdd = self.model.makeQuickAdd() }),
         ]
     }
@@ -175,7 +184,7 @@ public struct AddHomeView: View {
         .buttonStyle(.plain)
         .disabled(!action.available)
         .accessibilityLabel(action.title)
-        .accessibilityHint(action.available ? "" : action.explanation)
+        .accessibilityHint(action.available ? action.help : action.explanation)
     }
 
     /// A full-width row for the actions that need a line of help, such as From Library.
@@ -197,6 +206,7 @@ private struct QuickAction: Identifiable {
     let id: String
     let title: String
     let icon: String
+    let help: String
     let available: Bool
     let explanation: String
     let action: () -> Void
