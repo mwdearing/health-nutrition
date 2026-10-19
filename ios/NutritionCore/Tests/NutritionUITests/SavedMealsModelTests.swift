@@ -128,6 +128,46 @@ final class SavedMealsModelTests: XCTestCase {
         XCTAssertNil(model.removalUndo)
     }
 
+    /// Saving a meal after a removal is a newer action, so the removal's Undo goes and the removal is final.
+    func testSavingAfterARemovalClearsTheRemovalOffer() throws {
+        let journal = try makeJournal()
+        let milk = try addEntry(journal, "Milk", at: now.addingTimeInterval(-60))
+        let oats = try addEntry(journal, "Oats", at: now.addingTimeInterval(-120))
+        let model = SavedMealsModel(store: UserDefaultsSavedMealStore(defaults: makeDefaults()), journal: journal)
+        XCTAssertTrue(model.save(name: "First", meal: .breakfast, intakes: [milk]))
+        model.remove(model.meals[0])
+        XCTAssertNotNil(model.removalUndo)
+
+        XCTAssertTrue(model.save(name: "Second", meal: .lunch, intakes: [oats]))
+
+        XCTAssertNil(model.removalUndo)
+        XCTAssertFalse(model.undoRemove())
+        XCTAssertEqual(model.meals.map(\.name), ["Second"])
+    }
+
+    /// A restore whose name a newer meal now uses fails, says so, and writes no duplicate.
+    func testRestoreWithAClashingNameFailsWithoutADuplicate() throws {
+        let journal = try makeJournal()
+        let milk = try addEntry(journal, "Milk", at: now.addingTimeInterval(-60))
+        let defaults = makeDefaults()
+        let store = UserDefaultsSavedMealStore(defaults: defaults)
+        let model = SavedMealsModel(store: store, journal: journal)
+        XCTAssertTrue(model.save(name: "Usual", meal: .breakfast, intakes: [milk]))
+        let original = try XCTUnwrap(model.meals.first)
+        model.remove(original)
+        // A meal named "usual" (any case) is saved by another route while the removal's Undo is still up.
+        var clash = original
+        clash.id = "clashing-meal"
+        clash.name = "usual"
+        try store.update { $0.insert(clash, at: 0) }
+
+        XCTAssertFalse(model.undoRemove())
+
+        XCTAssertEqual(try store.meals().map(\.name), ["usual"])
+        XCTAssertTrue(model.noticeIsFailure)
+        XCTAssertEqual(model.notice, "Could not put back Usual.")
+    }
+
     /// Once the Undo window has passed, the removal stays and Undo has nothing to put back.
     func testExpiredRemovalCannotBeUndone() throws {
         let journal = try makeJournal()

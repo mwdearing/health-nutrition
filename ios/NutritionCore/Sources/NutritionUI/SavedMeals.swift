@@ -214,6 +214,8 @@ public struct SavedMealBook {
         try store.update { list in
             guard !list.contains(where: { $0.id == saved.id }) else { return }
             guard list.count < Self.maximumMeals else { throw SavedMealError.tooManyMeals }
+            // A name saved since the removal can clash; the restore then fails rather than writing a duplicate.
+            _ = try Self.validName(saved.name, among: list, excluding: saved.id)
             list.insert(saved, at: min(max(index, 0), list.count))
             restored = true
         }
