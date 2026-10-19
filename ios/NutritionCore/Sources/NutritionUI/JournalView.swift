@@ -82,9 +82,18 @@ public struct JournalView: View {
                         .padding(DesignSpacing.m)
                         .background(TokenColors.background)
                 } else if let copied = model.copyNotice {
-                    InlineNotice(copied, tone: model.copyFailed ? .failed : .waiting)
-                        .padding(DesignSpacing.m)
-                        .background(TokenColors.background)
+                    if model.canUndoCopy(now: now()) {
+                        UndoToast(copied) { _ = model.undoCopy(now: now()) }
+                            .padding(DesignSpacing.m)
+                            .task(id: model.copyCount) {
+                                do { try await Task.sleep(for: .seconds(10)) } catch { return }
+                                model.expireCopyUndo()
+                            }
+                    } else {
+                        InlineNotice(copied, tone: model.copyFailed ? .failed : .waiting)
+                            .padding(DesignSpacing.m)
+                            .background(TokenColors.background)
+                    }
                 }
             }
             // A notice about an earlier jump goes whenever the journal reloads, except the reload on return to the app.
