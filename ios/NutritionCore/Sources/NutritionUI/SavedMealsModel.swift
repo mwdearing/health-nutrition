@@ -220,9 +220,9 @@ public final class SavedMealsModel: ObservableObject {
         guard let removal = removalUndo else { return false }
         removalUndo = nil
         do {
-            try book.restore(removal.meal, at: removal.index)
+            let restored = try book.restore(removal.meal, at: removal.index)
             load()
-            return true
+            return restored
         } catch {
             return finish(failure: "Could not put back \(removal.meal.name).")
         }
