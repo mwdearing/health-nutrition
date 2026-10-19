@@ -631,15 +631,6 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         // A restore flag left behind would let the next import of that file put back favorites the person is
         // erasing, so it goes first, before any store is touched. A flag that cannot be removed stops the erase
         // with nothing erased, and the screen offers Retry.
-        do {
-            try (store as? JournalRestoreProgress)?.clearRestoreInProgress()
-        } catch {
-            errorMessage = Self.eraseNothingErasedMessage
-            eraseRetryAvailable = true
-            // Nothing was erased, but the import effects deferred during this erase still need resolving.
-            resolveDeferredImportEffectsAfterErase(journalEraseSucceeded: false)
-            return false
-        }
 
         // Every store and export file that is still on the phone afterwards is named, in the order the erase ran,
         // so the person knows exactly what to retry. One failure never stops the rest.
@@ -659,8 +650,14 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
                     journalEraseSucceeded = true
                 }
             } catch {
-                leftBehind.append(eraser.erasureName)
+                if eraser.erasureName != "goals" { leftBehind.append(eraser.erasureName) }
+                break
             }
+        }
+        do {
+            try (store as? JournalRestoreProgress)?.clearRestoreInProgress()
+        } catch {
+            leftBehind.append("restore flag")
         }
         // Every export file this app wrote goes, not only the one this model remembers: the app can be
         // killed after an export, and the next session's model starts with no URL to delete.
