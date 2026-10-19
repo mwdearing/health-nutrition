@@ -482,11 +482,16 @@ public final class GoalsViewModel: ObservableObject {
     @Published public private(set) var clearedGoal: ClearedGoal?
 
     /// Removes the goal for `nutrient` on an explicit clear (the row's Clear button, or Return on an
-    /// empty field). The removed goal is kept for Undo.
+    /// empty field). The removed goal is kept for Undo. A goal that cannot be read is not removed, since
+    /// Undo could not put it back.
     @discardableResult
     public func clearTarget(for nutrient: String) -> Bool {
         rowError[nutrient] = nil
-        let previous = (try? storedGoal(for: nutrient)) ?? nil
+        let previous: NutrientGoal?
+        do { previous = try storedGoal(for: nutrient) } catch {
+            errorMessage = Self.readFailedMessage
+            return false
+        }
         guard removeTarget(for: nutrient) else { return false }
         draftText[nutrient] = ""
         clearedGoal = previous.map { ClearedGoal(nutrient: nutrient, goal: $0) }
@@ -494,12 +499,22 @@ public final class GoalsViewModel: ObservableObject {
         return true
     }
 
-    /// Puts back the goal the last Clear removed, and returns whether it did.
+    /// Puts back the goal the last Clear removed, and returns whether it did. Only when nothing has been
+    /// stored for that nutrient since: a goal saved after the Clear is the person's newer value and is kept.
     @discardableResult
     public func undoClear() -> Bool {
         guard let cleared = clearedGoal else { return false }
-        clearedGoal = nil
+        let current: NutrientGoal?
+        do { current = try storedGoal(for: cleared.nutrient) } catch {
+            errorMessage = Self.readFailedMessage
+            return false
+        }
+        guard current == nil else {
+            clearedGoal = nil
+            return false
+        }
         guard restoreGoal(cleared.goal, for: cleared.nutrient) else { return false }
+        clearedGoal = nil
         draftText[cleared.nutrient] = nil
         load()
         noteSaved()
@@ -518,6 +533,7 @@ public final class GoalsViewModel: ObservableObject {
     /// Commits one inline field without discarding drafts in other fields.
     @discardableResult
     public func commitTarget(for nutrient: String) -> Bool {
+        clearedGoal = nil
         let text = (draftText[nutrient] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         rowError[nutrient] = nil
         if nutrient == DailyTotalsBuilder.waterKey {

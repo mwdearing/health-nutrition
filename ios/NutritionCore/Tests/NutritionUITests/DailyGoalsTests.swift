@@ -263,6 +263,37 @@ final class DailyGoalsTests: XCTestCase {
         XCTAssertNil(model.clearedGoal)
     }
 
+    /// A goal saved after a Clear is the person's newer value, so Undo must not overwrite it.
+    func testUndoAfterANewerGoalWasSavedKeepsTheNewerGoal() throws {
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+        XCTAssertTrue(model.clearTarget(for: "protein"))
+        model.draftText["protein"] = "80"
+        XCTAssertTrue(model.commitTarget(for: "protein"))
+
+        XCTAssertFalse(model.undoClear())
+        XCTAssertEqual(try goals.goal(for: "protein")?.target, Decimal(80))
+        XCTAssertNil(model.clearedGoal)
+    }
+
+    /// When the stored goal cannot be read, Clear must not remove it: Undo could not put it back.
+    func testClearDoesNotRemoveAGoalItCannotRead() throws {
+        let goals = SpyGoalStore()
+        try goals.writeBehind(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+        goals.failsGoalReads = true
+
+        XCTAssertFalse(model.clearTarget(for: "protein"))
+        goals.failsGoalReads = false
+        XCTAssertEqual(try goals.goal(for: "protein")?.target, Decimal(60))
+        XCTAssertNil(model.clearedGoal)
+    }
+
     /// Metric display, water typed in fl oz: 8 fl oz is stored as 236.588 mL and shown as 237, so the
     /// field text never matches the read. An outside change must still be followed, not written back.
     func testAWaterGoalTypedInAnotherUnitFollowsAnOutsideChange() throws {
