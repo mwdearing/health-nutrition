@@ -106,4 +106,27 @@ final class CameraAccessNoticeTests: XCTestCase {
             CameraAccessNotice.stoppedMessage(access: .authorized, sheet: .label, fallback: "The camera stopped."),
             "The camera stopped.")
     }
+
+    func testReturningWithAccessAllowedClearsTheFailureOnBothSheets() {
+        XCTAssertNil(CameraAccessNotice.messageAfterReturn(current: .authorized, sheet: .barcode))
+        XCTAssertNil(CameraAccessNotice.messageAfterReturn(current: .authorized, sheet: .label))
+    }
+
+    func testReturningWithAccessStillOffKeepsTheMessageForEachSheet() {
+        XCTAssertEqual(
+            CameraAccessNotice.messageAfterReturn(current: .denied, sheet: .barcode),
+            "Camera access is off. Turn it on in Settings to scan, or type the digits instead.")
+        XCTAssertEqual(
+            CameraAccessNotice.messageAfterReturn(current: .denied, sheet: .label),
+            "Camera access is off. Turn it on in Settings to scan.")
+        XCTAssertEqual(
+            CameraAccessNotice.messageAfterReturn(current: .restricted, sheet: .label),
+            "Camera access is restricted on this phone.")
+    }
+
+    func testReturningWhileUndeterminedShowsTheStartFailure() {
+        XCTAssertEqual(
+            CameraAccessNotice.messageAfterReturn(current: .notDetermined, sheet: .barcode),
+            "The camera could not be started. Type the digits instead.")
+    }
 }

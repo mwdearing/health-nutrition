@@ -46,11 +46,21 @@ struct BarcodeScannerSheet: View {
     let onType: () -> Void
 
     @State private var failureMessage: String?
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         content
             .navigationTitle("Scan barcode")
             .navigationBarTitleDisplayMode(.inline)
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { resumeAfterSettings() }
+            }
+    }
+
+    /// Back from Settings: if access is now allowed, the failure clears and the scanner starts again.
+    private func resumeAfterSettings() {
+        guard failureMessage != nil else { return }
+        failureMessage = CameraAccessNotice.messageAfterReturn(access: CameraAccess.current(), sheet: .barcode)
     }
 
     /// The camera while it works, the notice once it cannot. A terminal failure takes the scanner

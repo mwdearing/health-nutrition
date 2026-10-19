@@ -169,6 +169,12 @@ final class LabelCaptureSheetState: ObservableObject {
         failureMessage = message
     }
 
+    /// Back from Settings: clears the failure when access is allowed, so the scanner starts again.
+    func resumeAfterSettings(access: CameraAccessState) {
+        guard failureMessage != nil else { return }
+        failureMessage = CameraAccessNotice.messageAfterReturn(access: access, sheet: .label)
+    }
+
     /// Goes back to the reviewed draft, keeping every value already on screen and forgetting what the
     /// camera had read in the photo that failed. Returns whether there was a draft to return to.
     @discardableResult
@@ -194,6 +200,7 @@ struct LabelCaptureSheet: View {
     let onUse: (ProductDefinition) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var session: LabelCaptureSession
     @StateObject private var state: LabelCaptureSheetState
 
@@ -209,6 +216,9 @@ struct LabelCaptureSheet: View {
         content
             .navigationTitle(model.isReviewing ? "Check the label" : "Scan the label")
             .navigationBarTitleDisplayMode(.inline)
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { state.resumeAfterSettings(access: CameraAccess.current()) }
+            }
     }
 
     /// The camera while it reads, the review screen once the Capture button has handed it the lines. A
