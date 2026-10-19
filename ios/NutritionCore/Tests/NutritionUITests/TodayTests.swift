@@ -108,7 +108,7 @@ final class TodayTests: XCTestCase {
         XCTAssertEqual(model.errorMessage, "Could not read the journal.")
         XCTAssertFalse(model.showsEmptyState, "a failed read is not an empty day")
         XCTAssertTrue(model.waterIsUnknown, "a failed read has no water total to show")
-        XCTAssertEqual(model.waterUnknownSpokenValue, "Water not available today")
+        XCTAssertEqual(model.waterUnknownSpokenValue, "Water not available")
     }
 
     /// Try again reloads the same day: a read that now succeeds clears the error and shows the empty day.

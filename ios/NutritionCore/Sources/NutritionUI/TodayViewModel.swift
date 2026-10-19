@@ -124,6 +124,8 @@ public final class TodayViewModel: ObservableObject {
     @Published public private(set) var lastLoadedAt: Date?
     @Published public private(set) var undo: UndoHandle?
     @Published public private(set) var errorMessage: String?
+    /// True when the last journal read failed. A failed read is never an empty day and never zero water.
+    public private(set) var journalReadFailed = false
 
     private let store: JournalStore
     private let lookup: NutrientFactsLookup
@@ -197,6 +199,7 @@ public final class TodayViewModel: ObservableObject {
         // Nil while a load is in progress and after one that failed, so it only ever names a load whose totals
         // are the ones on screen; a successful load sets it again at the end.
         lastLoadedAt = nil
+        journalReadFailed = false
         do {
             var skippedIntakes = 0
             var intakes: [Intake] = []
@@ -419,6 +422,7 @@ public final class TodayViewModel: ObservableObject {
             missingValuesSummary = nil
             activityGoalNote = nil
             dateSubtitle = Self.makeDateSubtitle(now, zoneIdentifier: TimeZone.current.identifier)
+            journalReadFailed = true
             errorMessage = "Could not read the journal."
         }
     }
@@ -564,6 +568,15 @@ public final class TodayViewModel: ObservableObject {
     }
 
     /// The water total in the unit the reader chose, as it is shown on screen.
+    /// The empty state is shown only for a read that succeeded and found nothing.
+    public var showsEmptyState: Bool { rows.isEmpty && !journalReadFailed }
+
+    /// A failed read has no water total, so the water value is unknown rather than zero.
+    public var waterIsUnknown: Bool { journalReadFailed }
+
+    /// The spoken water value while the water total is unknown. Not dated: Today can show other days.
+    public var waterUnknownSpokenValue: String { "Water not available" }
+
     public var waterTotalDisplay: DisplayAmount {
         AmountDisplay.water(self.waterTotalMilliliters, system: self.preferences.unitSystem)
     }

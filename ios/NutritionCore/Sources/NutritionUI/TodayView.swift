@@ -122,6 +122,9 @@ public struct TodayView: View {
         if let message = model.errorMessage {
             InlineNotice(message, tone: .failed)
         }
+        if model.journalReadFailed {
+            Button("Try again") { model.load(now: now()) }
+        }
         if model.skippedIntakeCount > 0 {
             InlineNotice("\(model.skippedIntakeCount) entries can't be shown.", tone: .waiting)
         }
@@ -164,10 +167,10 @@ public struct TodayView: View {
                             .font(.headline)
                             .foregroundStyle(TokenColors.textPrimary)
                         Spacer(minLength: DesignSpacing.s)
-                        Text(model.waterTotalDisplay.text)
+                        Text(model.waterIsUnknown ? "–" : model.waterTotalDisplay.text)
                             .font(.title3)
                             .foregroundStyle(TokenColors.textPrimary)
-                            .accessibilityValue(model.waterAccessibilityValue)
+                            .accessibilityValue(model.waterIsUnknown ? model.waterUnknownSpokenValue : model.waterAccessibilityValue)
                     }
                     if model.waterSkippedCount > 0 {
                         InlineNotice(
@@ -250,7 +253,7 @@ public struct TodayView: View {
                 }
             }
         }
-        if model.rows.isEmpty {
+        if model.showsEmptyState {
             EmptyState(
                 title: "Nothing logged today",
                 message: "Scan a label, scan a barcode or type it in.",
