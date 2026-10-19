@@ -7,6 +7,8 @@ public struct JournalView: View {
     private let onSelect: (String) -> Void
     /// Adds an entry from the empty journal. Nil leaves the empty state without a button.
     private let onAdd: (() -> Void)?
+    /// Opens the add flow on today with a meal chosen. Nil hides the "+ Add food" rows.
+    private let onAddToMeal: ((MealLabel) -> Void)?
     /// The day picked in the jump sheet, read when the sheet opens.
     @State private var pickedDay = Date()
     @State private var showingJumpSheet = false
@@ -33,11 +35,13 @@ public struct JournalView: View {
 
     public init(
         model: JournalViewModel, now: @escaping () -> Date = { Date() }, onSelect: @escaping (String) -> Void,
-        onAdd: (() -> Void)? = nil
+        onAdd: (() -> Void)? = nil,
+        onAddToMeal: ((MealLabel) -> Void)? = nil
     ) {
         self.model = model
         self.now = now
         self.onSelect = onSelect
+        self.onAddToMeal = onAddToMeal
         self.onAdd = onAdd
     }
 
@@ -310,13 +314,14 @@ public struct JournalView: View {
             }
             if model.isExpanded(section) {
                 // Each meal is its own row in its own card, so the List still lays out and recycles rows per meal.
-                ForEach(section.mealGroups) { group in
+                ForEach(JournalViewModel.diaryMealGroups(for: section.rows)) { group in
                     Card {
                         VStack(alignment: .leading, spacing: DesignSpacing.m) {
                             mealHeader(group, in: section)
                             ForEach(group.rows) { row in
                                 entryButton(row)
                             }
+                            if group.rows.isEmpty { addFoodRow(group, in: section) }
                         }
                     }
                     .listRowSeparator(.hidden)
@@ -356,6 +361,20 @@ public struct JournalView: View {
         }
     }
 
+    /// "+ Add food" under an empty meal. Only today's section offers it: the add flow logs to now, and a past
+    /// day's add belongs to the add owner's routing work.
+    @ViewBuilder
+    private func addFoodRow(_ group: JournalMealGroup, in section: JournalDaySection) -> some View {
+        if let onAddToMeal, let meal = JournalViewModel.addMeal(forGroupTitle: group.title),
+           section.id == JournalViewModel.dayKey(now(), zone: model.dayZone) {
+            Button { onAddToMeal(meal) } label: {
+                Label("Add food", systemImage: "plus").font(.subheadline)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Add food to \(group.title)")
+        }
+    }
+
     /// A meal's title and, on a past day, a button that copies just that meal to today.
     private func mealHeader(_ group: JournalMealGroup, in section: JournalDaySection) -> some View {
         HStack(spacing: DesignSpacing.s) {
@@ -391,7 +410,7 @@ public struct JournalView: View {
             .buttonStyle(.borderless)
             .accessibilityLabel("Save \(group.title) as a meal")
         }
-        if model.canCopyToToday(section, now: now()) {
+        if !group.rows.isEmpty, model.canCopyToToday(section, now: now()) {
             Button {
                 model.copyMealToToday(section.id, groupID: group.id, now: now())
             } label: {
