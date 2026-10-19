@@ -598,7 +598,9 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         let erased = await model.eraseAllData()
 
         XCTAssertFalse(erased)
-        XCTAssertEqual(model.errorMessage, ConnectionsPrivacyViewModel.eraseLeftBehindMessage(["community sign-in"]))
+        XCTAssertEqual(
+            model.errorMessage,
+            ConnectionsPrivacyViewModel.eraseLeftBehindMessage(["community sign-in", "journal"]))
         XCTAssertEqual(model.incompleteRestoreWarning, ConnectionsPrivacyViewModel.partialRestoreWarningMessage)
         XCTAssertEqual(model.journalRestoreGeneration, 1)
         XCTAssertEqual(try journal.activeIntakes().map(\.id), [entryID])

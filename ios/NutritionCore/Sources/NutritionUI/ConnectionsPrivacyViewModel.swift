@@ -636,6 +636,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         } catch {
             errorMessage = Self.eraseNothingErasedMessage
             eraseRetryAvailable = true
+            // Nothing was erased, but the import effects deferred during this erase still need resolving.
+            resolveDeferredImportEffectsAfterErase(journalEraseSucceeded: false)
             return false
         }
 
