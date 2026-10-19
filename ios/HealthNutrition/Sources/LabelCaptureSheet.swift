@@ -292,6 +292,13 @@ struct LabelCaptureSheet: View {
                     .accessibilityLabel("Back to the values you checked")
                     .accessibilityHint("Goes back to the review screen and keeps what you have checked")
             }
+            if CameraAccessNotice.offersOpenSettings(for: CameraAccess.current()) {
+                Button(CameraAccessNotice.openSettingsTitle) {
+                    if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                }
+                .font(.headline)
+                .accessibilityHint("Opens this app's settings, where camera access is turned on")
+            }
             Button("Close") { dismiss() }
                 .font(state.canReturnToValues ? .body : .headline)
                 .accessibilityHint("Closes label capture and throws the values on screen away")
@@ -369,7 +376,7 @@ struct LabelCaptureDataScanner: UIViewControllerRepresentable {
                 try controller.startScanning()
                 isRunning = true
             } catch {
-                report("The camera could not be started. Type the values in instead.")
+                report(CameraAccessNotice.failureMessage(for: CameraAccess.current(), sheet: .label))
             }
         }
 

@@ -84,6 +84,13 @@ struct BarcodeScannerSheet: View {
                 .multilineTextAlignment(.center)
             Button("Type the digits instead", action: onType)
                 .font(.headline)
+            if CameraAccessNotice.offersOpenSettings(for: CameraAccess.current()) {
+                Button(CameraAccessNotice.openSettingsTitle) {
+                    if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                }
+                .font(.headline)
+                .accessibilityHint("Opens this app's settings, where camera access is turned on")
+            }
         }
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
