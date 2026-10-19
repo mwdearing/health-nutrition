@@ -1,4 +1,5 @@
 import Foundation
+import NutritionJournal
 import XCTest
 @testable import NutritionUI
 
