@@ -171,7 +171,8 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
     @discardableResult
     public func quickAdd(_ recent: RecentItem) -> AddUndoToken? {
         var template = recent.template
-        template.meal = meal?.rawValue
+        // Only a meal the person chose overrides the item's own meal; None keeps the one it was logged under.
+        if let meal { template.meal = meal.rawValue }
         let date = now()
         do {
             let repeater = IntakeRepeater(store: store, timeZoneProvider: { TimeZone.current.identifier },
