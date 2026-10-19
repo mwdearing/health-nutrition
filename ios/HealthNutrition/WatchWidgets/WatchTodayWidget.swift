@@ -46,7 +46,7 @@ struct WatchTodayWidgetView: View {
     private var snapshot: WidgetSnapshot? { entry.snapshot }
     /// Remaining when there is one (a goal is set), otherwise Food, as Today puts them first.
     private var headline: String { snapshot?.gaugeHeadline ?? "—" }
-    private var spoken: String { snapshot?.calorieSpoken ?? "Calories unknown" }
+    private var spoken: String { snapshot?.calorieSpoken ?? "Calories not available" }
 
     var body: some View {
         switch family {

@@ -88,7 +88,7 @@ final class WidgetSnapshotTests: XCTestCase {
     func testTheCalorieBlockIsWordedAsTodayWordsIt() throws {
         var snapshot = WidgetSnapshot.empty(at: Date(timeIntervalSince1970: 1_700_000_000))
         XCTAssertNil(snapshot.remainingText)
-        XCTAssertEqual(snapshot.calorieSpoken, "Calories unknown")
+        XCTAssertEqual(snapshot.calorieSpoken, "Calories not available")
         snapshot.energyKcal = 800
         snapshot.remainingKcal = 1_200
         snapshot.burnedKcal = 250

@@ -73,13 +73,18 @@ final class WidgetSnapshotPublisher {
             }
     }
 
+    /// Whether a load's totals may be written: only the load on screen, and never after a failed journal read.
+    static func shouldPublish(lastLoadedAt: Date?, journalReadFailed: Bool, loadedAt: Date) -> Bool {
+        lastLoadedAt == loadedAt && !journalReadFailed
+    }
+
     func publish(from today: TodayViewModel, loadedAt: Date, generation: Int) {
         // Only the load whose totals are on screen is written: a pending write from an earlier load, or one whose
         // successor failed part way (lastLoadedAt is nil then), is dropped.
         // A failed read leaves no rows and no totals to summarise, so it is never written as an empty day.
         // Second line of defence: load() already clears lastLoadedAt before a read (TodayViewModel.swift:201).
-        guard let store, !isErasing(), erasure.accepts(generation: generation), today.lastLoadedAt == loadedAt,
-              !today.journalReadFailed
+        guard let store, !isErasing(), erasure.accepts(generation: generation),
+              Self.shouldPublish(lastLoadedAt: today.lastLoadedAt, journalReadFailed: today.journalReadFailed, loadedAt: loadedAt)
         else { return }
         // Reading the totals here, on the main actor, while `lastLoadedAt` still names this load (checked above),
         // is reading what that load produced.

@@ -63,7 +63,7 @@ struct TodayWidgetView: View {
                     }
                 }
             }
-            .accessibilityLabel(snapshot?.calorieSpoken ?? "Calories unknown")
+            .accessibilityLabel(snapshot?.calorieSpoken ?? "Calories not available")
             .privacySensitive()
         case .accessoryRectangular:
             if isEmpty {
@@ -76,11 +76,11 @@ struct TodayWidgetView: View {
                 Text("Nothing logged today")
             } else if let remaining = snapshot?.remainingInlineText {
                 Text("Calories remaining \(remaining)")
-                    .accessibilityLabel(snapshot?.calorieSpoken ?? "Calories unknown")
+                    .accessibilityLabel(snapshot?.calorieSpoken ?? "Calories not available")
                     .privacySensitive()
             } else {
                 Text("\(snapshot?.foodText ?? "—") Food")
-                    .accessibilityLabel(snapshot?.calorieSpoken ?? "Calories unknown")
+                    .accessibilityLabel(snapshot?.calorieSpoken ?? "Calories not available")
                     .privacySensitive()
             }
         case .systemMedium:

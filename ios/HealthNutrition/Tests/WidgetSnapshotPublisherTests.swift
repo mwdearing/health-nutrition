@@ -114,6 +114,17 @@ final class WidgetSnapshotPublisherTests: XCTestCase {
         XCTAssertNil(widgetStore.read(), "a failed read writes no summary")
     }
 
+    /// The publish decision: only the load on screen, and never after a failed read, even when lastLoadedAt still names it.
+    func testShouldPublishOnlyTheLoadOnScreenThatDidNotFail() {
+        XCTAssertTrue(WidgetSnapshotPublisher.shouldPublish(lastLoadedAt: loadedAt, journalReadFailed: false, loadedAt: loadedAt))
+        XCTAssertFalse(WidgetSnapshotPublisher.shouldPublish(lastLoadedAt: loadedAt, journalReadFailed: true, loadedAt: loadedAt),
+                       "loaded and failed: the second line of defence keeps it out")
+        XCTAssertFalse(WidgetSnapshotPublisher.shouldPublish(lastLoadedAt: nil, journalReadFailed: false, loadedAt: loadedAt),
+                       "no completed load")
+        XCTAssertFalse(WidgetSnapshotPublisher.shouldPublish(lastLoadedAt: loadedAt.addingTimeInterval(1), journalReadFailed: false, loadedAt: loadedAt),
+                       "a later load is on screen")
+    }
+
     /// A model that never read the journal is not an empty day: the publisher writes nothing for it.
     func testItWritesNothingBeforeAnyRead() throws {
         let today = try makeToday()

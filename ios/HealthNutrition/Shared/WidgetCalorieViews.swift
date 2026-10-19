@@ -40,7 +40,7 @@ extension WidgetSnapshot {
             foodNumber.map { "Food, \(isPartial("energy") ? "at least " : "")\($0) calories" },
             burnedText.map { "Burned, \($0) calories" },
         ].compactMap { $0 }
-        return parts.isEmpty ? "Calories unknown" : parts.joined(separator: ", ")
+        return parts.isEmpty ? "Calories not available" : parts.joined(separator: ", ")
     }
 }
 
@@ -92,6 +92,6 @@ struct WidgetCalorieSummary: View {
             WidgetFoodBurned(snapshot: snapshot, vertical: verticalDetails)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(snapshot?.calorieSpoken ?? "Calories unknown")
+        .accessibilityLabel(snapshot?.calorieSpoken ?? "Calories not available")
     }
 }
