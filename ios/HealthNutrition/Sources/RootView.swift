@@ -10,7 +10,7 @@ enum AddFlowMessage {
     static let productDetailsFailed = "Could not open product details."
 }
 
-/// The tab shell: Today, Diary (the journal), Library, Trends and Settings, all reading the same store.
+/// The tab shell: Today, Diary (the journal), Library and Trends, all reading the same store.
 @MainActor
 struct RootView: View {
     let services: AppServices

@@ -63,10 +63,11 @@ def test_add_actions_include_supplements_in_visible_and_accessible_labels() -> N
     assert '"Log your first food or drink"' not in checklist
 
 
-def test_the_trends_tab_hosts_the_trends_screen_and_the_settings_tab_only_redirects() -> None:
+def test_the_trends_tab_hosts_the_trends_screen_and_there_is_no_settings_tab() -> None:
     text = ROOT_VIEW.read_text()
     body = _tab_view_body()
     assert "TrendsView(today: services.today, journal: services.journal)" in body
     assert 'Label("Trends"' in body
-    # The Settings tab shows no screen of its own: the redirect rule is the tested SettingsTabRedirect.
-    assert "SettingsTabRedirect.resolve(" in text
+    # Settings lives behind the gear on every tab, not in the tab bar.
+    assert 'Label("Settings"' not in text
+    assert "SettingsTabRedirect" not in text
