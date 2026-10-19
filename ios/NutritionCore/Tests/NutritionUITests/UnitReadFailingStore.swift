@@ -11,6 +11,10 @@ final class UnitReadFailingStore: JournalStore, JournalLoggedUnits, @unchecked S
 
     init(inner: SwiftDataJournalStore) { self.inner = inner }
 
+    /// Set to false to let the reads succeed, so a test can load good data before failing the read.
+    var failsUnitReads = true
+
+
     var failNextSaveForTesting: Bool {
         get { inner.failNextSaveForTesting }
         set { inner.failNextSaveForTesting = newValue }
@@ -59,8 +63,6 @@ extension UnitReadFailingStore {
         try units.recordLoggedUnit(loggedUnit)
     }
 
-    /// Set to false to let the reads succeed, so a test can load good data before failing the read.
-    var failsUnitReads = true
 
     func loggedUnits() throws -> [JournalLoggedUnit] {
         if failsUnitReads { throw UnitsUnreadable() }
