@@ -145,7 +145,7 @@ public struct JournalView: View {
                 LabeledField("Meal name") { focus in
                     TextField("Such as Usual breakfast", text: $saveMealName).focused(focus)
                 }
-                Text("Keeps the \(target.entryCountText) of \(target.title) together, so you can log them again in one go from Add, in Find products.")
+                Text("Keeps the \(target.entryCountText) of \(target.title) together, so you can log them again in one go from Add, in Search foods.")
                     .font(.footnote)
                     .foregroundStyle(TokenColors.textSecondary)
                 // A refusal keeps the prompt open with the typed name, so the person can change it.

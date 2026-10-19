@@ -6,6 +6,6 @@ final class AddSearchRowTests: XCTestCase {
     /// The row's visible text and its spoken label come from one constant, so a rename cannot leave
     /// the spoken label behind (the label-in-name rule).
     func testSearchRowTitleConstantHasTheShippedWording() {
-        XCTAssertEqual(AddHomeView.searchRowTitle, "Search foods, brands, drinks")
+        XCTAssertEqual(AddHomeView.searchRowTitle, "Search foods")
     }
 }

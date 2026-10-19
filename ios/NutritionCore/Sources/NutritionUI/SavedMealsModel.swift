@@ -126,7 +126,7 @@ public final class SavedMealsModel: ObservableObject {
             }
             let saved = try book.add(name: name, meal: meal, templates: templates, itemIDs: itemIDs)
             load()
-            notice = "Saved \(saved.name). Log it again from Add, in Find products."
+            notice = "Saved \(saved.name). Log it again from Add, in Search foods."
             noticeIsFailure = false
             return true
         } catch let error as SavedMealError {

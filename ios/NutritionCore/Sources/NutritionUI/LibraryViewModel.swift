@@ -262,13 +262,13 @@ public final class LibraryViewModel: ObservableObject {
     /// Favorites first, then Products, then Recents.
     @Published public private(set) var sections: [LibrarySection] = []
     /// Every logged product, including those the Products segment lists as a standalone product row
-    /// instead. Find products searches these, so a typed name still finds the logged amount and meal.
+    /// instead. Search foods searches these, so a typed name still finds the logged amount and meal.
     @Published public private(set) var loggedProducts: [LibraryItem] = []
     /// Everything the person logs often, most often first (see `FrequentItemsProvider`), uncapped so a
-    /// typed name finds any of them. Find products lists the first few as "Often logged"; the Library
+    /// typed name finds any of them. Search foods lists the first few as "Often logged"; the Library
     /// screen itself does not show them.
     @Published public private(set) var frequentItems: [LibraryItem] = []
-    /// The saved meals Find products offers to log. Set once by the app; nil leaves them out.
+    /// The saved meals Search foods offers to log. Set once by the app; nil leaves them out.
     public var savedMeals: SavedMealsModel?
     @Published public private(set) var errorMessage: String?
     @Published public private(set) var standaloneProducts: [CustomProductRevision] = []

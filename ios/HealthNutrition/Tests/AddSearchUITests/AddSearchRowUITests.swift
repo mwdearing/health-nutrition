@@ -27,7 +27,8 @@ final class AddSearchRowUITests: XCTestCase {
         XCTAssertNotNil(tappable, "no hittable Add button on the Today screen (matching: \(hittableAdd))")
         tappable?.tap()
 
-        let row = app.buttons.matching(NSPredicate(format: "label == %@", "Search foods, brands, drinks")).firstMatch
+        // Matched by identifier: the Library picker and Library carry the same "Search foods" label.
+        let row = app.buttons["addSearchRow"]
         XCTAssertTrue(row.waitForExistence(timeout: 10),
                       "the search row is not on the Add screen. \(describeAddState(app))")
         XCTAssertTrue(row.isHittable, "the search row is on screen but cannot be tapped")

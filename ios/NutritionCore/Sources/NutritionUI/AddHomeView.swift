@@ -3,7 +3,7 @@ import SwiftUI
 
 public struct AddHomeView: View {
     /// The search row's visible text, also its spoken label, so the two cannot drift apart.
-    public static let searchRowTitle = "Search foods, brands, drinks"
+    public static let searchRowTitle = "Search foods"
     @ObservedObject private var model: AddHomeViewModel
     private let onBarcode: () -> Void
     private let onLabel: () -> Void
@@ -46,6 +46,7 @@ public struct AddHomeView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(Self.searchRowTitle)
+                    .accessibilityIdentifier("addSearchRow")
                     .accessibilityHint("Opens product search on this phone, public food databases and shared foods.")
                 }
                 Picker("Meal", selection: $model.meal) {
