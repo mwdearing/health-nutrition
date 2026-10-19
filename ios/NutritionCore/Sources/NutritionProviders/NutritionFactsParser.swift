@@ -1274,6 +1274,14 @@ public enum NutritionFactsParser {
             let longest = min(start + 4, tokens.count)
             for end in stride(from: longest, through: start + 1, by: -1) {
                 guard let named = compoundName(tokens[start..<end]) else { continue }
+                // "Vitamin B 1 2 mcg": a number joined after a letter, then a separate number, is ambiguous (B1 at
+                // 2 mcg, or B12 with its amount lost), so the line gives nothing rather than a guessed extra.
+                func isBareNumber(_ text: String) -> Bool { !text.isEmpty && text.allSatisfy { $0.isASCII && $0.isNumber } }
+                if end >= 2, end < tokens.count, isBareNumber(tokens[end - 1].text),
+                   tokens[end - 2].text.count == 1, tokens[end - 2].text.first?.isLetter == true,
+                   isBareNumber(tokens[end].text) {
+                    continue
+                }
                 guard let amount = additionalAmount(at: end, in: tokens, line: text, next: nextLine)
                 else { continue }
                 return AdditionalRow(
@@ -1313,6 +1321,18 @@ public enum NutritionFactsParser {
         _ words: ArraySlice<(text: String, range: Range<String.Index>)>
     ) -> (name: String, nutrient: PanelRow?)? {
         guard !words.isEmpty, words.count <= 4 else { return nil }
+        // A hyphen inside a known nutrient name is a line-break artifact, so matching ignores it. This runs before the
+        // word checks, so "Total-Fat" (whose part "total" is a panel word) still reaches its field. Spaces are ignored
+        // too, so "Saturated-Fat" matches the alias "saturated fat"; the field reads its canonical name ("Sodium").
+        let joined = words.map(\.text).joined(separator: " ")
+        if joined.contains("-") {
+            let bare = joined.filter { $0 != "-" && $0 != " " }.lowercased()
+            if let row = rows.first(where: { row in row.aliases.contains { $0.filter { $0 != " " } == bare } }) {
+                let alias = row.aliases.first { $0.filter { $0 != " " } == bare } ?? bare
+                let canonical = alias.split(separator: " ").map { String($0).capitalized }.joined(separator: " ")
+                return (canonical, row)
+            }
+        }
         var previous: String?
         for token in words {
             let lower = token.text.lowercased()
@@ -1331,17 +1351,6 @@ public enum NutritionFactsParser {
         }
         let name = words.map(\.text).joined(separator: " ")
         // A hyphen inside a known nutrient name is a line-break artifact, so matching ignores it: "So-dium" is sodium.
-        // The extra keeps its printed name when the name is not a known nutrient.
-        if name.contains("-") {
-            // Spaces are ignored too, so "Saturated-Fat" matches the alias "saturated fat".
-            let bare = name.filter { $0 != "-" && $0 != " " }.lowercased()
-            if let row = rows.first(where: { row in row.aliases.contains { $0.filter { $0 != " " } == bare } }) {
-                // The field reads its canonical name ("Sodium"), not the name split at the line break.
-                let alias = row.aliases.first { $0.filter { $0 != " " } == bare } ?? bare
-                let canonical = alias.split(separator: " ").map { String($0).capitalized }.joined(separator: " ")
-                return (canonical, row)
-            }
-        }
         guard let match = firstRow(in: name) else { return (name, nil) }
         // The whole name is one named row, so it is that nutrient and not a compound of its own.
         if match.nameStart == name.startIndex, match.end == name.endIndex { return nil }
