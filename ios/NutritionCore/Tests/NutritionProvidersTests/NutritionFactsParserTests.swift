@@ -1717,4 +1717,81 @@ final class NutritionFactsParserTests: XCTestCase {
         if case .known = panel.value(for: key) { return true }
         return false
     }
+
+    // MARK: Issue 485 (label-scan follow-ups). Tests first: the parser is not changed in this commit.
+
+    func testNetWeightLineGivesNoExtra() {
+        let panel = parse(["Nutrition Facts", "Serving Size 1 cup", "Calories 50", "NET-WT 100 g"])
+        XCTAssertTrue(panel.additionalNutrients.isEmpty)
+    }
+
+    func testFullwidthDigitsReadEveryKnownField() throws {
+        let panel = parse([
+            "Nutrition Facts", "Serving Size 1 cup",
+            "Calories ５０", "Total Fat ２g", "Sodium １００mg", "Protein ３g",
+        ])
+        XCTAssertEqual(try amount(.calories, panel), 50)
+        XCTAssertEqual(try amount(.totalFat, panel), 2)
+        XCTAssertEqual(try amount(.sodium, panel), 100)
+        XCTAssertEqual(try amount(.protein, panel), 3)
+    }
+
+    func testHyphenatedIronFormLandsOnIron() throws {
+        let panel = parse(["Supplement Facts", "Serving Size 1 capsule", "Iron-Bisglycinate 10mg"])
+        XCTAssertEqual(try amount(.iron, panel), 10)
+        XCTAssertEqual(try unit(.iron, panel), .mg)
+    }
+
+    func testCalciumCitrateStillLandsOnCalcium() throws {
+        let panel = parse(["Supplement Facts", "Serving Size 1 tablet", "Calcium Citrate 200mg"])
+        XCTAssertEqual(try amount(.calcium, panel), 200)
+    }
+
+    func testVitaminD3AndSpacedD3ReadAsVitaminDWithTheCanonicalName() {
+        let attached = parse(["Supplement Facts", "Serving Size 1 softgel", "Vitamin D3 25mcg"])
+        let spaced = parse(["Supplement Facts", "Serving Size 1 softgel", "Vitamin D 3 25mcg"])
+        XCTAssertEqual(attached.nutrientDisplayNames[NutritionFactKey.vitaminD.rawValue], "Vitamin D")
+        XCTAssertEqual(spaced.nutrientDisplayNames[NutritionFactKey.vitaminD.rawValue], "Vitamin D")
+    }
+
+    func testVitaminBTwelveWrittenTwoWaysGivesTheSameRows() {
+        let hyphen = parse(["Supplement Facts", "Serving Size 1 tablet", "Vitamin B-12 25mcg"])
+        let spaced = parse(["Supplement Facts", "Serving Size 1 tablet", "Vitamin B 12 25mcg"])
+        XCTAssertEqual(hyphen.additionalNutrients.count, 1)
+        XCTAssertEqual(hyphen.additionalNutrients, spaced.additionalNutrients)
+    }
+
+    func testSugarAlcoholGivesNoExtraOnANutritionFactsPanel() {
+        let panel = parse(["Nutrition Facts", "Serving Size 1 bar", "Sugar-Alcohol 2g"])
+        XCTAssertTrue(panel.additionalNutrients.isEmpty)
+        XCTAssertEqual(panel.unnamedRowCount, 1)
+    }
+
+    func testHyphenatedSugarAlcoholMatchesTheSpacedFormOnASupplementPanel() {
+        let hyphen = parse(["Supplement Facts", "Serving Size 1 bar", "Sugar-Alcohol 2g"])
+        let spaced = parse(["Supplement Facts", "Serving Size 1 bar", "Sugar Alcohol 2g"])
+        XCTAssertEqual(hyphen.additionalNutrients, spaced.additionalNutrients)
+        XCTAssertEqual(hyphen.unnamedRowCount, spaced.unnamedRowCount)
+    }
+
+    func testMultiWordAliasWithAnAmountGivesNoExtraOnBothPanels() {
+        for header in ["Nutrition Facts", "Supplement Facts"] {
+            let panel = parse([header, "Serving Size 1 bar", "Added Sugars 5g", "Total Sugars 8g"])
+            XCTAssertTrue(panel.additionalNutrients.isEmpty, "\(header): a known alias is not an extra")
+        }
+    }
+
+    func testVitaminsAKAndEAreExtrasWithTheirExactNames() {
+        let panel = parse(["Supplement Facts", "Serving Size 1 softgel", "Vitamin A 900mcg", "Vitamin E 15mg", "Vitamin K 120mcg"])
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Vitamin A", "Vitamin E", "Vitamin K"])
+    }
+
+    func testBAmbiguousSpacedNumbersAreUnreadAndAttachedUnitGivesTheSameResult() {
+        let spaced = parse(["Nutrition Facts", "Serving Size 1 tablet", "Vitamin B 1 2 mcg"])
+        let attached = parse(["Nutrition Facts", "Serving Size 1 tablet", "Vitamin B 1 2mcg"])
+        XCTAssertTrue(spaced.additionalNutrients.isEmpty)
+        XCTAssertEqual(spaced.unnamedRowCount, 1, "a row the parser cannot place counts as unread")
+        XCTAssertTrue(attached.additionalNutrients.isEmpty)
+        XCTAssertEqual(attached.unnamedRowCount, spaced.unnamedRowCount)
+    }
 }
