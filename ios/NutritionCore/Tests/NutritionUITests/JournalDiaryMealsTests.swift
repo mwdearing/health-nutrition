@@ -45,4 +45,12 @@ final class JournalDiaryMealsTests: XCTestCase {
         XCTAssertEqual(JournalViewModel.addMeal(forGroupTitle: "Snack"), .snack)
         XCTAssertNil(JournalViewModel.addMeal(forGroupTitle: "Other"))
     }
+
+    /// The add row belongs to the day the add flow logs to: today in the given zone, and only that day.
+    func testAddRowIsOfferedOnlyForToday() {
+        let utc = TimeZone(identifier: "UTC")!
+        XCTAssertTrue(JournalViewModel.isAddDay("2023-11-14", now: when, zone: utc))
+        XCTAssertFalse(JournalViewModel.isAddDay("2023-11-13", now: when, zone: utc))
+        XCTAssertFalse(JournalViewModel.isAddDay("2023-11-15", now: when, zone: utc))
+    }
 }
