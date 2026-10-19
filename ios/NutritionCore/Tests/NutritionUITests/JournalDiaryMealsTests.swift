@@ -123,4 +123,27 @@ final class JournalDiaryMealsTests: XCTestCase {
         let journal = JournalViewModel(store: store, locale: Locale(identifier: "en_US"))
         XCTAssertEqual(journal.dayZone.identifier, TimeZone.current.identifier)
     }
+
+    /// With only yesterday's entries, today still gets a section, so its four meal cards and add rows show.
+    func testTodayGetsASectionWhenOnlyYesterdayHasEntries() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let store = try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
+        let now = Date(timeIntervalSince1970: 1_700_012_400)  // 2023-11-15 01:40 UTC
+        let yesterday = now.addingTimeInterval(-86_400)
+        try store.create(
+            Intake(id: "yesterday-lunch", category: "food", occurredAt: yesterday, timeZoneIdentifier: "UTC", meal: "Lunch"),
+            components: [IntakeComponent(componentID: "example-oats", name: "Example oats", amount: 40, unit: .g)],
+            product: nil, now: yesterday)
+
+        let journal = JournalViewModel(store: store, timeZoneIdentifier: "UTC", locale: Locale(identifier: "en_US"))
+        journal.load(now: now)
+
+        let today = try XCTUnwrap(journal.sections.first { $0.id == "2023-11-15" })
+        XCTAssertEqual(today.mealGroups.map(\.title), ["Breakfast", "Lunch", "Dinner", "Snack"])
+        XCTAssertTrue(today.mealGroups.allSatisfy { $0.rows.isEmpty })
+        XCTAssertFalse(today.isCollapsedByDefault)
+        XCTAssertTrue(journal.showsAddRow(sectionID: today.id, now: now))
+    }
 }
