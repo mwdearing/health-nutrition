@@ -224,6 +224,8 @@ public struct LibraryView: View {
                     .foregroundStyle(TokenColors.accent)
                     .accessibilityHidden(true)
             }
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(Rectangle())
             .buttonStyle(.borderless)
             .accessibilityLabel(item.isFavorite ? "Remove \(item.title) from favorites" : "Add \(item.title) to favorites")
         }
