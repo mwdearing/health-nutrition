@@ -36,7 +36,7 @@ final class CameraAccessNoticeTests: XCTestCase {
     func testLabelSheetKeepsItsValuesFallback() {
         XCTAssertEqual(
             CameraAccessNotice.failureMessage(for: .notDetermined, sheet: .label),
-            "The camera could not be started. Type the values in instead.")
+            "The camera could not be started.")
         XCTAssertFalse(CameraAccessNotice.offersOpenSettings(for: .notDetermined))
     }
 }

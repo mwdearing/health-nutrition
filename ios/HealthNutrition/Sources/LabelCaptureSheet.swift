@@ -369,7 +369,7 @@ struct LabelCaptureDataScanner: UIViewControllerRepresentable {
             parent.session.attach(controller)
             guard !isRunning, !hasFailed else { return }
             guard DataScannerViewController.isSupported, DataScannerViewController.isAvailable else {
-                report("This device cannot read text with the camera. Type the values in instead.")
+                report("This device cannot read text with the camera.")
                 return
             }
             do {

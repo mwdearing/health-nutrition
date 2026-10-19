@@ -21,7 +21,7 @@ public enum CameraAccessNotice {
     public static let barcodeAccessOffMessage = "Camera access is off. Turn it on in Settings to scan, or type the digits instead."
     public static let labelAccessOffMessage = "Camera access is off. Turn it on in Settings to scan."
     public static let barcodeStartFailureMessage = "The camera could not be started. Type the digits instead."
-    public static let labelStartFailureMessage = "The camera could not be started. Type the values in instead."
+    public static let labelStartFailureMessage = "The camera could not be started."
     public static let openSettingsTitle = "Open Settings"
     public static let openSettingsHint = "Opens Settings to turn on camera access"
 
