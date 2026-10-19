@@ -292,6 +292,37 @@ final class SupplementStackTests: XCTestCase {
         XCTAssertNotEqual(first.intakeID, second.intakeID)
     }
 
+    /// The supplement load reads the logged units 3 times: call 1 is the read at load (line 150), call 2 the read in
+    /// makeCandidates (line 371), call 3 the recents read. This test fails call 1 (#415).
+    func testSupplementLoadShowsNothingWhenItsOwnUnitReadFails() throws {
+        let store = UnitReadCountingStore(inner: try makeStore())
+        store.failsOnUnitReadCall = 1
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        try saveFavorite(favorites)
+        let model = makeModel(store: store, favorites: favorites, schedules: schedules)
+        model.load(now: now)
+        XCTAssertEqual(store.unitReadCalls, 3)
+        XCTAssertNotNil(model.errorMessage)
+        XCTAssertTrue(model.rows.isEmpty)
+        XCTAssertTrue(model.candidates.isEmpty)
+    }
+
+    /// The supplement load reads the logged units 3 times: call 1 is the read at load (line 150), call 2 the read in
+    /// makeCandidates (line 371), call 3 the recents read. This test fails call 2 (#415).
+    func testSupplementCandidatesShowNothingWhenTheirOwnUnitReadFails() throws {
+        let store = UnitReadCountingStore(inner: try makeStore())
+        store.failsOnUnitReadCall = 2
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        try saveFavorite(favorites)
+        let model = makeModel(store: store, favorites: favorites, schedules: schedules)
+        model.load(now: now)
+        XCTAssertEqual(store.unitReadCalls, 3)
+        XCTAssertNotNil(model.errorMessage)
+        XCTAssertTrue(model.candidates.isEmpty)
+    }
+
     func testTakenLogsTheFavoriteWithItsLabelSnapshotAndUndoUnmarksIt() throws {
         let store = try makeStore()
         let favorites = try makeFavorites()
