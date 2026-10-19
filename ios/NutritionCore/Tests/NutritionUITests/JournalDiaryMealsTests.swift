@@ -151,4 +151,19 @@ final class JournalDiaryMealsTests: XCTestCase {
         // The section list the jump, copy and collapse code reads is unchanged: today is not in it.
         XCTAssertFalse(journal.sections.contains { $0.id == "2023-11-15" })
     }
+
+    /// A successful read with no entries lists nothing on the Diary path the view renders, and the journal reports
+    /// its empty state. Without the readable-entry condition in load, today's empty section would appear here.
+    func testEmptyJournalListsNothingOnTheDiaryPath() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let store = try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
+        let journal = JournalViewModel(store: store, timeZoneIdentifier: "UTC", locale: Locale(identifier: "en_US"))
+        journal.load(now: Date(timeIntervalSince1970: 1_700_012_400))
+
+        XCTAssertTrue(journal.diarySections.isEmpty)
+        XCTAssertNil(journal.todaySection)
+        XCTAssertTrue(journal.isEmpty)
+    }
 }
