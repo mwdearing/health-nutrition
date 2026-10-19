@@ -1321,7 +1321,9 @@ public enum NutritionFactsParser {
             let numberAfterLetter = token.text.allSatisfy({ $0.isASCII && $0.isNumber }) && previous?.count == 1
                 && previous?.first?.isLetter == true
             let startsWord = token.text.first?.isLetter == true || numberAfterLetter
-            guard startsWord, !leadingWords.contains(lower), !panelWords.contains(lower),
+            // A hyphen joins words of a name, so each part is checked as a word: "Net-Wt" is a label, not a name.
+            let hasPanelPart = token.text.split(separator: "-").contains { panelWords.contains($0.lowercased()) }
+            guard startsWord, !leadingWords.contains(lower), !panelWords.contains(lower), !hasPanelPart,
                   token.text.allSatisfy({ $0.isLetter || ($0.isASCII && $0.isNumber) || $0 == "-" })
             else { return nil }
             guard countedUnit(for: token.text) == nil else { return nil }
