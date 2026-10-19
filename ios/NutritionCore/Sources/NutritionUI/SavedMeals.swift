@@ -95,7 +95,6 @@ public final class UserDefaultsSavedMealStore: SavedMealStoring, JournalErasing,
         }
     }
 
-
     public var erasureName: String { "saved meals" }
 
     public func eraseAll() throws {

@@ -246,7 +246,6 @@ public final class CustomReminderEraser: JournalErasing, @unchecked Sendable {
         self.erasures = erasures
     }
 
-
     public var erasureName: String { "custom reminders" }
 
     public func eraseAll() throws {

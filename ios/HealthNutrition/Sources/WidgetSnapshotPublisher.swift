@@ -204,7 +204,6 @@ final class WidgetSnapshotEraser: JournalErasing, @unchecked Sendable {
         self.now = now
     }
 
-
     var erasureName: String { "widget data" }
 
     func eraseAll() throws {
