@@ -140,7 +140,7 @@ public struct GoalBarModel: Equatable, Identifiable {
             if skippedWaterCount > 0 {
                 return "\(skippedWaterCount) water entries have a unit that is not a volume and are not counted."
             }
-            return "Some entries can't be added up for \(name)"
+            return MissingValueWording.fallback(name: name)
         }
         return MissingValueWording.note(count: missingCount, name: name)
     }
@@ -248,6 +248,11 @@ enum MissingValueWording {
     static func note(count: Int, name: String) -> String {
         if count == 1 { return "1 entry has no \(name) value" }
         if count > 1 { return "\(count) entries have no \(name) value" }
-        return "Some entries can't be added up for \(name)"
+        return fallback(name: name)
+    }
+
+    /// The wording for a partial line with no missing entry (a below-threshold amount).
+    static func fallback(name: String) -> String {
+        "Some entries can't be added up for \(name)"
     }
 }
