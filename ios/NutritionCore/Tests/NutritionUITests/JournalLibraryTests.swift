@@ -216,6 +216,7 @@ final class JournalLibraryTests: XCTestCase {
     }
 
     func testRowTapRoutesByMode() {
+        XCTAssertEqual(LibraryRowTap.forRow(pickMode: false), .openDetails, "row tap never logs (#503)")
         // Pick mode only ever opens details; it never logs. Normal mode only ever logs.
         XCTAssertEqual(LibraryRowTap.forRow(pickMode: true), .openDetails)
         XCTAssertEqual(LibraryRowTap.forRow(pickMode: false), .logOnce)
