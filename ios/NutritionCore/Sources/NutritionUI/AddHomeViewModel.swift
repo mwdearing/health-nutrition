@@ -80,6 +80,13 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
             loggedUnits: kind == .supplement ? template.loggedUnits : [:], isSupplement: kind == .supplement)
     }
 
+    /// A Recent row's second line: its amounts, then its meal, separated the way the Library row shows them.
+    public func recentSubtitle(of template: RepeatTemplate) -> String {
+        let amounts = amountSummary(of: template)
+        guard let meal = MealLabel.displayName(for: template.meal) else { return amounts }
+        return "\(amounts) · \(meal)"
+    }
+
     public func makeDetails(product: CustomProductRevision, now: Date) throws -> AddIntakeViewModel {
         let model = makeDetails(now: now)
         try model.applyCustomProduct(product)

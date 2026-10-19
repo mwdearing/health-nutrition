@@ -81,19 +81,19 @@ public struct AddHomeView: View {
                             } label: {
                                 VStack(alignment: .leading) {
                                     Text(recent.template.displayName).font(.headline)
-                                    Text(model.amountSummary(of: recent.template))
+                                    Text(model.recentSubtitle(of: recent.template))
                                         .font(.subheadline).foregroundStyle(TokenColors.textSecondary)
                                 }
                             }
                             .buttonStyle(.borderless)
-                            .accessibilityLabel("Opens \(recent.template.displayName)")
+                            .accessibilityLabel("Opens \(recent.template.displayName), \(model.recentSubtitle(of: recent.template))")
                             .accessibilityHint("Opens details without adding an entry")
                             Spacer()
                             QuietCapsule("Add") {
                                 if self.model.quickAdd(recent) != nil { self.onChanged() }
                             }
                             .accessibilityLabel("Log \(recent.template.displayName)")
-                            .accessibilityValue(model.amountSummary(of: recent.template))
+                            .accessibilityValue(model.recentSubtitle(of: recent.template))
                             .accessibilityHint("Logs once. You can undo for 10 seconds.")
                         }
                     }
