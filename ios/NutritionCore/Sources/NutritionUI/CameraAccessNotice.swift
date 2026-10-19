@@ -44,7 +44,7 @@ public enum CameraAccessNotice {
     /// What the sheet shows when it becomes active again after the user may have changed access in Settings.
     /// Nil means access is allowed now, so the sheet clears the failure and starts the scanner again. Otherwise
     /// the message is the one for the access that is still in place (off, restricted, or start failure).
-    public static func messageAfterReturn(current access: CameraAccessState, sheet: CameraSheet) -> String? {
+    public static func messageAfterReturn(access: CameraAccessState, sheet: CameraSheet) -> String? {
         access == .authorized ? nil : failureMessage(for: access, sheet: sheet)
     }
 
