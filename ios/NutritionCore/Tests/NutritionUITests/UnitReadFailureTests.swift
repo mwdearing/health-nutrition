@@ -45,7 +45,8 @@ final class UnitReadFailureTests: XCTestCase {
         let model = JournalViewModel(store: store, timeZoneIdentifier: "UTC")
         model.load(now: now)
         XCTAssertNil(model.errorMessage)
-        XCTAssertNotNil(model.todaySection)
+        // Today has an entry, so its day is listed in the sections rather than as an empty today.
+        XCTAssertFalse(model.sections.isEmpty)
 
         store.failsUnitReads = true
         model.load(now: now)
