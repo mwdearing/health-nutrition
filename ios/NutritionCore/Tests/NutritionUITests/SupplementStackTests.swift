@@ -268,6 +268,27 @@ final class SupplementStackTests: XCTestCase {
 
     // MARK: The list
 
+    /// Two takes of the same favorite give two offers with the same text and different intake ids, so the toast
+    /// keys each offer on its own id.
+    func testTwoTakesOfTheSameFavoriteGiveTwoOffersWithDifferentIds() throws {
+        let store = try makeStore()
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        try saveFavorite(favorites)
+        let model = makeModel(store: store, favorites: favorites, schedules: schedules)
+        model.load(now: now)
+        let candidate = try XCTUnwrap(model.candidates.first { $0.id == "favorite:fav-magnesium" })
+        XCTAssertTrue(model.add(candidate, schedule: try XCTUnwrap(SupplementSchedule(times: [eight, twenty])), now: now))
+        let row = try XCTUnwrap(model.rows.first)
+
+        XCTAssertTrue(model.markTaken(row, at: eight, now: now))
+        let first = try XCTUnwrap(model.undoToken)
+        XCTAssertTrue(model.markTaken(row, at: twenty, now: now))
+        let second = try XCTUnwrap(model.undoToken)
+        XCTAssertEqual(first.message, second.message)
+        XCTAssertNotEqual(first.intakeID, second.intakeID)
+    }
+
     func testTakenLogsTheFavoriteWithItsLabelSnapshotAndUndoUnmarksIt() throws {
         let store = try makeStore()
         let favorites = try makeFavorites()
