@@ -70,4 +70,13 @@ final class CalorieRemainingTests: XCTestCase {
         XCTAssertTrue(value.isPartial)
         XCTAssertEqual(value.partialNote, "Some entries can't be added up for energy")
     }
+
+    /// Below threshold with the goal off: the fallback note still shows, and there is no Remaining to speak.
+    func testBelowThresholdPartialDayWithGoalOffKeepsTheNote() {
+        let value = CalorieRemaining.make(
+            goal: nil, food: 1500, partial: true, missingCount: 0, burned: nil, energyLabel: "Energy")
+        XCTAssertTrue(value.isPartial)
+        XCTAssertNil(value.remaining)
+        XCTAssertEqual(value.partialNote, "Some entries can't be added up for energy")
+    }
 }
