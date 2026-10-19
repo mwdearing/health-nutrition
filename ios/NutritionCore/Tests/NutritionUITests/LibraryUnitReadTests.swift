@@ -4,7 +4,7 @@ import NutritionJournal
 import XCTest
 @testable import NutritionUI
 
-/// The Library's own logged-units read (LibraryViewModel.load, line 330) must report a failure and show no sections,
+/// The Library's own logged-units read (LibraryViewModel.load, its logged-units read) must report a failure and show no sections,
 /// not repeat favorites in the stored unit. The load reads the logged units 4 times in total: calls 1–3 come from
 /// RecentItemsProvider (recents, foods, frequents), and call 4 is the read this test fails (#415).
 @MainActor

@@ -15,7 +15,6 @@ final class UnitReadCountingStore: JournalStore, JournalLoggedUnits, @unchecked 
     /// How many times loggedUnits() has been called on this store.
     private(set) var unitReadCalls = 0
 
-
     var failNextSaveForTesting: Bool {
         get { inner.failNextSaveForTesting }
         set { inner.failNextSaveForTesting = newValue }
@@ -60,20 +59,19 @@ extension UnitReadCountingStore {
     struct UnitsUnreadable: Error {}
 
     func recordLoggedUnit(_ loggedUnit: JournalLoggedUnit) throws {
-        guard let units = inner as? JournalLoggedUnits else { throw UnitsUnreadable() }
+        guard let units = inner as? JournalLoggedUnits else { preconditionFailure("inner store must conform to JournalLoggedUnits") }
         try units.recordLoggedUnit(loggedUnit)
     }
-
 
     func loggedUnits() throws -> [JournalLoggedUnit] {
         unitReadCalls += 1
         if unitReadCalls == failsOnUnitReadCall { throw UnitsUnreadable() }
-        guard let units = inner as? JournalLoggedUnits else { throw UnitsUnreadable() }
+        guard let units = inner as? JournalLoggedUnits else { preconditionFailure("inner store must conform to JournalLoggedUnits") }
         return try units.loggedUnits()
     }
 
     func removeLoggedUnit(intakeID: String, componentID: String) throws {
-        guard let units = inner as? JournalLoggedUnits else { throw UnitsUnreadable() }
+        guard let units = inner as? JournalLoggedUnits else { preconditionFailure("inner store must conform to JournalLoggedUnits") }
         try units.removeLoggedUnit(intakeID: intakeID, componentID: componentID)
     }
 }

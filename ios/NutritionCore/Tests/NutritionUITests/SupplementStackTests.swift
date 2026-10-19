@@ -292,8 +292,8 @@ final class SupplementStackTests: XCTestCase {
         XCTAssertNotEqual(first.intakeID, second.intakeID)
     }
 
-    /// The supplement load reads the logged units 3 times when nothing fails: call 1 is the read at load (line 150), call 2
-    /// the read in makeCandidates (line 371), call 3 the recents read. Failing call 1 throws at load, so only 1 read runs (#415).
+    /// The supplement load reads the logged units 3 times when nothing fails: call 1 is the read at load (in `load`), call 2
+    /// the read in `makeCandidates`, call 3 the recents read. Failing call 1 throws at load, so only 1 read runs (#415).
     func testSupplementLoadShowsNothingWhenItsOwnUnitReadFails() throws {
         let store = UnitReadCountingStore(inner: try makeStore())
         store.failsOnUnitReadCall = 1
@@ -321,7 +321,7 @@ final class SupplementStackTests: XCTestCase {
     }
 
     /// The supplement load reads the logged units 3 times when nothing fails. This test fails call 2, the read in
-    /// makeCandidates (line 371), so call 1 succeeds and the load stops at 2 reads (#415).
+    /// `makeCandidates`, so call 1 succeeds and the load stops at 2 reads (#415).
     func testSupplementCandidatesShowNothingWhenTheirOwnUnitReadFails() throws {
         let store = UnitReadCountingStore(inner: try makeStore())
         store.failsOnUnitReadCall = 2
