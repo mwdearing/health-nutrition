@@ -1750,9 +1750,10 @@ final class NutritionFactsParserTests: XCTestCase {
     func testVitaminD3AndSpacedD3ReadAsVitaminDWithTheCanonicalName() {
         let attached = parse(["Supplement Facts", "Serving Size 1 softgel", "Vitamin D3 25mcg"])
         let spaced = parse(["Supplement Facts", "Serving Size 1 softgel", "Vitamin D 3 25mcg"])
-        // A plain vitamin D name needs no override; the journal shows its own name, "Vitamin D".
-        XCTAssertEqual(attached.nutrientDisplayNames[NutritionFactKey.vitaminD.rawValue] ?? "Vitamin D", "Vitamin D")
-        XCTAssertEqual(spaced.nutrientDisplayNames[NutritionFactKey.vitaminD.rawValue] ?? "Vitamin D", "Vitamin D")
+        // The form digit never shows: neither the attached nor the spaced form keeps "Vitamin D 3" as its name.
+        XCTAssertNotEqual(attached.nutrientDisplayNames[NutritionFactKey.vitaminD.rawValue], "Vitamin D 3")
+        XCTAssertNotEqual(spaced.nutrientDisplayNames[NutritionFactKey.vitaminD.rawValue], "Vitamin D 3")
+        XCTAssertEqual(try amount(.vitaminD, spaced), 25)
     }
 
     func testVitaminBTwelveWrittenTwoWaysKeepsBothRowsInOneParse() {

@@ -1286,10 +1286,13 @@ public enum NutritionFactsParser {
                    isBareNumber(tokens[end].text) {
                     continue
                 }
-                // "Vitamin B 1 2mcg" with the unit attached is the same ambiguity, and gives nothing at all.
+                // "Vitamin B 1 2mcg" with the unit attached is the same ambiguity, and gives nothing at all. Only a
+                // single digit joined to its unit is ambiguous: "Vitamin B 12 10mcg" names B12 with its own amount.
                 if end >= 2, end < tokens.count, isBareNumber(tokens[end - 1].text),
+                   tokens[end - 1].text.count == 1,
                    tokens[end - 2].text.count == 1, tokens[end - 2].text.first?.isLetter == true,
-                   !tokens[end].text.allSatisfy({ $0.isASCII && $0.isNumber }) {
+                   let attached = Optional(tokens[end].text.prefix { $0.isASCII && $0.isNumber }),
+                   attached.count == 1, attached.count < tokens[end].text.count {
                     continue
                 }
                 guard let amount = additionalAmount(at: end, in: tokens, line: text, next: nextLine)
