@@ -6,6 +6,51 @@ import XCTest
 
 @testable import HealthNutrition
 
+private final class ReadFailingStoreStub: JournalStore, @unchecked Sendable {
+    var failNextSaveForTesting = false
+    let intakes: [Intake]
+    let components: [String: [IntakeComponent]]
+
+    init(intakes: [Intake], components: [String: [IntakeComponent]]) {
+        self.intakes = intakes
+        self.components = components
+    }
+
+    private struct Unsupported: Error {}
+
+    func create(_ intake: Intake, components: [IntakeComponent], product: ProductDefinition?, now: Date) throws -> IntakeRevision {
+        throw Unsupported()
+    }
+    func edit(
+        intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
+        now: Date, occurredAt: Date? = nil, timeZoneIdentifier: String? = nil
+    ) throws -> IntakeRevision {
+        throw Unsupported()
+    }
+
+    func editRemovingUnits(
+        intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
+        now: Date, occurredAt: Date? = nil, timeZoneIdentifier: String? = nil, unitRemovals: [String])throws -> IntakeRevision {
+        throw Unsupported()
+    }
+    func delete(intakeID: String, now: Date) throws { throw Unsupported() }
+    var failReadsForTesting = false
+    func activeIntakes() throws -> [Intake] {
+        if failReadsForTesting { throw Unsupported() }
+        return intakes
+    }
+    func revisions(of intakeID: String) throws -> [IntakeRevision] {
+        [IntakeRevision(
+            intakeID: intakeID, number: 1, components: components[intakeID] ?? [], productSnapshotID: nil,
+            changeReason: "test", createdAt: Date(timeIntervalSince1970: 0))]
+    }
+    func projections(of intakeID: String) throws -> [DestinationProjection] { [] }
+    func pendingOutbox() throws -> [OutboxOperation] { [] }
+    func product(snapshotID: String) throws -> ProductDefinition? { nil }
+    func activeIntakesFromBackground() async throws -> [Intake] { intakes }
+    func close() {}
+}
+
 /// The publisher's gates against a real Today view model on throwaway files: it writes for the load on screen,
 /// and not while an erase runs, for a load announced before an erase, or for a load that is no longer the one on
 /// screen. Synthetic data only; display settings live in a throwaway suite.
@@ -47,6 +92,21 @@ final class WidgetSnapshotPublisherTests: XCTestCase {
         XCTAssertNil(snapshot.waterMilliliters, "no read means no water total, not zero")
         XCTAssertEqual(WidgetFigure.water(snapshot.waterMilliliters, usUnits: false), "— mL")
         XCTAssertEqual(WidgetFigure.water(snapshot.waterMilliliters, usUnits: true), "— fl oz")
+    }
+
+    /// A journal read that fails writes no widget summary, so yesterday's or an empty day is never shown as today.
+    func testItWritesNothingWhenTheJournalReadFails() throws {
+        let store = ReadFailingStoreStub(intakes: [], components: [:])
+        store.failReadsForTesting = true
+        let today = TodayViewModel(store: store, timeZoneIdentifier: "UTC")
+        today.load(now: loadedAt)
+        XCTAssertTrue(today.journalReadFailed)
+        let widgetStore = makeStore()
+        let publisher = WidgetSnapshotPublisher(store: widgetStore, erasure: WidgetSnapshotErasure(), watch: nil)
+
+        publisher.publish(from: today, loadedAt: loadedAt, generation: 0)
+
+        XCTAssertNil(widgetStore.read(), "a failed read writes no summary")
     }
 
     /// A model that never read the journal is not an empty day: the publisher writes nothing for it.
