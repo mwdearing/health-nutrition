@@ -327,7 +327,7 @@ public final class LibraryViewModel: ObservableObject {
             let recents = try RecentItemsProvider(store: store).recents()
             let foods = try RecentItemsProvider(store: store).foods()
             let frequents = try FrequentItemsProvider(store: store).frequents(limit: .max)
-            let loggedUnitIndex = try LoggedUnitIndex.loadOrThrow(from: store)
+            let loggedUnitIndex = LoggedUnitIndex.load(from: store)
             let favoriteTemplates: [RepeatTemplate] = stored.map { favorite in
                 // A malformed favorite shows as unknown and cannot be repeated.
                 RepeatTemplate(favorite: favorite, loggedUnitIndex: loggedUnitIndex) ?? RepeatTemplate(

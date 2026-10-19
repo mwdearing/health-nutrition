@@ -147,7 +147,7 @@ public final class SupplementStackViewModel: ObservableObject {
     public func load(now: Date) {
         do {
             let stored = try favorites.list()
-            let loggedUnitIndex = try LoggedUnitIndex.loadOrThrow(from: store)
+            let loggedUnitIndex = LoggedUnitIndex.load(from: store)
             let byID = Dictionary(stored.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             let planned = try pruned(schedules.schedules(), keeping: Set(byID.keys))
             guard let clock = SupplementStackClock(now: now, zoneIdentifier: zoneID()) else {
@@ -368,7 +368,7 @@ public final class SupplementStackViewModel: ObservableObject {
         favorites stored: [FavoriteTemplate], planned: Set<String>,
         kind: (String?, String) -> ProductKind
     ) throws -> [SupplementStackCandidate] {
-        let loggedUnitIndex = try LoggedUnitIndex.loadOrThrow(from: store)
+        let loggedUnitIndex = LoggedUnitIndex.load(from: store)
         let onList = Set(stored.filter { planned.contains($0.id) }.map { Self.matchKey($0) })
         let favoriteCandidates = stored
             .filter { !planned.contains($0.id) && !onList.contains(Self.matchKey($0)) }

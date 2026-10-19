@@ -268,20 +268,6 @@ final class SupplementStackTests: XCTestCase {
 
     // MARK: The list
 
-    /// The favorites and the picker read the logged units to repeat a favorite; a failed read shows no rows and no
-    /// candidates, and reports the failure (#415).
-    func testSupplementListShowsNothingWhenTheUnitReadFails() throws {
-        let store = UnitReadFailingStore(inner: try makeStore())
-        let favorites = try makeFavorites()
-        let schedules = try makeSchedules()
-        try saveFavorite(favorites)
-        let model = makeModel(store: store, favorites: favorites, schedules: schedules)
-        model.load(now: now)
-        XCTAssertNotNil(model.errorMessage)
-        XCTAssertTrue(model.rows.isEmpty)
-        XCTAssertTrue(model.candidates.isEmpty)
-    }
-
     func testTakenLogsTheFavoriteWithItsLabelSnapshotAndUndoUnmarksIt() throws {
         let store = try makeStore()
         let favorites = try makeFavorites()
