@@ -185,6 +185,10 @@ public final class EntryDetailViewModel: ObservableObject {
     /// time edit is waiting to be saved (choosing a meal reloads the screen). A meal this build does not name
     /// (an imported free-text value) is shown as written and is left as it is.
     public var canChangeMeal: Bool { (mealText == nil || selectedMeal != nil) && !isDirty }
+
+    /// Log again copies the stored entry, so it is offered only when no edit is waiting to be saved: then the copy
+    /// matches what the sheet shows. With unsaved edits the person saves first.
+    public var canLogAgain: Bool { !isDirty }
     /// The time exactly as the journal holds it, and nil until `load` has read the entry. A draft
     /// may only correct that, so a save made before the first load cannot move an entry whose
     /// stored time this model has not seen.
