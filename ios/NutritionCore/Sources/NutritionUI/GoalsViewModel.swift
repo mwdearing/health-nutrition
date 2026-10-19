@@ -499,6 +499,7 @@ public final class GoalsViewModel: ObservableObject {
         }
         guard removeTarget(for: nutrient) else { return false }
         draftText[nutrient] = ""
+        loadedDraftText[nutrient] = ""
         clearedGoal = ClearedGoal(nutrient: nutrient, goal: previous)
         noteSaved()
         return true
