@@ -486,7 +486,9 @@ public final class NutrientGapsViewModel: ObservableObject {
             guard let current = revisions.first(where: { $0.number == intake.currentRevision }) else { continue }
             if intake.category != DailyTotalsBuilder.waterCategory { logged.insert(day.date) }
             let snapshot = current.productSnapshotID.flatMap { try? store.product(snapshotID: $0) }
+            // A hand-typed entry has no snapshot, so its category says whether it is a supplement (#364).
             let isSupplement = snapshot?.kind == .supplement
+                || (current.productSnapshotID == nil && intake.category == SupplementStackViewModel.supplementCategory)
             // Every entry goes through the one totals path, so the negative-amount rule and the partial sums
             // are the same here as on Today. The known part of a partial entry is kept; the entry counts once
             // as missing for each nutrient it leaves unknown.
@@ -509,7 +511,9 @@ public final class NutrientGapsViewModel: ObservableObject {
                 var amount = Decimal(0)
                 var anyKnown = false
                 var anyMissing = false
-                for value in values {
+                // IU vitamin D is restated to mcg before it is converted, as the totals path does (#364).
+                let mapping = HealthKitWritePlanner.mapping(for: nutrient)
+                for value in values.map({ mapping?.restatingInternationalUnits($0) ?? $0 }) {
                     if case .known(let stated, let statedUnit) = value,
                         let converted = try? Quantity(value: stated, unit: statedUnit).converted(to: unit),
                         !converted.value.isNaN, converted.value >= 0
