@@ -191,7 +191,7 @@ public struct TodayView: View {
                     Spacer(minLength: DesignSpacing.s)
                 }
                 HStack(spacing: DesignSpacing.m) {
-                    QuietCapsule("Other amount") {
+                    QuietCapsule("Type an amount") {
                         self.otherWaterOpen.toggle()
                         self.otherWaterFocused = self.otherWaterOpen
                     }

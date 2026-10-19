@@ -74,7 +74,7 @@ final class NutrientGapsTests: XCTestCase {
         XCTAssertEqual(complete.referenceText, "RDA 11 mg, upper limit 40 mg")
         let partial = try row("zinc", NutrientDayTally(fromFood: 6, known: 1, missing: 1))
         XCTAssertEqual(partial.status, .belowReferenceSoFar)
-        XCTAssertEqual(partial.statusText, "Below the RDA so far")
+        XCTAssertEqual(partial.statusText, "Below the RDA so far today")
         XCTAssertEqual(partial.amountText, "At least 6 mg")
     }
 
