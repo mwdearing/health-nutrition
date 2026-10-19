@@ -1076,9 +1076,10 @@ final class DailyTotalsTests: XCTestCase {
         let intake = Intake(id: UUID().uuidString.lowercased(), category: "water", occurredAt: when, timeZoneIdentifier: "UTC")
         try store.create(
             intake, components: [
-                IntakeComponent(componentID: "drink", name: "Drink", amount: 250, unit: .mL, hydrationPercent: 100),
-                IntakeComponent(componentID: "drink", name: "Drink", amount: -50, unit: .mL, hydrationPercent: 100),
+                IntakeComponent(componentID: "drinkA", name: "Drink", amount: 250, unit: .mL, hydrationPercent: 100),
+                IntakeComponent(componentID: "drinkB", name: "Drink", amount: 50, unit: .mL, hydrationPercent: 100),
             ], product: nil, now: when)
+        try store.seedLegacyAmountsForTesting(intakeID: intake.id, amountsByComponent: ["drinkB": "-50"])
         let totals = try DailyTotalsBuilder.totals(
             for: try store.activeIntakes(), store: store, lookup: SnapshotOnlyFacts(),
             nutrients: [DailyTotalsBuilder.waterKey])
@@ -1100,14 +1101,24 @@ final class DailyTotalsTests: XCTestCase {
         XCTAssertEqual(energyOnly.total(for: "energyKcal")?.value, .unknown)
     }
 
+    /// A legacy negative row seeded into the store reads back through the normal read path with its amount intact.
+    func testASeededNegativeRowReadsBackThroughTheNormalReadPath() throws {
+        let store = try makeStore()
+        let id = try addFood(store, name: "Oats", id: "oats", at: when, amount: 40)
+        try store.seedLegacyAmountsForTesting(intakeID: id, amountsByComponent: ["oats": "-40"])
+        let revision = try XCTUnwrap(try store.revisions(of: id).last)
+        XCTAssertEqual(revision.components.first?.amount, -40)
+    }
+
     /// A food row with a negative volume and a 100% water share must not lower the day's water.
     func testANegativeVolumeWithAWaterShareIsUnknownWaterNotDrunk() throws {
         let store = try makeStore()
         let intake = Intake(id: UUID().uuidString.lowercased(), category: "food", occurredAt: when, timeZoneIdentifier: "UTC")
         try store.create(
             intake, components: [IntakeComponent(
-                componentID: "soup", name: "Soup", amount: -250, unit: .mL, hydrationPercent: 100)],
+                componentID: "soup", name: "Soup", amount: 250, unit: .mL, hydrationPercent: 100)],
             product: nil, now: when)
+        try store.seedLegacyAmountsForTesting(intakeID: intake.id, amountsByComponent: ["soup": "-250"])
         let totals = try DailyTotalsBuilder.totals(
             for: try store.activeIntakes(), store: store, lookup: SnapshotOnlyFacts(),
             nutrients: [DailyTotalsBuilder.waterKey])
@@ -1125,7 +1136,8 @@ final class DailyTotalsTests: XCTestCase {
             snapshotID: "snapshot-oats", productID: "product-oats", name: "Oats",
             labelBasis: "per 100 g", catalogOrigin: "test", catalogVersion: "1",
             nutrients: ["energyKcal": .known(Decimal(380), .kcal), "protein": .known(Decimal(13), .g)])
-        try addFood(store, name: "Vitamin D", id: "vitd", at: when, amount: -1, unit: .serving, product: vitaminD)
+        let vitDID = try addFood(store, name: "Vitamin D", id: "vitd", at: when, amount: 1, unit: .serving, product: vitaminD)
+        try store.seedLegacyAmountsForTesting(intakeID: vitDID, amountsByComponent: ["vitd": "-1"])
         try addFood(store, name: "Oats", id: "oats", at: when, amount: 100, product: oats)
         let totals = try DailyTotalsBuilder.totals(
             for: try store.activeIntakes(), store: store, lookup: SnapshotOnlyFacts(),
@@ -1143,7 +1155,8 @@ final class DailyTotalsTests: XCTestCase {
         do {
             let store = try makeStore()
             try addFood(store, name: "Oats", id: "oats", at: when, amount: 40, unit: .g)
-            try addFood(store, name: "Oats", id: "oats", at: when, amount: -40, unit: .g)
+            let oatsID = try addFood(store, name: "Oats", id: "oats", at: when, amount: 40, unit: .g)
+            try store.seedLegacyAmountsForTesting(intakeID: oatsID, amountsByComponent: ["oats": "-40"])
             let totals = try DailyTotalsBuilder.totals(
                 for: try store.activeIntakes(), store: store, lookup: facts, nutrients: ["energyKcal"])
             XCTAssertEqual(totals.total(for: "energyKcal")?.value, .unknown, "no-snapshot path")
@@ -1157,7 +1170,8 @@ final class DailyTotalsTests: XCTestCase {
                 barcode: "", labelBasis: "per 100 g", catalogOrigin: "usda-fdc", catalogVersion: "unknown",
                 nutrients: ["energyKcal": .known(Decimal(10), .kcal)])
             try addFood(store, name: "Oats", id: "oats", at: when, amount: 40, unit: .g, product: product)
-            try addFood(store, name: "Oats", id: "oats", at: when, amount: -40, unit: .g, product: product)
+            let oatsID = try addFood(store, name: "Oats", id: "oats", at: when, amount: 40, unit: .g, product: product)
+            try store.seedLegacyAmountsForTesting(intakeID: oatsID, amountsByComponent: ["oats": "-40"])
             let totals = try DailyTotalsBuilder.totals(
                 for: try store.activeIntakes(), store: store, lookup: SnapshotOnlyFacts(), nutrients: ["energyKcal"])
             XCTAssertEqual(totals.total(for: "energyKcal")?.value, .unknown, "mass path")
@@ -1174,7 +1188,8 @@ final class DailyTotalsTests: XCTestCase {
                 barcode: "", labelBasis: "per serving", catalogOrigin: "usda-fdc", catalogVersion: "unknown",
                 nutrients: ["energyKcal": .known(Decimal(10), .kcal)])
             try addFood(store, name: "Gummy", id: "gummy", at: when, amount: 2, unit: .serving, product: product)
-            try addFood(store, name: "Gummy", id: "gummy", at: when, amount: -2, unit: .serving, product: product)
+            let gummyID = try addFood(store, name: "Gummy", id: "gummy", at: when, amount: 2, unit: .serving, product: product)
+            try store.seedLegacyAmountsForTesting(intakeID: gummyID, amountsByComponent: ["gummy": "-2"])
             let totals = try DailyTotalsBuilder.totals(
                 for: try store.activeIntakes(), store: store, lookup: SnapshotOnlyFacts(), nutrients: ["energyKcal"])
             XCTAssertEqual(totals.total(for: "energyKcal")?.value, .unknown, "count path")

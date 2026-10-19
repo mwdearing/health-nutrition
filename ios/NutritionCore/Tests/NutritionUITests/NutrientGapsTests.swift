@@ -305,12 +305,12 @@ final class NutrientGapsTests: XCTestCase {
         let intake = Intake(id: UUID().uuidString.lowercased(), category: "food", occurredAt: noon, timeZoneIdentifier: "UTC")
         try store.create(
             intake, components: [
-                IntakeComponent(componentID: "typedVitC", name: "Typed", amount: 30, unit: .g),
-                IntakeComponent(componentID: "boundVitC", name: "Bound", amount: 10, unit: .g),
+                IntakeComponent(componentID: "typedvitc", name: "Typed", amount: 30, unit: .g),
+                IntakeComponent(componentID: "boundvitc", name: "Bound", amount: 10, unit: .g),
             ], product: nil, now: noon)
         let lookup = GapsComponentFacts(values: [
-            "typedVitC": ["vitaminC": .known(30, .mg)],
-            "boundVitC": ["vitaminC": .belowReportingThreshold(.mg)],
+            "typedvitc": ["vitaminC": .known(30, .mg)],
+            "boundvitc": ["vitaminC": .belowReportingThreshold(.mg)],
         ])
         let model = NutrientGapsViewModel(store: store, lookup: lookup)
         model.load(now: noon)
