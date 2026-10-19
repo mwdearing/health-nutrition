@@ -192,7 +192,7 @@ final class JournalLibraryTests: XCTestCase {
             components: [IntakeComponent(componentID: "ipa", name: "Ipamorelin", amount: 2, unit: .mg)])
         let supplement = LibraryItem(id: "ipa", title: "Ipamorelin", detail: "2 mg",
             isFavorite: false, template: template, kind: .supplement)
-        XCTAssertEqual(supplement.logAccessibilityLabel, "Log Ipamorelin")
+        XCTAssertEqual(supplement.logAccessibilityLabel, "Log Ipamorelin, Supplement")
         let food = LibraryItem(id: "oats", title: "Oats", detail: "40 g",
             isFavorite: false, template: template, kind: .food)
         XCTAssertEqual(food.logAccessibilityLabel, "Log Oats")
