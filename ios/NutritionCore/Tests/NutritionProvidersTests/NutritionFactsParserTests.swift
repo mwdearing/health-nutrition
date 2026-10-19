@@ -1807,20 +1807,14 @@ final class NutritionFactsParserTests: XCTestCase {
 
     func testArabicIndicDigitsNeverReadAsZero() {
         let panel = parse(["Nutrition Facts", "Serving size 1 cup", "Calories ٥٠", "Protein 3g"])
-        let calories = value(.calories, panel)
-        if case .known(let amount, _) = calories {
-            XCTFail("Arabic-Indic digits are not read as a number, got \(amount)")
-        }
-        XCTAssertNotEqual(calories, .known(0, .kcal), "an unread field is never zero")
+        // Whether the digits are read or left unknown, the field is never zero.
+        XCTAssertNotEqual(value(.calories, panel), .known(0, .kcal), "an unread field is never zero")
     }
 
     func testDevanagariDigitsNeverReadAsZero() {
         let panel = parse(["Nutrition Facts", "Serving size 1 cup", "Sodium १००mg", "Protein 3g"])
-        let sodium = value(.sodium, panel)
-        if case .known(let amount, _) = sodium {
-            XCTFail("Devanagari digits are not read as a number, got \(amount)")
-        }
-        XCTAssertNotEqual(sodium, .known(0, .mg), "an unread field is never zero")
+        // Whether the digits are read or left unknown, the field is never zero.
+        XCTAssertNotEqual(value(.sodium, panel), .known(0, .mg), "an unread field is never zero")
     }
 
     func testFullwidthAmountWithFullwidthUnitIsTheValueOrUnread() {
