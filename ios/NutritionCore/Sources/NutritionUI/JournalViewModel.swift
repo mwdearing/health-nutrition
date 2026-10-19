@@ -404,6 +404,7 @@ public final class JournalViewModel: ObservableObject {
     public func copyDayToToday(_ sectionID: String, now: Date) -> IntakeCopyResult? {
         let result = runCopy(now: now) { try copier.copyDay(dayKey: sectionID, now: now) }
         copiedIDs = result?.createdIDs ?? []
+        copyCount += 1
         return result
     }
 
@@ -412,6 +413,12 @@ public final class JournalViewModel: ObservableObject {
 
     /// Whether the latest copy can still be undone.
     public var canUndoCopy: Bool { !copiedIDs.isEmpty }
+
+    /// Counts each copy, so the Undo control restarts its window when a new copy lands.
+    @Published public private(set) var copyCount = 0
+
+    /// Ends the Undo window for the latest copy without undoing it.
+    public func expireCopyUndo() { copiedIDs = [] }
 
     /// Removes exactly the entries the latest copy created, and nothing else. Taken once: a second call finds
     /// nothing to undo.
@@ -436,6 +443,7 @@ public final class JournalViewModel: ObservableObject {
         let selector = MealLabel.allCases.first { $0.displayName == groupID }.map(MealSelector.named) ?? .other
         let result = runCopy(now: now) { try copier.copyMeal(selector, dayKey: sectionID, now: now) }
         copiedIDs = result?.createdIDs ?? []
+        copyCount += 1
         return result
     }
 
