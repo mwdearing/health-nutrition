@@ -69,7 +69,7 @@ public struct TrendsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: DesignSpacing.m) {
                 row(
-                    title: "Nutrients", detail: "Vitamins and minerals against published reference values",
+                    title: "Vitamins and minerals", detail: "Vitamins and minerals against published reference values",
                     systemImage: "leaf"
                 ) {
                     NutrientGapsView(makeModel: { today.makeNutrientGaps() }, now: now)

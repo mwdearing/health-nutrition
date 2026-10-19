@@ -184,7 +184,9 @@ public struct NutrientGapRow: Equatable, Identifiable {
         let name = reference.kind.abbreviation
         switch status {
         case .belowReference: return "Below the \(name)"
-        case .belowReferenceSoFar: return "Below the \(name) so far"
+        case .belowReferenceSoFar:
+            // The day's screen says "so far today"; a daily average over the week says only "so far".
+            return averagedOverDays == nil ? "Below the \(name) so far today" : "Below the \(name) so far"
         case .reachedReference: return "Reached the \(name)"
         case .aboveUpperLimit: return "Above the upper limit"
         case .nothingLogged, .unknown, .noReference: return nil
