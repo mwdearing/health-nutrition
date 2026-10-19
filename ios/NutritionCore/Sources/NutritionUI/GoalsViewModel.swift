@@ -513,9 +513,13 @@ public final class GoalsViewModel: ObservableObject {
             // Leaving an empty field keeps the stored goal (#506). Removal is `clearTarget`. The field
             // goes back to what is stored, so the screen does not show a goal that is not there.
             // Only this field is restored; the other drafts are the person's own text.
-            if let stored = try? storedGoal(for: nutrient) {
-                draftText[nutrient] = DecimalFormatting.text(displayGoal(stored).amount)
+            // A failed read is said, not shown as an empty field over a stored goal.
+            let stored: NutrientGoal?
+            do { stored = try storedGoal(for: nutrient) } catch {
+                errorMessage = Self.readFailedMessage
+                return false
             }
+            draftText[nutrient] = stored.map { DecimalFormatting.text(displayGoal($0).amount) } ?? ""
             loadedDraftText[nutrient] = draftText[nutrient]
             return true
         }
