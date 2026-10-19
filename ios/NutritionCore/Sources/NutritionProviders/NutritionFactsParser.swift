@@ -1769,8 +1769,11 @@ public enum NutritionFactsParser {
     /// One line with its surrounding whitespace removed and its inner runs of whitespace collapsed, so a
     /// name and its amount read the same whether the capture wrote "Total Fat 7g" or "Total Fat  7 g".
     private static func cleanLine(_ line: String) -> String {
-        // Fullwidth digits and letters ("５０", "Ｃａｌｏｒｉｅｓ") are read as their ASCII forms.
-        let ascii = line.applyingTransform(StringTransform("Fullwidth-Halfwidth"), reverse: false) ?? line
-        return ascii.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        // A word that starts with a fullwidth digit is an amount ("５０", "２g"), read as its ASCII form. A fullwidth
+        // digit inside a name ("Vitamin B１２") is left as printed, so the name is not read as a row.
+        line.split(whereSeparator: \.isWhitespace).map { word -> String in
+            guard let first = word.first, ("\u{FF10}"..."\u{FF19}").contains(first) else { return String(word) }
+            return String(word).applyingTransform(StringTransform("Fullwidth-Halfwidth"), reverse: false) ?? String(word)
+        }.joined(separator: " ")
     }
 }

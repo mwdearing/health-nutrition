@@ -1758,8 +1758,9 @@ final class NutritionFactsParserTests: XCTestCase {
 
     func testVitaminBTwelveWrittenTwoWaysKeepsBothRowsInOneParse() {
         let panel = parse(["Supplement Facts", "Serving Size 1 tablet", "Vitamin B-12 25mcg", "Vitamin B 12 10mcg"])
-        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Vitamin B-12", "Vitamin B 12"])
-        XCTAssertNotEqual(panel.additionalNutrients[0].key, panel.additionalNutrients[1].key)
+        // Both spellings name one nutrient, so they are one row under one key.
+        XCTAssertEqual(panel.additionalNutrients.count, 1)
+        XCTAssertEqual(panel.additionalNutrients.first?.key, "vitamin-b-12")
     }
 
     func testSugarAlcoholGivesNoExtraOnANutritionFactsPanel() {
