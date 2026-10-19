@@ -186,6 +186,16 @@ final class ScreenshotCaptureTests: XCTestCase {
         try captureProductSizes("RootView") { RootView(services: services) }
     }
 
+    // The Today header on its own, so the design-system check finds a capture for it.
+    func testNourishTodayHeader() throws {
+        let services = try makeSeededServices()
+        try capture("NourishTodayHeader") {
+            ScrollView {
+                NourishTodayHeader(model: services.today, onEditGoals: {}).padding()
+            }
+        }
+    }
+
     func testTodayView() throws {
         let services = try makeSeededServices()
         try capture("TodayView") {
