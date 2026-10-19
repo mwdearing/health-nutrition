@@ -52,22 +52,22 @@ struct WatchTodayWidgetView: View {
         switch family {
         case .accessoryCircular:
             Group {
-            if let fraction = snapshot?.energyFraction {
-                Gauge(value: fraction) {
-                    Image(systemName: "fork.knife")
-                } currentValueLabel: {
-                    Text(headline)
+                if let fraction = snapshot?.energyFraction {
+                    Gauge(value: fraction) {
+                        Image(systemName: "fork.knife")
+                    } currentValueLabel: {
+                        Text(headline)
+                    }
+                    .gaugeStyle(.accessoryCircularCapacity)
+                    .accessibilityLabel(spoken)
+                } else {
+                    // No known energy figure: no ring, so an empty ring cannot read as zero calories.
+                    ZStack {
+                        Image(systemName: "fork.knife")
+                        Text(headline)
+                    }
+                    .accessibilityLabel(spoken)
                 }
-                .gaugeStyle(.accessoryCircularCapacity)
-                .accessibilityLabel(spoken)
-            } else {
-                // No known energy figure: no ring, so an empty ring cannot read as zero calories.
-                ZStack {
-                    Image(systemName: "fork.knife")
-                    Text(headline)
-                }
-                .accessibilityLabel(spoken)
-            }
             }
             .privacySensitive()
         case .accessoryCorner:
