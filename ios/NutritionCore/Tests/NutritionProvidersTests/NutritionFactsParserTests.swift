@@ -1731,7 +1731,7 @@ final class NutritionFactsParserTests: XCTestCase {
             "Calories ５０", "Total Fat ２g", "Sodium １００mg", "Protein ３g",
         ])
         XCTAssertEqual(try amount(.calories, panel), 50)
-        XCTAssertEqual(try amount(.totalFat, panel), 2)
+        XCTAssertEqual(try amount(.fat, panel), 2)
         XCTAssertEqual(try amount(.sodium, panel), 100)
         XCTAssertEqual(try amount(.protein, panel), 3)
     }
