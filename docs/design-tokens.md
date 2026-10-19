@@ -24,9 +24,9 @@ Semantic roles either name the existing token they equal, or are new values that
 | RelaySecondaryText | #6C6C70 | #AEAEB2 | RelaySecondaryText asset | existing |
 | background | #FFFFFF | #07222E | dark value equals RelayOnMint; light is white | proposed, needs Michael's approval |
 | surface | #F2F2F7 | #0B3D4A | dark value equals the light value of RelayAccentInk | proposed, needs Michael's approval |
-| border | #D1D5DB | #1F5663 | none | proposed, needs Michael's approval |
+| border | #86868B | #5B98A4 | 3.62:1 on background, 3.25:1 on surface (light); 5.07:1 and 3.63:1 (dark) | approved 2026-10-18 |
 | textPrimary | #111827 | #F0F6FC | brand guide text colors | proposed, needs Michael's approval |
-| track | #DCE7E9 | #1F5663 | none (dark equals border) | proposed, needs Michael's approval |
+| track | #DCE7E9 | #1F5663 | none | proposed, needs Michael's approval |
 | accentTint | #E3F1F0 | #134B58 | none | proposed, needs Michael's approval |
 | textSecondary | #6C6C70 | #AEAEB2 | RelaySecondaryText | existing: equals RelaySecondaryText |
 | accent | #0F6B78 | #5EEAD4 | AccentColor | existing: equals AccentColor |
@@ -34,7 +34,7 @@ Semantic roles either name the existing token they equal, or are new values that
 | warning | #7A3E00 | #FFCB94 | RelayWaitingInk | existing: equals RelayWaitingInk |
 | error | #8A1C14 | #FFB3AB | RelayFailedInk | existing: equals RelayFailedInk |
 
-The rows marked proposed (background, surface, border, textPrimary) are the only additions in this change. They reuse
+The rows marked proposed (background, surface, textPrimary) are the only additions in this change. They reuse
 brand values where possible: the dark background is the dark end of the brand gradient, the dark surface is the other
 gradient color, and the two text colors come from the brand guide. Nothing here is final until approved.
 
@@ -73,7 +73,7 @@ Checked pairs (light / dark ratio):
 
 - Never use RelayMint as text on a light surface: mint on white is only 1.48:1. Mint is a fill color, with RelayOnMint on top.
 - In dark mode the accent is mint, which reads at 11.11:1 on the dark background.
-- The border role is a decorative separator. It is not text and does not carry meaning on its own, so it is not held to 4.5:1.
+- The border role is the input outline of a field. It is a graphic that marks where the field is, so it is held to 3:1 against the background and the surface in both appearances (approved 2026-10-18).
 - `track` is the unfilled part of a goal bar and its hatch lines. It is decorative: the figure beside the bar always
   states the value, so the bar's low contrast against the background (1.26 light, 2.01 dark) never carries meaning alone.
   The filled part of the bar is the accent, which clears 3:1 on the track in both appearances.
