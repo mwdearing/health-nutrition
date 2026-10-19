@@ -1,5 +1,6 @@
 import Foundation
 import NutritionUI
+import AVFoundation
 import SwiftUI
 
 // The camera lives in the app target, never in the UI package: this file owns VisionKit, and the
@@ -9,6 +10,19 @@ import SwiftUI
 import UIKit
 import Vision
 import VisionKit
+
+/// What the system says about camera access, for the failure message the sheets show.
+enum CameraAccess {
+    static func current() -> CameraAccessState {
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized: return .authorized
+        case .notDetermined: return .notDetermined
+        case .denied: return .denied
+        case .restricted: return .restricted
+        @unknown default: return .notDetermined
+        }
+    }
+}
 
 /// Whether this device can scan barcodes with the camera right now. `isSupported` is a build-time
 /// answer, `isAvailable` the runtime one: a device may support the scanner and still have it
@@ -151,7 +165,7 @@ struct BarcodeDataScanner: UIViewControllerRepresentable {
                 try controller.startScanning()
                 isRunning = true
             } catch {
-                report("The camera could not be started. Type the digits instead.")
+                report(CameraAccessNotice.failureMessage(for: CameraAccess.current()))
             }
         }
 
