@@ -55,14 +55,14 @@ extension UnitReadFailingStore {
     struct UnitsUnreadable: Error {}
 
     func recordLoggedUnit(_ loggedUnit: JournalLoggedUnit) throws {
-        guard let units = inner as? JournalLoggedUnits else { return }
+        guard let units = inner as? JournalLoggedUnits else { throw UnitsUnreadable() }
         try units.recordLoggedUnit(loggedUnit)
     }
 
     func loggedUnits() throws -> [JournalLoggedUnit] { throw UnitsUnreadable() }
 
     func removeLoggedUnit(intakeID: String, componentID: String) throws {
-        guard let units = inner as? JournalLoggedUnits else { return }
+        guard let units = inner as? JournalLoggedUnits else { throw UnitsUnreadable() }
         try units.removeLoggedUnit(intakeID: intakeID, componentID: componentID)
     }
 }

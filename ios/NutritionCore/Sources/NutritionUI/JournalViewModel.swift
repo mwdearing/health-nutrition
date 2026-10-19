@@ -290,7 +290,11 @@ public final class JournalViewModel: ObservableObject {
             goalsErrorMessage = goalsReadFailed ? GoalsViewModel.readFailedMessage : nil
             hasLoaded = true
         } catch {
+            // Clear everything the last successful load built: a failed read must not leave its totals on screen.
             todaySection = nil
+            sections = []
+            skippedCount = 0
+            weekSummary = nil
             errorMessage = "Could not read the journal."
         }
     }
