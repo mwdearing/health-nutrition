@@ -83,8 +83,6 @@ public final class SavedMealsModel: ObservableObject {
     /// not saved at all: a meal missing an item would log less than was eaten without saying so.
     @discardableResult
     public func save(name: String, meal: MealLabel?, intakes: [Intake]) -> Bool {
-        // A save is now the latest action, so the earlier removal is final and its Undo goes.
-        removalUndo = nil
         let provider = RecentItemsProvider(store: journal)
         // The templates below read which entries were kept out of Library; a failed read refuses the save rather
         // than building them as if none were.
