@@ -260,7 +260,8 @@ public struct EntryDetailView: View {
                 if loggedAgain {
                     // The sheet stays open to confirm the new entry, so a second tap is not a second log.
                     InlineNotice("Logged again", tone: .waiting)
-                    Button("Done", action: onFinished).font(.headline)
+                    // Done is held while an edit is unsaved: it would close the sheet and drop the edit silently.
+                    Button("Done", action: onFinished).font(.headline).disabled(model.isDirty)
                 } else {
                     Button {
                         if model.repeatEntry(now: now()) != nil { loggedAgain = true }

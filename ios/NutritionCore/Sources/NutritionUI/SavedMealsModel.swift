@@ -203,10 +203,9 @@ public final class SavedMealsModel: ObservableObject {
     }
 
     public func remove(_ saved: SavedMeal) {
-        // Read the position from the store, not the screen's cached list, so Undo puts it back where it was.
-        let index = (try? book.meals())?.firstIndex { $0.id == saved.id } ?? 0
+        // The position comes from the same store write as the removal, so Undo puts the meal back where it was.
         do {
-            try book.remove(id: saved.id)
+            let index = try book.remove(id: saved.id)
             load()
             notice = nil
             noticeIsFailure = false
