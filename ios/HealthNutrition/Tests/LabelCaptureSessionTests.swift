@@ -145,7 +145,6 @@ final class LabelCaptureSessionTests: XCTestCase {
         XCTAssertFalse(state.backToValues(), "there is no draft to return to")
         XCTAssertEqual(state.failureMessage, CameraAccessNotice.labelUnsupportedMessage)
     }
-}
 
     /// Back from Settings with access allowed clears the failure, so the camera starts again.
     func testReturningWithAccessAllowedClearsTheFailure() {
