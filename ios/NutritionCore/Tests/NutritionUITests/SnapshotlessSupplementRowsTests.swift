@@ -72,4 +72,14 @@ final class SnapshotlessSupplementRowsTests: XCTestCase {
         XCTAssertEqual(protein.total, 1, "a typed supplement still counts in Today's food totals")
         XCTAssertEqual(protein.missing, 0)
     }
+
+    /// A day with only a typed supplement still counts as logged in the Diary (#364, #416).
+    func testDayWithOnlyATypedSupplementCountsAsLogged() throws {
+        let store = try makeStore()
+        try logTypedEntry(store, category: "supplement")
+        let journal = JournalViewModel(store: store, timeZoneIdentifier: "UTC")
+        journal.load(now: now)
+        let rows = try XCTUnwrap(journal.sections.first?.rows)
+        XCTAssertTrue(JournalViewModel.hasFoodEntries(rows), "a typed supplement is a logged entry, as before")
+    }
 }
