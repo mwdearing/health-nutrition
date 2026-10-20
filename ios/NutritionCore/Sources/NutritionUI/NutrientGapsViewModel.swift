@@ -511,9 +511,7 @@ public final class NutrientGapsViewModel: ObservableObject {
                 var amount = Decimal(0)
                 var anyKnown = false
                 var anyMissing = false
-                // IU vitamin D is restated to mcg before it is converted, as the totals path does (#364).
-                let mapping = HealthKitWritePlanner.mapping(for: nutrient)
-                for value in values.map({ mapping?.restatingInternationalUnits($0) ?? $0 }) {
+                for value in values {
                     if case .known(let stated, let statedUnit) = value,
                         let converted = try? Quantity(value: stated, unit: statedUnit).converted(to: unit),
                         !converted.value.isNaN, converted.value >= 0
