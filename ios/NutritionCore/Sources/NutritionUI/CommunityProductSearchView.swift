@@ -8,6 +8,8 @@ public struct CommunityProductSearchView: View {
     private let onLegacy: (LegacyCustomProductDraft) -> Void
     /// Nil when this build has no account to sign in to; the Sign in control is then not offered.
     private let onSignIn: (() -> Void)?
+    /// Whether this build has an account to sign in to. With none, the signed-out line is not shown at all.
+    private let hasAccount: Bool
     private let onSaved: () -> Void
     private let onOpenFoodFacts: (LookedUpProduct, ProductKind?) -> Void
     /// The person's own favorites and recents, listed above the products. Both must be given, or the
@@ -15,6 +17,8 @@ public struct CommunityProductSearchView: View {
     private let library: LibraryViewModel?
     /// Opens the details form prefilled from a favorite or recent. Nothing is logged until Save.
     private let onPick: ((RepeatTemplate) -> Void)?
+    /// The search field's name, shown and spoken. Shared by the field label and its placeholder.
+    public static let fieldLabel = "Search foods"
     @State private var query = ""
     @State private var kind: ProductKind?
     @State private var selectionError: String?
@@ -27,7 +31,7 @@ public struct CommunityProductSearchView: View {
                 library: LibraryViewModel? = nil, onPick: ((RepeatTemplate) -> Void)? = nil,
                 focusSearchOnAppear: Bool = false, onSaved: @escaping () -> Void = {}) {
         self.onSaved = onSaved
-        self.model = model; self.onSelect = onSelect; self.onLegacy = onLegacy; self.onSignIn = onSignIn; self.onOpenFoodFacts = onOpenFoodFacts
+        self.model = model; self.onSelect = onSelect; self.onLegacy = onLegacy; self.onSignIn = onSignIn; self.hasAccount = onSignIn != nil; self.onOpenFoodFacts = onOpenFoodFacts
         self.library = library; self.onPick = onPick; self.focusSearchOnAppear = focusSearchOnAppear
     }
     /// Opened from Add's search row: the field takes focus so the keyboard is up at once.
@@ -35,8 +39,10 @@ public struct CommunityProductSearchView: View {
     public var body: some View {
         List {
             Section {
-                LabeledField("Search foods and products", focus: $searchFocused) { focus in
-                    TextField("Search foods and products", text: $query).focused(focus).submitLabel(.search)
+                LabeledField(Self.fieldLabel, focus: $searchFocused) { focus in
+                    TextField(Self.fieldLabel, text: $query).focused(focus).submitLabel(.search)
+                        .accessibilityLabel(Self.fieldLabel)
+                        .accessibilityIdentifier("sharedProductSearchField")
                 }.onSubmit { search() }
                 if query.trimmingCharacters(in: .whitespaces).count >= 2 {
                     Button("Search food databases", action: search)
@@ -85,28 +91,30 @@ public struct CommunityProductSearchView: View {
                     }.accessibilityHint("Opens intake details without logging or sharing")
                 }
             }
-            Section("Shared products") {
-                sharedState
-                ForEach(model.sharedResults, id: \.productID) { product in
-                    Button { do { try model.inspect(product) } catch { selectionError = "Search again to refresh this product." } } label: {
-                        VStack(alignment: .leading, spacing: DesignSpacing.xs) {
-                            Text(CommunityProductSearchViewModel.name(product)).font(.headline)
-                            Text(CommunityProductSearchViewModel.verificationText(product))
-                            Text("\(product.support.distinctAccounts) supporting accounts").font(.footnote)
-                            if product.missingFacts { Text("No numeric facts stated").font(.footnote) }
-                            if !product.alternatives.isEmpty {
-                                Text("Separate alternatives; facts are not averaged.").font(.footnote)
-                                ForEach(product.alternatives, id: \.representativeRevision) { alternative in
-                                    Text("Alternative revision \(alternative.representativeRevision): \(alternative.support.distinctAccounts) supporting accounts").font(.footnote)
+            if showsSharedProducts {
+                Section("Shared products") {
+                    sharedState
+                    ForEach(model.sharedResults, id: \.productID) { product in
+                        Button { do { try model.inspect(product) } catch { selectionError = "Search again to refresh this product." } } label: {
+                            VStack(alignment: .leading, spacing: DesignSpacing.xs) {
+                                Text(CommunityProductSearchViewModel.name(product)).font(.headline)
+                                Text(CommunityProductSearchViewModel.verificationText(product))
+                                Text("\(product.support.distinctAccounts) supporting accounts").font(.footnote)
+                                if product.missingFacts { Text("No numeric facts stated").font(.footnote) }
+                                if !product.alternatives.isEmpty {
+                                    Text("Separate alternatives; facts are not averaged.").font(.footnote)
+                                    ForEach(product.alternatives, id: \.representativeRevision) { alternative in
+                                        Text("Alternative revision \(alternative.representativeRevision): \(alternative.support.distinctAccounts) supporting accounts").font(.footnote)
+                                    }
                                 }
+                                Text(product.source.attribution).font(.footnote)
                             }
-                            Text(product.source.attribution).font(.footnote)
-                        }
-                    }.accessibilityHint("Inspects shared facts and alternatives without saving, logging or sharing.")
+                        }.accessibilityHint("Inspects shared facts and alternatives without saving, logging or sharing.")
+                    }
+                    if model.loadingNextPage { ProgressView("Loading more shared products") }
+                    if model.pageError { Text("Could not load the next page.") }
+                    if model.canLoadMore { Button(model.pageError ? "Retry next page" : "Load more") { Task { await model.loadNextPage() } } }
                 }
-                if model.loadingNextPage { ProgressView("Loading more shared products") }
-                if model.pageError { Text("Could not load the next page.") }
-                if model.canLoadMore { Button(model.pageError ? "Retry next page" : "Load more") { Task { await model.loadNextPage() } } }
             }
             if let selectionError { Text(selectionError).foregroundStyle(TokenColors.error) }
         }
@@ -204,6 +212,11 @@ public struct CommunityProductSearchView: View {
         case .unavailable: Text("Food databases are unavailable right now.")
         }
     }
+    /// The view only asks SearchSignIn; the signed-out state here is always signed out.
+    private var showsSharedProducts: Bool {
+        SearchSignIn.showsSharedProducts(state: model.state, hasAccount: hasAccount, signedIn: false)
+    }
+
     @ViewBuilder private var sharedState: some View {
         switch model.state {
         case .idle: Text("Search shared foods, drinks and supplements.")
@@ -212,8 +225,11 @@ public struct CommunityProductSearchView: View {
         case .loaded: EmptyView()
         case .empty: Text("No shared products match this search.")
         case .signInRequired:
-            Text("Sign in to search shared products. Local products are available above.")
-            if let onSignIn { Button("Sign in", action: onSignIn) }
+            // The state is reached only when the person is signed out.
+            if SearchSignIn.signedOutLine(hasAccount: hasAccount, signedIn: false) == .signInMessage {
+                Text("Sign in to search shared products. Local products are available above.")
+                if let onSignIn { Button("Sign in", action: onSignIn) }
+            }
         case .unsupported: Text("Shared product search is unavailable on this server.")
         case .unavailable:
             Text("Shared products are temporarily unavailable.")
