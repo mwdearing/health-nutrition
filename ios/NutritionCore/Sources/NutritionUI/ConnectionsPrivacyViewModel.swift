@@ -730,7 +730,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         reminders: [JournalErasing], journal: JournalErasing, favorites: JournalErasing, recipes: JournalErasing,
         goals: JournalErasing
     ) -> [JournalErasing] {
-        [widgets, savedMeals, supplements] + reminders + [journal, favorites, recipes, goals]
+        [widgets, savedMeals, supplements] + reminders + [journal, favorites, recipes]
     }
 
     /// The names of the stores this model runs, in erase order, for tests that pin the production list.
