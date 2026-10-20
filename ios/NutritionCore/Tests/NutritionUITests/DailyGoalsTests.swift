@@ -246,9 +246,28 @@ final class DailyGoalsTests: XCTestCase {
         XCTAssertEqual(try goals.goal(for: "protein")?.target, Decimal(60))
 
         XCTAssertTrue(model.clearTarget(for: "protein", now: clearedAt))
-        model.expireClearUndo()
+        model.expireClearUndo(now: clearedAt.addingTimeInterval(5))
+        XCTAssertNotNil(model.clearedGoal, "expiry before the deadline does nothing")
+        model.expireClearUndo(now: clearedAt.addingTimeInterval(10))
         XCTAssertNil(model.clearedGoal)
         XCTAssertNil(model.clearUndoExpiry)
+    }
+
+    /// A second Clear inside the first's window replaces the first Undo, and its Undo still works at +3 (#526).
+    func testSecondClearInsideTheWindowKeepsItsOwnUndo() throws {
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        try goals.setGoal(NutrientGoal(nutrient: "fat", target: Decimal(70), unit: .g))
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+        let clearedAt = Date(timeIntervalSince1970: 1_700_000_000)
+
+        XCTAssertTrue(model.clearTarget(for: "protein", now: clearedAt))
+        XCTAssertTrue(model.clearTarget(for: "fat", now: clearedAt.addingTimeInterval(3)))
+        XCTAssertEqual(model.clearedGoal?.nutrient, "fat")
+        XCTAssertTrue(model.undoClear(now: clearedAt.addingTimeInterval(3)))
+        XCTAssertEqual(try goals.goal(for: "fat")?.target, Decimal(70))
     }
 
     /// Clear removes the goal, and Undo puts back the same goal (issue #506).

@@ -58,7 +58,7 @@ public struct GoalsView: View {
                     .id(model.clearedGoal.map { "\($0.nutrient)-\($0.goal.target)-\($0.goal.unit.symbol)" } ?? "")
                     .task(id: model.clearUndoExpiry) {
                         guard let expiry = model.clearUndoExpiry else { return }
-                        try? await Task.sleep(for: .seconds(expiry.timeIntervalSinceNow))
+                        do { try await Task.sleep(for: .seconds(expiry.timeIntervalSinceNow)) } catch { return }
                         model.expireClearUndo()
                     }
             }
