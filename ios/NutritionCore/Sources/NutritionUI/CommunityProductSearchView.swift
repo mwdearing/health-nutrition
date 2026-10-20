@@ -37,8 +37,8 @@ public struct CommunityProductSearchView: View {
     public var body: some View {
         List {
             Section {
-                LabeledField("Search foods", focus: $searchFocused) { focus in
-                    TextField("Search foods", text: $query).focused(focus).submitLabel(.search)
+                LabeledField("Search foods and products", focus: $searchFocused) { focus in
+                    TextField("Search foods and products", text: $query).focused(focus).submitLabel(.search)
                         .accessibilityIdentifier("sharedProductSearchField")
                 }.onSubmit { search() }
                 if query.trimmingCharacters(in: .whitespaces).count >= 2 {
