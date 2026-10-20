@@ -1,4 +1,5 @@
 import HealthKit
+import NutritionDomain
 import NutritionJournal
 import XCTest
 
