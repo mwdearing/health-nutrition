@@ -95,7 +95,7 @@ struct MacroSplitSection: View {
     }
 
     private func percentField(_ label: String, text: Binding<String>) -> some View {
-        LabeledField(label) { focus in
+        LabeledField(label, spokenTitle: true) { focus in
             TextField(text: text, prompt: Text("0")) {
                 Text(label)
             }
