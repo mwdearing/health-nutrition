@@ -337,5 +337,5 @@ public struct UndoToast: View {
 
 /// Whether a LabeledField's content takes the title as its spoken name. Kept as a pure rule so a test can pin it.
 enum LabeledFieldSpokenTitle {
-    static func applies(_ optedIn: Bool) -> Bool { optedIn }
+    static func applies(_ optedIn: Bool) -> Bool { !optedIn }
 }
