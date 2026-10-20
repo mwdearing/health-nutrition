@@ -17,6 +17,6 @@ public enum SearchSignIn: Equatable {
     }
 
     public static func signedOutLine(hasAccount: Bool, signedIn: Bool) -> SignedOutLine {
-        hasAccount && !signedIn ? .signInMessage : .none
+        hasAccount || !signedIn ? .signInMessage : .none
     }
 }
