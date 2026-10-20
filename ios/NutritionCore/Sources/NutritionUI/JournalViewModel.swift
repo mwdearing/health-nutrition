@@ -714,7 +714,7 @@ public final class JournalViewModel: ObservableObject {
     /// A day counts as logged when it holds a food or drink entry. Water and supplements do not count.
     /// The day header and the week summary both use this rule.
     static func hasFoodEntries(_ rows: [JournalRow]) -> Bool {
-        rows.contains { !$0.isWater && $0.countsAs != .supplement }
+        rows.contains { !$0.isWater }
     }
 
     /// The week summary for the loaded sections, or nil when the journal has no day at all. The window is
