@@ -103,6 +103,9 @@ public protocol CustomReminderScheduling: AnyObject, Sendable {
     /// Removes the pending and delivered requests of these reminders. Synchronous so an erase can finish
     /// before it returns.
     func cancel(ids: [UUID])
+    /// How many custom requests are still pending in the system. Read back after an erase, so a request that
+    /// survived the cancel is reported instead of a clean erase.
+    func pendingCustomCount() async -> Int
 }
 
 /// Drives the list of custom reminders: adding, removing, switching on and off, changing the time, and

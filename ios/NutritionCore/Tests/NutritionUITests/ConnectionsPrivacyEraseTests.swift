@@ -211,11 +211,52 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
     func testARemainingReminderRequestIsReportedAsStillOnThePhone() async {
         let model = ConnectionsPrivacyViewModel(
             store: EraseStubStore(), favorites: EraseStubFavorites(), erasers: [RecordingEraser()],
-            remindersStillPending: { true })
+            remindersStillPending: { ["reminders"] })
 
         let erased = await model.eraseAllData()
         XCTAssertFalse(erased)
         XCTAssertEqual(model.errorMessage, ConnectionsPrivacyViewModel.eraseLeftBehindMessage(["reminders"]))
+    }
+
+    /// A custom reminder request still pending after the erase is reported as "custom reminders" still on the phone.
+    func testARemainingCustomReminderIsReportedAsStillOnThePhone() async {
+        let scheduler = KeepsCustomReminderPending()
+        let model = ConnectionsPrivacyViewModel(
+            store: EraseStubStore(), favorites: EraseStubFavorites(), erasers: [RecordingEraser()],
+            remindersStillPending: {
+                await scheduler.pendingCustomCount() > 0 ? ["custom reminders"] : []
+            })
+
+        let erased = await model.eraseAllData()
+        XCTAssertFalse(erased)
+        XCTAssertEqual(model.errorMessage, ConnectionsPrivacyViewModel.eraseLeftBehindMessage(["custom reminders"]))
+    }
+
+    /// The erase list keeps each store instance it was given, in the pinned order: the builder returns the same
+    /// objects, not copies with matching names.
+    func testTheEraseOrderBuilderKeepsTheExactInstancesInOrder() {
+        let log = EraseOrderLog()
+        let widgets = OrderedEraser("widget data", log)
+        let savedMeals = OrderedEraser("saved meals", log)
+        let supplements = OrderedEraser("supplements", log)
+        let daily = OrderedEraser("reminders", log)
+        let custom = OrderedEraser("custom reminders", log)
+        let journal = OrderedEraser("journal", log)
+        let favorites = OrderedEraser("favorites", log)
+        let recipes = OrderedEraser("recipes", log)
+        let goals = OrderedEraser("goals", log)
+
+        let order = ConnectionsPrivacyViewModel.eraseOrder(
+            widgets: widgets, savedMeals: savedMeals, supplements: supplements,
+            reminders: [daily, custom], journal: journal, favorites: favorites, recipes: recipes, goals: goals)
+
+        let expected: [JournalErasing] = [
+            widgets, savedMeals, supplements, daily, custom, journal, favorites, recipes, goals,
+        ]
+        XCTAssertEqual(order.count, expected.count)
+        for (actual, wanted) in zip(order, expected) {
+            XCTAssertTrue(actual === wanted, "\(wanted.erasureName) is not the instance the builder was given")
+        }
     }
 
     /// Erase and Retry only ask for confirmation: nothing is erased until the person confirms.
@@ -509,4 +550,11 @@ private final class OrderedEraser: JournalErasing, @unchecked Sendable {
     func eraseAll() throws {
         log.names.append(erasureName)
     }
+}
+
+/// A custom-reminder scheduler that keeps one request pending, as the system would after a failed cancel.
+private final class KeepsCustomReminderPending: CustomReminderScheduling, @unchecked Sendable {
+    func replaceAll(with reminders: [CustomReminder]) async throws {}
+    func cancel(ids: [UUID]) {}
+    func pendingCustomCount() async -> Int { 1 }
 }
