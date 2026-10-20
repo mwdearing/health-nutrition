@@ -138,6 +138,16 @@ final class AppServicesEraseTests: XCTestCase {
         XCTAssertTrue(try services.goalStore.goals().isEmpty)
     }
 
+    /// Every production store is in the erase, in the pinned order: widget data first, journal after the lists. The
+    /// custom reminders join only with the system scheduler, which the test scheduler does not provide.
+    func testTheProductionEraseListIsPinnedAndComplete() throws {
+        let (services, _) = try makeServices()
+        XCTAssertEqual(services.connections.eraserNamesForTesting, [
+            "widget data", "saved meals", "supplements", "reminders",
+            "journal", "favorites", "recipes", "goals",
+        ])
+    }
+
     /// The app supplies its account model to the privacy erase hook. The hook drops the local session
     /// while leaving server sign-out and account deletion untouched.
     func testEraseUsesTheAppWiredLocalAccountHookOnly() async throws {

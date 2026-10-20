@@ -165,6 +165,7 @@ final class AppServices {
                 account?.pauseSharingForErase()
                 productSharing?.closeGate(reason: .erase)
             },
+            remindersStillPending: { await reminderScheduler.pendingDailyCount() > 0 },
             afterSuccessfulErase: {
                 displayPreferences.clearProductSharingPausesAfterErase()
                 HealthKitReader.forgetReadAccess()

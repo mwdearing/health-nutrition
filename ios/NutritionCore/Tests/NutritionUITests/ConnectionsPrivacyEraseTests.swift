@@ -207,6 +207,17 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
         XCTAssertEqual(model.entryCount, 0)
     }
 
+    /// A reminder request still pending after the erase is reported as "reminders" still on the phone.
+    func testARemainingReminderRequestIsReportedAsStillOnThePhone() async {
+        let model = ConnectionsPrivacyViewModel(
+            store: EraseStubStore(), favorites: EraseStubFavorites(), erasers: [RecordingEraser()],
+            remindersStillPending: { true })
+
+        let erased = await model.eraseAllData()
+        XCTAssertFalse(erased)
+        XCTAssertEqual(model.errorMessage, ConnectionsPrivacyViewModel.eraseLeftBehindMessage(["reminders"]))
+    }
+
     /// Erase and Retry only ask for confirmation: nothing is erased until the person confirms.
     func testARequestedEraseErasesNothingUntilConfirmed() async {
         let eraser = RecordingEraser()

@@ -599,9 +599,7 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         XCTAssertEqual(journal.clearRestoreCallsForTesting, 0, "a timed-out erase must not touch the restore flag")
 
         journal.resumeRestoreBeforeWriteForTesting.signal()
-        for _ in 0..<200 where model.isImporting {
-            try await Task.sleep(nanoseconds: 10_000_000)
-        }
+        await model.waitForImportForTesting()
         // The import finishes after the timed-out erase and its effects are applied, not dropped.
         XCTAssertEqual(model.journalRestoreGeneration, 1)
         XCTAssertEqual(try journal.activeIntakes().map(\.id), [entryID])
@@ -619,12 +617,9 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         let restorePaused = await waitForSignal(journal.restorePausedBeforeWriteForTesting)
         XCTAssertTrue(restorePaused)
 
-        let release = Task.detached {
-            try? await Task.sleep(nanoseconds: 200_000_000)
-            journal.resumeRestoreBeforeWriteForTesting.signal()
-        }
+        // The erase waits on the import gate, so releasing the paused import first lets it finish inside the wait.
+        journal.resumeRestoreBeforeWriteForTesting.signal()
         let erased = await model.eraseAllData()
-        await release.value
 
         XCTAssertFalse(erased)
         XCTAssertEqual(model.errorMessage, ConnectionsPrivacyViewModel.eraseNothingErasedMessage)
