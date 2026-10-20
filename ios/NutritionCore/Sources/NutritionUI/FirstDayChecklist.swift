@@ -71,7 +71,7 @@ public final class FirstDayChecklistModel: ObservableObject {
             if health.state != .unavailable {
                 items.append(FirstDayChecklistItem(
                     kind: .connectHealth, title: "Connect Apple Health", detail: nil,
-                    isDone: health.state == .connected && health.actionTitle == nil, isPlaceholder: false))
+                    isDone: health.state == .connected, isPlaceholder: false))
             }
         }
         // The Health row is appended after the three real steps, so these are the first three.
