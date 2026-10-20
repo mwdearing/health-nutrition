@@ -52,7 +52,7 @@ final class HealthIntakeTodayTests: XCTestCase {
 
         model.outsideIntake = .read(values: ["energy": 620], readKeys: ["energy"])
         model.load(now: now)
-        XCTAssertEqual(model.progress.first { $0.nutrient == "energy" }?.knownSum,
+        XCTAssertEqual(model.progress.first { $0.nutrient == "energy" }?.amount,
                        NutrientValue.known(620, HealthKitWritePlanner.mapping(for: "energy")!.unit))
     }
 }

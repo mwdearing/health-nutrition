@@ -6,6 +6,7 @@ import XCTest
 /// failure, and the failure line appears only when nothing was read.
 @MainActor
 final class OutsideCardTextTests: XCTestCase {
+    @MainActor
     private final class FixedReader: BodyActivityReading {
         var hasAskedForReadAccess = true
         let readings: BodyActivityReadings
