@@ -207,7 +207,6 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
         XCTAssertEqual(model.entryCount, 0)
     }
 
-    /// Every store still on the phone is named, in the order the erase ran, and none of them stops the rest.
     /// Community sharing is paused only once the erase is going ahead. A restore flag that cannot be cleared
     /// stops the erase before the stores, so it must not pause sharing.
     func testBeforeEraseDoesNotRunWhenTheFlagCannotBeCleared() async {
@@ -223,6 +222,7 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
         XCTAssertFalse(paused)
     }
 
+    /// Every store still on the phone is named, in the order the erase ran, and none of them stops the rest.
     func testEverySurvivingStoreIsNamedInEraseOrder() async {
         let savedMeals = RecordingEraser(failure: EraseFailure(), name: "saved meals")
         let working = RecordingEraser()
