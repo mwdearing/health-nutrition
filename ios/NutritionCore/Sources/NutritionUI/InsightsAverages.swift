@@ -3,8 +3,9 @@ import NutritionDomain
 
 /// Per-day averages over the last 30 local days, for the Insights screen.
 ///
-/// Only days with a known amount for a nutrient count towards its average; a partly logged day counts with its known sum, as a minimum (#510), and the line says how many days that was,
-/// so a month with gaps reads as an average of what was logged and never as a month of zeros.
+/// Only days with a known amount for a nutrient count towards its average; a partly logged day counts with its
+/// known sum, as a minimum (#510), and the line says how many days that was, so a month with gaps reads as an
+/// average of what was logged and never as a month of zeros.
 public struct InsightsAverages: Equatable {
     public static let windowDays = 30
 
@@ -58,7 +59,8 @@ public struct InsightsAverages: Equatable {
             var unit: MeasureUnit?
             for day in inWindow {
                 // A fully known day counts as it is. A partly logged day counts with the sum of its known entries,
-                // which is a minimum (#510). A day with nothing known for this nutrient is left out, never counted as 0.
+                // which is a minimum (#510). A day with nothing known for this nutrient is left out, never counted as
+                // 0.
                 let value: NutrientValue
                 let isPartial: Bool
                 if let total = day.totals.total(for: nutrient), case .known = total.value {
