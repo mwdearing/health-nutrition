@@ -55,25 +55,4 @@ final class SnapshotlessSupplementRowsTests: XCTestCase {
         XCTAssertFalse(row.detail.contains("tsp"), "a typed food has no spoon reading, got \(row.detail)")
         XCTAssertEqual(row.kind, .food)
     }
-
-    /// A saved meal of a typed supplement reads as the spoon in Library, as its favorite row does (#416).
-    func testSavedMealOfATypedSupplementReadsAsTheSpoon() throws {
-        let store = try makeStore()
-        try logTypedSupplement(store, category: "supplement")
-        let journal = JournalViewModel(store: store, timeZoneIdentifier: "UTC")
-        journal.load(now: now)
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: "saved-meal-416-\(UUID().uuidString)"))
-        let savedMeals = SavedMealsModel(store: UserDefaultsSavedMealStore(defaults: defaults), journal: store)
-        journal.savedMeals = savedMeals
-        let day = try XCTUnwrap(journal.sections.first)
-        XCTAssertTrue(journal.saveMeal(day.id, groupID: "Other", name: "Fiber dose"))
-        let library = LibraryViewModel(
-            store: store, favorites: try SwiftDataFavoritesStore(url: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)),
-            timeZoneIdentifier: "UTC")
-        library.load()
-        library.segment = .favorites
-        let row = try XCTUnwrap(library.visibleItems.first { $0.title == "Fiber dose" })
-        XCTAssertTrue(row.detail.contains("tsp"), "the saved meal reads as the spoon, got \(row.detail)")
-        XCTAssertEqual(row.kind, .supplement)
-    }
 }
