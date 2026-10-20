@@ -82,4 +82,19 @@ final class AddIntakeLabelServingTests: XCTestCase {
         let kcal = try XCTUnwrap(model.amountPreview?.kcal)
         XCTAssertEqual(NSDecimalNumber(decimal: kcal).doubleValue, 453.59, accuracy: 0.01)
     }
+
+    /// A serving counted in ounces shows the stored gram serving, not the rounded ounce figure on screen, so the
+    /// preview of one serving is the serving's own calories whatever the display rounding.
+    func testAServingCountedInOuncesPreviewsTheStoredServing() throws {
+        let store = try makeStore()
+        let model = AddIntakeViewModel(
+            store: store, now: now, timeZoneIdentifier: "UTC",
+            preferences: InMemoryDisplayPreferences(unitSystem: .usCustomary))
+        model.applyLabelProduct(panel(basis: "per serving (30 g)"), fromLabelCapture: true)
+
+        model.setServingCount("1")
+
+        let kcal = try XCTUnwrap(model.amountPreview?.kcal)
+        XCTAssertEqual(NSDecimalNumber(decimal: kcal).doubleValue, 480, accuracy: 0.001)
+    }
 }
