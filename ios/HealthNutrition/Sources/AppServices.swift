@@ -165,7 +165,6 @@ final class AppServices {
                 account?.pauseSharingForErase()
                 productSharing?.closeGate(reason: .erase)
             },
-            remindersStillPending: { await ReminderReadback.namesStillPending(in: SystemPendingReminderCenter()) },
             afterSuccessfulErase: {
                 displayPreferences.clearProductSharingPausesAfterErase()
                 HealthKitReader.forgetReadAccess()
@@ -178,7 +177,8 @@ final class AppServices {
             eraseLocalAccount: {
                 guard let account else { return }
                 try await account.discardLocalSession()
-            })
+            },
+            remindersStillPending: { await ReminderReadback.namesStillPending(in: SystemPendingReminderCenter()) })
         let openFoodFacts = OpenFoodFactsProductLookup(
             client: OpenFoodFactsClient(appVersion: Self.appVersion))
         barcodeLookup = Self.makeBarcodeLookup(primary: openFoodFacts, community: community, account: account)
