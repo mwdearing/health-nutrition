@@ -246,6 +246,7 @@ public struct AddIntakeView: View {
                 }
                 if model.canChooseLibrary {
                     Toggle("Save to Library", isOn: $model.savesToLibrary)
+                        .accessibilityHint("Scanned and searched products are kept in Library, or only this entry is logged")
                     Text("Also keep this product in Library.")
                         .font(.footnote)
                         .foregroundStyle(TokenColors.textSecondary)
