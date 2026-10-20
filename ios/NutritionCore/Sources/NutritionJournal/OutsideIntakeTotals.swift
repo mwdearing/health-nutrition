@@ -78,7 +78,7 @@ extension OutsideIntakeTotals {
             return .none
         }
         guard unitIsReadable(mapping.unit) else {
-            return .unreadable(nutrientKey: mapping.nutrientKey)
+            return .unreadable(nutrientKey: "")
         }
         return .read(
             nutrientKey: mapping.nutrientKey, unit: mapping.unit,
