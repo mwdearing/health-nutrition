@@ -167,6 +167,16 @@ final class HealthIntakeTotalsTests: XCTestCase {
         XCTAssertEqual(combined.first?.knownSum, .known(100, .iu))
     }
 
+    func testAnAliasLineReadsHealthUnderItsCanonicalKey() {
+        // A goal stored under a captured alias (vitamin-a) still reads Health's canonical vitaminA values.
+        let vitaminA = HealthKitWritePlanner.mapping(for: "vitaminA")!.unit
+        let aliasLine = NutrientProgressLine(nutrient: "vitamin-a", amount: .known(300, vitaminA), goal: nil)
+        let combined = HealthIntakeTotals.combine(
+            [aliasLine], outside: .read(values: ["vitaminA": 200], readKeys: ["vitaminA"]))
+        XCTAssertEqual(combined.first?.amount, .known(500, vitaminA))
+        XCTAssertEqual(combined.first?.isPartial, false)
+    }
+
     func testWaterLineIsNeverCombined() {
         let water = line(DailyTotalsBuilder.waterKey, known: 500, unit: .mL)
         let combined = HealthIntakeTotals.combine([water], outside: .read(values: [DailyTotalsBuilder.waterKey: 250], readKeys: [DailyTotalsBuilder.waterKey]))

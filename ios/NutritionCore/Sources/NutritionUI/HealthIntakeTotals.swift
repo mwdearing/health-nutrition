@@ -63,12 +63,15 @@ public enum HealthIntakeTotals {
         // A nutrient whose query was skipped for any sample stays incomplete even when some of its samples were summed.
         var outsideValue: Decimal?
         var outsideComplete = false
+        // Health's values and read keys are canonical, so an alias line (a goal stored under a captured alias) is looked up
+        // under its canonical key.
+        let canonical = HealthKitWritePlanner.canonicalKey(for: line.nutrient)
         if case .read(let values, let readKeys) = outside {
-            if readKeys.contains(line.nutrient) {
-                outsideValue = values[line.nutrient] ?? 0
+            if readKeys.contains(canonical) {
+                outsideValue = values[canonical] ?? 0
                 outsideComplete = true
             } else {
-                outsideValue = values[line.nutrient]
+                outsideValue = values[canonical]
             }
         }
 
