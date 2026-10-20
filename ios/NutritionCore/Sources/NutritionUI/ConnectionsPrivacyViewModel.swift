@@ -51,7 +51,7 @@ public enum ConnectionsPrivacyImportState: Equatable {
 /// waits on the main actor. `begin` is called before a restore starts and `end` when it has finished, whether
 /// it succeeded or failed; `wait` reports whether every restore in flight had finished within the time it was
 /// given, so a caller never blocks forever on work that cannot arrive.
-private final class ImportGate: @unchecked Sendable {
+final class ImportGate: @unchecked Sendable {
     private let condition = NSCondition()
     /// How many restores are in flight. A count rather than a flag: two imports can overlap, and the first
     /// of them to finish must not report the gate idle while the second is still writing.
@@ -315,16 +315,10 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// The restore in flight, so an erase can ask it to stop and wait for it. Nil when nothing is running.
     private var importTask: Task<Void, Never>?
 
-    /// Waits for the running import, if any, to finish. Tests await this instead of polling.
-    func waitForImportForTesting() async {
-        await importTask?.value
-    }
-    /// Whether the in-flight import has been cancelled, so a test can tell a cancelled import from a running one.
-    var importIsCancelledForTesting: Bool { importTask?.isCancelled ?? false }
     /// Whether a restore is running right now, and how to wait for it. A lock rather than an actor,
     /// because the two sides of that wait are on different actors: the restore finishes on a background
     /// thread and the erase waits here, on the main actor, so they have to meet somewhere both can reach.
-    private let importGate = ImportGate()
+    private let importGate: ImportGate
     /// Counts imports and erases. An import publishes only while its own number is still the current one,
     /// which is how the outcome of an import an erase overtook is dropped rather than shown.
     private var importGeneration = 0
@@ -361,8 +355,10 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         afterSuccessfulErase: @escaping @MainActor () -> Void = {},
         eraseLocalAccount: @escaping () async throws -> Void = {},
         remindersStillPending: @escaping () async -> [String] = { [] },
-        importWaitSeconds: TimeInterval = ConnectionsPrivacyViewModel.eraseWaitsForImportSeconds
+        importWaitSeconds: TimeInterval = ConnectionsPrivacyViewModel.eraseWaitsForImportSeconds,
+        importGate: ImportGate = ImportGate()
     ) {
+        self.importGate = importGate
         self.store = store
         self.favorites = favorites
         self.savedMeals = savedMeals
