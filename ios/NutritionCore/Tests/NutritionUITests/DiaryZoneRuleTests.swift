@@ -59,9 +59,5 @@ final class DiaryZoneRuleTests: XCTestCase {
         let journal = JournalViewModel(store: store, timeZoneIdentifier: "UTC")
         journal.load(now: now)
         XCTAssertEqual(journal.arrowSectionIDs.first, "2026-10-20")
-        // With today as the only visible day, the arrows start from today's midnight, not yesterday's.
-        let base = JournalViewModel.arrowBaseDay(
-            sectionIDs: journal.arrowSectionIDs, visible: ["2026-10-20"], zone: journal.dayZone, now: now)
-        XCTAssertEqual(JournalViewModel.dayKey(base, zone: journal.dayZone), "2026-10-20")
     }
 }

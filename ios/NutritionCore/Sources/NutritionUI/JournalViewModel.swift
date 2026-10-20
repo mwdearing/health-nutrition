@@ -162,7 +162,7 @@ public final class JournalViewModel: ObservableObject {
     public var dayZone: TimeZone { TimeZone(identifier: journalZoneID()) ?? TimeZone.current }
     /// The day keys the Diary arrows step through, in list order: today's empty day too, which the
     /// sections leave out (#539).
-    public var arrowSectionIDs: [String] { diarySections.map(\.id) }
+    @Published public private(set) var arrowSectionIDs: [String] = []
     private let locale: Locale
     private let preferences: DisplayPreferences
 
@@ -283,6 +283,7 @@ public final class JournalViewModel: ObservableObject {
             }
             todaySection = built.first { $0.id == todayKey && $0.rows.isEmpty }
             sections = built.filter { !($0.id == todayKey && $0.rows.isEmpty) }
+            arrowSectionIDs = diarySections.map(\.id)
             weekSummary = Self.makeWeekSummary(
                 sections: sections, now: now,
                 zone: TimeZone(identifier: journalZoneID()) ?? TimeZone.current,
@@ -296,6 +297,7 @@ public final class JournalViewModel: ObservableObject {
             // Clear everything the last successful load built: a failed read must not leave its totals on screen.
             todaySection = nil
             sections = []
+            arrowSectionIDs = []
             skippedCount = 0
             weekSummary = nil
             goalsErrorMessage = nil
