@@ -294,6 +294,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// Reads back the system's pending reminder requests after the reminder erasers ran. True when any of ours remain,
     /// so the erase names "reminders" as still on the phone. The reminder erasers cannot report a failure themselves.
     private let remindersStillPending: () async -> Bool
+    /// How long an erase waits for a running import; a test shortens it so the timeout path runs quickly.
+    private let importWaitSeconds: TimeInterval
 
     /// Changes whenever this screen creates, clears, or forgets an export. An import may remove only the
     /// copy that was already current when that import began; a later export may contain restored rows.
@@ -358,7 +360,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         beforeErase: @escaping @MainActor () -> Void = {},
         afterSuccessfulErase: @escaping @MainActor () -> Void = {},
         eraseLocalAccount: @escaping () async throws -> Void = {},
-        remindersStillPending: @escaping () async -> Bool = { false }
+        remindersStillPending: @escaping () async -> Bool = { false },
+        importWaitSeconds: TimeInterval = ConnectionsPrivacyViewModel.eraseWaitsForImportSeconds
     ) {
         self.store = store
         self.favorites = favorites
@@ -370,6 +373,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         self.afterSuccessfulErase = afterSuccessfulErase
         self.eraseLocalAccount = eraseLocalAccount
         self.remindersStillPending = remindersStillPending
+        self.importWaitSeconds = importWaitSeconds
         self.remover = remover
         self.preferences = preferences
         self.unitSystem = preferences.unitSystem
@@ -626,7 +630,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         defer { isErasing = false }
         // Wait for a running import to finish. The wait never cancels the import: if it runs past the wait, the erase
         // touches nothing, the import keeps running, and the person is told nothing was erased so they can try again.
-        guard importGate.wait(upTo: Self.eraseWaitsForImportSeconds) else {
+        guard importGate.wait(upTo: importWaitSeconds) else {
             errorMessage = Self.eraseNothingErasedMessage
             eraseRetryAvailable = true
             resolveDeferredImportEffectsAfterErase(journalEraseSucceeded: false)
@@ -643,7 +647,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         importGeneration += 1
         beforeErase()
 
-        // Every store and export file that is still on the phone afterwards is named, in the order the erase ran,
+        // Every store and export file that is still on the phone afterwards is named in the order the erase ran;
+        // the reminder readback runs after the stores, so "reminders" is listed last among the stores,
         // so the person knows exactly what to retry. One failure never stops the rest.
         var leftBehind: [String] = []
         var journalEraseSucceeded = false
