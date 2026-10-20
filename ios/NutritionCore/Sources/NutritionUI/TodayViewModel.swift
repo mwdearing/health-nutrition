@@ -229,8 +229,7 @@ public final class TodayViewModel: ObservableObject {
                 let snapshot = Self.snapshot(of: current, in: &snapshots, using: store)
                 // An entry with no product snapshot takes its stored category, so a typed supplement is a supplement;
                 // an entry with a snapshot states its kind through that snapshot (#416, #364).
-                let kind = ProductKindResolution.kind(
-                    snapshotID: current.productSnapshotID, snapshotKind: { _ in snapshot?.kind }, category: intake.category)
+                let kind = snapshot?.kind ?? .food
                 if intake.category == "water" {
                     waterEntries += 1
                     for component in components {
