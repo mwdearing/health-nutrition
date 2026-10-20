@@ -610,6 +610,8 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         journal.resumeRestoreBeforeWriteForTesting.signal()
         let finished = await awaitImport(gate)
         XCTAssertTrue(finished)
+        // The gate clears on the import thread; the outcome reaches the model on the main actor afterwards.
+        await waitForImportToSettle(model)
         // The import finishes after the timed-out erase and its effects are applied, not dropped.
         XCTAssertEqual(model.journalRestoreGeneration, 1)
         // Each effect of the import ran exactly once: one restore, one generation bump.
@@ -633,6 +635,8 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         journal.resumeRestoreBeforeWriteForTesting.signal()
         let finished = await awaitImport(gate)
         XCTAssertTrue(finished)
+        // The gate clears on the import thread; the outcome reaches the model on the main actor afterwards.
+        await waitForImportToSettle(model)
         journal.failClearRestoreForTesting = true
         let erased = await model.eraseAllData()
 
