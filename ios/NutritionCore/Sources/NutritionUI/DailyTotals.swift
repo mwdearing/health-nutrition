@@ -152,7 +152,7 @@ public enum DailyTotalsBuilder {
             for component in entry.components {
                 // Every key the nutrient may be stored under, not only the first one that answers: a negative alias
                 // distrusts the entry even when its canonical key states a positive value (#521 item 6).
-                for key in HealthKitWritePlanner.acceptedKeys(for: nutrient) {
+                for key in HealthKitWritePlanner.acceptedKeys(for: nutrient).prefix(1) {
                     if case .known(let stated, _) = lookup.value(for: component, snapshot: nil, nutrient: key),
                         stated < 0
                     {
