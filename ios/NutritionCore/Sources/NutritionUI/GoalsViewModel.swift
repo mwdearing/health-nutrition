@@ -480,12 +480,21 @@ public final class GoalsViewModel: ObservableObject {
     public static let clearedMessage = "Goal removed"
 
     @Published public private(set) var clearedGoal: ClearedGoal?
+    /// When the Undo for the last Clear closes: ten seconds after it, the same window as the other undos (#526).
+    private var clearUndoDeadline: Date?
+    private static let clearUndoWindow: TimeInterval = 10
+
+    /// Whether the last Clear can still be undone at `now`.
+    public func canUndoClear(now: Date = Date()) -> Bool {
+        guard clearedGoal != nil, let deadline = clearUndoDeadline else { return false }
+        return now < deadline
+    }
 
     /// Removes the goal for `nutrient` on an explicit clear (the row's Clear button, or Return on an
     /// empty field). The removed goal is kept for Undo. A goal that cannot be read is not removed, since
     /// Undo could not put it back.
     @discardableResult
-    public func clearTarget(for nutrient: String) -> Bool {
+    public func clearTarget(for nutrient: String, now: Date = Date()) -> Bool {
         rowError[nutrient] = nil
         let previous: NutrientGoal?
         do { previous = try storedGoal(for: nutrient) } catch {
@@ -501,6 +510,7 @@ public final class GoalsViewModel: ObservableObject {
         draftText[nutrient] = ""
         loadedDraftText[nutrient] = ""
         clearedGoal = ClearedGoal(nutrient: nutrient, goal: previous)
+        clearUndoDeadline = now.addingTimeInterval(Self.clearUndoWindow)
         noteSaved()
         return true
     }
@@ -508,8 +518,8 @@ public final class GoalsViewModel: ObservableObject {
     /// Puts back the goal the last Clear removed, and returns whether it did. Only when nothing has been
     /// stored for that nutrient since: a goal saved after the Clear is the person's newer value and is kept.
     @discardableResult
-    public func undoClear() -> Bool {
-        guard let cleared = clearedGoal else { return false }
+    public func undoClear(now: Date = Date()) -> Bool {
+        guard canUndoClear(now: now), let cleared = clearedGoal else { return false }
         let current: NutrientGoal?
         do { current = try storedGoal(for: cleared.nutrient) } catch {
             errorMessage = Self.readFailedMessage
