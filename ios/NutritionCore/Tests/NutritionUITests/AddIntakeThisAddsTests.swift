@@ -45,6 +45,65 @@ final class AddIntakeThisAddsTests: XCTestCase {
         XCTAssertTrue(model.statesNoNutrients)
     }
 
+    /// A per-serving label scales a non-gram mass amount the same as the same weight in grams: 2 oz is 56.7 g,
+    /// so with a 30 g serving the preview must match 56.7 g.
+    func testAPerServingPreviewScalesAnOunceAmountLikeItsGrams() throws {
+        let product = ProductDefinition(snapshotID: "example-serving", productID: "example-oats",
+            name: "Example oats", labelBasis: "per serving (30 g)", catalogOrigin: "label", catalogVersion: "1",
+            nutrients: ["protein": .known(Decimal(6), .g)])
+        let grams = AddIntakeViewModel(store: try makeStore(), now: now)
+        grams.applyLabelProduct(product, fromLabelCapture: true)
+        grams.amountText = "56.7"
+        grams.unit = .g
+        let ounces = AddIntakeViewModel(store: try makeStore(), now: now)
+        ounces.applyLabelProduct(product, fromLabelCapture: true)
+        ounces.amountText = "2"
+        ounces.unit = .oz
+        let fromGrams = try XCTUnwrap(grams.amountPreview?.protein)
+        let fromOunces = try XCTUnwrap(ounces.amountPreview?.protein)
+        XCTAssertEqual(NSDecimalNumber(decimal: fromOunces).doubleValue,
+                       NSDecimalNumber(decimal: fromGrams).doubleValue, accuracy: 0.05)
+    }
+
+    /// A per-100 g label scales an ounce amount the same as its grams too: 2 oz is 56.7 g, so 13 g per 100 g
+    /// gives 7.4 g of protein from either entry.
+    func testAPerHundredGramPreviewScalesAnOunceAmountLikeItsGrams() throws {
+        let product = ProductDefinition(snapshotID: "example-per100", productID: "example-oats",
+            name: "Example oats", labelBasis: "per 100 g", catalogOrigin: "label", catalogVersion: "1",
+            nutrients: ["protein": .known(Decimal(13), .g)])
+        let grams = AddIntakeViewModel(store: try makeStore(), now: now)
+        grams.applyLabelProduct(product, fromLabelCapture: true)
+        grams.amountText = "56.7"
+        grams.unit = .g
+        let ounces = AddIntakeViewModel(store: try makeStore(), now: now)
+        ounces.applyLabelProduct(product, fromLabelCapture: true)
+        ounces.amountText = "2"
+        ounces.unit = .oz
+        let fromGrams = try XCTUnwrap(grams.amountPreview?.protein)
+        let fromOunces = try XCTUnwrap(ounces.amountPreview?.protein)
+        XCTAssertEqual(NSDecimalNumber(decimal: fromOunces).doubleValue,
+                       NSDecimalNumber(decimal: fromGrams).doubleValue, accuracy: 0.05)
+    }
+
+    /// A caller other than the label capture (a repeat, a Recent) must not set the Servings control, but its
+    /// amount preview for a per-serving product is the same as the label capture's.
+    func testANonLabelCallerDoesNotSetServingsButKeepsItsPreview() throws {
+        let product = ProductDefinition(snapshotID: "example-serving-repeat", productID: "example-oats",
+            name: "Example oats", labelBasis: "per serving (30 g)", catalogOrigin: "label", catalogVersion: "1",
+            nutrients: ["protein": .known(Decimal(6), .g)])
+        let captured = AddIntakeViewModel(store: try makeStore(), now: now)
+        captured.applyLabelProduct(product, fromLabelCapture: true)
+        captured.amountText = "2"
+        captured.unit = .oz
+        let repeated = AddIntakeViewModel(store: try makeStore(), now: now)
+        repeated.applyLabelProduct(product)
+        repeated.amountText = "2"
+        repeated.unit = .oz
+        XCTAssertNil(repeated.servingOption)
+        XCTAssertNotNil(repeated.amountPreview)
+        XCTAssertEqual(repeated.amountPreview?.protein, captured.amountPreview?.protein)
+    }
+
     func testBoundOnlyProductStillShowsItsValues() throws {
         let model = AddIntakeViewModel(store: try makeStore(), now: now)
         model.applyLabelProduct(ProductDefinition(snapshotID: "example-bound", productID: "example-oats",
