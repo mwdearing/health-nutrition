@@ -2,6 +2,17 @@ import NutritionJournal
 import SwiftUI
 
 public struct AddHomeView: View {
+    /// How the four quick actions lay out: one row at normal text sizes, two columns at accessibility sizes.
+    public enum QuickActionLayout: Equatable {
+        case row, grid
+    }
+
+    /// The layout is picked from the text size, not from whether a row happens to fit, so the choice is testable.
+    public static func quickActionLayout(for size: DynamicTypeSize) -> QuickActionLayout {
+        size.isAccessibilitySize ? .grid : .row
+    }
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     /// The search row's visible text, also its spoken label, so the two cannot drift apart.
     public static let searchRowTitle = "Search foods"
     @ObservedObject private var model: AddHomeViewModel
@@ -92,11 +103,12 @@ public struct AddHomeView: View {
                         }
                     }
                 }
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: DesignSpacing.s) { ForEach(quickActions) { quickActionButton($0) } }
+                if Self.quickActionLayout(for: dynamicTypeSize) == .grid {
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: DesignSpacing.s) {
                         ForEach(quickActions) { quickActionButton($0) }
                     }
+                } else {
+                    HStack(spacing: DesignSpacing.s) { ForEach(quickActions) { quickActionButton($0) } }
                 }
                 // Why a quick action is off is shown in words, not only in its hint.
                 ForEach(quickActions.filter { !$0.available && !$0.explanation.isEmpty }) { action in

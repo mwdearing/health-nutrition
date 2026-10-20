@@ -1,6 +1,7 @@
 import Foundation
 import NutritionDomain
 import NutritionJournal
+import SwiftUI
 import XCTest
 @testable import NutritionUI
 
@@ -128,6 +129,14 @@ final class AddHomeTests: XCTestCase {
         XCTAssertTrue(home.undo())
         XCTAssertFalse(try store.activeIntakes().contains { $0.id == token.intakeID })
         XCTAssertEqual(try store.activeIntakes().count, 1)
+    }
+
+    /// The four quick actions sit in one row at normal text sizes and in two columns at accessibility sizes.
+    func testQuickActionsGoToTwoColumnsOnlyAtAccessibilitySizes() {
+        XCTAssertEqual(AddHomeView.quickActionLayout(for: .large), .row)
+        XCTAssertEqual(AddHomeView.quickActionLayout(for: .xxxLarge), .row)
+        XCTAssertEqual(AddHomeView.quickActionLayout(for: .accessibility1), .grid)
+        XCTAssertEqual(AddHomeView.quickActionLayout(for: .accessibility3), .grid)
     }
 
     /// The Meal row names the current choice, so the value shows without opening the picker.
