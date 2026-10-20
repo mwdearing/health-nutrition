@@ -209,10 +209,9 @@ public struct CommunityProductSearchView: View {
         case .unavailable: Text("Food databases are unavailable right now.")
         }
     }
-    /// Hidden entirely when the signed-out line is off, so a build with no account shows no empty section.
+    /// The view only asks SearchSignIn; the signed-out state here is always signed out.
     private var showsSharedProducts: Bool {
-        guard model.state == .signInRequired else { return true }
-        return SearchSignIn.signedOutLine(hasAccount: hasAccount, signedIn: false) == .signInMessage
+        SearchSignIn.showsSharedProducts(state: model.state, hasAccount: hasAccount, signedIn: false)
     }
 
     @ViewBuilder private var sharedState: some View {

@@ -15,4 +15,18 @@ final class SearchSignInLineTests: XCTestCase {
         XCTAssertEqual(SearchSignIn.signedOutLine(hasAccount: true, signedIn: true), .none)
         XCTAssertEqual(SearchSignIn.signedOutLine(hasAccount: false, signedIn: true), .none)
     }
+
+    func testNoAccountSignedOutHidesTheSharedProductsSection() {
+        XCTAssertFalse(SearchSignIn.showsSharedProducts(state: .signInRequired, hasAccount: false, signedIn: false))
+    }
+
+    func testAnAccountSignedOutShowsTheSharedProductsSection() {
+        XCTAssertTrue(SearchSignIn.showsSharedProducts(state: .signInRequired, hasAccount: true, signedIn: false))
+    }
+
+    func testAnyOtherStateShowsTheSharedProductsSection() {
+        for state in [CommunityProductSearchState.idle, .queryTooShort, .loading, .loaded, .empty, .unsupported, .unavailable] {
+            XCTAssertTrue(SearchSignIn.showsSharedProducts(state: state, hasAccount: false, signedIn: false), "\(state)")
+        }
+    }
 }
