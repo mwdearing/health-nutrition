@@ -4,6 +4,16 @@ import SQLite3
 import SwiftData
 
 /// A store file the erase could not checkpoint, so its removal did not start.
+/// The two file operations an erase performs on the store, so a test can make each one fail.
+struct StoreFileOperations {
+    var checkpoint: (URL) throws -> Void
+    var remove: (URL) throws -> Void
+
+    static let system = StoreFileOperations(
+        checkpoint: { try SwiftDataJournalStore.checkpointStoreFile(at: $0) },
+        remove: { try FileManager.default.removeItem(at: $0) })
+}
+
 private enum StoreFileError: Error {
     case checkpointFailed
 }
@@ -1101,6 +1111,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     private let restoreMarkerURL: URL
     /// The store file itself. An erase deletes it with its write-ahead and shared-memory files.
     private let storeURL: URL
+    private let fileOperations: StoreFileOperations
     private let enabledDestinations: Set<JournalDestination>
 
     public var failNextSaveForTesting: Bool {
@@ -1110,8 +1121,13 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
 
     /// Opens or creates the store file at `url`. Destinations not in `enabledDestinations` get a
     /// disabled projection and no outbox operation.
-    public init(url: URL, enabledDestinations: Set<JournalDestination> = [.healthKit, .relay]) throws {
+    public convenience init(url: URL, enabledDestinations: Set<JournalDestination> = [.healthKit, .relay]) throws {
+        try self.init(url: url, enabledDestinations: enabledDestinations, fileOperations: .system)
+    }
+
+    init(url: URL, enabledDestinations: Set<JournalDestination>, fileOperations: StoreFileOperations) throws {
         self.enabledDestinations = enabledDestinations
+        self.fileOperations = fileOperations
         storeURL = url
         restoreMarkerURL = url.appendingPathExtension("restore-in-progress")
         container = try Self.makeContainer(url: url)
@@ -1824,7 +1840,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             container = nil
             var removalError: Error?
             do {
-                try checkpointStoreFile()
+                try fileOperations.checkpoint(storeURL)
             } catch {
                 removalError = error
             }
@@ -1834,7 +1850,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
                 let file = URL(fileURLWithPath: storeURL.path + suffix)
                 guard FileManager.default.fileExists(atPath: file.path) else { continue }
                 do {
-                    try FileManager.default.removeItem(at: file)
+                    try fileOperations.remove(file)
                 } catch {
                     removalError = error
                 }
@@ -1852,11 +1868,11 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     /// Moves every page of the write-ahead file into the store file and truncates the write-ahead file to nothing.
     /// A checkpoint that cannot run to completion (for example, while another connection still reads the store)
     /// throws, and the erase reports it.
-    private func checkpointStoreFile() throws {
-        guard FileManager.default.fileExists(atPath: storeURL.path) else { return }
+    static func checkpointStoreFile(at url: URL) throws {
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
         var database: OpaquePointer?
         defer { sqlite3_close(database) }
-        guard sqlite3_open_v2(storeURL.path, &database, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK else {
+        guard sqlite3_open_v2(url.path, &database, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK else {
             throw StoreFileError.checkpointFailed
         }
         var logFrames: Int32 = 0
