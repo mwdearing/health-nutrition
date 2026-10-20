@@ -1879,7 +1879,10 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             throw StoreFileError.checkpointFailed
         }
         // Another connection may hold the file for a moment; wait for it rather than fail the erase on the first try.
-        sqlite3_busy_timeout(database, 2_000)
+        // A busy timeout that cannot be set is a failed checkpoint, not a silent default.
+        guard sqlite3_busy_timeout(database, 2_000) == SQLITE_OK else {
+            throw StoreFileError.checkpointFailed
+        }
         var logFrames: Int32 = 0
         var checkpointedFrames: Int32 = 0
         guard
