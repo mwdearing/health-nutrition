@@ -1,0 +1,58 @@
+import Foundation
+import NutritionDomain
+import NutritionJournal
+import XCTest
+@testable import NutritionUI
+
+/// Today with an empty journal and nutrition from other apps in Health: the lines show Health's amounts.
+@MainActor
+final class HealthIntakeTodayTests: XCTestCase {
+    private let now = Date(timeIntervalSince1970: 1_700_000_000)
+
+    private func makeJournal() throws -> SwiftDataJournalStore {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        return try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
+    }
+
+    /// No journal entries at all and every Health read complete: both show Health's exact amounts.
+    func testEmptyJournalShowsHealthEnergyAndProteinExactly() throws {
+        let model = TodayViewModel(store: try makeJournal(), timeZoneIdentifier: "UTC")
+        model.outsideIntake = .read(
+            values: ["energy": 620, "protein": 48], readKeys: ["energy", "protein"])
+        model.load(now: now)
+
+        let energy = try XCTUnwrap(model.progress.first { $0.nutrient == "energy" })
+        let protein = try XCTUnwrap(model.progress.first { $0.nutrient == "protein" })
+        XCTAssertEqual(energy.amount, NutrientValue.known(620, HealthKitWritePlanner.mapping(for: "energy")!.unit))
+        XCTAssertEqual(protein.amount, NutrientValue.known(48, HealthKitWritePlanner.mapping(for: "protein")!.unit))
+        XCTAssertFalse(energy.isPartial)
+        XCTAssertFalse(protein.isPartial)
+    }
+
+    /// Health's protein read was not complete, so protein reads as at least while energy stays exact.
+    func testEmptyJournalWithPartialHealthReadIsAtLeastForThatNutrientOnly() throws {
+        let model = TodayViewModel(store: try makeJournal(), timeZoneIdentifier: "UTC")
+        model.outsideIntake = .read(values: ["energy": 620, "protein": 48], readKeys: ["energy"])
+        model.load(now: now)
+
+        let energy = try XCTUnwrap(model.progress.first { $0.nutrient == "energy" })
+        let protein = try XCTUnwrap(model.progress.first { $0.nutrient == "protein" })
+        XCTAssertFalse(energy.isPartial)
+        XCTAssertTrue(protein.isPartial)
+        XCTAssertEqual(protein.knownSum, NutrientValue.known(48, HealthKitWritePlanner.mapping(for: "protein")!.unit))
+    }
+
+    /// Changing only the Health side and loading again changes Today's lines.
+    func testChangingOnlyTheHealthSideReloadsTheLines() throws {
+        let model = TodayViewModel(store: try makeJournal(), timeZoneIdentifier: "UTC")
+        model.load(now: now)
+        XCTAssertFalse(model.progress.contains { $0.nutrient == "energy" && $0.knownSum != nil })
+
+        model.outsideIntake = .read(values: ["energy": 620], readKeys: ["energy"])
+        model.load(now: now)
+        XCTAssertEqual(model.progress.first { $0.nutrient == "energy" }?.amount,
+                       NutrientValue.known(620, HealthKitWritePlanner.mapping(for: "energy")!.unit))
+    }
+}

@@ -54,11 +54,11 @@ final class HealthKitReader: BodyActivityReading {
         var readings = BodyActivityReadings()
         readings.steps = await sum(.stepCount, unit: .count(), from: startOfDay, to: now)
         readings.activeEnergyKcal = await sum(.activeEnergyBurned, unit: .kilocalorie(), from: startOfDay, to: now)
-        if let outside = await outsideNutrientTotals(from: startOfDay, to: now) {
-            readings.outsideNutrients = outside
-        } else {
-            readings.outsideReadFailed = true
-        }
+        readings.outsideRead = true
+        let outside = await outsideNutrientTotals(from: startOfDay, to: now)
+        readings.outsideNutrients = outside.totals
+        readings.outsideReadKeys = outside.readKeys
+        readings.outsideReadFailed = outside.failed
         if let latest = await latestWeight(before: now) {
             readings.latestWeightKg = latest.kilograms
             readings.latestWeightDate = latest.date
@@ -84,48 +84,54 @@ final class HealthKitReader: BodyActivityReading {
 
     /// Today's nutrient totals from samples other apps wrote. This app's own samples are flagged by
     /// their source and left out by `OutsideIntakeTotals`, so an entry logged here is never counted twice.
-    /// The day's outside totals, or nil when any query fails: a partial total would read as complete.
-    private func outsideNutrientTotals(from start: Date, to end: Date) async -> [String: Decimal]? {
+    /// The day's outside totals per nutrient. A query that succeeds marks its nutrient as read, so an empty
+    /// result is a known zero; a query that fails (or cannot be mapped) leaves its nutrient unread, and `failed`
+    /// is set. Other nutrients still report, so one failed type does not make the whole day unknown.
+    private func outsideNutrientTotals(from start: Date, to end: Date) async -> OutsideIntakeReading {
         let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
         let own = HKSource.default()
-        var samples: [OutsideNutrientSample] = []
+        var queries: [OutsideQuery] = []
         for identifier in OutsideIntakeTotals.readQuantityTypeIdentifiers {
-            guard
-                let mapping = HealthKitWritePlanner.mappings.first(where: { $0.quantityTypeIdentifier == identifier }),
-                let hkUnit = Self.healthKitUnit(for: mapping.unit)
-            else { return nil }
+            let plan = OutsideIntakeTotals.readPlan(for: identifier, unitIsReadable: { Self.healthKitUnit(for: $0) != nil })
+            guard case .read(let key, let unit, let hasIUFactor) = plan, let hkUnit = Self.healthKitUnit(for: unit) else {
+                if case .unreadable(let key) = plan {
+                    queries.append(OutsideQuery(nutrientKey: key, outcome: .failed))
+                }
+                continue
+            }
             let found: [HKQuantitySample]
             do {
                 found = try await HKSampleQueryDescriptor(
                     predicates: [.quantitySample(type: HKQuantityType(HKQuantityTypeIdentifier(rawValue: identifier)), predicate: predicate)],
                     sortDescriptors: []).result(for: healthStore)
             } catch {
-                return nil
+                queries.append(OutsideQuery(nutrientKey: key, outcome: .failed))
+                continue
             }
-            for sample in found {
-                // Another app may store a sample in international units. Each sample is read in a unit it is
-                // compatible with (checked first, so no incompatible conversion is attempted), and IU is passed
-                // through so OutsideIntakeTotals restates it. Only a nutrient with a fixed IU amount (vitamin D) is
-                // read this way; any other IU sample is skipped here, as any unconvertible sample is.
+            // Another app may store a sample in international units. Each sample is read in a unit it is compatible
+            // with (checked first, so no incompatible conversion is attempted). IU is passed through only for a
+            // nutrient with a fixed IU amount (vitamin D); any other sample is unconvertible.
+            let outcomes: [OutsideSampleOutcome] = found.map { sample in
                 let value: Double
-                let unit: MeasureUnit
+                let sampleUnit: MeasureUnit
                 if sample.quantity.is(compatibleWith: hkUnit) {
                     value = sample.quantity.doubleValue(for: hkUnit)
-                    unit = mapping.unit
-                } else if mapping.amountPerInternationalUnit != nil, sample.quantity.is(compatibleWith: .internationalUnit()) {
+                    sampleUnit = unit
+                } else if hasIUFactor, sample.quantity.is(compatibleWith: .internationalUnit()) {
                     value = sample.quantity.doubleValue(for: .internationalUnit())
-                    unit = .iu
+                    sampleUnit = .iu
                 } else {
-                    continue
+                    return .unconvertible
                 }
-                samples.append(OutsideNutrientSample(
+                return .sample(OutsideNutrientSample(
                     quantityTypeIdentifier: identifier,
                     value: Decimal(value),
-                    unit: unit,
+                    unit: sampleUnit,
                     isWrittenByThisApp: sample.sourceRevision.source == own))
             }
+            queries.append(OutsideQuery(nutrientKey: key, outcome: .samples(outcomes)))
         }
-        return OutsideIntakeTotals.totals(from: samples)
+        return OutsideIntakeTotals.reading(queries)
     }
 
     /// The HealthKit unit for each unit the nutrient table uses. A unit not listed here returns nil, which fails the day's read.

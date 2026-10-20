@@ -60,3 +60,109 @@ public enum OutsideIntakeTotals {
         return totals
     }
 }
+
+/// How one identifier is read, decided without HealthKit.
+public enum OutsideReadPlan: Equatable, Sendable {
+    /// The identifier names no nutrient, so there is nothing to read.
+    case none
+    /// The nutrient's unit cannot be read here, so its key is left unread under its own name.
+    case unreadable(nutrientKey: String)
+    /// Read the identifier. `unit` is the nutrient's unit; `hasIUFactor` says whether IU samples can be restated.
+    case read(nutrientKey: String, unit: MeasureUnit, hasIUFactor: Bool)
+}
+
+extension OutsideIntakeTotals {
+    /// The read plan for one identifier. `unitIsReadable` says whether HealthKit has a unit for a nutrient unit.
+    public static func readPlan(for identifier: String, unitIsReadable: (MeasureUnit) -> Bool) -> OutsideReadPlan {
+        guard let mapping = HealthKitWritePlanner.mappings.first(where: { $0.quantityTypeIdentifier == identifier }) else {
+            return .none
+        }
+        guard unitIsReadable(mapping.unit) else {
+            return .unreadable(nutrientKey: mapping.nutrientKey)
+        }
+        return .read(
+            nutrientKey: mapping.nutrientKey, unit: mapping.unit,
+            hasIUFactor: mapping.amountPerInternationalUnit != nil)
+    }
+}
+
+/// One sample from a Health query, after the app target has converted it where it could. HealthKit's own
+/// types stay in the app target, so the rules below can be tested here.
+public enum OutsideSampleOutcome: Sendable, Equatable {
+    /// A sample in a unit this app can total (the mapping's unit, or IU for a nutrient with a fixed IU amount).
+    case sample(OutsideNutrientSample)
+    /// A sample in a unit that cannot be converted. Its nutrient cannot be read as a complete total.
+    case unconvertible
+}
+
+/// What one Health query for one nutrient returned.
+public enum OutsideQueryOutcome: Sendable, Equatable {
+    /// The query ran and returned these samples. An empty list is a successful read with no samples.
+    case samples([OutsideSampleOutcome])
+    /// The query failed.
+    case failed
+    /// The identifier does not map to a nutrient, so there is nothing to read.
+    case unmapped
+}
+
+/// One query for one nutrient: the canonical key it reads, and what came back. An unmapped query has no key to read.
+public struct OutsideQuery: Sendable, Equatable {
+    public let nutrientKey: String
+    public let outcome: OutsideQueryOutcome
+
+    public init(nutrientKey: String, outcome: OutsideQueryOutcome) {
+        self.nutrientKey = nutrientKey
+        self.outcome = outcome
+    }
+}
+
+/// The day's outside reading: totals per canonical key, the keys whose reads were complete, and whether any read was not.
+public struct OutsideIntakeReading: Equatable, Sendable {
+    public let totals: [String: Decimal]
+    public let readKeys: Set<String>
+    public let failed: Bool
+
+    public init(totals: [String: Decimal], readKeys: Set<String>, failed: Bool) {
+        self.totals = totals
+        self.readKeys = readKeys
+        self.failed = failed
+    }
+}
+
+extension OutsideIntakeTotals {
+    /// Combines the queries for a day. A nutrient is read completely only when its query succeeded and every one of
+    /// its samples converted, so a failed query or an unconvertible sample leaves it unread. A successful query with no
+    /// samples is a complete read. The samples this app wrote are left out of the totals (see `totals(from:)`), but
+    /// their query still counts as read.
+    public static func reading(_ queries: [OutsideQuery]) -> OutsideIntakeReading {
+        var samples: [OutsideNutrientSample] = []
+        var succeeded: Set<String> = []
+        var unread: Set<String> = []
+        var failed = false
+        for query in queries {
+            switch query.outcome {
+            case .failed, .unmapped:
+                failed = true
+                unread.insert(query.nutrientKey)
+            case .samples(let outcomes):
+                var skipped = false
+                for outcome in outcomes {
+                    switch outcome {
+                    case .sample(let sample): samples.append(sample)
+                    case .unconvertible: skipped = true
+                    }
+                }
+                if skipped {
+                    failed = true
+                    unread.insert(query.nutrientKey)
+                } else {
+                    succeeded.insert(query.nutrientKey)
+                }
+            }
+        }
+        // A key is read only when every query for it succeeded, so one nutrient with two queries cannot be marked
+        // read by the one that succeeded.
+        return OutsideIntakeReading(
+            totals: totals(from: samples), readKeys: succeeded.subtracting(unread), failed: failed)
+    }
+}
