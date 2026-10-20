@@ -223,7 +223,7 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
         let center = FakePendingReminderCenter(["custom-reminder-\(UUID().uuidString)"])
         let model = ConnectionsPrivacyViewModel(
             store: EraseStubStore(), favorites: EraseStubFavorites(), erasers: [RecordingEraser()],
-            remindersStillPending: { await ReminderReadback.namesStillPending(in: center) })
+            remindersStillPending: { await ReminderReadback.namesStillPending(in: center, pause: {}) })
 
         let erased = await model.eraseAllData()
         XCTAssertFalse(erased)

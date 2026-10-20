@@ -148,6 +148,21 @@ final class AppServicesEraseTests: XCTestCase {
         ])
     }
 
+    /// A system scheduler that also supports custom reminders adds "custom reminders" to the erase, after the
+    /// daily reminders and before the journal, so a custom request is cleared too.
+    func testTheEraseListIncludesCustomRemindersWhenTheSchedulerSupportsThem() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HealthNutritionTests", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let services = try AppServices.make(
+            directory: directory, reminderScheduler: CustomCapableReminderScheduler())
+        XCTAssertEqual(services.connections.eraserNamesForTesting, [
+            "widget data", "saved meals", "supplements", "reminders", "custom reminders",
+            "journal", "favorites", "recipes", "goals",
+        ])
+    }
+
     /// The app supplies its account model to the privacy erase hook. The hook drops the local session
     /// while leaving server sign-out and account deletion untouched.
     func testEraseUsesTheAppWiredLocalAccountHookOnly() async throws {
@@ -264,6 +279,17 @@ final class AppServicesEraseTests: XCTestCase {
 }
 
 /// A reminder scheduler that records calls and answers from settable state, for the app's own wiring.
+/// A daily scheduler that also takes custom reminders, as the system scheduler does.
+final class CustomCapableReminderScheduler: ReminderScheduling, CustomReminderScheduling, @unchecked Sendable {
+    func permission() async -> ReminderPermission { .notDetermined }
+    func requestPermission() async -> Bool { false }
+    func scheduleDaily(at time: ReminderTime) async throws {}
+    func cancelDaily() {}
+    func pendingDailyCount() async -> Int { 0 }
+    func replaceAll(with reminders: [CustomReminder]) async throws {}
+    func cancel(ids: [UUID]) {}
+}
+
 final class RecordingReminderScheduler: ReminderScheduling, @unchecked Sendable {
     private let lock = NSLock()
     private var currentPermission: ReminderPermission = .notDetermined
