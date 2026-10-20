@@ -18,7 +18,7 @@ final class LibrarySnapshotlessFavoriteTests: XCTestCase {
     }
 
     /// Logs one typed entry of 19.72 mL (4 teaspoons) in `category`, favorites it, and returns the favorite row.
-    private func favoriteRow(category: String) throws -> NutritionUI.LibraryItem {
+    private func favoriteRow(category: String) throws -> (detail: String, kind: ProductKind) {
         let directory = try makeDirectory()
         let store = try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
         let favorites = try SwiftDataFavoritesStore(url: directory.appendingPathComponent("favorites.store"))
@@ -35,7 +35,8 @@ final class LibrarySnapshotlessFavoriteTests: XCTestCase {
         model.addFavorite(recent)
         model.load()
         model.segment = .favorites
-        return try XCTUnwrap(model.visibleItems.first)
+        let row = try XCTUnwrap(model.visibleItems.first)
+        return (row.detail, row.kind)
     }
 
     func testSnapshotlessSupplementFavoriteReadsAsTheSpoonItWasTypedIn() throws {
