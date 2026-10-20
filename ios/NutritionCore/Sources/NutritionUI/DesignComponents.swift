@@ -80,6 +80,8 @@ public struct LabeledField<Content: View>: View {
                 .foregroundStyle(TokenColors.textSecondary)
                 .accessibilityHidden(true)
             content(focus)
+                // The visible title is the field's spoken name, so VoiceOver and UI tests read it while typing.
+                .accessibilityLabel(label)
                 .padding(.horizontal, DesignSpacing.m)
                 .padding(.vertical, DesignSpacing.s)
                 .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
