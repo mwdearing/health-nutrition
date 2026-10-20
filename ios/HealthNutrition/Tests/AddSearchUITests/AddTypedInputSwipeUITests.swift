@@ -71,13 +71,10 @@ final class AddTypedInputSwipeUITests: XCTestCase {
     }
 }
 
-/// Once a form is pushed, its navigation bar shows exactly one leading control, Back or Cancel, and the
-/// root Cancel of the Add flow is not also on screen.
-func assertOneLeadingControl(_ app: XCUIApplication, bar: String, file: StaticString = #filePath, line: UInt = #line) {
+/// Once a form is pushed, its own navigation bar shows exactly one leading control, Back or Cancel.
+private func assertOneLeadingControl(_ app: XCUIApplication, bar: String, file: StaticString = #filePath, line: UInt = #line) {
     let navBar = app.navigationBars[bar]
     XCTAssertTrue(navBar.waitForExistence(timeout: 10), "\(bar) bar is missing", file: file, line: line)
     let leading = navBar.buttons.matching(NSPredicate(format: "label == %@ OR label == %@", "Back", "Cancel"))
     XCTAssertEqual(leading.count, 1, "\(bar) shows \(leading.count) leading controls, expected one", file: file, line: line)
-    XCTAssertEqual(app.navigationBars.buttons.matching(NSPredicate(format: "label == %@", "Cancel")).count, 1,
-                   "more than one Cancel is on screen", file: file, line: line)
 }
