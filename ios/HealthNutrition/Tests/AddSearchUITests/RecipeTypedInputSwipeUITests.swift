@@ -28,6 +28,7 @@ final class RecipeTypedInputSwipeUITests: XCTestCase {
         title.tap()
         title.typeText("Pancakes")
 
+        assertOneLeadingControl(app, bar: "Recipe")
         let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5))
         let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5))
         start.press(forDuration: 0.1, thenDragTo: end)
@@ -37,4 +38,15 @@ final class RecipeTypedInputSwipeUITests: XCTestCase {
         XCTAssertTrue(askedFirst || stillThere,
                       "the edge swipe left the recipe editor and lost the typed title without asking")
     }
+}
+
+/// Once a form is pushed, its navigation bar shows exactly one leading control, Back or Cancel, and the
+/// root Cancel of the Add flow is not also on screen.
+func assertOneLeadingControl(_ app: XCUIApplication, bar: String, file: StaticString = #filePath, line: UInt = #line) {
+    let navBar = app.navigationBars[bar]
+    XCTAssertTrue(navBar.waitForExistence(timeout: 10), "\(bar) bar is missing", file: file, line: line)
+    let leading = navBar.buttons.matching(NSPredicate(format: "label == %@ OR label == %@", "Back", "Cancel"))
+    XCTAssertEqual(leading.count, 1, "\(bar) shows \(leading.count) leading controls, expected one", file: file, line: line)
+    XCTAssertEqual(app.navigationBars.buttons.matching(NSPredicate(format: "label == %@", "Cancel")).count, 1,
+                   "more than one Cancel is on screen", file: file, line: line)
 }

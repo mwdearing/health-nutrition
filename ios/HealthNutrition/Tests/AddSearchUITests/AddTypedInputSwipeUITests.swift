@@ -30,6 +30,7 @@ final class AddTypedInputSwipeUITests: XCTestCase {
         name.typeText("Oat")
 
         // Drag from the left edge to the middle: the edge swipe-back gesture.
+        assertOneLeadingControl(app, bar: "Log entry")
         let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5))
         let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5))
         start.press(forDuration: 0.1, thenDragTo: end)
@@ -68,4 +69,15 @@ final class AddTypedInputSwipeUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Type it in"].waitForExistence(timeout: 5) || !app.navigationBars["Log entry"].exists,
                       "a clean details form did not pop back on an edge swipe, so the gesture stayed off")
     }
+}
+
+/// Once a form is pushed, its navigation bar shows exactly one leading control, Back or Cancel, and the
+/// root Cancel of the Add flow is not also on screen.
+func assertOneLeadingControl(_ app: XCUIApplication, bar: String, file: StaticString = #filePath, line: UInt = #line) {
+    let navBar = app.navigationBars[bar]
+    XCTAssertTrue(navBar.waitForExistence(timeout: 10), "\(bar) bar is missing", file: file, line: line)
+    let leading = navBar.buttons.matching(NSPredicate(format: "label == %@ OR label == %@", "Back", "Cancel"))
+    XCTAssertEqual(leading.count, 1, "\(bar) shows \(leading.count) leading controls, expected one", file: file, line: line)
+    XCTAssertEqual(app.navigationBars.buttons.matching(NSPredicate(format: "label == %@", "Cancel")).count, 1,
+                   "more than one Cancel is on screen", file: file, line: line)
 }
