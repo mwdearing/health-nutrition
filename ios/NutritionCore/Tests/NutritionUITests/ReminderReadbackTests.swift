@@ -33,10 +33,17 @@ final class ReminderReadbackTests: XCTestCase {
     /// A request that never clears is still there at the last read, so it is reported.
     func testARequestThatNeverClearsIsReported() async {
         let center = ClearingPendingCenter(identifiers: [ReminderIdentifier.daily], clearsAfterReads: nil)
-        let names = await ReminderReadback.namesStillPending(in: center, pause: {})
+        let waits = WaitCounter()
+        let names = await ReminderReadback.namesStillPending(in: center, pause: { waits.count += 1 })
         XCTAssertEqual(names, ["reminders"])
         XCTAssertEqual(center.reads, ReminderReadback.settleReads)
+        XCTAssertEqual(waits.count, ReminderReadback.settleReads - 1)
     }
+}
+
+/// Counts the waits the readback makes between reads; the test supplies it as the pause, so no real time passes.
+private final class WaitCounter: @unchecked Sendable {
+    var count = 0
 }
 
 private struct FakePendingCenter: PendingReminderCenter {
