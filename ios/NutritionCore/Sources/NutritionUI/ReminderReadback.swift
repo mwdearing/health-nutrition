@@ -28,17 +28,17 @@ public enum ReminderReadback {
             try? await Task.sleep(nanoseconds: ReminderReadback.settleIntervalNanoseconds)
         }
     ) async -> [String] {
-        var names = names(in: await center.pendingRequestIdentifiers())
+        var stillPending = namesPending(in: await center.pendingRequestIdentifiers())
         var readsLeft = settleReads - 1
-        while !names.isEmpty, readsLeft > 0 {
+        while !stillPending.isEmpty, readsLeft > 0 {
             await pause()
-            names = names(in: await center.pendingRequestIdentifiers())
+            stillPending = namesPending(in: await center.pendingRequestIdentifiers())
             readsLeft -= 1
         }
-        return names
+        return stillPending
     }
 
-    private static func names(in identifiers: [String]) -> [String] {
+    private static func namesPending(in identifiers: [String]) -> [String] {
         var names: [String] = []
         if identifiers.contains(ReminderIdentifier.daily) { names.append("reminders") }
         if identifiers.contains(where: { $0.hasPrefix(customPrefix) }) { names.append("custom reminders") }
