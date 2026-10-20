@@ -3,7 +3,7 @@ import NutritionDomain
 import SQLite3
 import SwiftData
 
-/// A store file the erase could not checkpoint, so its removal did not start.
+/// The store's checkpoint failed, so the erase stopped before any companion or main file was removed.
 /// The two file operations an erase performs on the store, so a test can make each one fail.
 struct StoreFileOperations {
     var checkpoint: (URL) throws -> Void

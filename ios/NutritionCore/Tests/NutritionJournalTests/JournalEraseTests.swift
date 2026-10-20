@@ -179,6 +179,7 @@ final class JournalEraseTests: XCTestCase {
         XCTAssertTrue(calls.removed.isEmpty)
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
         erasing.close()
+        store.close()
 
         let reopened = try SwiftDataJournalStore(url: url)
         XCTAssertTrue(try reopened.activeIntakes().isEmpty)
