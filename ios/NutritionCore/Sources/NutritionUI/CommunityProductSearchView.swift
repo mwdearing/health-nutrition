@@ -8,6 +8,8 @@ public struct CommunityProductSearchView: View {
     private let onLegacy: (LegacyCustomProductDraft) -> Void
     /// Nil when this build has no account to sign in to; the Sign in control is then not offered.
     private let onSignIn: (() -> Void)?
+    /// Whether this build has an account to sign in to. With none, the signed-out line is not shown at all.
+    private let hasAccount: Bool
     private let onSaved: () -> Void
     private let onOpenFoodFacts: (LookedUpProduct, ProductKind?) -> Void
     /// The person's own favorites and recents, listed above the products. Both must be given, or the
@@ -27,7 +29,7 @@ public struct CommunityProductSearchView: View {
                 library: LibraryViewModel? = nil, onPick: ((RepeatTemplate) -> Void)? = nil,
                 focusSearchOnAppear: Bool = false, onSaved: @escaping () -> Void = {}) {
         self.onSaved = onSaved
-        self.model = model; self.onSelect = onSelect; self.onLegacy = onLegacy; self.onSignIn = onSignIn; self.onOpenFoodFacts = onOpenFoodFacts
+        self.model = model; self.onSelect = onSelect; self.onLegacy = onLegacy; self.onSignIn = onSignIn; self.hasAccount = onSignIn != nil; self.onOpenFoodFacts = onOpenFoodFacts
         self.library = library; self.onPick = onPick; self.focusSearchOnAppear = focusSearchOnAppear
     }
     /// Opened from Add's search row: the field takes focus so the keyboard is up at once.
@@ -35,8 +37,9 @@ public struct CommunityProductSearchView: View {
     public var body: some View {
         List {
             Section {
-                LabeledField("Search foods and products", focus: $searchFocused) { focus in
-                    TextField("Search foods and products", text: $query).focused(focus).submitLabel(.search)
+                LabeledField("Search foods", focus: $searchFocused) { focus in
+                    TextField("Search foods", text: $query).focused(focus).submitLabel(.search)
+                        .accessibilityIdentifier("sharedProductSearchField")
                 }.onSubmit { search() }
                 if query.trimmingCharacters(in: .whitespaces).count >= 2 {
                     Button("Search food databases", action: search)
@@ -212,8 +215,11 @@ public struct CommunityProductSearchView: View {
         case .loaded: EmptyView()
         case .empty: Text("No shared products match this search.")
         case .signInRequired:
-            Text("Sign in to search shared products. Local products are available above.")
-            if let onSignIn { Button("Sign in", action: onSignIn) }
+            // The state is reached only when the person is signed out.
+            if SearchSignIn.signedOutLine(hasAccount: hasAccount, signedIn: false) == .signInMessage {
+                Text("Sign in to search shared products. Local products are available above.")
+                if let onSignIn { Button("Sign in", action: onSignIn) }
+            }
         case .unsupported: Text("Shared product search is unavailable on this server.")
         case .unavailable:
             Text("Shared products are temporarily unavailable.")
