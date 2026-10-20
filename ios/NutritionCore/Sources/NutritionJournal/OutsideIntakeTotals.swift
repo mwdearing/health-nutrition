@@ -111,12 +111,14 @@ extension OutsideIntakeTotals {
     /// their query still counts as read.
     public static func reading(_ queries: [OutsideQuery]) -> OutsideIntakeReading {
         var samples: [OutsideNutrientSample] = []
-        var readKeys: Set<String> = []
+        var succeeded: Set<String> = []
+        var unread: Set<String> = []
         var failed = false
         for query in queries {
             switch query.outcome {
             case .failed, .unmapped:
                 failed = true
+                unread.insert(query.nutrientKey)
             case .samples(let outcomes):
                 var skipped = false
                 for outcome in outcomes {
@@ -127,11 +129,15 @@ extension OutsideIntakeTotals {
                 }
                 if skipped {
                     failed = true
+                    unread.insert(query.nutrientKey)
                 } else {
-                    readKeys.insert(query.nutrientKey)
+                    succeeded.insert(query.nutrientKey)
                 }
             }
         }
-        return OutsideIntakeReading(totals: totals(from: samples), readKeys: readKeys, failed: failed)
+        // A key is read only when every query for it succeeded, so one nutrient with two queries cannot be marked
+        // read by the one that succeeded.
+        return OutsideIntakeReading(
+            totals: totals(from: samples), readKeys: succeeded.subtracting(unread), failed: failed)
     }
 }

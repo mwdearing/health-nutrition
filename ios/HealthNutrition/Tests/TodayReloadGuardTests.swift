@@ -19,4 +19,15 @@ final class TodayReloadGuardTests: XCTestCase {
         let current = readings.outsideIntake
         XCTAssertFalse(TodayViewModel.needsReload(activeEnergyKcal: 116, outsideIntake: current, for: readings))
     }
+
+    func testAChangeOnlyInWhichKeysWereReadReloadsToday() {
+        // Same values, but the nutrient is now read: a known zero is not the same as unknown, so Today must reload.
+        let readings = BodyActivityReadings(outsideNutrients: [:], outsideRead: true, outsideReadKeys: ["energy"])
+        XCTAssertTrue(TodayViewModel.needsReload(activeEnergyKcal: nil, outsideIntake: .read(values: [:], readKeys: []), for: readings))
+    }
+
+    func testNoHealthReadAndNoEnergyChangeDoesNotReloadToday() {
+        let readings = BodyActivityReadings()
+        XCTAssertFalse(TodayViewModel.needsReload(activeEnergyKcal: nil, outsideIntake: .notConnected, for: readings))
+    }
 }

@@ -54,6 +54,15 @@ final class OutsideReadingTests: XCTestCase {
         XCTAssertTrue(reading.failed)
     }
 
+    func testOneFailedQueryForAKeyLeavesTheKeyUnreadEvenIfAnotherSucceeded() {
+        let reading = OutsideIntakeTotals.reading([
+            OutsideQuery(nutrientKey: "energy", outcome: .samples([sample(energy, 620)])),
+            OutsideQuery(nutrientKey: "energy", outcome: .failed),
+        ])
+        XCTAssertFalse(reading.readKeys.contains("energy"))
+        XCTAssertTrue(reading.failed)
+    }
+
     func testTheAppsOwnSampleIsLeftOutButItsQueryStillCountsAsRead() {
         let reading = OutsideIntakeTotals.reading([
             OutsideQuery(nutrientKey: "energy", outcome: .samples([sample(energy, 500, own: true)])),

@@ -177,6 +177,15 @@ final class HealthIntakeTotalsTests: XCTestCase {
         XCTAssertEqual(combined.first?.isPartial, false)
     }
 
+    func testAnUnknownLineWithNoMissingEntriesReadsAsNothingStatedWhenHealthHasAmounts() {
+        // An unknown line with no missing entries is a day where no entry states the nutrient (an empty day, or only
+        // drinks or supplements). Health's amount is then the whole day, exactly, as the empty-journal rule says.
+        let combined = HealthIntakeTotals.combine(
+            [unknownLine("energy")], outside: .read(values: ["energy": 620], readKeys: ["energy"]))
+        XCTAssertEqual(combined.first?.amount, .known(620, energyUnit))
+        XCTAssertEqual(combined.first?.isPartial, false)
+    }
+
     func testWaterLineIsNeverCombined() {
         let water = line(DailyTotalsBuilder.waterKey, known: 500, unit: .mL)
         let combined = HealthIntakeTotals.combine([water], outside: .read(values: [DailyTotalsBuilder.waterKey: 250], readKeys: [DailyTotalsBuilder.waterKey]))
