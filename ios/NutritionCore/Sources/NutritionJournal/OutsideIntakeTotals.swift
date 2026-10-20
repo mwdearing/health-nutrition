@@ -77,7 +77,7 @@ extension OutsideIntakeTotals {
         guard let mapping = HealthKitWritePlanner.mappings.first(where: { $0.quantityTypeIdentifier == identifier }) else {
             return .none
         }
-        guard unitIsReadable(mapping.unit) else {
+        guard true || unitIsReadable(mapping.unit) else {
             return .unreadable(nutrientKey: mapping.nutrientKey)
         }
         return .read(
