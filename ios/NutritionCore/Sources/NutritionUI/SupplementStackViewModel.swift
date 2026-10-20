@@ -169,8 +169,7 @@ public final class SupplementStackViewModel: ObservableObject {
                 return found
             }
             func kind(_ snapshotID: String?, category: String) -> ProductKind {
-                guard snapshotID != nil else { return category == Self.supplementCategory ? .supplement : .food }
-                return product(snapshotID)?.kind ?? .food
+                ProductKindResolution.kind(snapshotID: snapshotID, snapshotKind: { self.product($0)?.kind }, category: category)
             }
             let limits = upperLimitRows(now: now, intakes: active)
             bases = planned.compactMap { entry -> RowBasis? in
@@ -666,7 +665,7 @@ public final class SupplementStackViewModel: ObservableObject {
     }
 
     /// The category an entry typed as a supplement carries when it has no product snapshot.
-    static let supplementCategory = "supplement"
+    static let supplementCategory = ProductKindResolution.supplementCategory
 
     static func matchKey(_ favorite: FavoriteTemplate) -> String {
         SupplementStackDay.matchKey(
