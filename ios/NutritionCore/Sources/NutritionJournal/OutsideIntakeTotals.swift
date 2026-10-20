@@ -122,7 +122,7 @@ extension OutsideIntakeTotals {
                 for outcome in outcomes {
                     switch outcome {
                     case .sample(let sample): samples.append(sample)
-                    case .unconvertible: break
+                    case .unconvertible: skipped = false
                     }
                 }
                 if skipped {
