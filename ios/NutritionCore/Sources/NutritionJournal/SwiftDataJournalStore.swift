@@ -1,6 +1,22 @@
 import Foundation
 import NutritionDomain
+import SQLite3
 import SwiftData
+
+/// A store file the erase could not checkpoint, so its removal did not start.
+/// The two file operations an erase performs on the store, so a test can make each one fail.
+struct StoreFileOperations {
+    var checkpoint: (URL) throws -> Void
+    var remove: (URL) throws -> Void
+
+    static let system = StoreFileOperations(
+        checkpoint: { try SwiftDataJournalStore.checkpointStoreFile(at: $0) },
+        remove: { try FileManager.default.removeItem(at: $0) })
+}
+
+private enum StoreFileError: Error {
+    case checkpointFailed
+}
 
 enum JournalSchemaV1: VersionedSchema {
     static var versionIdentifier: Schema.Version { Schema.Version(1, 0, 0) }
@@ -1093,6 +1109,9 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     private var container: ModelContainer?
     /// Where `markRestoreInProgress(fileDigest:)` keeps its flag, beside the store file.
     private let restoreMarkerURL: URL
+    /// The store file itself. An erase deletes it with its write-ahead and shared-memory files.
+    private let storeURL: URL
+    private let fileOperations: StoreFileOperations
     private let enabledDestinations: Set<JournalDestination>
 
     public var failNextSaveForTesting: Bool {
@@ -1102,14 +1121,24 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
 
     /// Opens or creates the store file at `url`. Destinations not in `enabledDestinations` get a
     /// disabled projection and no outbox operation.
-    public init(url: URL, enabledDestinations: Set<JournalDestination> = [.healthKit, .relay]) throws {
+    public convenience init(url: URL, enabledDestinations: Set<JournalDestination> = [.healthKit, .relay]) throws {
+        try self.init(url: url, enabledDestinations: enabledDestinations, fileOperations: .system)
+    }
+
+    init(url: URL, enabledDestinations: Set<JournalDestination>, fileOperations: StoreFileOperations) throws {
         self.enabledDestinations = enabledDestinations
+        self.fileOperations = fileOperations
+        storeURL = url
         restoreMarkerURL = url.appendingPathExtension("restore-in-progress")
+        container = try Self.makeContainer(url: url)
+        try recoverProductOperations()
+    }
+
+    private static func makeContainer(url: URL) throws -> ModelContainer {
         let schema = Schema(versionedSchema: JournalSchemaV10.self)
         let configuration = ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
-        container = try ModelContainer(
+        return try ModelContainer(
             for: schema, migrationPlan: JournalMigrationPlan.self, configurations: configuration)
-        try recoverProductOperations()
     }
 
     public func close() {
@@ -1739,6 +1768,8 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
 
     // MARK: Erasing
 
+    public var erasureName: String { "journal" }
+
     /// Removes every row the journal file holds: intakes, their revision history, product snapshots,
     /// projections and queued outbox operations. A deleted entry leaves no tombstone behind either,
     /// because a tombstone only exists so a later export can retract the entry.
@@ -1749,13 +1780,9 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     /// as it was: a journal emptied by a failed save would be worse than an unerased one, because the
     /// person cannot tell which half is gone.
     ///
-    /// The container is not closed: the store reads empty and accepts new entries afterwards.
+    /// The store file is then deleted and reopened empty, so the store reads empty and accepts new entries
+    /// afterwards. The erased rows are removed from the store file when both companion files were deleted.
     public func eraseAll() throws {
-        // A restore flag left behind would let the next import of that file put back favorites the person is
-        // erasing, so it goes first: an erase that fails partway (this store or another) can then leave journal
-        // rows, but never a way for a re-import to bring erased favorites back. A flag that cannot be removed
-        // fails the erase before anything is deleted, so the screen reports it.
-        try clearRestoreInProgress()
         _ = try commit { context in
             for row in try context.fetch(FetchDescriptor<JournalSchemaV10.LoggedUnitRecord>()) { context.delete(row) }
             for row in try context.fetch(FetchDescriptor<JournalSchemaV9.LibraryExclusionRecord>()) { context.delete(row) }
@@ -1769,6 +1796,62 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             for row in try context.fetch(FetchDescriptor<ProjectionRecord>()) { context.delete(row) }
             for row in try context.fetch(FetchDescriptor<ProductRecord>()) { context.delete(row) }
             for row in try context.fetch(FetchDescriptor<IntakeRecord>()) { context.delete(row) }
+        }
+        try removeStoreFiles()
+    }
+
+    /// Deletes the store file with its write-ahead and shared-memory files, then opens an empty store at the same
+    /// place. The write-ahead file is first checkpointed into the store file and emptied, so the store file alone
+    /// holds the state the erase left: whatever a removal does afterwards, it cannot bring back a row the erase
+    /// deleted. The companion files go before the main file. The store reopens even when a step fails, and the
+    /// first error is thrown afterwards so the erase reports it.
+    private func removeStoreFiles() throws {
+        try lock.withLock {
+            container = nil
+            var removalError: Error?
+            do {
+                try fileOperations.checkpoint(storeURL)
+            } catch {
+                removalError = error
+            }
+            for suffix in ["-shm", "-wal", ""] {
+                // Stop at the first failure, so no later file is removed after an earlier one failed.
+                let file = URL(fileURLWithPath: storeURL.path + suffix)
+                guard FileManager.default.fileExists(atPath: file.path) else { continue }
+                do {
+                    try fileOperations.remove(file)
+                } catch {
+                    removalError = error
+                }
+            }
+            // A reopen failure is thrown only when no earlier step failed, so the first error is the one reported.
+            do {
+                container = try Self.makeContainer(url: storeURL)
+            } catch {
+                throw removalError ?? error
+            }
+            if let removalError { throw removalError }
+        }
+    }
+
+    /// Moves every page of the write-ahead file into the store file and truncates the write-ahead file to nothing.
+    /// A checkpoint that cannot run to completion (for example, while another connection still reads the store)
+    /// throws, and the erase reports it.
+    static func checkpointStoreFile(at url: URL) throws {
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        var database: OpaquePointer?
+        defer { sqlite3_close(database) }
+        guard sqlite3_open_v2(url.path, &database, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK else {
+            throw StoreFileError.checkpointFailed
+        }
+        var logFrames: Int32 = 0
+        var checkpointedFrames: Int32 = 0
+        guard
+            sqlite3_wal_checkpoint_v2(database, nil, SQLITE_CHECKPOINT_TRUNCATE, &logFrames, &checkpointedFrames)
+                == SQLITE_OK,
+            logFrames == checkpointedFrames
+        else {
+            throw StoreFileError.checkpointFailed
         }
     }
 

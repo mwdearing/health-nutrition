@@ -193,6 +193,10 @@ private struct SettingsContent: View {
                 if let error = connections.errorMessage {
                     Text(error).font(.footnote).foregroundStyle(TokenColors.error)
                 }
+                if connections.eraseRetryAvailable {
+                    Button("Retry") { Task { await self.connections.eraseAllData() } }
+                        .disabled(self.connections.isErasing)
+                }
             } header: {
                 Text("Your data")
             } footer: {

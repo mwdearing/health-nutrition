@@ -91,6 +91,99 @@ final class JournalEraseTests: XCTestCase {
         XCTAssertEqual(try store.revisions(of: intakeID).count, 1)
     }
 
+    /// The erase deletes the store file with its write-ahead and shared-memory files, so a store opened on the
+    /// same file afterwards reads empty and a write made after the erase survives a reopen.
+    func testEraseLeavesAReopenedStoreEmptyAndWritableAfterwards() throws {
+        let directory = try makeDirectory()
+        let url = directory.appendingPathComponent("journal.store")
+        let store = try SwiftDataJournalStore(url: url)
+        try store.create(sampleIntake(), components: [oats()], product: product(), now: when)
+        try store.eraseAll()
+        store.close()
+
+        let reopened = try SwiftDataJournalStore(url: url)
+        XCTAssertTrue(try reopened.activeIntakes().isEmpty)
+        XCTAssertTrue(try reopened.revisions(of: intakeID).isEmpty)
+        try reopened.create(sampleIntake(), components: [oats()], product: nil, now: when)
+        reopened.close()
+
+        let again = try SwiftDataJournalStore(url: url)
+        XCTAssertEqual(try again.activeIntakes().map(\.id), [intakeID])
+    }
+
+    /// The erase replaces the store file itself, not only the rows in it: the file is deleted and created again,
+    /// so its creation date moves. An erase that only deleted rows would keep the original file.
+    func testEraseReplacesTheStoreFileItself() throws {
+        let directory = try makeDirectory()
+        let url = directory.appendingPathComponent("journal.store")
+        let store = try SwiftDataJournalStore(url: url)
+        try store.create(sampleIntake(), components: [oats()], product: product(), now: when)
+        let before = try XCTUnwrap(FileManager.default.attributesOfItem(atPath: url.path)[.creationDate] as? Date)
+
+        try store.eraseAll()
+
+        let after = try XCTUnwrap(FileManager.default.attributesOfItem(atPath: url.path)[.creationDate] as? Date)
+        XCTAssertNotEqual(before, after)
+    }
+
+    /// A removal that fails on the write-ahead file must keep the main file. The store then reopens on the file
+    /// the erase left, so the rows it deleted stay deleted, and the erase reports the failure.
+    func testAFailedWriteAheadRemovalKeepsTheMainFile() throws {
+        let directory = try makeDirectory()
+        let url = directory.appendingPathComponent("journal.store")
+        let store = try SwiftDataJournalStore(url: url)
+        try store.create(sampleIntake(), components: [oats()], product: product(), now: when)
+        store.close()
+        let wal = URL(fileURLWithPath: url.path + "-wal")
+        if !FileManager.default.fileExists(atPath: wal.path) {
+            FileManager.default.createFile(atPath: wal.path, contents: Data())
+        }
+        let calls = FileCalls()
+        let operations = StoreFileOperations(
+            checkpoint: { _ in },
+            remove: { file in
+                calls.removed.append(file.lastPathComponent)
+                if file.lastPathComponent.hasSuffix("-wal") { throw CocoaError(.fileWriteNoPermission) }
+                try FileManager.default.removeItem(at: file)
+            })
+        let erasing = try SwiftDataJournalStore(
+            url: url, enabledDestinations: [.healthKit, .relay], fileOperations: operations)
+
+        XCTAssertThrowsError(try erasing.eraseAll())
+        XCTAssertFalse(calls.removed.contains("journal.store"), "the main file goes only after every companion")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+        erasing.close()
+
+        let reopened = try SwiftDataJournalStore(url: url)
+        XCTAssertTrue(try reopened.activeIntakes().isEmpty)
+    }
+
+    /// A checkpoint that fails leaves every file as it was: nothing is removed, and the store reopens on its
+    /// own files with the erased rows still gone.
+    func testAFailedCheckpointRemovesNothing() throws {
+        let directory = try makeDirectory()
+        let url = directory.appendingPathComponent("journal.store")
+        let store = try SwiftDataJournalStore(url: url)
+        try store.create(sampleIntake(), components: [oats()], product: product(), now: when)
+        let calls = FileCalls()
+        let operations = StoreFileOperations(
+            checkpoint: { _ in throw CocoaError(.fileReadNoPermission) },
+            remove: { file in
+                calls.removed.append(file.lastPathComponent)
+                try FileManager.default.removeItem(at: file)
+            })
+        let erasing = try SwiftDataJournalStore(
+            url: url, enabledDestinations: [.healthKit, .relay], fileOperations: operations)
+
+        XCTAssertThrowsError(try erasing.eraseAll())
+        XCTAssertTrue(calls.removed.isEmpty)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+        erasing.close()
+
+        let reopened = try SwiftDataJournalStore(url: url)
+        XCTAssertTrue(try reopened.activeIntakes().isEmpty)
+    }
+
     func testEraseRemovesEveryFavorite() throws {
         let store = try SwiftDataFavoritesStore(url: try makeDirectory().appendingPathComponent("favorites.store"))
         try store.add(sampleFavorite("fav-1"))
@@ -186,4 +279,9 @@ final class JournalEraseTests: XCTestCase {
             XCTAssertNoThrow(try eraser.eraseAll())
         }
     }
+}
+
+/// Records each file the erase tries to remove, in order.
+private final class FileCalls: @unchecked Sendable {
+    var removed: [String] = []
 }
