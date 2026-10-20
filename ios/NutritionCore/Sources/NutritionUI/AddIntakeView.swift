@@ -240,7 +240,7 @@ public struct AddIntakeView: View {
         .blocksEdgeSwipeBack(while: model.hasTypedInput)
         .toolbar {
             if model.hasTypedInput {
-                ToolbarItem(placement: .navigationBarLeading) {
+                ToolbarItem(placement: .cancellationAction) {
                     Button {
                         confirmDiscard = true
                     } label: {
