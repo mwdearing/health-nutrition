@@ -160,6 +160,13 @@ final class HealthIntakeTotalsTests: XCTestCase {
         XCTAssertEqual(HealthIntakeTotals.combine([line], outside: .read(values: [:], readKeys: ["energy"])), [line])
     }
 
+    func testIUJournalTotalWithUnreadHealthReadsAtLeastInIU() {
+        let journalIU = NutrientProgressLine(nutrient: "vitaminD", amount: .known(100, .iu), goal: nil)
+        let combined = HealthIntakeTotals.combine([journalIU], outside: .read(values: [:], readKeys: []))
+        XCTAssertEqual(combined.first?.isPartial, true)
+        XCTAssertEqual(combined.first?.knownSum, .known(100, .iu))
+    }
+
     func testWaterLineIsNeverCombined() {
         let water = line(DailyTotalsBuilder.waterKey, known: 500, unit: .mL)
         let combined = HealthIntakeTotals.combine([water], outside: .read(values: [DailyTotalsBuilder.waterKey: 250], readKeys: [DailyTotalsBuilder.waterKey]))

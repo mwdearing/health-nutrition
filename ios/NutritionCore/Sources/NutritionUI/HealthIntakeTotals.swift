@@ -50,9 +50,11 @@ public enum HealthIntakeTotals {
             journalComplete = true
             journalEmpty = true
         }
+        var journalMismatch = false
         if let journalUnit, journalUnit.symbol != unit.symbol {
             journalValue = nil
             journalComplete = false
+            journalMismatch = true
         }
 
         // Health's side: a value Health returned, a known zero for a query that succeeded with no samples,
@@ -66,6 +68,21 @@ public enum HealthIntakeTotals {
                 outsideComplete = true
             } else {
                 outsideValue = values[line.nutrient]
+            }
+        }
+
+        // A journal amount in another unit is not added, and if Health is unknown too, the amount stays in its own
+        // unit as a partial total: "at least", never exact.
+        if journalMismatch, outsideValue == nil {
+            let own: NutrientValue? = {
+                if case .known = line.amount { return line.amount }
+                if line.isPartial, case .known? = line.knownSum { return line.knownSum }
+                return nil
+            }()
+            if let own {
+                return NutrientProgressLine(
+                    nutrient: line.nutrient, amount: .unknown, goal: line.goal, displayName: line.label,
+                    isPartial: true, knownSum: own, missingCount: line.missingCount)
             }
         }
 
