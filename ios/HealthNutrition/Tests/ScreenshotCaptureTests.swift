@@ -189,6 +189,8 @@ final class ScreenshotCaptureTests: XCTestCase {
     // The Today header on its own, so the design-system check finds a capture for it.
     func testNourishTodayHeader() throws {
         let services = try makeSeededServices()
+        // The header only shows what the model has loaded, and nothing loads it on its own here.
+        services.today.load(now: Date())
         try capture("NourishTodayHeader") {
             ScrollView {
                 NourishTodayHeader(model: services.today, onEditGoals: {}).padding()
