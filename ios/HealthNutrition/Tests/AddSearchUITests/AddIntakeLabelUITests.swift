@@ -31,5 +31,12 @@ final class AddIntakeLabelUITests: XCTestCase {
         let unit = app.popUpButtons["Unit"].firstMatch
         let unitAsButton = app.buttons["Unit"].firstMatch
         XCTAssertTrue(unit.exists || unitAsButton.exists, "the Unit picker lost its own name")
+
+        // The barcode field shows when a barcode lookup is available (AddIntakeView.swift:87, canLookUpBarcode).
+        // Look Up is the button beside it and keeps its own label.
+        let barcode = app.textFields["Barcode (optional)"]
+        XCTAssertTrue(barcode.waitForExistence(timeout: 5), "the barcode field is not on the Add intake form")
+        XCTAssertEqual(barcode.label, "Barcode (optional)", "the barcode field does not read its visible title")
+        XCTAssertTrue(app.buttons["Look up"].exists, "the Look up button lost its own name")
     }
 }
