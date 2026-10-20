@@ -19,13 +19,13 @@ private final class ImportStubStore: JournalStore, JournalTombstoneSource, Journ
     struct Unsupported: Error {}
     var failClearRestoreForTesting = false
     var failClearRestoreFromCallForTesting: Int?
-    private var clearRestoreCalls = 0
+    var clearRestoreCallsForTesting = 0
     func markRestoreInProgress(fileDigest: String) throws {}
     func restoreInProgressDigest() throws -> String? { nil }
     func clearRestoreInProgress() throws {
-        clearRestoreCalls += 1
+        clearRestoreCallsForTesting += 1
         if failClearRestoreForTesting { throw Unsupported() }
-        if let from = failClearRestoreFromCallForTesting, clearRestoreCalls >= from { throw Unsupported() }
+        if let from = failClearRestoreFromCallForTesting, clearRestoreCallsForTesting >= from { throw Unsupported() }
     }
     let erasureName = "journal"
 
@@ -581,32 +581,6 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         XCTAssertEqual(model.eraseGeneration, 1)
     }
 
-    /// A restore flag that cannot be cleared stops the erase before the import is cancelled, so the import keeps
-    /// running and completes once it is let go, and the screen says nothing was erased.
-    func testAFailedFlagClearLeavesTheImportRunning() async throws {
-        let journal = ImportStubStore()
-        journal.failClearRestoreForTesting = true
-        journal.pauseBeforeRestoreForTesting = true
-        let model = ConnectionsPrivacyViewModel(store: journal, erasers: [journal])
-
-        model.importJournal(data: try export(includeFavorite: false))
-        let restorePaused = await waitForSignal(journal.restorePausedBeforeWriteForTesting)
-        XCTAssertTrue(restorePaused)
-
-        let erased = await model.eraseAllData()
-        XCTAssertFalse(erased)
-        XCTAssertEqual(model.errorMessage, ConnectionsPrivacyViewModel.eraseNothingErasedMessage)
-        XCTAssertTrue(model.eraseRetryAvailable)
-        XCTAssertTrue(model.isImporting, "the failed erase must not cancel the import")
-        XCTAssertFalse(model.importIsCancelledForTesting, "the failed erase must not cancel the import")
-
-        journal.resumeRestoreBeforeWriteForTesting.signal()
-        for _ in 0..<200 where model.isImporting {
-            try await Task.sleep(nanoseconds: 10_000_000)
-        }
-        XCTAssertEqual(try journal.activeIntakes().map(\.id), [entryID])
-    }
-
     /// An import that is still running when the wait ends leaves the erase with nothing erased, and offers Retry.
     func testAnErasePastItsWaitErasesNothingAndOffersRetry() async throws {
         let journal = ImportStubStore()
@@ -621,6 +595,8 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         XCTAssertFalse(erased)
         XCTAssertEqual(model.errorMessage, ConnectionsPrivacyViewModel.eraseNothingErasedMessage)
         XCTAssertTrue(model.eraseRetryAvailable)
+        XCTAssertFalse(model.importIsCancelledForTesting, "a timed-out erase must not cancel the import")
+        XCTAssertEqual(journal.clearRestoreCallsForTesting, 0, "a timed-out erase must not touch the restore flag")
 
         journal.resumeRestoreBeforeWriteForTesting.signal()
         for _ in 0..<200 where model.isImporting {
@@ -628,11 +604,11 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         }
     }
 
-    /// The second flag clear runs after the import has finished, so a failure there cancels nothing: the import
-    /// completes, nothing is erased, and the screen offers Retry.
-    func testASecondFlagClearFailureAfterTheImportFinishesCancelsNothing() async throws {
+    /// The restore flag is cleared once the import has finished. A failed clear then cancels nothing, erases
+    /// nothing, and offers Retry; the import completes and its rows stay.
+    func testAFailedFlagClearAfterTheImportFinishesCancelsNothing() async throws {
         let journal = ImportStubStore()
-        journal.failClearRestoreFromCallForTesting = 2
+        journal.failClearRestoreForTesting = true
         journal.pauseBeforeRestoreForTesting = true
         let model = ConnectionsPrivacyViewModel(store: journal, erasers: [journal])
 
@@ -650,7 +626,7 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         XCTAssertFalse(erased)
         XCTAssertEqual(model.errorMessage, ConnectionsPrivacyViewModel.eraseNothingErasedMessage)
         XCTAssertTrue(model.eraseRetryAvailable)
-        XCTAssertFalse(model.importIsCancelledForTesting, "the import finished before the last flag clear")
+        XCTAssertFalse(model.importIsCancelledForTesting, "the import finished before the flag clear")
         XCTAssertEqual(try journal.activeIntakes().map(\.id), [entryID])
     }
 
