@@ -163,6 +163,13 @@ final class AppServicesEraseTests: XCTestCase {
         ])
     }
 
+    /// The custom-reminder decision, both sides: a scheduler that takes custom reminders gets the custom side, a fake
+    /// that does not gets nothing, so the custom eraser joins the erase only where the system scheduler is wired.
+    func testTheCustomReminderDecisionTakesTheCustomSideOnlyWhereTheSchedulerSupportsIt() {
+        XCTAssertNotNil(AppServices.customReminderScheduling(of: CustomCapableReminderScheduler()))
+        XCTAssertNil(AppServices.customReminderScheduling(of: RecordingReminderScheduler()))
+    }
+
     /// The erase order, built by the same function production calls, from stores in a temporary directory and fakes
     /// for the reminder centers. The custom eraser joins only when the scheduler takes custom reminders.
     private func productionEraseNames(withCustomReminders: Bool) -> [String] {

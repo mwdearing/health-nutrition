@@ -603,8 +603,8 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         XCTAssertEqual(model.errorMessage, ConnectionsPrivacyViewModel.eraseNothingErasedMessage)
         XCTAssertTrue(model.eraseRetryAvailable)
         // The import is paused, so the gate still reports it busy: the timed-out erase did not stop it.
-        let stillBusy = await awaitImport(gate, within: 0.01)
-        XCTAssertFalse(stillBusy)
+        let finishedEarly = await awaitImport(gate, within: 0.01)
+        XCTAssertFalse(finishedEarly)
         XCTAssertEqual(journal.clearRestoreCallsForTesting, 0, "a timed-out erase must not touch the restore flag")
 
         journal.resumeRestoreBeforeWriteForTesting.signal()

@@ -142,7 +142,7 @@ final class AppServices {
         let reminderEraser = ReminderEraser(scheduler: reminderScheduler, erasures: reminderErasures)
         var reminderErasers: [JournalErasing] = [reminderEraser]
         // Only the system scheduler also schedules the custom reminders; a test's fake leaves them out.
-        if let custom = reminderScheduler as? (ReminderScheduling & CustomReminderScheduling) {
+        if let custom = Self.customReminderScheduling(of: reminderScheduler) {
             let store = UserDefaultsCustomReminderStore()
             reminderController.customReminders = CustomReminderController(
                 store: store, permissions: custom, scheduler: custom, erasures: reminderErasures)
@@ -309,6 +309,13 @@ final class AppServices {
     ///   no notification is scheduled on the test device.
     /// - Parameter accountServiceOverride: a synthetic account service for checking the local-session erase
     ///   wiring. Nil in the app, where the account uses the community client.
+    /// The custom-reminder side of a scheduler, when it takes custom reminders. The system scheduler does; a fake may not.
+    static func customReminderScheduling(
+        of scheduler: ReminderScheduling
+    ) -> (ReminderScheduling & CustomReminderScheduling)? {
+        scheduler as? (ReminderScheduling & CustomReminderScheduling)
+    }
+
     static func make(
         directory: URL = defaultDirectory,
         displayPreferences: UserDefaultsDisplayPreferences = UserDefaultsDisplayPreferences(),
