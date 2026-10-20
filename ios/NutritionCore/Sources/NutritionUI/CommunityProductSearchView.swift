@@ -18,7 +18,7 @@ public struct CommunityProductSearchView: View {
     /// Opens the details form prefilled from a favorite or recent. Nothing is logged until Save.
     private let onPick: ((RepeatTemplate) -> Void)?
     /// The search field's name, shown and spoken. Shared by the field label and its placeholder.
-    public static let fieldLabel = "Search foods"
+    public static let fieldLabel = "Search foods and products"
     @State private var query = ""
     @State private var kind: ProductKind?
     @State private var selectionError: String?
