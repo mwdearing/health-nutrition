@@ -303,7 +303,9 @@ public final class AddIntakeViewModel: ObservableObject {
     private var filledName: String?
     private var filledBrand: String?
 
-    public let timeZoneIdentifier: String
+    /// The zone a new entry is stamped with. Read at save, through the same resolver the Diary uses (#539).
+    private let zoneID: () -> String
+    public var timeZoneIdentifier: String { zoneID() }
     /// The units the picker offers, read through so a preference changed on another screen is
     /// honored the next time this form is opened. Metric offers the whole registry; the US system
     /// puts ounces, fluid ounces, cups, tablespoons and teaspoons first.
@@ -342,7 +344,8 @@ public final class AddIntakeViewModel: ObservableObject {
     public init(
         store: JournalStore,
         now: Date,
-        timeZoneIdentifier: String = TimeZone.current.identifier,
+        timeZoneIdentifier: String? = nil,
+        timeZoneProvider: @escaping () -> String = { DiaryZone.identifier() },
         makeID: @escaping () -> String = { UUID().uuidString.lowercased() },
         lookup: BarcodeProductLookup? = nil,
         preferences: DisplayPreferences = InMemoryDisplayPreferences(),
@@ -356,7 +359,7 @@ public final class AddIntakeViewModel: ObservableObject {
         self.countDecimalSeparator = countDecimalSeparator
         self.portionLookup = portionLookup
         self.occurredAt = now
-        self.timeZoneIdentifier = timeZoneIdentifier
+        self.zoneID = IntakeRepeater.resolver(override: timeZoneIdentifier, provider: timeZoneProvider)
         self.makeID = makeID
         self.lookup = lookup
         self.preferences = preferences
