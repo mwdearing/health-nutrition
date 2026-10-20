@@ -1844,7 +1844,6 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     /// that reopen fails the store stays closed, later calls throw JournalError.closed, and the error is thrown.
     private func removeStoreFiles() throws {
         try lock.withLock {
-            container = nil
             var removalError: Error?
             do {
                 try fileOperations.checkpoint(storeURL)
