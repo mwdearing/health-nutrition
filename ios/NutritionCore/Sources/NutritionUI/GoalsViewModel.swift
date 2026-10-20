@@ -500,9 +500,7 @@ public final class GoalsViewModel: ObservableObject {
         sleep: @escaping (TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0)) },
         now: @escaping () -> Date = { Date() }
     ) async {
-        while let expiry = clearUndoExpiry, now() < expiry {
-            do { try await sleep(max(0, expiry.timeIntervalSince(now()))) } catch { return }
-        }
+        do { try await sleep(max(0, (clearUndoExpiry ?? now()).timeIntervalSince(now()))) } catch { return }
         expireClearUndo(now: now())
     }
 
