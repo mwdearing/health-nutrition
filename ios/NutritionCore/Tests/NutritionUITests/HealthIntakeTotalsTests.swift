@@ -91,7 +91,8 @@ final class HealthIntakeTotalsTests: XCTestCase {
     func testNothingKnownOnEitherSideStaysUnknown() {
         let lines = [unknownLine("energy")]
         XCTAssertEqual(HealthIntakeTotals.combine(lines, outside: .read(values: [:], readKeys: [])), lines)
-        XCTAssertEqual(HealthIntakeTotals.combine(lines, outside: .read(values: [:], readKeys: [])), lines)
+        // Health was read for protein only, so energy has no Health value and no known zero.
+        XCTAssertEqual(HealthIntakeTotals.combine(lines, outside: .read(values: [:], readKeys: ["protein"])), lines)
     }
 
     func testWaterLineIsNeverCombined() {
