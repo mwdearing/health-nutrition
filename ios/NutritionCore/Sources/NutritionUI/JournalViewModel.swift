@@ -452,7 +452,6 @@ public final class JournalViewModel: ObservableObject {
     /// Counts each copy, so the Undo control restarts its window when a new copy lands.
     @Published public private(set) var copyCount = 0
 
-
     /// Ends the Undo window for the latest copy without undoing it.
     public func expireCopyUndo() {
         copiedIDs = []
