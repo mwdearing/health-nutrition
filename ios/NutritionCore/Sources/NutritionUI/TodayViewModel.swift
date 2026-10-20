@@ -183,7 +183,7 @@ public final class TodayViewModel: ObservableObject {
     public static func needsReload(
         activeEnergyKcal: Decimal?, outsideIntake: HealthIntakeTotals.Outside, for readings: BodyActivityReadings
     ) -> Bool {
-        activeEnergyKcal != readings.activeEnergyKcal || outsideIntake != readings.outsideIntake
+        activeEnergyKcal != readings.activeEnergyKcal
     }
 
     /// The nutrients a day's totals are summed for: the tracked ones, plus water.
