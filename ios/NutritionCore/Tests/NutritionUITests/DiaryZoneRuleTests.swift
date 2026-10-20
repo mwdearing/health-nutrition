@@ -59,5 +59,26 @@ final class DiaryZoneRuleTests: XCTestCase {
         let journal = JournalViewModel(store: store, timeZoneIdentifier: "UTC")
         journal.load(now: now)
         XCTAssertEqual(journal.arrowSectionIDs.first, "2026-10-20")
+        // With today as the only visible day, the arrows start from today's midnight, not yesterday's.
+        let base = JournalViewModel.arrowBaseDay(
+            sectionIDs: journal.arrowSectionIDs, visible: ["2026-10-20"], zone: journal.dayZone, now: now)
+        XCTAssertEqual(JournalViewModel.dayKey(base, zone: journal.dayZone), "2026-10-20")
+    }
+
+    /// The arrow ids follow the sections when a day's last entry is deleted and the Diary reloads (#611).
+    func testArrowIdsFollowADeletedDay() throws {
+        let store = try makeStore()
+        let yesterday = now.addingTimeInterval(-86_400)
+        let seed = AddIntakeViewModel(store: store, now: yesterday, timeZoneIdentifier: "UTC")
+        seed.name = "Oats"
+        seed.amountText = "40"
+        XCTAssertTrue(seed.save(now: yesterday))
+        let journal = JournalViewModel(store: store, timeZoneIdentifier: "UTC")
+        journal.load(now: now)
+        XCTAssertTrue(journal.arrowSectionIDs.contains("2026-10-19"))
+        try store.delete(intakeID: try XCTUnwrap(store.activeIntakes().first).id, now: now)
+        journal.load(now: now)
+        XCTAssertEqual(journal.arrowSectionIDs, journal.diarySections.map(\.id))
+        XCTAssertFalse(journal.arrowSectionIDs.contains("2026-10-19"))
     }
 }
