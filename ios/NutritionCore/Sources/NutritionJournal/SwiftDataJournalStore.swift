@@ -1834,10 +1834,11 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     }
 
     /// Deletes the store file with its write-ahead and shared-memory files, then opens an empty store at the same
-    /// place. The write-ahead file is first checkpointed into the store file and emptied, so the store file alone
-    /// holds the state the erase left: whatever a removal does afterwards, it cannot bring back a row the erase
-    /// deleted. The companion files go before the main file. The store reopens even when a step fails, and the
-    /// first error is thrown afterwards so the erase reports it.
+    /// place. On success the write-ahead file is first checkpointed into the store file and emptied, so the store
+    /// file alone holds the erased state. If the checkpoint fails, nothing is removed and the deleted rows are still
+    /// in the write-ahead file on disk; the error tells the person the files are still on the phone. The companion
+    /// files go before the main file. The store reopens when it can; if that reopen fails the store stays closed and
+    /// the error is thrown.
     private func removeStoreFiles() throws {
         try lock.withLock {
             container = nil
