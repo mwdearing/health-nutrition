@@ -626,6 +626,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         clearImport()
         // Anything an in-flight import publishes afterwards is about a journal that is about to be deleted.
         importGeneration += 1
+        importTask?.cancel()
         guard importGate.wait(upTo: Self.eraseWaitsForImportSeconds) else {
             // The import ran past the wait, so it is cancelled now. Nothing was erased, and no flag clear follows the
             // cancel, so a failure can never leave a cancelled import behind a "Nothing was erased" message.
