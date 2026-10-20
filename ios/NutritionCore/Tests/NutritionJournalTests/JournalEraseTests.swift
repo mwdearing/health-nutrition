@@ -158,7 +158,8 @@ final class JournalEraseTests: XCTestCase {
                 calls.removed.append(file.lastPathComponent)
                 if file.lastPathComponent.hasSuffix("-wal") { throw CocoaError(.fileWriteNoPermission) }
                 try FileManager.default.removeItem(at: file)
-            })
+            },
+            openContainer: { try SwiftDataJournalStore.makeContainer(url: $0) })
         let erasing = try SwiftDataJournalStore(
             url: url, enabledDestinations: [.healthKit, .relay], fileOperations: operations)
 
@@ -184,7 +185,8 @@ final class JournalEraseTests: XCTestCase {
             remove: { file in
                 calls.removed.append(file.lastPathComponent)
                 try FileManager.default.removeItem(at: file)
-            })
+            },
+            openContainer: { try SwiftDataJournalStore.makeContainer(url: $0) })
         let erasing = try SwiftDataJournalStore(
             url: url, enabledDestinations: [.healthKit, .relay], fileOperations: operations)
 
