@@ -165,7 +165,7 @@ final class SavedMealsModelTests: XCTestCase {
 
         XCTAssertEqual(try store.meals().map(\.name), ["usual"])
         XCTAssertTrue(model.noticeIsFailure)
-        XCTAssertEqual(model.notice, "Could not put back Usual.")
+        XCTAssertEqual(model.notice, "Couldn't put back Usual. Tap Undo to try again.")
     }
 
     /// Once the Undo window has passed, the removal stays and Undo has nothing to put back.

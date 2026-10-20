@@ -199,11 +199,16 @@ public struct SavedMealBook {
         }
     }
 
-    public func remove(id: String) throws {
+    /// Removes the meal and returns the position it held, read in the same write so the two cannot disagree.
+    @discardableResult
+    public func remove(id: String) throws -> Int {
+        var position = 0
         try store.update { list in
-            guard list.contains(where: { $0.id == id }) else { throw SavedMealError.notFound }
-            list.removeAll { $0.id == id }
+            guard let index = list.firstIndex(where: { $0.id == id }) else { throw SavedMealError.notFound }
+            position = index
+            list.remove(at: index)
         }
+        return position
     }
 
     /// Puts back a meal `remove` took out, at the position it had. Returns false, and changes nothing, when the
