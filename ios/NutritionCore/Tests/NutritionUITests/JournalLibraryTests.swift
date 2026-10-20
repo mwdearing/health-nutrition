@@ -381,6 +381,20 @@ final class JournalLibraryTests: XCTestCase {
         XCTAssertEqual(activeIDs, Set([first, second]))
     }
 
+    /// The window is open just before its deadline and closed at it: offered at nine seconds, not at ten (#535).
+    func testUndoCopyWindowIsOpenAtNineSecondsAndClosedAtTen() throws {
+        let store = try makeStore()
+        let yesterday = now.addingTimeInterval(-86_400)
+        _ = try addFood(store, name: "Oats", at: yesterday, product: product("snap-a"))
+        let model = JournalViewModel(store: store, timeZoneIdentifier: "UTC")
+        model.load(now: now)
+        let past = try XCTUnwrap(model.sections.first { $0.id != JournalViewModel.dayKey(now, zone: TimeZone(identifier: "UTC")!) })
+        _ = try XCTUnwrap(model.copyDayToToday(past.id, now: now))
+
+        XCTAssertTrue(model.canUndoCopy(now: now.addingTimeInterval(9)))
+        XCTAssertFalse(model.canUndoCopy(now: now.addingTimeInterval(10)))
+    }
+
     /// Undo is not offered after its ten-second window, even if the toast was hidden the whole time.
     func testUndoCopyIsNotOfferedAfterItsWindowEvenIfTheToastWasHidden() throws {
         let store = try makeStore()
