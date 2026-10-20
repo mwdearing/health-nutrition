@@ -125,11 +125,11 @@ public struct JournalWeekSummary: Equatable {
 @MainActor
 public final class JournalViewModel: ObservableObject {
     @Published public private(set) var sections: [JournalDaySection] = [] {
-        didSet { arrowSectionIDs = diarySections.map(\.id) }
+        didSet { }
     }
     /// Today's section when it has no entries of its own; nil otherwise. The Diary lists it above `sections`.
     @Published public private(set) var todaySection: JournalDaySection? {
-        didSet { arrowSectionIDs = diarySections.map(\.id) }
+        didSet { }
     }
 
     /// Every section the Diary lists, today first when it is empty.
