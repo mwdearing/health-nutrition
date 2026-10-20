@@ -88,28 +88,30 @@ public struct CommunityProductSearchView: View {
                     }.accessibilityHint("Opens intake details without logging or sharing")
                 }
             }
-            Section("Shared products") {
-                sharedState
-                ForEach(model.sharedResults, id: \.productID) { product in
-                    Button { do { try model.inspect(product) } catch { selectionError = "Search again to refresh this product." } } label: {
-                        VStack(alignment: .leading, spacing: DesignSpacing.xs) {
-                            Text(CommunityProductSearchViewModel.name(product)).font(.headline)
-                            Text(CommunityProductSearchViewModel.verificationText(product))
-                            Text("\(product.support.distinctAccounts) supporting accounts").font(.footnote)
-                            if product.missingFacts { Text("No numeric facts stated").font(.footnote) }
-                            if !product.alternatives.isEmpty {
-                                Text("Separate alternatives; facts are not averaged.").font(.footnote)
-                                ForEach(product.alternatives, id: \.representativeRevision) { alternative in
-                                    Text("Alternative revision \(alternative.representativeRevision): \(alternative.support.distinctAccounts) supporting accounts").font(.footnote)
+            if showsSharedProducts {
+                Section("Shared products") {
+                    sharedState
+                    ForEach(model.sharedResults, id: \.productID) { product in
+                        Button { do { try model.inspect(product) } catch { selectionError = "Search again to refresh this product." } } label: {
+                            VStack(alignment: .leading, spacing: DesignSpacing.xs) {
+                                Text(CommunityProductSearchViewModel.name(product)).font(.headline)
+                                Text(CommunityProductSearchViewModel.verificationText(product))
+                                Text("\(product.support.distinctAccounts) supporting accounts").font(.footnote)
+                                if product.missingFacts { Text("No numeric facts stated").font(.footnote) }
+                                if !product.alternatives.isEmpty {
+                                    Text("Separate alternatives; facts are not averaged.").font(.footnote)
+                                    ForEach(product.alternatives, id: \.representativeRevision) { alternative in
+                                        Text("Alternative revision \(alternative.representativeRevision): \(alternative.support.distinctAccounts) supporting accounts").font(.footnote)
+                                    }
                                 }
+                                Text(product.source.attribution).font(.footnote)
                             }
-                            Text(product.source.attribution).font(.footnote)
-                        }
-                    }.accessibilityHint("Inspects shared facts and alternatives without saving, logging or sharing.")
+                        }.accessibilityHint("Inspects shared facts and alternatives without saving, logging or sharing.")
+                    }
+                    if model.loadingNextPage { ProgressView("Loading more shared products") }
+                    if model.pageError { Text("Could not load the next page.") }
+                    if model.canLoadMore { Button(model.pageError ? "Retry next page" : "Load more") { Task { await model.loadNextPage() } } }
                 }
-                if model.loadingNextPage { ProgressView("Loading more shared products") }
-                if model.pageError { Text("Could not load the next page.") }
-                if model.canLoadMore { Button(model.pageError ? "Retry next page" : "Load more") { Task { await model.loadNextPage() } } }
             }
             if let selectionError { Text(selectionError).foregroundStyle(TokenColors.error) }
         }
@@ -207,6 +209,12 @@ public struct CommunityProductSearchView: View {
         case .unavailable: Text("Food databases are unavailable right now.")
         }
     }
+    /// Hidden entirely when the signed-out line is off, so a build with no account shows no empty section.
+    private var showsSharedProducts: Bool {
+        guard model.state == .signInRequired else { return true }
+        return SearchSignIn.signedOutLine(hasAccount: hasAccount, signedIn: false) == .signInMessage
+    }
+
     @ViewBuilder private var sharedState: some View {
         switch model.state {
         case .idle: Text("Search shared foods, drinks and supplements.")
