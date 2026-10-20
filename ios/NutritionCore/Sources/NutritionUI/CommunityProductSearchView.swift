@@ -41,6 +41,7 @@ public struct CommunityProductSearchView: View {
             Section {
                 LabeledField(Self.fieldLabel, focus: $searchFocused) { focus in
                     TextField(Self.fieldLabel, text: $query).focused(focus).submitLabel(.search)
+                        .accessibilityLabel(Self.fieldLabel)
                         .accessibilityIdentifier("sharedProductSearchField")
                 }.onSubmit { search() }
                 if query.trimmingCharacters(in: .whitespaces).count >= 2 {
