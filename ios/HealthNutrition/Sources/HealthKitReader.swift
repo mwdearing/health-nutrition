@@ -99,11 +99,9 @@ final class HealthKitReader: BodyActivityReading {
                 }
                 continue
             }
-            // Unreachable today (readPlan and this lookup share one predicate), but a nutrient with no HealthKit unit
-            // must still be left unread under its own key rather than dropped.
+            // readPlan returns .read only when this same lookup has a HealthKit unit, so a missing unit is a broken invariant.
             guard let hkUnit = Self.healthKitUnit(for: unit) else {
-                queries.append(OutsideQuery(nutrientKey: key, outcome: .failed))
-                continue
+                preconditionFailure("readPlan planned \(key) with a unit HealthKit does not have")
             }
             let found: [HKQuantitySample]
             do {
