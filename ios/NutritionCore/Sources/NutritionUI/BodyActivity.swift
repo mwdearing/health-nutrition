@@ -129,10 +129,13 @@ public final class BodyActivityViewModel: ObservableObject {
     public var outsideText: String? {
         // A partial failure still shows the values that were read; the failure copy is only for a read with nothing.
         var parts: [String] = []
-        // Only a nutrient whose read completed is shown: a partial sum would look like a complete figure.
-        if readings.outsideReadKeys.contains("energy"), let energy = readings.outsideNutrients["energy"] { parts.append("\(Self.whole(energy)) Calories") }
-        if readings.outsideReadKeys.contains("protein"), let protein = readings.outsideNutrients["protein"] { parts.append("\(Self.whole(protein)) g protein") }
-        if readings.outsideReadKeys.contains("water"), let water = readings.outsideNutrients["water"] {
+        // One check for every nutrient: a value is shown only when its read completed.
+        func completed(_ key: String) -> Decimal? {
+            readings.outsideReadKeys.contains(key) ? readings.outsideNutrients[key] : nil
+        }
+        if let energy = completed("energy") { parts.append("\(Self.whole(energy)) Calories") }
+        if let protein = completed("protein") { parts.append("\(Self.whole(protein)) g protein") }
+        if let water = completed("water") {
             if unitSystem() == .usCustomary {
                 parts.append("\(Self.whole(water / Self.millilitersPerFluidOunce)) fl oz water")
             } else {
