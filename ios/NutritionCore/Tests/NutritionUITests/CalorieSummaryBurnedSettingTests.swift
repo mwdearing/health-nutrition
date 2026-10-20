@@ -21,6 +21,9 @@ final class CalorieSummaryBurnedSettingTests: XCTestCase {
         let model = TodayViewModel(store: try makeJournal(), timeZoneIdentifier: "UTC", preferences: preferences)
         model.activeEnergyKcal = 120
         model.load(now: now)
+        // A positive control: the load succeeded, so a nil Burned is the setting's doing, not a failed load.
+        XCTAssertNil(model.errorMessage)
+        XCTAssertNotNil(model.lastLoadedAt)
         XCTAssertNil(model.calorieRemaining.burned)
     }
 

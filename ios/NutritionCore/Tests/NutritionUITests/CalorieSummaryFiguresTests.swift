@@ -21,7 +21,8 @@ final class CalorieSummaryFiguresTests: XCTestCase {
 
     func testLoggedFoodWithAGoalShowsRemainingFoodAndBurned() {
         let result = figures(goal: 2000, food: 500, burned: 120)
-        XCTAssertEqual(result.remaining, "1500")
+        // Remaining is goal minus food plus burned (CalorieRemaining.make), so 2000 - 500 + 120.
+        XCTAssertEqual(result.remaining, "1620")
         XCTAssertEqual(result.food, "500")
         XCTAssertEqual(result.burned, "120")
     }
