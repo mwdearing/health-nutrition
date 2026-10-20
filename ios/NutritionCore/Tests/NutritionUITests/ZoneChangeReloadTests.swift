@@ -39,6 +39,9 @@ final class ZoneChangeReloadTests: XCTestCase {
         await journal.runZoneChangeReloads(changes, now: { self.now })
         XCTAssertEqual(journal.loadCount, loadsBefore + 1, "the zone change reloads the Diary")
         XCTAssertEqual(journal.dayZone.identifier, "Asia/Tokyo", "the Diary now reads days in the new zone")
+        // Today is Tokyo's date now, and empty, so it is the today section; the New York entry stays on its own day.
+        XCTAssertEqual(journal.todaySection?.id, "2026-10-20", "after the change today is Tokyo's date")
+        XCTAssertEqual(journal.arrowSectionIDs.first, "2026-10-20", "the arrows start from Tokyo's today")
         XCTAssertEqual(journal.sections.first?.id, "2026-10-19", "an entry keeps the day of the zone it was saved in")
     }
 }
