@@ -259,10 +259,13 @@ public final class TodayViewModel: ObservableObject {
                         // A stored share counts toward the goal bar too, so the bar reads it as a logged amount.
                         countedWater += 1
                     }
-                    if kind != .supplement {
-                        for component in components { foodComponents.append((component, snapshot, kind)) }
+                    // Totals count an entry as it always has (#364): a typed entry in the food total, a snapshot-backed
+                    // supplement on its own. The row's kind above is what the entry is, not how the totals count it.
+                    let countsAs = snapshot?.kind ?? .food
+                    if countsAs != .supplement {
+                        for component in components { foodComponents.append((component, snapshot, countsAs)) }
                     }
-                    foodEntries.append((components, snapshot, kind))
+                    foodEntries.append((components, snapshot, countsAs))
                 }
                 newRows.append(
                     TodayRow(

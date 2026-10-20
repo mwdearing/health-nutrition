@@ -17,7 +17,7 @@ final class SnapshotlessSupplementRowsTests: XCTestCase {
     }
 
     /// One typed supplement of 19.72 mL (4 teaspoons), logged today, with no product snapshot.
-    private func logTypedSupplement(_ store: SwiftDataJournalStore, category: String) throws {
+    private func logTypedEntry(_ store: SwiftDataJournalStore, category: String) throws {
         let intake = Intake(
             id: UUID().uuidString.lowercased(), category: category, occurredAt: now.addingTimeInterval(-300),
             timeZoneIdentifier: "UTC", meal: nil)
@@ -28,7 +28,7 @@ final class SnapshotlessSupplementRowsTests: XCTestCase {
 
     func testDiaryRowReadsATypedSupplementAsTheSpoon() throws {
         let store = try makeStore()
-        try logTypedSupplement(store, category: "supplement")
+        try logTypedEntry(store, category: "supplement")
         let journal = JournalViewModel(store: store, timeZoneIdentifier: "UTC")
         journal.load(now: now)
         let row = try XCTUnwrap(journal.sections.flatMap(\.rows).first)
@@ -38,7 +38,7 @@ final class SnapshotlessSupplementRowsTests: XCTestCase {
 
     func testTodayRowReadsATypedSupplementAsTheSpoon() throws {
         let store = try makeStore()
-        try logTypedSupplement(store, category: "supplement")
+        try logTypedEntry(store, category: "supplement")
         let today = TodayViewModel(store: store, timeZoneIdentifier: "UTC")
         today.load(now: now)
         let row = try XCTUnwrap(today.rows.first)
@@ -48,11 +48,28 @@ final class SnapshotlessSupplementRowsTests: XCTestCase {
 
     func testTypedFoodRowKeepsItsFluidOuncesOnTheDiary() throws {
         let store = try makeStore()
-        try logTypedSupplement(store, category: "food")
+        try logTypedEntry(store, category: "food")
         let journal = JournalViewModel(store: store, timeZoneIdentifier: "UTC")
         journal.load(now: now)
         let row = try XCTUnwrap(journal.sections.flatMap(\.rows).first)
         XCTAssertFalse(row.detail.contains("tsp"), "a typed food has no spoon reading, got \(row.detail)")
+        XCTAssertTrue(row.detail.contains("mL"), "a typed food keeps its millilitres, got \(row.detail)")
         XCTAssertEqual(row.kind, .food)
+    }
+
+    /// A typed supplement's nutrients still count in Today's food coverage, as they always have (#364, #416).
+    func testTypedSupplementStillCountsInTodayFoodCoverage() throws {
+        struct ProteinFacts: NutrientFactsLookup {
+            func value(for component: IntakeComponent, nutrient: String) -> NutrientValue {
+                nutrient == "protein" ? .known(5, .g) : .unknown
+            }
+        }
+        let store = try makeStore()
+        try logTypedEntry(store, category: "supplement")
+        let today = TodayViewModel(store: store, lookup: ProteinFacts(), timeZoneIdentifier: "UTC")
+        today.load(now: now)
+        let protein = try XCTUnwrap(today.coverage.first { $0.nutrient == "protein" })
+        XCTAssertEqual(protein.total, 1, "a typed supplement still counts in Today's food totals")
+        XCTAssertEqual(protein.missing, 0)
     }
 }
