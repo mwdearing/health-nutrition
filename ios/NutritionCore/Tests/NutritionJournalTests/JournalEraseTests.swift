@@ -202,6 +202,33 @@ final class JournalEraseTests: XCTestCase {
 
     /// The checkpoint runs after this store releases its container. Another store instance on the same file, still
     /// open, must not stop the erase from checkpointing and removing the files.
+    /// When the reopen after an erase fails, the erase reports the failure and the store stays closed: later journal
+    /// calls throw JournalError.closed rather than reading a container the erase has already released.
+    func testAFailedReopenReportsTheFailureAndLeavesTheStoreClosed() throws {
+        let directory = try makeDirectory()
+        let url = directory.appendingPathComponent("journal.store")
+        let opens = OpenCounter()
+        let operations = StoreFileOperations(
+            checkpoint: { _ in },
+            remove: { try FileManager.default.removeItem(at: $0) },
+            openContainer: { url in
+                opens.count += 1
+                if opens.count > 1 { throw CocoaError(.fileWriteNoPermission) }
+                return try SwiftDataJournalStore.makeContainer(url: url)
+            })
+        let store = try SwiftDataJournalStore(
+            url: url, enabledDestinations: [.healthKit, .relay], fileOperations: operations)
+        try store.create(sampleIntake(), components: [oats()], product: product(), now: when)
+
+        XCTAssertThrowsError(try store.eraseAll()) {
+            XCTAssertEqual(($0 as? CocoaError)?.code, .fileWriteNoPermission)
+        }
+        XCTAssertThrowsError(try store.activeIntakes()) {
+            XCTAssertEqual($0 as? JournalError, .closed)
+        }
+        store.close()
+    }
+
     func testAnEraseSucceedsWhileAnotherStoreOnTheSameFileIsOpen() throws {
         let directory = try makeDirectory()
         let url = directory.appendingPathComponent("journal.store")
@@ -313,6 +340,11 @@ final class JournalEraseTests: XCTestCase {
             XCTAssertNoThrow(try eraser.eraseAll())
         }
     }
+}
+
+/// Counts how many times the store opens its container.
+private final class OpenCounter: @unchecked Sendable {
+    var count = 0
 }
 
 /// Records each file the erase tries to remove, in order.

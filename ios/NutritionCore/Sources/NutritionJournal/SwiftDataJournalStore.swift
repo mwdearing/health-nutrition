@@ -7,10 +7,13 @@ import SwiftData
 struct StoreFileOperations {
     var checkpoint: (URL) throws -> Void
     var remove: (URL) throws -> Void
+    /// Opens the store file as a container; the erase calls it again to reopen the emptied store.
+    var openContainer: (URL) throws -> ModelContainer
 
     static let system = StoreFileOperations(
         checkpoint: { try SwiftDataJournalStore.checkpointStoreFile(at: $0) },
-        remove: { try FileManager.default.removeItem(at: $0) })
+        remove: { try FileManager.default.removeItem(at: $0) },
+        openContainer: { try SwiftDataJournalStore.makeContainer(url: $0) })
 }
 
 /// The store's checkpoint failed, so the erase stopped before any companion or main file was removed.
@@ -1130,11 +1133,11 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
         self.fileOperations = fileOperations
         storeURL = url
         restoreMarkerURL = url.appendingPathExtension("restore-in-progress")
-        container = try Self.makeContainer(url: url)
+        container = try fileOperations.openContainer(url)
         try recoverProductOperations()
     }
 
-    private static func makeContainer(url: URL) throws -> ModelContainer {
+    static func makeContainer(url: URL) throws -> ModelContainer {
         let schema = Schema(versionedSchema: JournalSchemaV10.self)
         let configuration = ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
         return try ModelContainer(
@@ -1861,7 +1864,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             }
             // A reopen failure is thrown only when no earlier step failed, so the first error is the one reported.
             do {
-                container = try Self.makeContainer(url: storeURL)
+                container = try fileOperations.openContainer(storeURL)
             } catch {
                 throw removalError ?? error
             }
