@@ -179,6 +179,13 @@ public final class TodayViewModel: ObservableObject {
         return ordered
     }
 
+    /// Whether Today must reload for these readings: only when the figures it reads from Health changed.
+    public static func needsReload(
+        activeEnergyKcal: Decimal?, outsideIntake: HealthIntakeTotals.Outside, for readings: BodyActivityReadings
+    ) -> Bool {
+        activeEnergyKcal != readings.activeEnergyKcal || outsideIntake != readings.outsideIntake
+    }
+
     /// The nutrients a day's totals are summed for: the tracked ones, plus water.
     ///
     /// Water is always among them and is not in the fallback list above, because a drink is logged
@@ -187,13 +194,6 @@ public final class TodayViewModel: ObservableObject {
     /// than to the front for a goal, because the order is the fallback's fixed one and a goal does not
     /// reorder a day; `JournalViewModel.totalsText` is what puts a targeted nutrient first, on the
     /// one-line summary where the order is a presentational choice.
-    /// Whether Today must reload for these readings: only when the figures it reads from Health changed.
-    public static func needsReload(
-        activeEnergyKcal: Decimal?, outsideIntake: HealthIntakeTotals.Outside, for readings: BodyActivityReadings
-    ) -> Bool {
-        activeEnergyKcal != readings.activeEnergyKcal || outsideIntake != readings.outsideIntake
-    }
-
     public static func totalsNutrients(
         goals: [NutrientGoal], fallback: [String] = TodayViewModel.defaultTrackedNutrients
     ) -> [String] {
