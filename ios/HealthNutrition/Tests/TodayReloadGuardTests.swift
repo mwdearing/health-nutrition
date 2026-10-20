@@ -3,6 +3,7 @@ import NutritionUI
 import XCTest
 
 /// The app reloads Today from the activity card only when a figure Today reads has changed.
+@MainActor
 final class TodayReloadGuardTests: XCTestCase {
     func testAnOutsideIntakeChangeAloneReloadsToday() {
         let readings = BodyActivityReadings(outsideNutrients: ["energy": 620], outsideRead: true, outsideReadKeys: ["energy"])
