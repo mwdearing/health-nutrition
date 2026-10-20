@@ -266,7 +266,7 @@ final class DailyGoalsTests: XCTestCase {
         var sleeps: [TimeInterval] = []
         // Wake after half of each requested sleep: an early wake, as a clock step can cause.
         await model.runClearUndoExpiry(
-            sleep: { seconds in sleeps.append(seconds); clock.now.addTimeInterval(seconds / 2) },
+            sleep: { seconds in sleeps.append(seconds); clock.now = clock.now.addingTimeInterval(seconds / 2) },
             now: { clock.now })
         XCTAssertGreaterThan(sleeps.count, 1, "an early wake sleeps again")
         XCTAssertNil(model.clearedGoal)
