@@ -44,8 +44,9 @@ public enum HealthIntakeTotals {
             journalValue = value
             journalUnit = amountUnit
         } else if case .unknown = line.amount, !line.isPartial, line.missingCount == 0 {
-            // No journal entries for the day: the totals builder reads an empty day as unknown, but nothing was
-            // left out, so the journal side is a complete nothing.
+            // Unknown with nothing left out: no entry contributes a value to this nutrient (an empty day, or a day
+            // with only drinks or supplements that do not state it). The builder reads that as unknown, but nothing
+            // was missed, so the journal side is a complete nothing.
             journalValue = 0
             journalComplete = true
             journalEmpty = true
