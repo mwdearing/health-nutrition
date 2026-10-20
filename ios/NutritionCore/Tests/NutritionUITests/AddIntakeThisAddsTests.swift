@@ -85,16 +85,23 @@ final class AddIntakeThisAddsTests: XCTestCase {
                        NSDecimalNumber(decimal: fromGrams).doubleValue, accuracy: 0.05)
     }
 
-    /// A caller other than the label capture (a repeat, a Recent) must not set the Servings control or the
-    /// captured basis: those come from a label capture only.
-    func testANonLabelCallerDoesNotSetServingsOrCapturedBasis() throws {
+    /// A caller other than the label capture (a repeat, a Recent) must not set the Servings control, but its
+    /// amount preview for a per-serving product is the same as the label capture's.
+    func testANonLabelCallerDoesNotSetServingsButKeepsItsPreview() throws {
         let product = ProductDefinition(snapshotID: "example-serving-repeat", productID: "example-oats",
             name: "Example oats", labelBasis: "per serving (30 g)", catalogOrigin: "label", catalogVersion: "1",
             nutrients: ["protein": .known(Decimal(6), .g)])
-        let model = AddIntakeViewModel(store: try makeStore(), now: now)
-        model.applyLabelProduct(product)
-        XCTAssertNil(model.servingOption)
-        XCTAssertNil(model.capturedLabelBasis)
+        let captured = AddIntakeViewModel(store: try makeStore(), now: now)
+        captured.applyLabelProduct(product, fromLabelCapture: true)
+        captured.amountText = "2"
+        captured.unit = .oz
+        let repeated = AddIntakeViewModel(store: try makeStore(), now: now)
+        repeated.applyLabelProduct(product)
+        repeated.amountText = "2"
+        repeated.unit = .oz
+        XCTAssertNil(repeated.servingOption)
+        XCTAssertNotNil(repeated.amountPreview)
+        XCTAssertEqual(repeated.amountPreview?.protein, captured.amountPreview?.protein)
     }
 
     func testBoundOnlyProductStillShowsItsValues() throws {
