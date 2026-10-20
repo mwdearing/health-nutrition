@@ -210,7 +210,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     @Published public private(set) var eraseRetryAvailable = false
     /// True from the moment the person asks to erase (Erase or Retry) until they confirm or cancel. Nothing is erased
     /// while this is only requested.
-    @Published public var eraseConfirmationPending = false
+    @Published public private(set) var eraseConfirmationPending = false
     @Published public private(set) var importState: ConnectionsPrivacyImportState = .idle
     @Published public private(set) var isImporting = false
     /// Main-actor count of restores whose outcomes have not yet reached `apply`. The store-write gate is
