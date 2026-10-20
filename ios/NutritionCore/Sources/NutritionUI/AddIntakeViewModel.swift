@@ -790,7 +790,9 @@ public final class AddIntakeViewModel: ObservableObject {
         fillProductValues(product)
         // The captured panel's serving and basis feed the Servings control and the amount preview, the same
         // as a looked-up product's. Form state only; the stored values are not changed.
-        servingOption = Self.capturedServing(of: product)
+        // Only a label capture sets the Servings control. The captured basis still drives the amount preview for
+        // every caller, so a repeated per-serving product keeps its preview.
+        servingOption = fromLabelCapture ? Self.capturedServing(of: product) : nil
         capturedLabelBasis = product.labelBasis
     }
 
