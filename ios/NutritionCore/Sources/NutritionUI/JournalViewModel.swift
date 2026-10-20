@@ -162,7 +162,7 @@ public final class JournalViewModel: ObservableObject {
     public var dayZone: TimeZone { TimeZone(identifier: journalZoneID()) ?? TimeZone.current }
     /// The day keys the Diary arrows step through, in list order: today's empty day too, which the
     /// sections leave out (#539).
-    public var arrowSectionIDs: [String] { diarySections.map(\.id) }
+    public var arrowSectionIDs: [String] { sections.map(\.id) }
     private let locale: Locale
     private let preferences: DisplayPreferences
 
