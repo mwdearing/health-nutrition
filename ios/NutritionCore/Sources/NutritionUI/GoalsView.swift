@@ -55,6 +55,7 @@ public struct GoalsView: View {
             }
             if model.clearedGoal != nil {
                 UndoToast(GoalsViewModel.clearedMessage) { self.model.undoClear() }
+                    .id(model.clearedGoal.map { "\($0.nutrient)-\($0.goal.target)-\($0.goal.unit.symbol)" } ?? "")
             }
         }
         .scrollContentBackground(.hidden)

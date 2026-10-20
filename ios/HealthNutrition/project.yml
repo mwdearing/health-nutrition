@@ -272,12 +272,14 @@ schemes:
         HealthNutrition: all
         HealthNutritionWidgets: all
         HealthNutritionTests: [test]
+        HealthNutritionAddUITests: [test]
     run:
       config: Debug
     test:
       config: Debug
       targets:
         - HealthNutritionTests
+        - HealthNutritionAddUITests
     archive:
       config: Release
 

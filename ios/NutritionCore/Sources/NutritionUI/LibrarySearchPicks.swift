@@ -1,7 +1,7 @@
 import Foundation
 import NutritionDomain
 
-/// One group of the person's own items on the Find products screen.
+/// One group of the person's own items on the Search foods screen.
 public struct LibrarySearchGroup: Equatable, Identifiable {
     public var id: String { title }
     public let title: String
@@ -15,7 +15,7 @@ extension LibraryViewModel {
     public static let searchMatchesLimit = 8
 
     /// The person's own favorites, often logged items (`frequentItems`), recents and logged products
-    /// (`loggedProducts`, every product logged, standalone ones included) for the Find products screen,
+    /// (`loggedProducts`, every product logged, standalone ones included) for the Search foods screen,
     /// built from what `load()` last read. It reads no store and sends nothing anywhere, so it can run on
     /// every keystroke. It never sets `searchText` or `segment`: this model is shared with the Library
     /// screen, and a filter set here would stay applied there.

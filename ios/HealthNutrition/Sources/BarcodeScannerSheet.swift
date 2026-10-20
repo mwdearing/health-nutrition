@@ -1,5 +1,6 @@
 import Foundation
 import NutritionUI
+import AVFoundation
 import SwiftUI
 
 // The camera lives in the app target, never in the UI package: this file owns VisionKit, and the
@@ -10,6 +11,19 @@ import UIKit
 import Vision
 import VisionKit
 
+/// What the system says about camera access, for the failure message the sheets show.
+enum CameraAccess {
+    static func current() -> CameraAccessState {
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized: return .authorized
+        case .notDetermined: return .notDetermined
+        case .denied: return .denied
+        case .restricted: return .restricted
+        @unknown default: return .notDetermined
+        }
+    }
+}
+
 /// Whether this device can scan barcodes with the camera right now. `isSupported` is a build-time
 /// answer, `isAvailable` the runtime one: a device may support the scanner and still have it
 /// unavailable (no camera, or the camera in use by something else). Both have to hold; the Add
@@ -17,6 +31,9 @@ import VisionKit
 enum BarcodeScanner {
     // Both properties are main-actor isolated, so this is too. It is read from the form's Scan
     // action, which runs on the main actor like the rest of the view.
+    @MainActor
+    static var isSupported: Bool { DataScannerViewController.isSupported }
+
     @MainActor
     static var isAvailable: Bool {
         DataScannerViewController.isSupported && DataScannerViewController.isAvailable
@@ -29,11 +46,21 @@ struct BarcodeScannerSheet: View {
     let onType: () -> Void
 
     @State private var failureMessage: String?
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         content
             .navigationTitle("Scan barcode")
             .navigationBarTitleDisplayMode(.inline)
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { resumeAfterSettings() }
+            }
+    }
+
+    /// Back from Settings: if access is now allowed, the failure clears and the scanner starts again.
+    private func resumeAfterSettings() {
+        guard failureMessage != nil else { return }
+        failureMessage = CameraAccessNotice.messageAfterReturn(access: CameraAccess.current(), sheet: .barcode)
     }
 
     /// The camera while it works, the notice once it cannot. A terminal failure takes the scanner
@@ -70,6 +97,13 @@ struct BarcodeScannerSheet: View {
                 .multilineTextAlignment(.center)
             Button("Type the digits instead", action: onType)
                 .font(.headline)
+            if CameraAccessNotice.offersOpenSettings(for: CameraAccess.current()) {
+                Button(CameraAccessNotice.openSettingsTitle) {
+                    if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                }
+                .font(.headline)
+                .accessibilityHint(CameraAccessNotice.openSettingsHint)
+            }
         }
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -143,15 +177,17 @@ struct BarcodeDataScanner: UIViewControllerRepresentable {
         @MainActor
         func startScanning(on controller: DataScannerViewController) {
             guard !isRunning, !hasDelivered, !hasFailed else { return }
-            guard DataScannerViewController.isSupported, DataScannerViewController.isAvailable else {
-                report("This device cannot scan barcodes. Type the digits instead.")
+            if let message = CameraAccessNotice.unavailableMessage(
+                isSupported: DataScannerViewController.isSupported, access: CameraAccess.current(),
+                isAvailable: DataScannerViewController.isAvailable, sheet: .barcode) {
+                report(message)
                 return
             }
             do {
                 try controller.startScanning()
                 isRunning = true
             } catch {
-                report("The camera could not be started. Type the digits instead.")
+                report(CameraAccessNotice.failureMessage(for: CameraAccess.current(), sheet: .barcode))
             }
         }
 
@@ -187,7 +223,9 @@ struct BarcodeDataScanner: UIViewControllerRepresentable {
             becameUnavailableWithError error: DataScannerViewController.ScanningUnavailable
         ) {
             guard !hasDelivered else { return }
-            report("Scanning stopped, so the barcode was not read. Type the digits instead.")
+            report(CameraAccessNotice.stoppedMessage(
+                access: CameraAccess.current(), sheet: .barcode,
+                fallback: "Scanning stopped, so the barcode was not read. Type the digits instead."))
         }
 
         /// Hands the barcode over once and stops the camera. Set before the callback, so the same

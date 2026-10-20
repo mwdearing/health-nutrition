@@ -222,7 +222,7 @@ public final class TodayViewModel: ObservableObject {
             var countedWater = 0
             // One snapshot is read once per load, however many components and nutrients refer to it.
             var snapshots: [String: ProductDefinition?] = [:]
-            let loggedUnits = LoggedUnitIndex.load(from: store)
+            let loggedUnits = try LoggedUnitIndex.loadOrThrow(from: store)
             for intake in intakes.sorted(by: { $0.occurredAt > $1.occurredAt }) {
                 let revisions = try store.revisions(of: intake.id)
                 let current = revisions.first { $0.number == intake.currentRevision }

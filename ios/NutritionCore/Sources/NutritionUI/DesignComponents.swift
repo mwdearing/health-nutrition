@@ -123,6 +123,8 @@ public struct PrimaryCapsule: View {
         self.action = action
     }
 
+    @Environment(\.isEnabled) private var isEnabled
+
     public var body: some View {
         Button(action: action) {
             HStack(spacing: DesignSpacing.s) {
@@ -134,6 +136,8 @@ public struct PrimaryCapsule: View {
             .foregroundStyle(TokenColors.onMint)
             .frame(maxWidth: .infinity, minHeight: 50)
             .background(TokenColors.mint, in: Capsule())
+            // A disabled capsule looks disabled: the fixed colours alone read as tappable.
+            .opacity(isEnabled ? 1 : 0.5)
         }
         .buttonStyle(.plain)
     }
@@ -291,14 +295,32 @@ public struct UndoToast: View {
         self.onUndo = onUndo
     }
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     public var body: some View {
-        HStack(spacing: DesignSpacing.m) {
+        // Stacked at accessibility sizes so the Undo button keeps its width and the message can wrap.
+        let stacked = dynamicTypeSize.isAccessibilitySize
+        let layout: AnyLayout = stacked ? AnyLayout(VStackLayout(alignment: .leading, spacing: DesignSpacing.s))
+            : AnyLayout(HStackLayout(spacing: DesignSpacing.m))
+        layout {
             Text(message).font(.body)
-            Spacer(minLength: DesignSpacing.s)
-            QuietCapsule("Undo", action: onUndo)
+            if !stacked { Spacer(minLength: DesignSpacing.s) }
+            // Undo is an accent fill with the background ink, so it reads apart from the accentTint toast.
+            Button(action: onUndo) {
+                Text("Undo")
+                    .font(.headline)
+                    .foregroundStyle(TokenColors.background)
+                    .padding(.horizontal, DesignSpacing.m)
+                    .frame(minHeight: 44)
+                    .background(TokenColors.accent, in: Capsule())
+            }
+            .buttonStyle(.plain)
         }
         .foregroundStyle(TokenColors.textPrimary)
         .padding(DesignSpacing.m)
-        .background(TokenColors.accentTint, in: RoundedRectangle(cornerRadius: DesignRadius.control))
+        .background(TokenColors.accentTint, in: RoundedRectangle(cornerRadius: DesignRadius.control, style: .continuous))
+        // VoiceOver hears the toast's own message when it appears. It is announced again when the toast is shown
+        // again, such as navigating back inside its offer window: the person returns to a live offer, so repeating it is intended.
+        .onAppear { AccessibilityNotification.Announcement(message).post() }
     }
 }

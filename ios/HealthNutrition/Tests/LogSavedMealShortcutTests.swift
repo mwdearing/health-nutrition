@@ -17,6 +17,47 @@ final class LogSavedMealShortcutTests: XCTestCase {
                 components: [FavoriteComponent(componentID: "oats", name: "Sample oats", amountText: "40", unitSymbol: "g")])])
     }
 
+    /// Counts what a run reads and writes, with a meal ready to log.
+    private final class Counts {
+        var reads = 0, writes = 0, reloads = 0
+    }
+
+    private func effects(busy: Bool, _ counts: Counts) -> SavedMealShortcut.Effects {
+        SavedMealShortcut.Effects(
+            isBusy: { busy },
+            readMeals: { counts.reads += 1; return ([self.saved()], nil) },
+            logMeal: { _, _, _ in
+                counts.writes += 1
+                return SavedMealLogResult(createdIDs: ["a"], skippedCount: 0)
+            },
+            recordLeftovers: { _ in },
+            reload: { _ in counts.reloads += 1 })
+    }
+
+    func testWhileBusyTheRunReadsAndWritesNothing() {
+        let counts = Counts()
+        let outcome = SavedMealShortcut.run(id: "meal-1", meal: nil, now: now, effects: effects(busy: true, counts))
+        XCTAssertEqual(outcome, .reply(SavedMealShortcut.busyMessage))
+        XCTAssertEqual(counts.reads, 0)
+        XCTAssertEqual(counts.writes, 0)
+        XCTAssertEqual(counts.reloads, 0)
+    }
+
+    func testWhenIdleTheRunReadsOnceWritesOnceAndReloads() {
+        let counts = Counts()
+        _ = SavedMealShortcut.run(id: "meal-1", meal: nil, now: now, effects: effects(busy: false, counts))
+        XCTAssertEqual(counts.reads, 1)
+        XCTAssertEqual(counts.writes, 1)
+        XCTAssertEqual(counts.reloads, 1)
+    }
+
+    /// While an erase or import runs the Shortcut replies with the busy message and writes nothing (#480).
+    func testABusyAppRepliesWithTheBusyMessageAndLogsNothing() {
+        XCTAssertEqual(
+            SavedMealShortcut.busyReply(isBusy: true), "The app is busy with an erase or import. Try again in a moment.")
+        XCTAssertNil(SavedMealShortcut.busyReply(isBusy: false))
+    }
+
     func testLogsUnderTheMealItWasSavedWithUnlessOneIsNamed() {
         var loggedUnder: [MealLabel?] = []
         let log: (SavedMeal, MealLabel?, Date) throws -> SavedMealLogResult = { _, meal, _ in

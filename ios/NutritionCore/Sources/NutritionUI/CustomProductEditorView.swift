@@ -96,6 +96,7 @@ public struct CustomProductEditorView: View {
                             Text("IU amounts stay in IU.").font(.footnote)
                         }
                         Button("Remove fact", role: .destructive) { model.facts.removeAll { $0.id == fact.id } }
+                            .accessibilityLabel("Remove \(fact.displayName)")
                     }
                     .accessibilityElement(children: .contain)
                 }

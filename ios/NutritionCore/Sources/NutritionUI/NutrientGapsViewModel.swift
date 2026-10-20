@@ -184,7 +184,9 @@ public struct NutrientGapRow: Equatable, Identifiable {
         let name = reference.kind.abbreviation
         switch status {
         case .belowReference: return "Below the \(name)"
-        case .belowReferenceSoFar: return "Below the \(name) so far"
+        case .belowReferenceSoFar:
+            // The day's screen says "so far today"; a daily average over the week says only "so far".
+            return averagedOverDays == nil ? "Below the \(name) so far today" : "Below the \(name) so far"
         case .reachedReference: return "Reached the \(name)"
         case .aboveUpperLimit: return "Above the upper limit"
         case .nothingLogged, .unknown, .noReference: return nil
@@ -484,7 +486,9 @@ public final class NutrientGapsViewModel: ObservableObject {
             guard let current = revisions.first(where: { $0.number == intake.currentRevision }) else { continue }
             if intake.category != DailyTotalsBuilder.waterCategory { logged.insert(day.date) }
             let snapshot = current.productSnapshotID.flatMap { try? store.product(snapshotID: $0) }
+            // A hand-typed entry has no snapshot, so its category says whether it is a supplement (#364).
             let isSupplement = snapshot?.kind == .supplement
+                || (current.productSnapshotID == nil && intake.category == SupplementStackViewModel.supplementCategory)
             // Every entry goes through the one totals path, so the negative-amount rule and the partial sums
             // are the same here as on Today. The known part of a partial entry is kept; the entry counts once
             // as missing for each nutrient it leaves unknown.

@@ -3,8 +3,9 @@ import NutritionDomain
 
 /// Per-day averages over the last 30 local days, for the Insights screen.
 ///
-/// Only days that have a known total count towards an average, and the line says how many days that was,
-/// so a month with gaps reads as an average of what was logged and never as a month of zeros.
+/// Only days with a known amount for a nutrient count towards its average; a partly logged day counts with its
+/// known sum, as a minimum (#510), and the line says how many days that was, so a month with gaps reads as an
+/// average of what was logged and never as a month of zeros.
 public struct InsightsAverages: Equatable {
     public static let windowDays = 30
 
@@ -54,15 +55,30 @@ public struct InsightsAverages: Equatable {
         var lines: [Line] = []
         for nutrient in nutrients {
             var values: [Decimal] = []
+            var partialDays = 0
             var unit: MeasureUnit?
             for day in inWindow {
-                guard let total = day.totals.total(for: nutrient), case .known(let amount, let amountUnit) = total.value
-                else { continue }
+                // A fully known day counts as it is. A partly logged day counts with the sum of its known entries,
+                // which is a minimum (#510). A day with nothing known for this nutrient is left out, never counted as
+                // 0.
+                let value: NutrientValue
+                let isPartial: Bool
+                if let total = day.totals.total(for: nutrient), case .known = total.value {
+                    value = total.value
+                    isPartial = false
+                } else if let sum = day.totals.knownSum(for: nutrient) {
+                    value = sum
+                    isPartial = true
+                } else {
+                    continue
+                }
+                guard case .known(let amount, let amountUnit) = value else { continue }
                 let target = unit ?? amountUnit
                 guard let converted = try? Quantity(value: amount, unit: amountUnit).converted(to: target).value
                 else { continue }
                 unit = target
                 values.append(converted)
+                if isPartial { partialDays += 1 }
             }
             guard let unit, !values.isEmpty else { continue }
             let average = values.reduce(Decimal(0), +) / Decimal(values.count)
@@ -73,11 +89,11 @@ public struct InsightsAverages: Equatable {
                 amount: rounded, unit: shown.unit,
                 isBelowSmallest: shown.isBelowSmallest || (rounded == 0 && average > 0))
             let name = NutrientNames.displayName(for: nutrient)
-            lines.append(
-                Line(
-                    id: nutrient,
-                    text: "\(name): average \(figure.text) a day over \(values.count) logged "
-                        + (values.count == 1 ? "day" : "days")))
+            let dayCount = values.count == 1 ? "1 logged day" : "\(values.count) logged days"
+            let text = partialDays > 0
+                ? "\(name): at least \(figure.text) a day over \(dayCount)"
+                : "\(name): average \(figure.text) a day over \(dayCount)"
+            lines.append(Line(id: nutrient, text: text))
         }
         return InsightsAverages(lines: lines)
     }

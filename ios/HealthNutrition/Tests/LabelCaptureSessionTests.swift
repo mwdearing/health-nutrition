@@ -134,11 +134,16 @@ final class LabelCaptureSessionTests: XCTestCase {
         let session = LabelCaptureSession(model: model)
         let state = LabelCaptureSheetState(model: model, session: session)
 
-        state.report("This device cannot read text with the camera. Type the values in instead.")
+        // The production copy for an unsupported device, from the same chooser the sheet calls.
+        let unsupported = CameraAccessNotice.unavailableMessage(
+            isSupported: false, access: .authorized, isAvailable: false, sheet: .label)
+        XCTAssertEqual(unsupported, CameraAccessNotice.labelUnsupportedMessage)
+
+        state.report(try! XCTUnwrap(unsupported))
 
         XCTAssertFalse(state.canReturnToValues)
         XCTAssertFalse(state.backToValues(), "there is no draft to return to")
-        XCTAssertEqual(state.failureMessage, "This device cannot read text with the camera. Type the values in instead.")
+        XCTAssertEqual(state.failureMessage, CameraAccessNotice.labelUnsupportedMessage)
     }
 }
 #endif

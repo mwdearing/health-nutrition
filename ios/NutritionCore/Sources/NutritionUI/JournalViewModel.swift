@@ -160,6 +160,9 @@ public final class JournalViewModel: ObservableObject {
     private let journalZoneID: () -> String
     /// The zone the Diary groups its days in. The arrows and the jump both use it, so they agree with the sections.
     public var dayZone: TimeZone { TimeZone(identifier: journalZoneID()) ?? TimeZone.current }
+    /// The day keys the Diary arrows step through, in list order: today's empty day too, which the
+    /// sections leave out (#539).
+    public var arrowSectionIDs: [String] { diarySections.map(\.id) }
     private let locale: Locale
     private let preferences: DisplayPreferences
 
@@ -168,7 +171,7 @@ public final class JournalViewModel: ObservableObject {
         goals: GoalStore? = nil,
         lookup: NutrientFactsLookup = UnknownNutrientFacts(),
         timeZoneIdentifier: String? = nil,
-        timeZoneProvider: @escaping () -> String = { TimeZone.current.identifier },
+        timeZoneProvider: @escaping () -> String = { DiaryZone.identifier() },
         locale: Locale = .current,
         makeID: @escaping () -> String = { UUID().uuidString.lowercased() },
         preferences: DisplayPreferences = InMemoryDisplayPreferences()
@@ -198,7 +201,7 @@ public final class JournalViewModel: ObservableObject {
             var intakesByDay: [String: [Intake]] = [:]
             // One snapshot is read once per load, however many entries name it.
             var snapshots: [String: ProductDefinition?] = [:]
-            let loggedUnits = LoggedUnitIndex.load(from: store)
+            let loggedUnits = try LoggedUnitIndex.loadOrThrow(from: store)
             for intake in try store.activeIntakes() where intake.lifecycle == .active {
                 guard let zone = TimeZone(identifier: intake.timeZoneIdentifier) else {
                     skipped += 1
@@ -290,7 +293,12 @@ public final class JournalViewModel: ObservableObject {
             goalsErrorMessage = goalsReadFailed ? GoalsViewModel.readFailedMessage : nil
             hasLoaded = true
         } catch {
+            // Clear everything the last successful load built: a failed read must not leave its totals on screen.
             todaySection = nil
+            sections = []
+            skippedCount = 0
+            weekSummary = nil
+            goalsErrorMessage = nil
             errorMessage = "Could not read the journal."
         }
     }
@@ -859,4 +867,10 @@ public final class JournalViewModel: ObservableObject {
         let parts = calendar.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
     }
+}
+
+/// The zone a new entry is stamped with and the Diary groups its days in, when no override is given (#539).
+/// The add flow and the Diary both default to this one function, so the two cannot drift apart.
+public enum DiaryZone {
+    public static func identifier() -> String { TimeZone.current.identifier }
 }

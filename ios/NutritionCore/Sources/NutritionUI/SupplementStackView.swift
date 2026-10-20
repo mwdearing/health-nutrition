@@ -136,6 +136,7 @@ public struct SupplementStackView: View {
                 UndoToast(token.message) {
                     if self.model.undo(now: self.now()) { self.onLogged() }
                 }
+                .id(token.intakeID)
                 .padding(DesignSpacing.m)
                 .task(id: token.intakeID) {
                     do { try await Task.sleep(for: .seconds(10)) } catch { return }
@@ -335,6 +336,8 @@ struct SupplementScheduleEditor: View {
                             } label: {
                                 Image(systemName: "minus.circle").accessibilityHidden(true)
                             }
+                            .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(Rectangle())
                             .buttonStyle(.borderless)
                             .accessibilityLabel("Remove \(SupplementStackText.time(item.time))")
                         }
