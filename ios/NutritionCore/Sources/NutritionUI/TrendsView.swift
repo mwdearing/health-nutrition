@@ -28,6 +28,8 @@ public struct InsightsHost: View {
     }
 
     /// The energy and the three macros: the figures the Today ring and columns show.
+    /// The vitamins row's detail. It says what the row compares, without repeating the title (#537).
+    static let vitaminsDetail = "Compared with published reference values"
     private static let averagedNutrients = ["energy", "protein", "carbohydrate", "fat"]
 
     public var body: some View {
@@ -69,7 +71,7 @@ public struct TrendsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: DesignSpacing.m) {
                 row(
-                    title: "Vitamins and minerals", detail: "Vitamins and minerals against published reference values",
+                    title: "Vitamins and minerals", detail: Self.vitaminsDetail,
                     systemImage: "leaf"
                 ) {
                     NutrientGapsView(makeModel: { today.makeNutrientGaps() }, now: now)
