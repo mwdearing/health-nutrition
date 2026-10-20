@@ -291,9 +291,9 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     private let afterSuccessfulErase: @MainActor () -> Void
     /// Forgets an optional community session on this device; the default keeps account-free builds standalone.
     private let eraseLocalAccount: () async throws -> Void
-    /// Reads back the system's pending reminder requests after the reminder erasers ran. True when any of ours remain,
-    /// so the erase names "reminders" as still on the phone. The reminder erasers cannot report a failure themselves.
-    private let remindersStillPending: () async -> Bool
+    /// Reads back the system's pending reminder requests after the reminder erasers ran, and names each kind of
+    /// reminder that still has one ("reminders", "custom reminders"). The reminder erasers cannot report a failure.
+    private let remindersStillPending: () async -> [String]
     /// How long an erase waits for a running import; a test shortens it so the timeout path runs quickly.
     private let importWaitSeconds: TimeInterval
 
@@ -360,7 +360,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         beforeErase: @escaping @MainActor () -> Void = {},
         afterSuccessfulErase: @escaping @MainActor () -> Void = {},
         eraseLocalAccount: @escaping () async throws -> Void = {},
-        remindersStillPending: @escaping () async -> Bool = { false },
+        remindersStillPending: @escaping () async -> [String] = { [] },
         importWaitSeconds: TimeInterval = ConnectionsPrivacyViewModel.eraseWaitsForImportSeconds
     ) {
         self.store = store
@@ -671,7 +671,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         }
         // Every export file this app wrote goes, not only the one this model remembers: the app can be
         // killed after an export, and the next session's model starts with no URL to delete.
-        if await remindersStillPending() { leftBehind.append("reminders") }
+        leftBehind += await remindersStillPending()
         if !removeEveryExportFile() { leftBehind.append("export files") }
         let failed = !leftBehind.isEmpty
         // The handle this screen was holding is one of those files, or is already gone. Clearing it

@@ -165,7 +165,15 @@ final class AppServices {
                 account?.pauseSharingForErase()
                 productSharing?.closeGate(reason: .erase)
             },
-            remindersStillPending: { await reminderScheduler.pendingDailyCount() > 0 },
+            remindersStillPending: {
+                var names: [String] = []
+                if await reminderScheduler.pendingDailyCount() > 0 { names.append("reminders") }
+                if let custom = reminderScheduler as? (ReminderScheduling & CustomReminderScheduling),
+                   await custom.pendingCustomCount() > 0 {
+                    names.append("custom reminders")
+                }
+                return names
+            },
             afterSuccessfulErase: {
                 displayPreferences.clearProductSharingPausesAfterErase()
                 HealthKitReader.forgetReadAccess()

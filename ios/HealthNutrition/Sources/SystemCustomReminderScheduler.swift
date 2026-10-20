@@ -34,4 +34,9 @@ extension SystemReminderScheduler: CustomReminderScheduling {
         center.removePendingNotificationRequests(withIdentifiers: identifiers)
         center.removeDeliveredNotifications(withIdentifiers: identifiers)
     }
+
+    func pendingCustomCount() async -> Int {
+        let pending = await UNUserNotificationCenter.current().pendingNotificationRequests()
+        return pending.filter { $0.identifier.hasPrefix(Self.customPrefix) }.count
+    }
 }
