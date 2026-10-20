@@ -88,6 +88,43 @@ final class HealthIntakeTotalsTests: XCTestCase {
         XCTAssertEqual(combined[1].knownSum, .known(40, proteinUnit))
     }
 
+    func testPartiallyReadNutrientIsAtLeastEvenWithSomeSamplesSummed() {
+        // Protein has samples summed, but its query skipped one, so its key is not in readKeys.
+        let combined = HealthIntakeTotals.combine(
+            [line("protein", known: 40, unit: proteinUnit)],
+            outside: .read(values: ["protein": 10], readKeys: []))
+        XCTAssertEqual(combined.first?.isPartial, true)
+        XCTAssertEqual(combined.first?.knownSum, .known(50, proteinUnit))
+    }
+
+    func testPartialJournalWithNoKnownSumAndHealthKnownShowsHealthOnly() {
+        let combined = HealthIntakeTotals.combine(
+            [NutrientProgressLine(nutrient: "energy", amount: .unknown, goal: nil, isPartial: true, knownSum: nil)],
+            outside: .read(values: ["energy": 620], readKeys: ["energy"]))
+        XCTAssertEqual(combined.first?.isPartial, true)
+        XCTAssertEqual(combined.first?.knownSum, .known(620, energyUnit))
+    }
+
+    func testMultipleReadKeysInOneReadAllCombine() {
+        let combined = HealthIntakeTotals.combine(
+            [line("energy", known: 500, unit: energyUnit), line("protein", known: 40, unit: proteinUnit)],
+            outside: .read(values: ["energy": 620, "protein": 10], readKeys: ["energy", "protein"]))
+        XCTAssertEqual(combined[0].amount, .known(1120, energyUnit))
+        XCTAssertEqual(combined[1].amount, .known(50, proteinUnit))
+    }
+
+    func testReadKeysUseTheSameCanonicalKeysAsTheOutsideTotals() {
+        // The reader's keys come from each identifier's mapping, and the totals are keyed the same way.
+        for identifier in OutsideIntakeTotals.readQuantityTypeIdentifiers {
+            let mapping = HealthKitWritePlanner.mappings.first { $0.quantityTypeIdentifier == identifier }
+            XCTAssertNotNil(mapping, identifier)
+            let sample = OutsideNutrientSample(
+                quantityTypeIdentifier: identifier, value: 1, unit: mapping?.unit ?? .g, isWrittenByThisApp: false)
+            let totals = OutsideIntakeTotals.totals(from: [sample])
+            XCTAssertEqual(Set(totals.keys), [mapping?.nutrientKey].compactMap { $0 }, identifier)
+        }
+    }
+
     func testNothingKnownOnEitherSideStaysUnknown() {
         let lines = [unknownLine("energy")]
         XCTAssertEqual(HealthIntakeTotals.combine(lines, outside: .read(values: [:], readKeys: [])), lines)

@@ -41,11 +41,17 @@ public enum HealthIntakeTotals {
 
         // Health's side: a value Health returned, a known zero for a query that succeeded with no samples,
         // and unknown (nil, never zero) for a query that failed or was not run.
+        // A nutrient whose query was skipped for any sample stays incomplete even when some of its samples were summed.
         var outsideValue: Decimal?
+        var outsideComplete = false
         if case .read(let values, let readKeys) = outside {
-            outsideValue = values[line.nutrient] ?? (readKeys.contains(line.nutrient) ? 0 : nil)
+            if readKeys.contains(line.nutrient) {
+                outsideValue = values[line.nutrient] ?? 0
+                outsideComplete = true
+            } else {
+                outsideValue = values[line.nutrient]
+            }
         }
-        let outsideComplete = outsideValue != nil
 
         guard journalValue != nil || outsideValue != nil else { return line }
         let sum = NutrientValue.known((journalValue ?? 0) + (outsideValue ?? 0), unit)
