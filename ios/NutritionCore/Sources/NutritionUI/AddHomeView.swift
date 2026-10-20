@@ -26,7 +26,6 @@ public struct AddHomeView: View {
     /// Opens the details form for a Recent row (long-press or the Details action). Nothing is logged there.
     private let onOpen: ((RepeatTemplate) -> Void)?
     @State private var quickAdd: QuickAddViewModel?
-    @State private var confirmDiscardQuickAdd = false
 
     public init(model: AddHomeViewModel, onBarcode: @escaping () -> Void,
         onLabel: @escaping () -> Void, onLibrary: @escaping () -> Void,
