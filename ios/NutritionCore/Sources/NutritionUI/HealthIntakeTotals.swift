@@ -65,7 +65,7 @@ public enum HealthIntakeTotals {
         var outsideComplete = false
         // Health's values and read keys are canonical, so an alias line (a goal stored under a captured alias) is looked up
         // under its canonical key.
-        let canonical = HealthKitWritePlanner.canonicalKey(for: line.nutrient)
+        let canonical = line.nutrient
         if case .read(let values, let readKeys) = outside {
             if readKeys.contains(canonical) {
                 outsideValue = values[canonical] ?? 0
