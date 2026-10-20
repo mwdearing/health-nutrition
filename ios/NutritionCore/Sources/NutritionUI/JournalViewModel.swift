@@ -188,6 +188,18 @@ public final class JournalViewModel: ObservableObject {
     }
 
     /// Groups active intakes by the local day of each intake's own time zone, newest first.
+    /// Reloads the Diary on each time-zone change, so its days follow the device zone without a relaunch (#648).
+    /// The changes are injected so a test can send one without a system notification.
+    public func runZoneChangeReloads<Changes: AsyncSequence>(
+        _ changes: Changes, now: @escaping () -> Date
+    ) async where Changes.Element == Void {
+        do {
+            for try await _ in changes { load(now: now()) }
+        } catch {
+            return
+        }
+    }
+
     public func load(now: Date) {
         defer { loadCount += 1 }
         copyNotice = nil
