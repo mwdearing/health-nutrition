@@ -397,7 +397,7 @@ public final class TodayViewModel: ObservableObject {
                     line: line, hasEntries: waterEntries > 0 || countedWater > 0, missingCount: 0,
                     skippedWaterCount: skipped, someKnown: countedWater > 0, unitSystem: self.preferences.unitSystem)
             }
-            let burnedCounted = (preferences as? ActivityGoalPreferences)?.addsActiveEnergyToGoal == true
+            let burnedCounted = true
             let foodLine = progress.first { $0.nutrient == Self.energyKey }
             calorieRemaining = CalorieRemaining.make(
                 goal: storedEnergyTarget,
