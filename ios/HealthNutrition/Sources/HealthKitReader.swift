@@ -113,20 +113,20 @@ final class HealthKitReader: BodyActivityReading {
             // nutrient with a fixed IU amount (vitamin D); any other sample is unconvertible.
             let outcomes: [OutsideSampleOutcome] = found.map { sample in
                 let value: Double
-                let unit: MeasureUnit
+                let sampleUnit: MeasureUnit
                 if sample.quantity.is(compatibleWith: hkUnit) {
                     value = sample.quantity.doubleValue(for: hkUnit)
-                    unit = unit
+                    sampleUnit = unit
                 } else if hasIUFactor, sample.quantity.is(compatibleWith: .internationalUnit()) {
                     value = sample.quantity.doubleValue(for: .internationalUnit())
-                    unit = .iu
+                    sampleUnit = .iu
                 } else {
                     return .unconvertible
                 }
                 return .sample(OutsideNutrientSample(
                     quantityTypeIdentifier: identifier,
                     value: Decimal(value),
-                    unit: unit,
+                    unit: sampleUnit,
                     isWrittenByThisApp: sample.sourceRevision.source == own))
             }
             queries.append(OutsideQuery(nutrientKey: key, outcome: .samples(outcomes)))
