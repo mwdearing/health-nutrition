@@ -1244,4 +1244,19 @@ final class DailyTotalsTests: XCTestCase {
         let entry = (components: [component], snapshot: nil as ProductDefinition?, category: "food")
         XCTAssertTrue(DailyTotalsBuilder.isDistrusted(entry, lookup: lookup))
     }
+
+    /// #590: the alias check covers another aliased nutrient too, not only energy: carbohydrate's alias
+    /// "carbohydrates" distrusts the entry when the canonical key is positive.
+    func testANegativeCarbohydrateAliasDistrustsAnEntryWhoseCanonicalKeyIsPositive() {
+        let keys = HealthKitWritePlanner.acceptedKeys(for: "carbohydrate")
+        XCTAssertGreaterThan(keys.count, 1, "carbohydrate has an alias to check")
+        var stated: [String: NutrientValue] = [:]
+        for (index, key) in keys.enumerated() {
+            stated[key] = .known(index == 0 ? 100 : -5, .g)
+        }
+        let component = IntakeComponent(componentID: "oats", name: "Oats", amount: 40, unit: .g)
+        let lookup = NutrientFacts(values: ["oats": stated])
+        let entry = (components: [component], snapshot: nil as ProductDefinition?, category: "food")
+        XCTAssertTrue(DailyTotalsBuilder.isDistrusted(entry, lookup: lookup))
+    }
 }
