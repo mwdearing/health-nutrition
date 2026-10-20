@@ -194,7 +194,7 @@ private struct SettingsContent: View {
                     Text(error).font(.footnote).foregroundStyle(TokenColors.error)
                 }
                 if connections.eraseRetryAvailable {
-                    Button("Retry") { Task { await self.connections.eraseAllData() } }
+                    Button("Retry") { self.confirmingErase = true }
                         .disabled(self.connections.isErasing)
                 }
             } header: {

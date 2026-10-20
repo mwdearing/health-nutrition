@@ -607,35 +607,28 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         // than queueing matters here, because the person asked for everything gone, not for the erase to
         // happen first and then be undone.
         guard !isErasing else { return false }
-        beforeErase()
         isErasing = true
         eraseRetryAvailable = false
         deferredImportEffectsDuringErase.removeAll()
-        // The import state from *before* the erase goes now, as the screen enters its erasing state: "Imported
-        // 3 entries" describes a journal that is about to stop existing. It is cleared here rather than at
-        // the end, because an import asked for during the erase is refused with a message of its own, and
-        // clearing afterwards would throw that away - and it is the only thing on the screen explaining why
-        // the file they chose did nothing.
         defer { isErasing = false }
-        // A restore flag left behind would let the next import of that file put back favorites the person is
-        // erasing, so it goes before any store is touched and before the import is cancelled. A flag that cannot be
-        // removed stops the erase with nothing erased and no import cancelled, and the screen offers Retry.
+        // Wait for a running import to finish. The wait never cancels the import: if it runs past the wait, the erase
+        // touches nothing, the import keeps running, and the person is told nothing was erased so they can try again.
+        guard importGate.wait(upTo: Self.eraseWaitsForImportSeconds) else {
+            errorMessage = Self.eraseNothingErasedMessage
+            eraseRetryAvailable = true
+            resolveDeferredImportEffectsAfterErase(journalEraseSucceeded: false)
+            return false
+        }
+        // With the import gone, no import can run again until this erase finishes. A restore flag left behind would
+        // let the next import of that file put back favorites the person is erasing, so it goes before any store is
+        // touched. A flag that cannot be removed stops the erase with nothing erased, and the screen offers Retry.
         guard clearRestoreFlagOrStop() else { return false }
         // The import state from *before* the erase goes now, once the erase is known to be going ahead, so a failed
         // flag clear leaves the import on screen as it was.
         clearImport()
         // Anything an in-flight import publishes afterwards is about a journal that is about to be deleted.
         importGeneration += 1
-        guard importGate.wait(upTo: Self.eraseWaitsForImportSeconds) else {
-            // The import ran past the wait, so it is cancelled now. Nothing was erased, and no flag clear follows the
-            // cancel, so a failure can never leave a cancelled import behind a "Nothing was erased" message.
-            importTask?.cancel()
-            errorMessage = Self.eraseNothingErasedMessage
-            eraseRetryAvailable = true
-            return false
-        }
-        // An import that was running when the flag was first cleared may have written a new one before it finished.
-        guard clearRestoreFlagOrStop() else { return false }
+        beforeErase()
 
         // Every store and export file that is still on the phone afterwards is named, in the order the erase ran,
         // so the person knows exactly what to retry. One failure never stops the rest.

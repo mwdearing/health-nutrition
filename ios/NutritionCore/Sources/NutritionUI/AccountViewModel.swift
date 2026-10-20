@@ -299,8 +299,9 @@ public final class AccountViewModel: ObservableObject {
         try await service.discardLocalSession()
     }
 
-    /// Called after Erase all data cleared the stored preferences: a signed-in person who has not read the
-    /// disclosure on this device is asked again, and nothing is shared until they do.
+    /// Called once Erase all data has cleared the restore flag and is going ahead, just before the stores are
+    /// erased: a signed-in person who has not read the disclosure on this device is asked again, and nothing is
+    /// shared until they do.
     public func pauseSharingForErase() {
         accountIdentity = UUID()
         productCapabilities = nil
