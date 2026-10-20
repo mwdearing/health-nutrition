@@ -202,7 +202,7 @@ public struct TodayView: View {
                 }
                 if self.otherWaterOpen {
                     HStack(spacing: DesignSpacing.s) {
-                        LabeledField(self.model.otherWaterFieldLabel, focus: self.$otherWaterFocused) { focus in
+                        LabeledField(self.model.otherWaterFieldLabel, focus: self.$otherWaterFocused, spokenTitle: true) { focus in
                             TextField(text: self.$otherWaterText, prompt: Text("For example, 250")) {
                                 Text(self.model.otherWaterFieldLabel)
                             }

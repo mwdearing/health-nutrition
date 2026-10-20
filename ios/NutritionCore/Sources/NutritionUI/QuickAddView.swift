@@ -35,7 +35,7 @@ public struct QuickAddView: View {
                         Text(label.displayName).tag(MealLabel?.some(label))
                     }
                 }
-                LabeledField("Name (optional)") { focus in
+                LabeledField("Name (optional)", spokenTitle: true) { focus in
                     TextField(text: $model.name, prompt: Text(QuickAddViewModel.defaultName)) {
                         Text("Name")
                     }
@@ -70,7 +70,7 @@ public struct QuickAddView: View {
     }
 
     private func amountField(_ field: QuickAddViewModel.Field, text: Binding<String>) -> some View {
-        LabeledField("\(field.label) (\(field.unit.screenSymbol))", error: model.error(for: field)) { focus in
+        LabeledField("\(field.label) (\(field.unit.screenSymbol))", error: model.error(for: field), spokenTitle: true) { focus in
             TextField(text: text, prompt: Text("0")) {
                 Text(field.label)
             }

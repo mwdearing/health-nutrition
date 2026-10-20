@@ -53,12 +53,16 @@ public struct LabeledField<Content: View>: View {
     private let onFocusEnd: (() -> Void)?
     private let onFocusBegin: (() -> Void)?
     private let content: (FocusState<Bool>.Binding) -> Content
+    private let spokenTitle: Bool
     @FocusState private var ownFocus: Bool
 
+    /// - Parameter spokenTitle: when true, the content's spoken name is the visible title. Only for content that is a
+    ///   single control; content holding a second control (a picker, a button) keeps its own names.
     public init(
         _ label: String,
         error: String? = nil,
         focus: FocusState<Bool>.Binding? = nil,
+        spokenTitle: Bool = false,
         onFocusEnd: (() -> Void)? = nil,
         onFocusBegin: (() -> Void)? = nil,
         @ViewBuilder content: @escaping (FocusState<Bool>.Binding) -> Content
@@ -66,9 +70,15 @@ public struct LabeledField<Content: View>: View {
         self.label = label
         self.error = error
         self.externalFocus = focus
+        self.spokenTitle = spokenTitle
         self.onFocusEnd = onFocusEnd
         self.onFocusBegin = onFocusBegin
         self.content = content
+    }
+
+    /// The content with the title as its spoken name when opted in; otherwise the content unchanged.
+    @ViewBuilder private func spoken(_ view: Content) -> some View {
+        if spokenTitle { view.accessibilityLabel(label) } else { view }
     }
 
     private var focus: FocusState<Bool>.Binding { externalFocus ?? $ownFocus }
@@ -79,9 +89,7 @@ public struct LabeledField<Content: View>: View {
                 .font(.footnote)
                 .foregroundStyle(TokenColors.textSecondary)
                 .accessibilityHidden(true)
-            content(focus)
-                // The visible title is the field's spoken name, so VoiceOver and UI tests read it while typing.
-                .accessibilityLabel(label)
+            spoken(content(focus))
                 .padding(.horizontal, DesignSpacing.m)
                 .padding(.vertical, DesignSpacing.s)
                 .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
