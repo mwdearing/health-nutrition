@@ -56,7 +56,7 @@ public struct InsightsHost: View {
 /// The Trends tab: the two ways to look back, each a row that opens its screen in this tab's stack.
 public struct TrendsView: View {
     /// The vitamins row's detail. It says what the row compares, without repeating the title (#537).
-    static let vitaminsDetail = "Compared with published reference values"
+    static let vitaminsDetail = "Vitamins and minerals against published reference values"
 
     private let today: TodayViewModel
     private let journal: JournalViewModel
