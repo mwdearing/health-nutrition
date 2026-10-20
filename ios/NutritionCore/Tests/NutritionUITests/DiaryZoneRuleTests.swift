@@ -6,8 +6,8 @@ import XCTest
 /// The add flow stamps the zone at save, and the Diary files the row under the same zone (#539).
 @MainActor
 final class DiaryZoneRuleTests: XCTestCase {
-    /// 03:00 UTC on 2026-10-20: 23:00 on the 19th in New York, 12:00 on the 20th in Tokyo.
-    private let now = Date(timeIntervalSince1970: 1_792_468_800)
+    /// 02:00 UTC on 2026-10-20: 22:00 on the 19th in New York (EDT), 11:00 on the 20th in Tokyo.
+    private let now = Date(timeIntervalSince1970: 1_792_461_600)
 
     private func makeStore() throws -> SwiftDataJournalStore {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -31,8 +31,8 @@ final class DiaryZoneRuleTests: XCTestCase {
 
         let journal = JournalViewModel(store: store, timeZoneProvider: { zone })
         journal.load(now: now)
-        XCTAssertEqual(journal.arrowSectionIDs.first, "2026-10-20")
         XCTAssertEqual(journal.sections.first?.id, "2026-10-20")
+        XCTAssertEqual(journal.arrowSectionIDs.first, "2026-10-20")
     }
 
     /// The Diary's arrows start from today's day even when today is empty, the same list the Diary shows (#539).
@@ -46,5 +46,9 @@ final class DiaryZoneRuleTests: XCTestCase {
         let journal = JournalViewModel(store: store, timeZoneIdentifier: "UTC")
         journal.load(now: now)
         XCTAssertEqual(journal.arrowSectionIDs.first, "2026-10-20")
+        // With today as the only visible day, the arrows start from today's midnight, not yesterday's.
+        let base = JournalViewModel.arrowBaseDay(
+            sectionIDs: journal.arrowSectionIDs, visible: ["2026-10-20"], zone: journal.dayZone, now: now)
+        XCTAssertEqual(JournalViewModel.dayKey(base, zone: journal.dayZone), "2026-10-20")
     }
 }
