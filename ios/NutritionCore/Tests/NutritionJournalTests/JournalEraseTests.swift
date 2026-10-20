@@ -167,7 +167,7 @@ final class JournalEraseTests: XCTestCase {
         try store.create(sampleIntake(), components: [oats()], product: product(), now: when)
         let calls = FileCalls()
         let operations = StoreFileOperations(
-            checkpoint: { _ in throw CocoaError(.fileReadNoPermission) },
+            checkpoint: { _ in throw StoreFileError.checkpointFailed },
             remove: { file in
                 calls.removed.append(file.lastPathComponent)
                 try FileManager.default.removeItem(at: file)
