@@ -142,7 +142,7 @@ final class AppServicesEraseTests: XCTestCase {
     /// custom reminders join only with the system scheduler, which the test scheduler does not provide.
     func testTheProductionEraseListWithoutTheSystemSchedulerIsPinned() throws {
         let (services, _) = try makeServices()
-        XCTAssertEqual(services.eraseSteps.map(\.erasureName), [
+        XCTAssertEqual(productionEraseNames(withCustomReminders: false), [
             "widget data", "saved meals", "supplements", "reminders",
             "journal", "favorites", "recipes", "goals",
         ])
@@ -157,10 +157,36 @@ final class AppServicesEraseTests: XCTestCase {
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         let services = try AppServices.make(
             directory: directory, reminderScheduler: CustomCapableReminderScheduler())
-        XCTAssertEqual(services.eraseSteps.map(\.erasureName), [
+        XCTAssertEqual(productionEraseNames(withCustomReminders: true), [
             "widget data", "saved meals", "supplements", "reminders", "custom reminders",
             "journal", "favorites", "recipes", "goals",
         ])
+    }
+
+    /// The erase order, built by the same function production calls, from stores in a temporary directory and fakes
+    /// for the reminder centers. The custom eraser joins only when the scheduler takes custom reminders.
+    private func productionEraseNames(withCustomReminders: Bool) -> [String] {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HealthNutritionTests", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        var reminders: [JournalErasing] = [
+            ReminderEraser(scheduler: RecordingReminderScheduler(), erasures: ReminderErasures()),
+        ]
+        if withCustomReminders {
+            reminders.append(CustomReminderEraser(
+                store: UserDefaultsCustomReminderStore(), scheduler: CustomCapableReminderScheduler(),
+                erasures: ReminderErasures()))
+        }
+        let order = ConnectionsPrivacyViewModel.eraseOrder(
+            widgets: WidgetSnapshotEraser(), savedMeals: UserDefaultsSavedMealStore(),
+            supplements: UserDefaultsSupplementStackStore(), reminders: reminders,
+            journal: try! SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store")),
+            favorites: try! SwiftDataFavoritesStore(url: directory.appendingPathComponent("favorites.store")),
+            recipes: try! SwiftDataRecipeStore(url: directory.appendingPathComponent("recipes.store")),
+            goals: try! SwiftDataGoalStore(url: directory.appendingPathComponent("goals.store")))
+        return order.map(\.erasureName)
     }
 
     /// The app supplies its account model to the privacy erase hook. The hook drops the local session

@@ -51,21 +51,22 @@ public enum ConnectionsPrivacyImportState: Equatable {
 /// waits on the main actor. `begin` is called before a restore starts and `end` when it has finished, whether
 /// it succeeded or failed; `wait` reports whether every restore in flight had finished within the time it was
 /// given, so a caller never blocks forever on work that cannot arrive.
-final class ImportGate: @unchecked Sendable {
+public final class ImportGate: @unchecked Sendable {
     private let condition = NSCondition()
+    public init() {}
     /// How many restores are in flight. A count rather than a flag: two imports can overlap, and the first
     /// of them to finish must not report the gate idle while the second is still writing.
     private var inFlight = 0
 
     /// Marks a restore as started.
-    func begin() {
+    public func begin() {
         condition.lock()
         inFlight += 1
         condition.unlock()
     }
 
     /// Marks a restore as finished, and wakes anything waiting once the last one is gone.
-    func end() {
+    public func end() {
         condition.lock()
         if inFlight > 0 { inFlight -= 1 }
         if inFlight == 0 { condition.broadcast() }
@@ -75,7 +76,7 @@ final class ImportGate: @unchecked Sendable {
     /// Blocks the caller until **every** restore in flight has finished. True when there was nothing running,
     /// or when they all finished in time; false when one was still running after `timeout`, which is the
     /// caller's cue to refuse rather than erase beside a restore that is still writing.
-    func wait(upTo timeout: TimeInterval) -> Bool {
+    public func wait(upTo timeout: TimeInterval) -> Bool {
         let deadline = Date(timeIntervalSinceNow: timeout)
         condition.lock()
         defer { condition.unlock() }
@@ -733,7 +734,6 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     ) -> [JournalErasing] {
         [widgets, savedMeals, supplements] + reminders + [journal, favorites, recipes, goals]
     }
-
 
     /// Puts the display preferences back to their defaults and republishes that state, so the screen
     /// shows what a person sees on a fresh install rather than the settings just erased.

@@ -612,6 +612,8 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         XCTAssertTrue(finished)
         // The import finishes after the timed-out erase and its effects are applied, not dropped.
         XCTAssertEqual(model.journalRestoreGeneration, 1)
+        // Each effect of the import ran exactly once: one restore, one generation bump.
+        XCTAssertEqual(journal.restoredPlans.count, 1)
         XCTAssertEqual(try journal.activeIntakes().map(\.id), [entryID])
     }
 

@@ -30,8 +30,6 @@ final class AppServices {
     /// The Connections and privacy screen. It reads the same stores and, for its "Erase all data"
     /// action, holds all four as erasers, so one action empties every file the app keeps.
     let connections: ConnectionsPrivacyViewModel
-    /// The stores an erase runs, in erase order; the erase screen's view model holds the same list.
-    let eraseSteps: [JournalErasing]
     /// The Daily goals screen, reached from the Library screen's Connections section.
     let goals: GoalsViewModel
     /// Saved meals, saved from the Journal and logged from Find products. Kept in the defaults domain and
@@ -157,7 +155,6 @@ final class AppServices {
             widgets: widgetSnapshotEraser, savedMeals: savedMealStore, supplements: supplementSchedules,
             reminders: reminderErasers, journal: journalStore, favorites: favoritesStore, recipes: recipeStore,
             goals: goalStore)
-        eraseSteps = erasers
         connections = ConnectionsPrivacyViewModel(
             store: journalStore, favorites: favoritesStore, savedMeals: savedMealStore, appVersion: Self.appVersion,
             erasers: erasers,
