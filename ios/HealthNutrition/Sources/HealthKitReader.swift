@@ -93,10 +93,16 @@ final class HealthKitReader: BodyActivityReading {
         var queries: [OutsideQuery] = []
         for identifier in OutsideIntakeTotals.readQuantityTypeIdentifiers {
             let plan = OutsideIntakeTotals.readPlan(for: identifier, unitIsReadable: { Self.healthKitUnit(for: $0) != nil })
-            guard case .read(let key, let unit, let hasIUFactor) = plan, let hkUnit = Self.healthKitUnit(for: unit) else {
+            guard case .read(let key, let unit, let hasIUFactor) = plan else {
                 if case .unreadable(let key) = plan {
                     queries.append(OutsideQuery(nutrientKey: key, outcome: .failed))
                 }
+                continue
+            }
+            // Unreachable today (readPlan and this lookup share one predicate), but a nutrient with no HealthKit unit
+            // must still be left unread under its own key rather than dropped.
+            guard let hkUnit = Self.healthKitUnit(for: unit) else {
+                queries.append(OutsideQuery(nutrientKey: key, outcome: .failed))
                 continue
             }
             let found: [HKQuantitySample]
@@ -112,15 +118,7 @@ final class HealthKitReader: BodyActivityReading {
             // with (checked first, so no incompatible conversion is attempted). IU is passed through only for a
             // nutrient with a fixed IU amount (vitamin D); any other sample is unconvertible.
             let outcomes: [OutsideSampleOutcome] = found.map { sample in
-                let value: Double
-                let sampleUnit: MeasureUnit
-                if sample.quantity.is(compatibleWith: hkUnit) {
-                    value = sample.quantity.doubleValue(for: hkUnit)
-                    sampleUnit = unit
-                } else if hasIUFactor, sample.quantity.is(compatibleWith: .internationalUnit()) {
-                    value = sample.quantity.doubleValue(for: .internationalUnit())
-                    sampleUnit = .iu
-                } else {
+                guard let (value, sampleUnit) = Self.sampleValue(sample.quantity, hkUnit: hkUnit, unit: unit, hasIUFactor: hasIUFactor) else {
                     return .unconvertible
                 }
                 return .sample(OutsideNutrientSample(
@@ -134,8 +132,20 @@ final class HealthKitReader: BodyActivityReading {
         return OutsideIntakeTotals.reading(queries)
     }
 
+    /// The value and unit a HealthKit quantity is read in, or nil when it cannot be converted. Each quantity is read in the
+    /// nutrient's unit when HealthKit says it is compatible; IU is used only for a nutrient with a fixed IU amount (vitamin D).
+    static func sampleValue(_ quantity: HKQuantity, hkUnit: HKUnit, unit: MeasureUnit, hasIUFactor: Bool) -> (Double, MeasureUnit)? {
+        if quantity.is(compatibleWith: hkUnit) {
+            return (quantity.doubleValue(for: hkUnit), unit)
+        }
+        if hasIUFactor, quantity.is(compatibleWith: .internationalUnit()) {
+            return (quantity.doubleValue(for: .internationalUnit()), .iu)
+        }
+        return nil
+    }
+
     /// The HealthKit unit for each unit the nutrient table uses. A unit not listed here returns nil, which fails the day's read.
-    private static func healthKitUnit(for unit: MeasureUnit) -> HKUnit? {
+    static func healthKitUnit(for unit: MeasureUnit) -> HKUnit? {
         switch unit.symbol {
         case "g": return .gram()
         case "mg": return .gramUnit(with: .milli)
