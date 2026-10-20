@@ -193,7 +193,7 @@ public final class JournalViewModel: ObservableObject {
         _ changes: Changes, now: @escaping () -> Date
     ) async where Changes.Element == Void {
         do {
-            for try await _ in changes { load(now: now()) }
+            _ = changes
         } catch {
             return
         }
