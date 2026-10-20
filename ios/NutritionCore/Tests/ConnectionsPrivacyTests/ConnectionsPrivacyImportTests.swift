@@ -602,6 +602,9 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         for _ in 0..<200 where model.isImporting {
             try await Task.sleep(nanoseconds: 10_000_000)
         }
+        // The import finishes after the timed-out erase and its effects are applied, not dropped.
+        XCTAssertEqual(model.journalRestoreGeneration, 1)
+        XCTAssertEqual(try journal.activeIntakes().map(\.id), [entryID])
     }
 
     /// The restore flag is cleared once the import has finished. A failed clear then cancels nothing, erases

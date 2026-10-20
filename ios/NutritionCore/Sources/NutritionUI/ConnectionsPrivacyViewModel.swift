@@ -208,6 +208,9 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     @Published public private(set) var errorMessage: String?
     /// True when `errorMessage` describes an erase that did not finish, so the screen offers Retry.
     @Published public private(set) var eraseRetryAvailable = false
+    /// True from the moment the person asks to erase (Erase or Retry) until they confirm or cancel. Nothing is erased
+    /// while this is only requested.
+    @Published public var eraseConfirmationPending = false
     @Published public private(set) var importState: ConnectionsPrivacyImportState = .idle
     @Published public private(set) var isImporting = false
     /// Main-actor count of restores whose outcomes have not yet reached `apply`. The store-write gate is
@@ -691,6 +694,32 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             resolveDeferredImportEffectsAfterErase(journalEraseSucceeded: false)
             return false
         }
+    }
+
+    /// Asks the person to confirm an erase. Erase and Retry both come through here, so neither erases on its own.
+    public func requestErase() {
+        eraseConfirmationPending = true
+    }
+
+    /// Withdraws a requested erase without erasing anything.
+    public func cancelEraseRequest() {
+        eraseConfirmationPending = false
+    }
+
+    /// Runs the erase the person has just confirmed.
+    public func confirmErase() async -> Bool {
+        eraseConfirmationPending = false
+        return await eraseAllData()
+    }
+
+    /// The stores in the order an erase runs them, and so the order a failure is listed in: widget data first, so no
+    /// publish announced before the erase lands after it, and journal after the lists it does not depend on.
+    public static func eraseOrder(
+        widgets: JournalErasing, savedMeals: JournalErasing, supplements: JournalErasing,
+        reminders: [JournalErasing], journal: JournalErasing, favorites: JournalErasing, recipes: JournalErasing,
+        goals: JournalErasing
+    ) -> [JournalErasing] {
+        [widgets, savedMeals, supplements] + reminders + [journal, favorites, recipes, goals]
     }
 
     /// Puts the display preferences back to their defaults and republishes that state, so the screen
