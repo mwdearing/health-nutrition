@@ -65,6 +65,13 @@ final class HealthIntakeTotalsTests: XCTestCase {
         XCTAssertEqual(combined.first?.knownSum, .known(620, energyUnit))
     }
 
+    func testExplicitZeroFromHealthIsAKnownValue() {
+        let combined = HealthIntakeTotals.combine(
+            [line("energy", known: 500, unit: energyUnit)], outside: .read(["energy": 0]))
+        XCTAssertEqual(combined.first?.amount, .known(500, energyUnit))
+        XCTAssertEqual(combined.first?.isPartial, false)
+    }
+
     func testNothingKnownOnEitherSideStaysUnknown() {
         let lines = [unknownLine("energy")]
         XCTAssertEqual(HealthIntakeTotals.combine(lines, outside: .failed), lines)
