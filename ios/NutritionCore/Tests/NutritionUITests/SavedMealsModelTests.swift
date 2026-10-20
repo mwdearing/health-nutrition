@@ -513,6 +513,24 @@ final class SavedMealsModelTests: XCTestCase {
 
     // MARK: Save as meal from the Journal
 
+    /// A saved meal that is refused keeps the copy's Undo, because only a saved meal finalizes it (#535).
+    func testARefusedSavedMealKeepsTheCopysUndo() throws {
+        let journal = try makeJournal()
+        let yesterday = now.addingTimeInterval(-86_400)
+        try addEntry(journal, "Oats", at: yesterday)
+        let model = JournalViewModel(store: journal, timeZoneIdentifier: "UTC")
+        let savedMeals = SavedMealsModel(store: UserDefaultsSavedMealStore(defaults: makeDefaults()), journal: journal)
+        model.savedMeals = savedMeals
+        model.load(now: now)
+        let day = try XCTUnwrap(model.sections.first)
+        XCTAssertTrue(model.saveMeal(day.id, groupID: "Breakfast", name: "Usual breakfast"))
+        _ = try XCTUnwrap(model.copyDayToToday(day.id, now: now))
+        XCTAssertTrue(model.canUndoCopy(now: now))
+
+        XCTAssertFalse(model.saveMeal(day.id, groupID: "Dinner", name: "Usual breakfast"))
+        XCTAssertTrue(model.canUndoCopy(now: now), "a refused save does not finalize the copy's Undo")
+    }
+
     func testJournalSavesOneMealGroupOfADay() throws {
         let journal = try makeJournal()
         let yesterday = now.addingTimeInterval(-86_400)

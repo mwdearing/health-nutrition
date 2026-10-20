@@ -463,13 +463,10 @@ public final class JournalViewModel: ObservableObject {
     @discardableResult
     public func undoCopy(now: Date) -> Bool {
         guard canUndoCopy(now: now) else { return false }
-        // The copy notice is kept on a failed undo, so the Undo control stays on screen while copies remain. A
-        // successful undo leaves nothing to say, so the notice goes.
-        let notice = copyNotice
         // A copy the person already deleted by hand is not active any more: it is skipped, not counted as a failure.
         guard let active = try? Set(store.activeIntakes().map(\.id)) else {
             load(now: now)
-            copyNotice = notice
+            copyNotice = Self.undoFailureText(copiedIDs.count)
             return false
         }
         var succeeded = true
@@ -484,8 +481,16 @@ public final class JournalViewModel: ObservableObject {
             copiedIDs.removeFirst()
         }
         load(now: now)
-        copyNotice = succeeded ? nil : notice
+        // A failed undo leaves the copies still here, and the Undo control stays so tapping it tries again.
+        copyNotice = succeeded ? nil : Self.undoFailureText(copiedIDs.count)
         return succeeded
+    }
+
+    /// The notice after an undo could not remove every copy: `remaining` copies are still here (#535).
+    static func undoFailureText(_ remaining: Int) -> String {
+        remaining == 1
+            ? "Couldn't remove 1 copied entry. Tap Undo to try again."
+            : "Couldn't remove \(remaining) copied entries. Tap Undo to try again."
     }
 
     /// Copies one meal group of a past day to now. "Other" copies the entries with no named meal.
@@ -506,8 +511,6 @@ public final class JournalViewModel: ObservableObject {
     @discardableResult
     public func saveMeal(_ sectionID: String, groupID: String, name: String) -> Bool {
         guard let savedMeals else { return false }
-        // Saving a meal is a newer action than the copy, so the copy's Undo is no longer offered.
-        expireCopyUndo()
         let label = MealLabel.allCases.first { $0.displayName == groupID }
         let selector = label.map(MealSelector.named) ?? .other
         let intakes: [Intake]
@@ -519,6 +522,8 @@ public final class JournalViewModel: ObservableObject {
             return false
         }
         let saved = savedMeals.save(name: name, meal: label, intakes: intakes)
+        // Saving a meal is a newer action than the copy, so the copy's Undo is no longer offered once it has saved.
+        if saved { expireCopyUndo() }
         copyNotice = savedMeals.notice
         copyFailed = savedMeals.noticeIsFailure
         return saved
