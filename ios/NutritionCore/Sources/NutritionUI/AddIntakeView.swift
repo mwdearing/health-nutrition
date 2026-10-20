@@ -358,5 +358,5 @@ extension View {
 /// would repeat or contradict the label (#527). Kept here, so a test can pin the hint without a UI tree.
 public enum SaveToLibraryAccessibility {
     public static let label = "Save to Library"
-    public static let hint: String? = nil
+    public static let hint: String? = "Scanned and searched products are kept in Library, or only this entry is logged"
 }
