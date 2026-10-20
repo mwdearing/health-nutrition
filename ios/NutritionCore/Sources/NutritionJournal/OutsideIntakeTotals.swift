@@ -115,7 +115,10 @@ extension OutsideIntakeTotals {
         var failed = false
         for query in queries {
             switch query.outcome {
-            case .failed, .unmapped:
+            case .failed:
+                failed = true
+                readKeys.insert(query.nutrientKey)
+            case .unmapped:
                 failed = true
             case .samples(let outcomes):
                 var skipped = false
