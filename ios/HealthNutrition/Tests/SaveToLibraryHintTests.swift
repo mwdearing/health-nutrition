@@ -16,16 +16,11 @@ final class SaveToLibraryHintTests: XCTestCase {
         return try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
     }
 
-    /// Every accessibility element under `root` whose label is `label`, so a container and its inner switch
-    /// are both checked, not just the first one found.
-    private func elements(labelled label: String, under root: NSObject) -> [NSObject] {
-        var found: [NSObject] = root.accessibilityLabel == label ? [root] : []
-        for child in root.accessibilityElements ?? [] {
-            if let object = child as? NSObject { found += elements(labelled: label, under: object) }
-        }
-        if let view = root as? UIView {
-            for subview in view.subviews { found += elements(labelled: label, under: subview) }
-        }
+    /// Every UISwitch under `root`: SwiftUI exposes the Save to Library toggle as a switch with no label of its own,
+    /// so the switch is found by class, not by label (#527).
+    private func switches(under root: UIView) -> [UISwitch] {
+        var found: [UISwitch] = (root as? UISwitch).map { [$0] } ?? []
+        for subview in root.subviews { found += switches(under: subview) }
         return found
     }
 
@@ -45,10 +40,8 @@ final class SaveToLibraryHintTests: XCTestCase {
         host.view.layoutIfNeeded()
         RunLoop.current.run(until: Date().addingTimeInterval(0.3))
 
-        let toggles = elements(labelled: "Save to Library", under: host.view)
-        XCTAssertFalse(toggles.isEmpty, "the Save to Library toggle is on screen")
-        for toggle in toggles {
-            XCTAssertTrue((toggle.accessibilityHint ?? "").isEmpty, "no element labelled Save to Library has a stale hint")
-        }
+        let toggles = switches(under: host.view)
+        XCTAssertEqual(toggles.count, 1, "the Add form shows the Save to Library switch")
+        XCTAssertTrue((toggles.first?.accessibilityHint ?? "").isEmpty, "the Save to Library switch has no stale hint")
     }
 }
