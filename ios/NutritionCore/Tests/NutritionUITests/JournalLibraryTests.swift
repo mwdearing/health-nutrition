@@ -426,6 +426,25 @@ final class JournalLibraryTests: XCTestCase {
         XCTAssertEqual(model.copyNotice, "Couldn't remove 1 copied entry. Tap Undo to try again.")
     }
 
+    /// A copy after a failed delete that was deleted by hand is not counted as still here (#535).
+    func testFailedUndoDoesNotCountACopyAfterTheFailureThatWasDeletedByHand() throws {
+        let store = try makeStore()
+        let yesterday = now.addingTimeInterval(-86_400)
+        _ = try addFood(store, name: "Oats", at: yesterday, product: product("snap-a"))
+        _ = try addFood(store, name: "Rice", at: yesterday.addingTimeInterval(60), product: product("snap-b"))
+        _ = try addFood(store, name: "Milk", at: yesterday.addingTimeInterval(120), product: product("snap-c"))
+        let model = JournalViewModel(store: store, timeZoneIdentifier: "UTC")
+        model.load(now: now)
+        let past = try XCTUnwrap(model.sections.first { $0.id != JournalViewModel.dayKey(now, zone: TimeZone(identifier: "UTC")!) })
+        let result = try XCTUnwrap(model.copyDayToToday(past.id, now: now))
+
+        // The third copy is deleted by hand (delete call 1). The undo removes the first (call 2), fails the second (call 3) and stops.
+        try store.delete(intakeID: result.createdIDs[2], now: now)
+        store.failDeleteAt = 3
+        XCTAssertFalse(model.undoCopy(now: now))
+        XCTAssertEqual(model.copyNotice, "Couldn't remove 1 copied entry. Tap Undo to try again.")
+    }
+
     /// When the store cannot be read, the notice names no count, since the copies still here are unknown (#535).
     func testFailedReadDuringUndoNamesNoCountEvenWithAHandDeletedCopy() throws {
         let store = try makeStore()

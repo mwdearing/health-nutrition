@@ -483,7 +483,8 @@ public final class JournalViewModel: ObservableObject {
         }
         load(now: now)
         // A failed undo leaves the copies still here, and the Undo control stays so tapping it tries again.
-        copyNotice = succeeded ? nil : Self.undoFailureText(copiedIDs.count)
+        // A copy after a failed delete may have been deleted by hand, so count only the ids still active (#535).
+        copyNotice = succeeded ? nil : Self.undoFailureText(copiedIDs.filter { active.contains($0) }.count)
         return succeeded
     }
 
