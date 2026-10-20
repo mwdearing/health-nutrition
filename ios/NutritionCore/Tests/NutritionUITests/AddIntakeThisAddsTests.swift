@@ -45,6 +45,25 @@ final class AddIntakeThisAddsTests: XCTestCase {
         XCTAssertTrue(model.statesNoNutrients)
     }
 
+    /// A per-serving label scales a non-gram mass amount the same as the same weight in grams: 2 oz is 56.7 g,
+    /// so with a 30 g serving the preview must match 56.7 g.
+    func testAPerServingPreviewScalesAnOunceAmountLikeItsGrams() throws {
+        let product = ProductDefinition(snapshotID: "example-serving", productID: "example-oats",
+            name: "Example oats", labelBasis: "per serving (30 g)", catalogOrigin: "label", catalogVersion: "1",
+            nutrients: ["protein": .known(Decimal(6), .g)])
+        let grams = AddIntakeViewModel(store: try makeStore(), now: now)
+        grams.applyLabelProduct(product, fromLabelCapture: true)
+        grams.amountText = "56.7"
+        grams.unit = .g
+        let ounces = AddIntakeViewModel(store: try makeStore(), now: now)
+        ounces.applyLabelProduct(product, fromLabelCapture: true)
+        ounces.amountText = "2"
+        ounces.unit = .oz
+        let fromGrams = try XCTUnwrap(grams.amountPreview?.protein)
+        let fromOunces = try XCTUnwrap(ounces.amountPreview?.protein)
+        XCTAssertEqual(fromOunces, fromGrams, accuracy: Decimal(string: "0.05")!)
+    }
+
     func testBoundOnlyProductStillShowsItsValues() throws {
         let model = AddIntakeViewModel(store: try makeStore(), now: now)
         model.applyLabelProduct(ProductDefinition(snapshotID: "example-bound", productID: "example-oats",
