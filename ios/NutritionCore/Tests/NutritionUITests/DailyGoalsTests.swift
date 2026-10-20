@@ -215,6 +215,22 @@ final class DailyGoalsTests: XCTestCase {
         XCTAssertEqual(model.draftText["protein"], "")
     }
 
+    /// The Goals Undo closes ten seconds after the Clear, like the other undos (#526).
+    func testGoalsUndoWindowIsOpenAtNineSecondsAndClosedAtTen() throws {
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+        let clearedAt = Date(timeIntervalSince1970: 1_700_000_000)
+
+        XCTAssertTrue(model.clearTarget(for: "protein", now: clearedAt))
+        XCTAssertTrue(model.canUndoClear(now: clearedAt.addingTimeInterval(9)))
+        XCTAssertFalse(model.canUndoClear(now: clearedAt.addingTimeInterval(10)))
+        XCTAssertFalse(model.undoClear(now: clearedAt.addingTimeInterval(10)))
+        XCTAssertNil(try goals.goal(for: "protein"), "an Undo offered after its window does not restore the goal")
+    }
+
     /// Clear removes the goal, and Undo puts back the same goal (issue #506).
     func testClearThenUndoRestoresTheGoal() throws {
         let goals = try makeGoalStore()
