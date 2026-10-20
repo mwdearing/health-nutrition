@@ -466,7 +466,8 @@ public final class JournalViewModel: ObservableObject {
         // A copy the person already deleted by hand is not active any more: it is skipped, not counted as a failure.
         guard let active = try? Set(store.activeIntakes().map(\.id)) else {
             load(now: now)
-            copyNotice = Self.undoFailureText(copiedIDs.count)
+            // A failed read cannot tell which copies are still here, so the notice names no count (#535).
+            copyNotice = "Couldn't remove the copied entries. Tap Undo to try again."
             return false
         }
         var succeeded = true

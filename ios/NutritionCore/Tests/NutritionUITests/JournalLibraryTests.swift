@@ -11,6 +11,7 @@ private final class CountingStore: JournalStore, @unchecked Sendable {
     var deleteCalls = 0
     /// Fails the delete call with this 1-based number, when set.
     var failDeleteAt: Int?
+    var failsActiveReads = false
     var lastEditProductSnapshotID: String?
     /// What the last `edit` was asked to correct the entry's time to, and the zone it named with
     /// it. Nil for an edit that was not given a time, which is the amounts-only case.
@@ -57,7 +58,10 @@ private final class CountingStore: JournalStore, @unchecked Sendable {
         if deleteCalls == failDeleteAt { throw JournalError.injectedSaveFailure }
         try inner.delete(intakeID: intakeID, now: now)
     }
-    func activeIntakes() throws -> [Intake] { try inner.activeIntakes() }
+    func activeIntakes() throws -> [Intake] {
+        if failsActiveReads { throw JournalError.injectedSaveFailure }
+        return try inner.activeIntakes()
+    }
     func revisions(of intakeID: String) throws -> [IntakeRevision] { try inner.revisions(of: intakeID) }
     func projections(of intakeID: String) throws -> [DestinationProjection] { try inner.projections(of: intakeID) }
     func pendingOutbox() throws -> [OutboxOperation] { try inner.pendingOutbox() }
@@ -420,6 +424,25 @@ final class JournalLibraryTests: XCTestCase {
         store.failDeleteAt = 3
         XCTAssertFalse(model.undoCopy(now: now))
         XCTAssertEqual(model.copyNotice, "Couldn't remove 1 copied entry. Tap Undo to try again.")
+    }
+
+    /// When the store cannot be read, the notice names no count, since the copies still here are unknown (#535).
+    func testFailedReadDuringUndoNamesNoCountEvenWithAHandDeletedCopy() throws {
+        let store = try makeStore()
+        let yesterday = now.addingTimeInterval(-86_400)
+        _ = try addFood(store, name: "Oats", at: yesterday, product: product("snap-a"))
+        _ = try addFood(store, name: "Rice", at: yesterday.addingTimeInterval(60), product: product("snap-b"))
+        _ = try addFood(store, name: "Milk", at: yesterday.addingTimeInterval(120), product: product("snap-c"))
+        let model = JournalViewModel(store: store, timeZoneIdentifier: "UTC")
+        model.load(now: now)
+        let past = try XCTUnwrap(model.sections.first { $0.id != JournalViewModel.dayKey(now, zone: TimeZone(identifier: "UTC")!) })
+        let result = try XCTUnwrap(model.copyDayToToday(past.id, now: now))
+        try store.delete(intakeID: result.createdIDs[0], now: now)
+
+        store.failsActiveReads = true
+        XCTAssertFalse(model.undoCopy(now: now))
+        XCTAssertEqual(model.copyNotice, "Couldn't remove the copied entries. Tap Undo to try again.")
+        XCTAssertTrue(model.canUndoCopy(now: now))
     }
 
     /// One copy left behind reads in the singular (#535).
