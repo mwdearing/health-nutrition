@@ -9,7 +9,7 @@ public struct AddHomeView: View {
 
     /// The layout is picked from the text size, not from whether a row happens to fit, so the choice is testable.
     public static func quickActionLayout(for size: DynamicTypeSize) -> QuickActionLayout {
-        size.isAccessibilitySize ? .grid : .row
+        size.isAccessibilitySize ? .row : .grid
     }
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
