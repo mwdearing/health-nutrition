@@ -35,6 +35,19 @@ final class DiaryZoneRuleTests: XCTestCase {
         XCTAssertEqual(journal.arrowSectionIDs.first, "2026-10-20")
     }
 
+    /// With no zone given, the add flow stamps the same zone the Diary groups by, at the call site (#539).
+    func testDefaultZonesAgreeAtTheCallSite() throws {
+        let store = try makeStore()
+        let add = AddIntakeViewModel(store: store, now: now)
+        add.name = "Oats"
+        add.amountText = "40"
+        XCTAssertTrue(add.save(now: now))
+        let saved = try XCTUnwrap(store.activeIntakes().first)
+        XCTAssertEqual(saved.timeZoneIdentifier, TimeZone.current.identifier)
+        let journal = JournalViewModel(store: store)
+        XCTAssertEqual(journal.dayZone.identifier, saved.timeZoneIdentifier)
+    }
+
     /// The Diary's arrows start from today's day even when today is empty, the same list the Diary shows (#539).
     func testArrowSectionsIncludeAnEmptyToday() throws {
         let store = try makeStore()

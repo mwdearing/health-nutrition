@@ -171,7 +171,7 @@ public final class JournalViewModel: ObservableObject {
         goals: GoalStore? = nil,
         lookup: NutrientFactsLookup = UnknownNutrientFacts(),
         timeZoneIdentifier: String? = nil,
-        timeZoneProvider: @escaping () -> String = { TimeZone.current.identifier },
+        timeZoneProvider: @escaping () -> String = { DiaryZone.identifier() },
         locale: Locale = .current,
         makeID: @escaping () -> String = { UUID().uuidString.lowercased() },
         preferences: DisplayPreferences = InMemoryDisplayPreferences()
@@ -867,4 +867,10 @@ public final class JournalViewModel: ObservableObject {
         let parts = calendar.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
     }
+}
+
+/// The zone a new entry is stamped with and the Diary groups its days in, when no override is given (#539).
+/// The add flow and the Diary both default to this one function, so the two cannot drift apart.
+public enum DiaryZone {
+    public static func identifier() -> String { TimeZone.current.identifier }
 }

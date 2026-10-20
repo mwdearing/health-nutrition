@@ -345,7 +345,7 @@ public final class AddIntakeViewModel: ObservableObject {
         store: JournalStore,
         now: Date,
         timeZoneIdentifier: String? = nil,
-        timeZoneProvider: @escaping () -> String = { TimeZone.current.identifier },
+        timeZoneProvider: @escaping () -> String = { DiaryZone.identifier() },
         makeID: @escaping () -> String = { UUID().uuidString.lowercased() },
         lookup: BarcodeProductLookup? = nil,
         preferences: DisplayPreferences = InMemoryDisplayPreferences(),
