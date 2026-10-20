@@ -271,7 +271,7 @@ public final class TodayViewModel: ObservableObject {
                     }
                     // Totals count an entry as it always has (#364): a typed entry in the food total, a snapshot-backed
                     // supplement on its own. The row's kind above is what the entry is, not how the totals count it.
-                    let countsAs = ProductKindResolution.totalsKind(snapshotKind: snapshot?.kind)
+                    let countsAs = snapshot?.kind ?? kind
                     if countsAs != .supplement {
                         for component in components { foodComponents.append((component, snapshot, countsAs)) }
                     }
