@@ -124,9 +124,13 @@ public struct JournalWeekSummary: Equatable {
 
 @MainActor
 public final class JournalViewModel: ObservableObject {
-    @Published public private(set) var sections: [JournalDaySection] = []
+    @Published public private(set) var sections: [JournalDaySection] = [] {
+        didSet { arrowSectionIDs = diarySections.map(\.id) }
+    }
     /// Today's section when it has no entries of its own; nil otherwise. The Diary lists it above `sections`.
-    @Published public private(set) var todaySection: JournalDaySection?
+    @Published public private(set) var todaySection: JournalDaySection? {
+        didSet { arrowSectionIDs = diarySections.map(\.id) }
+    }
 
     /// Every section the Diary lists, today first when it is empty.
     public var diarySections: [JournalDaySection] { (todaySection.map { [$0] } ?? []) + sections }
@@ -161,8 +165,8 @@ public final class JournalViewModel: ObservableObject {
     /// The zone the Diary groups its days in. The arrows and the jump both use it, so they agree with the sections.
     public var dayZone: TimeZone { TimeZone(identifier: journalZoneID()) ?? TimeZone.current }
     /// The day keys the Diary arrows step through, in list order: today's empty day too, which the
-    /// sections leave out (#539).
-    public var arrowSectionIDs: [String] { diarySections.map(\.id) }
+    /// sections leave out (#539). Refreshed by every change to the sections, so no writer can leave them stale (#611).
+    @Published public private(set) var arrowSectionIDs: [String] = []
     private let locale: Locale
     private let preferences: DisplayPreferences
 
