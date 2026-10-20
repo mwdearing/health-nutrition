@@ -245,7 +245,8 @@ public struct AddIntakeView: View {
                         .accessibilityLabel("Cannot save: \(message)")
                 }
                 if model.canChooseLibrary {
-                    Toggle("Save to Library", isOn: $model.savesToLibrary)
+                    Toggle(SaveToLibraryAccessibility.label, isOn: $model.savesToLibrary)
+                        .accessibilityHint(Text(SaveToLibraryAccessibility.hint ?? ""))
                     Text("Also keep this product in Library.")
                         .font(.footnote)
                         .foregroundStyle(TokenColors.textSecondary)
@@ -351,4 +352,11 @@ extension View {
         self
         #endif
     }
+}
+
+/// The Save to Library switch's spoken text. The label says what the switch does, so it has no hint: a hint
+/// would repeat or contradict the label (#527). Kept here, so a test can pin the hint without a UI tree.
+public enum SaveToLibraryAccessibility {
+    public static let label = "Save to Library"
+    public static let hint: String? = nil
 }
