@@ -145,7 +145,7 @@ public struct JournalView: View {
                 LabeledField("Meal name") { focus in
                     TextField("Such as Usual breakfast", text: $saveMealName).focused(focus)
                 }
-                Text("Keeps the \(target.entryCountText) of \(target.title) together, so you can log them again in one go from Add, in Find products.")
+                Text("Keeps the \(target.entryCountText) of \(target.title) together, so you can log them again in one go from Add, in Search foods.")
                     .font(.footnote)
                     .foregroundStyle(TokenColors.textSecondary)
                 // A refusal keeps the prompt open with the typed name, so the person can change it.
@@ -217,11 +217,11 @@ public struct JournalView: View {
         if let day = lastRequestedDay, topVisibleID == lastRevealedSection {
             return day
         }
-        return JournalViewModel.arrowBaseDay(sectionIDs: model.sections.map(\.id), visible: visibleDayIDs, zone: model.dayZone, now: now())
+        return JournalViewModel.arrowBaseDay(sectionIDs: model.arrowSectionIDs, visible: visibleDayIDs, zone: model.dayZone, now: now())
     }
 
     private var topVisibleID: String? {
-        model.sections.map(\.id).first { visibleDayIDs.contains($0) }
+        model.arrowSectionIDs.first { visibleDayIDs.contains($0) }
     }
 
     /// Forward is disabled when the arrows already point at today.

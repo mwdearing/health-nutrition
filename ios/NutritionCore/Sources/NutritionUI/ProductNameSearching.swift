@@ -9,12 +9,12 @@ public enum ProductNameSearchOutcome: Sendable, Equatable {
     case failed(String)
 }
 
-/// Name search for the Find products screen. Implemented by the app target over the Open Food Facts client.
+/// Name search for the Search foods screen. Implemented by the app target over the Open Food Facts client.
 public protocol ProductNameSearching: Sendable {
     func search(query: String) async -> ProductNameSearchOutcome
 }
 
-/// The state of the open product source section of Find products.
+/// The state of the open product source section of Search foods.
 public enum ProductNameSearchState: Equatable {
     case idle, queryTooShort, loading, results, empty, rateLimited(retryAfterSeconds: Int?), unavailable
 }

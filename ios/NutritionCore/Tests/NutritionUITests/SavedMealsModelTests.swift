@@ -165,7 +165,7 @@ final class SavedMealsModelTests: XCTestCase {
 
         XCTAssertEqual(try store.meals().map(\.name), ["usual"])
         XCTAssertTrue(model.noticeIsFailure)
-        XCTAssertEqual(model.notice, "Could not put back Usual.")
+        XCTAssertEqual(model.notice, "Couldn't put back Usual. Tap Undo to try again.")
     }
 
     /// Once the Undo window has passed, the removal stays and Undo has nothing to put back.
@@ -528,7 +528,7 @@ final class SavedMealsModelTests: XCTestCase {
         XCTAssertTrue(model.saveMeal(day.id, groupID: "Breakfast", name: "Usual breakfast"))
         XCTAssertEqual(savedMeals.meals.first?.items.map(\.displayName), ["Oats", "Milk"])
         XCTAssertEqual(savedMeals.meals.first?.meal, .breakfast)
-        XCTAssertEqual(model.copyNotice, "Saved Usual breakfast. Log it again from Add, in Find products.")
+        XCTAssertEqual(model.copyNotice, "Saved Usual breakfast. Log it again from Add, in Search foods.")
         XCTAssertFalse(model.copyFailed)
 
         XCTAssertFalse(model.saveMeal(day.id, groupID: "Dinner", name: "Usual breakfast"))

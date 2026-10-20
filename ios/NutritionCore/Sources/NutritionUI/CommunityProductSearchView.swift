@@ -6,7 +6,8 @@ public struct CommunityProductSearchView: View {
     @ObservedObject private var model: CommunityProductSearchViewModel
     private let onSelect: (CustomProductRevision) -> Void
     private let onLegacy: (LegacyCustomProductDraft) -> Void
-    private let onSignIn: () -> Void
+    /// Nil when this build has no account to sign in to; the Sign in control is then not offered.
+    private let onSignIn: (() -> Void)?
     private let onSaved: () -> Void
     private let onOpenFoodFacts: (LookedUpProduct, ProductKind?) -> Void
     /// The person's own favorites and recents, listed above the products. Both must be given, or the
@@ -22,7 +23,7 @@ public struct CommunityProductSearchView: View {
     @FocusState private var searchFocused: Bool
     /// Focus is taken once per screen. Going Back from a result must not raise the keyboard over it.
     @State private var didAutoFocus = false
-    public init(model: CommunityProductSearchViewModel, onSelect: @escaping (CustomProductRevision) -> Void, onLegacy: @escaping (LegacyCustomProductDraft) -> Void, onSignIn: @escaping () -> Void, onOpenFoodFacts: @escaping (LookedUpProduct, ProductKind?) -> Void = { _, _ in },
+    public init(model: CommunityProductSearchViewModel, onSelect: @escaping (CustomProductRevision) -> Void, onLegacy: @escaping (LegacyCustomProductDraft) -> Void, onSignIn: (() -> Void)?, onOpenFoodFacts: @escaping (LookedUpProduct, ProductKind?) -> Void = { _, _ in },
                 library: LibraryViewModel? = nil, onPick: ((RepeatTemplate) -> Void)? = nil,
                 focusSearchOnAppear: Bool = false, onSaved: @escaping () -> Void = {}) {
         self.onSaved = onSaved
@@ -37,6 +38,9 @@ public struct CommunityProductSearchView: View {
                 LabeledField("Search foods and products", focus: $searchFocused) { focus in
                     TextField("Search foods and products", text: $query).focused(focus).submitLabel(.search)
                 }.onSubmit { search() }
+                if query.trimmingCharacters(in: .whitespaces).count >= 2 {
+                    Button("Search food databases", action: search)
+                }
                 Picker("Kind", selection: $kind) {
                     Text("All kinds").tag(ProductKind?.none)
                     ForEach(ProductKind.allCases, id: \.self) { Text($0.displayName).tag(Optional($0)) }
@@ -44,24 +48,6 @@ public struct CommunityProductSearchView: View {
                 Button("Search", action: search)
             } footer: {
                 Text("Your foods and products on this phone narrow as you type. Public food databases and shared products are searched only when you tap Search or press Return.")
-            }
-            // A saved meal can mix foods, drinks and supplements, so meals are offered only under All kinds; a
-            // warning about entries a failed log left behind shows under any kind.
-            if let savedMeals = library?.savedMeals, onPick != nil {
-                SavedMealSections(model: savedMeals, query: query, showsMeals: kind == nil, onLog: { mealToLog = $0 })
-            }
-            if let library, let onPick { LibrarySearchSections(library: library, query: query, kind: kind, onPick: onPick) }
-            Section("On this phone") {
-                if model.localError { Text("Could not read local products.") }
-                else if model.localResults.isEmpty { Text("No matching local products.") }
-                ForEach(model.localResults, id: \.localProductID) { product in
-                    Button { onSelect(product) } label: {
-                        VStack(alignment: .leading) {
-                            Text(product.content.name)
-                            Text(product.content.kind.displayName).font(.footnote)
-                        }
-                    }.accessibilityHint("Opens intake details without logging or sharing")
-                }
             }
             if kind != .supplement { Section(header: Text("Food databases"), footer: Text("The words you search for are sent to public food databases (USDA FoodData Central and Open Food Facts). Nothing else from this phone is sent.")) {
                 openFoodFactsStatus
@@ -81,6 +67,24 @@ public struct CommunityProductSearchView: View {
                     }
                 }
             } }
+            // A saved meal can mix foods, drinks and supplements, so meals are offered only under All kinds; a
+            // warning about entries a failed log left behind shows under any kind.
+            if let savedMeals = library?.savedMeals, onPick != nil {
+                SavedMealSections(model: savedMeals, query: query, showsMeals: kind == nil, onLog: { mealToLog = $0 })
+            }
+            if let library, let onPick { LibrarySearchSections(library: library, query: query, kind: kind, onPick: onPick) }
+            Section("On this phone") {
+                if model.localError { Text("Could not read local products.") }
+                else if model.localResults.isEmpty { Text("No matching local products.") }
+                ForEach(model.localResults, id: \.localProductID) { product in
+                    Button { onSelect(product) } label: {
+                        VStack(alignment: .leading) {
+                            Text(product.content.name)
+                            Text(product.content.kind.displayName).font(.footnote)
+                        }
+                    }.accessibilityHint("Opens intake details without logging or sharing")
+                }
+            }
             Section("Shared products") {
                 sharedState
                 ForEach(model.sharedResults, id: \.productID) { product in
@@ -142,7 +146,7 @@ public struct CommunityProductSearchView: View {
                 }
             }
         }
-        .navigationTitle("Find products")
+        .navigationTitle("Search foods")
         .task { if model.state == .idle { await model.search(query: query, kind: kind) } }
         // Focus after the push animation. Setting focus during the transition can be dropped.
         .task {
@@ -209,7 +213,7 @@ public struct CommunityProductSearchView: View {
         case .empty: Text("No shared products match this search.")
         case .signInRequired:
             Text("Sign in to search shared products. Local products are available above.")
-            Button("Sign in", action: onSignIn)
+            if let onSignIn { Button("Sign in", action: onSignIn) }
         case .unsupported: Text("Shared product search is unavailable on this server.")
         case .unavailable:
             Text("Shared products are temporarily unavailable.")
@@ -232,7 +236,7 @@ public struct CommunityProductSearchView: View {
     }
 }
 
-/// The saved meals on Find products, narrowed by name as the person types. A tap asks which meal to log it
+/// The saved meals on Search foods, narrowed by name as the person types. A tap asks which meal to log it
 /// under; nothing is logged until one is chosen.
 struct SavedMealSections: View {
     @ObservedObject var model: SavedMealsModel
@@ -298,7 +302,7 @@ struct SavedMealUndoBar: View {
     }
 }
 
-/// The person's own favorites and recents on Find products, narrowed as they type. Built from the Library's
+/// The person's own favorites and recents on Search foods, narrowed as they type. Built from the Library's
 /// last load: nothing here reads the network or sends the query anywhere, and a tap opens details only.
 struct LibrarySearchSections: View {
     @ObservedObject var library: LibraryViewModel

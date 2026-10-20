@@ -4,7 +4,7 @@ import NutritionJournal
 import XCTest
 @testable import NutritionUI
 
-/// "Often logged": items logged at least twice among the newest entries, and their group on Find products.
+/// "Often logged": items logged at least twice among the newest entries, and their group on Search foods.
 ///
 /// Synthetic names and ids only. Lowercase UUID intake ids.
 @MainActor
@@ -113,7 +113,7 @@ final class LibraryFrequentsTests: XCTestCase {
         XCTAssertEqual(try frequentTitles(store, window: 5), ["Oat porridge"])
     }
 
-    // MARK: On Find products
+    // MARK: On Search foods
 
     func testOftenLoggedFollowsRecentWithoutRepeatingIt() throws {
         let store = try makeStore()

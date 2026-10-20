@@ -3,7 +3,7 @@ import NutritionDomain
 import NutritionProviders
 import NutritionUI
 
-/// Name search for Find products over USDA FoodData Central and Open Food Facts together. Each source runs on
+/// Name search for Search foods over USDA FoodData Central and Open Food Facts together. Each source runs on
 /// its own; a source that fails or is rate limited does not hide the other source's results.
 struct FoodDatabaseSearch: ProductNameSearching {
     /// Results shown at most, across both sources.

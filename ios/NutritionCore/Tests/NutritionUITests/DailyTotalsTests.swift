@@ -1225,4 +1225,19 @@ final class DailyTotalsTests: XCTestCase {
             XCTAssertEqual(NSDecimalNumber(decimal: kcal).doubleValue, 20, accuracy: 0.001, "count path")
         }
     }
+
+    /// #521 item 6: a negative alias distrusts an entry even when its canonical key states a positive value.
+    /// Before the fix only the first key that answered was read, so the canonical positive hid the alias.
+    func testANegativeAliasDistrustsAnEntryWhoseCanonicalKeyIsPositive() {
+        let keys = HealthKitWritePlanner.acceptedKeys(for: "energy")
+        XCTAssertGreaterThan(keys.count, 1, "energy has an alias to check")
+        var stated: [String: NutrientValue] = [:]
+        for (index, key) in keys.enumerated() {
+            stated[key] = .known(index == 0 ? 100 : -5, .kcal)
+        }
+        let component = IntakeComponent(componentID: "oats", name: "Oats", amount: 40, unit: .g)
+        let lookup = NutrientFacts(values: ["oats": stated])
+        let entry = (components: [component], snapshot: nil as ProductDefinition?, category: "food")
+        XCTAssertTrue(DailyTotalsBuilder.isDistrusted(entry, lookup: lookup))
+    }
 }
