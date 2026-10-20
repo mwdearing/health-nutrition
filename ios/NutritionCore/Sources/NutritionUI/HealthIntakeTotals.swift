@@ -32,11 +32,18 @@ public enum HealthIntakeTotals {
         // The journal's side: complete when the whole day is known, a known partial sum otherwise.
         var journalValue: Decimal?
         var journalComplete = false
+        var journalEmpty = false
         if case .known(let value, _) = line.amount {
             journalValue = value
             journalComplete = true
         } else if line.isPartial, case .known(let value, _)? = line.knownSum {
             journalValue = value
+        } else if case .unknown = line.amount, !line.isPartial, line.missingCount == 0 {
+            // No journal entries for the day: the totals builder reads an empty day as unknown, but nothing was
+            // left out, so the journal side is a complete nothing.
+            journalValue = 0
+            journalComplete = true
+            journalEmpty = true
         }
 
         // Health's side: a value Health returned, a known zero for a query that succeeded with no samples,
@@ -54,6 +61,9 @@ public enum HealthIntakeTotals {
         }
 
         guard journalValue != nil || outsideValue != nil else { return line }
+        // Nothing logged and no Health amount above zero: the day has nothing known, so the line stays "—" rather
+        // than reading 0 or "at least 0".
+        if journalEmpty, (outsideValue ?? 0) == 0 { return line }
         let sum = NutrientValue.known((journalValue ?? 0) + (outsideValue ?? 0), unit)
 
         if journalComplete && outsideComplete {

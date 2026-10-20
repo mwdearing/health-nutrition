@@ -59,8 +59,15 @@ final class HealthIntakeTotalsTests: XCTestCase {
         XCTAssertEqual(combined.first?.missingCount, 1)
     }
 
-    func testHealthOnlyDayIsAtLeastTheHealthValue() {
+    func testEmptyJournalWithCompleteHealthIsExact() {
         let combined = HealthIntakeTotals.combine([unknownLine("energy")], outside: .read(values: ["energy": 620], readKeys: ["energy"]))
+        XCTAssertEqual(combined.first?.amount, .known(620, energyUnit))
+        XCTAssertEqual(combined.first?.isPartial, false)
+    }
+
+    func testUnknownJournalWithEntriesAndHealthIsAtLeast() {
+        let line = NutrientProgressLine(nutrient: "energy", amount: .unknown, goal: nil, missingCount: 1)
+        let combined = HealthIntakeTotals.combine([line], outside: .read(values: ["energy": 620], readKeys: ["energy"]))
         XCTAssertEqual(combined.first?.isPartial, true)
         XCTAssertEqual(combined.first?.knownSum, .known(620, energyUnit))
     }
@@ -130,6 +137,12 @@ final class HealthIntakeTotalsTests: XCTestCase {
         XCTAssertEqual(HealthIntakeTotals.combine(lines, outside: .read(values: [:], readKeys: [])), lines)
         // Health was read for protein only, so energy has no Health value and no known zero.
         XCTAssertEqual(HealthIntakeTotals.combine(lines, outside: .read(values: [:], readKeys: ["protein"])), lines)
+    }
+
+    func testEmptyJournalAndZeroHealthStaysUnknown() {
+        let lines = [unknownLine("energy")]
+        XCTAssertEqual(HealthIntakeTotals.combine(lines, outside: .read(values: [:], readKeys: ["energy"])), lines)
+        XCTAssertEqual(HealthIntakeTotals.combine(lines, outside: .failed), lines)
     }
 
     func testWaterLineIsNeverCombined() {

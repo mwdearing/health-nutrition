@@ -127,7 +127,7 @@ public final class BodyActivityViewModel: ObservableObject {
 
     /// "From other apps: 620 kcal, 48 g protein, 16 fl oz water", naming only what other apps logged today.
     public var outsideText: String? {
-        if readings.outsideReadFailed { return "From other apps: could not be read" }
+        // A partial failure still shows the values that were read; the failure copy is only for a read with nothing.
         var parts: [String] = []
         if let energy = readings.outsideNutrients["energy"] { parts.append("\(Self.whole(energy)) Calories") }
         if let protein = readings.outsideNutrients["protein"] { parts.append("\(Self.whole(protein)) g protein") }
@@ -138,7 +138,9 @@ public final class BodyActivityViewModel: ObservableObject {
                 parts.append("\(Self.whole(water)) mL water")
             }
         }
-        guard !parts.isEmpty else { return nil }
+        guard !parts.isEmpty else {
+            return readings.outsideReadFailed ? "From other apps: could not be read" : nil
+        }
         return "From other apps: " + parts.joined(separator: ", ")
     }
 

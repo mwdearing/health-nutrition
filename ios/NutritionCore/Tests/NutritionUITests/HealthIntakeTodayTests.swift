@@ -16,9 +16,8 @@ final class HealthIntakeTodayTests: XCTestCase {
         return try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
     }
 
-    /// No journal entries at all, Health reports energy and protein for the day: both show Health's amounts,
-    /// as at least, because the journal side has nothing known.
-    func testEmptyJournalShowsHealthEnergyAndProteinAsAtLeast() throws {
+    /// No journal entries at all and every Health read complete: both show Health's exact amounts.
+    func testEmptyJournalShowsHealthEnergyAndProteinExactly() throws {
         let model = TodayViewModel(store: try makeJournal(), timeZoneIdentifier: "UTC")
         model.outsideIntake = .read(
             values: ["energy": 620, "protein": 48], readKeys: ["energy", "protein"])
@@ -26,9 +25,21 @@ final class HealthIntakeTodayTests: XCTestCase {
 
         let energy = try XCTUnwrap(model.progress.first { $0.nutrient == "energy" })
         let protein = try XCTUnwrap(model.progress.first { $0.nutrient == "protein" })
-        XCTAssertEqual(energy.knownSum, NutrientValue.known(620, HealthKitWritePlanner.mapping(for: "energy")!.unit))
-        XCTAssertEqual(protein.knownSum, NutrientValue.known(48, HealthKitWritePlanner.mapping(for: "protein")!.unit))
-        XCTAssertTrue(energy.isPartial)
+        XCTAssertEqual(energy.amount, NutrientValue.known(620, HealthKitWritePlanner.mapping(for: "energy")!.unit))
+        XCTAssertEqual(protein.amount, NutrientValue.known(48, HealthKitWritePlanner.mapping(for: "protein")!.unit))
+        XCTAssertFalse(energy.isPartial)
+        XCTAssertFalse(protein.isPartial)
+    }
+
+    /// Health's protein read was not complete, so protein reads as at least while energy stays exact.
+    func testEmptyJournalWithPartialHealthReadIsAtLeastForThatNutrientOnly() throws {
+        let model = TodayViewModel(store: try makeJournal(), timeZoneIdentifier: "UTC")
+        model.outsideIntake = .read(values: ["energy": 620, "protein": 48], readKeys: ["energy"])
+        model.load(now: now)
+
+        let energy = try XCTUnwrap(model.progress.first { $0.nutrient == "energy" })
+        let protein = try XCTUnwrap(model.progress.first { $0.nutrient == "protein" })
+        XCTAssertFalse(energy.isPartial)
         XCTAssertTrue(protein.isPartial)
     }
 
