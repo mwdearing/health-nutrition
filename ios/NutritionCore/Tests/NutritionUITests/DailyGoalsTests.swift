@@ -264,9 +264,13 @@ final class DailyGoalsTests: XCTestCase {
         XCTAssertTrue(model.clearTarget(for: "protein", now: clearedAt))
         let clock = FakeClock(now: clearedAt)
         var sleeps: [TimeInterval] = []
-        // Wake after half of each requested sleep: an early wake, as a clock step can cause.
+        // Wake one second early on each sleep until the last second: an early wake, as a clock step can cause.
+        // A fixed margin keeps the gap shrinking, so the loop finishes exactly at the deadline.
         await model.runClearUndoExpiry(
-            sleep: { seconds in sleeps.append(seconds); clock.now = clock.now.addingTimeInterval(seconds / 2) },
+            sleep: { seconds in
+                sleeps.append(seconds)
+                clock.now = clock.now.addingTimeInterval(seconds > 1 ? seconds - 1 : seconds)
+            },
             now: { clock.now })
         XCTAssertGreaterThan(sleeps.count, 1, "an early wake sleeps again")
         XCTAssertNil(model.clearedGoal)
