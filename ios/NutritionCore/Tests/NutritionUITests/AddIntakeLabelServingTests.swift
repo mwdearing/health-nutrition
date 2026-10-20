@@ -71,4 +71,15 @@ final class AddIntakeLabelServingTests: XCTestCase {
         XCTAssertFalse(model.canCountServings)
         XCTAssertNil(model.amountPreview)
     }
+
+    /// An ounce amount is scaled through its stored gram quantity, the same as the saved amount.
+    func testAnOunceAmountScalesThroughItsStoredGrams() throws {
+        let model = makeModel(try makeStore())
+        model.applyLabelProduct(panel(basis: "per serving (30 g)"), fromLabelCapture: true)
+        model.amountText = "1"
+        model.unit = .oz
+
+        let kcal = try XCTUnwrap(model.amountPreview?.kcal)
+        XCTAssertEqual(NSDecimalNumber(decimal: kcal).doubleValue, 453.59, accuracy: 0.01)
+    }
 }
