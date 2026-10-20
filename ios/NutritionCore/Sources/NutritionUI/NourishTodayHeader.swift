@@ -96,8 +96,8 @@ public struct NourishTodayHeader: View {
             burned: calories.burned.map { BodyActivityViewModel.whole($0) })
     }
 
-    /// Calories remaining in large type, with food and burned beneath, as MyFitnessPal lays them out. It replaces
-    /// the goal ring whenever food is known, so a day without a goal shows food and burned only.
+    /// Calories remaining in large type, with food and burned beneath, as MyFitnessPal lays them out. It is the
+    /// top block on Today every day. A day without a goal shows food and burned only.
     /// Remaining is hidden without a goal; burned is hidden when there is no Health reading or the setting is off.
     /// A partly known day reuses the existing partial note; Remaining is then an upper bound.
     private var calorieSummary: some View {

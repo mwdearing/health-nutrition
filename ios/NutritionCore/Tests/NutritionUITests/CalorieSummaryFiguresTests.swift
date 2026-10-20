@@ -26,6 +26,10 @@ final class CalorieSummaryFiguresTests: XCTestCase {
         XCTAssertEqual(result.burned, "120")
     }
 
+    func testAnExplicitlyLoggedZeroFoodShowsZero() {
+        XCTAssertEqual(figures(goal: 2000, food: 0).food, "0")
+    }
+
     func testLoggedFoodWithoutAGoalShowsFoodAndNoRemaining() {
         XCTAssertEqual(figures(goal: nil, food: 500), .init(remaining: nil, food: "500", burned: nil))
     }
