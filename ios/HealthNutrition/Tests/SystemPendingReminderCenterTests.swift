@@ -9,8 +9,9 @@ import XCTest
 final class SystemPendingReminderCenterTests: XCTestCase {
     func testAScheduledCustomRequestIsReadBackThroughTheSystemCenter() async throws {
         let center = UNUserNotificationCenter.current()
-        let granted = (try? await center.requestAuthorization(options: [.alert])) ?? false
-        try XCTSkipUnless(granted, "notifications are not authorized on this runner")
+        // Read the status without asking: a permission prompt would block the hosted run.
+        let settings = await center.notificationSettings()
+        try XCTSkipUnless(settings.authorizationStatus == .authorized, "notifications are not authorized on this runner")
 
         let identifier = ReminderReadback.customPrefix + UUID().uuidString
         let content = UNMutableNotificationContent()
