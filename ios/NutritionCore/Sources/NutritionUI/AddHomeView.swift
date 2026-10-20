@@ -2,6 +2,17 @@ import NutritionJournal
 import SwiftUI
 
 public struct AddHomeView: View {
+    /// How the four quick actions lay out: one row at normal text sizes, two columns at accessibility sizes.
+    public enum QuickActionLayout: Equatable {
+        case row, grid
+    }
+
+    /// The layout is picked from the text size, not from whether a row happens to fit, so the choice is testable.
+    public static func quickActionLayout(for size: DynamicTypeSize) -> QuickActionLayout {
+        size.isAccessibilitySize ? .grid : .row
+    }
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     /// The search row's visible text, also its spoken label, so the two cannot drift apart.
     public static let searchRowTitle = "Search foods"
     @ObservedObject private var model: AddHomeViewModel
@@ -92,10 +103,14 @@ public struct AddHomeView: View {
                         }
                     }
                 }
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: DesignSpacing.s) { ForEach(quickActions) { quickActionButton($0) } }
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: DesignSpacing.s) {
-                        ForEach(quickActions) { quickActionButton($0) }
+                // Accessibility sizes always use two columns. Otherwise the row is kept while it fits, and falls back
+                // to the two columns when the four labels would not fit side by side.
+                if Self.quickActionLayout(for: dynamicTypeSize) == .grid {
+                    quickActionGrid
+                } else {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: DesignSpacing.s) { ForEach(quickActions) { quickActionButton($0) } }
+                        quickActionGrid
                     }
                 }
                 // Why a quick action is off is shown in words, not only in its hint.
@@ -168,6 +183,12 @@ public struct AddHomeView: View {
         ]
     }
 
+    private var quickActionGrid: some View {
+        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: DesignSpacing.s) {
+            ForEach(quickActions) { quickActionButton($0) }
+        }
+    }
+
     private func quickActionButton(_ action: QuickAction) -> some View {
         Button(action: action.action) {
             VStack(spacing: DesignSpacing.xs) {
@@ -178,6 +199,8 @@ public struct AddHomeView: View {
             .padding(DesignSpacing.s)
             .background(TokenColors.surface, in: RoundedRectangle(cornerRadius: DesignRadius.control, style: .continuous))
             .foregroundStyle(TokenColors.textPrimary)
+            // Dimmed while unavailable, so the state reads without the reason line.
+            .opacity(action.available ? 1 : 0.4)
         }
         .buttonStyle(.plain)
         .disabled(!action.available)
