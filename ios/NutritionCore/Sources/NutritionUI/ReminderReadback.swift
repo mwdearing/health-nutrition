@@ -8,12 +8,37 @@ public protocol PendingReminderCenter: Sendable {
 }
 
 /// Names the reminder stores that still have a pending request on the phone after an erase.
+///
+/// Removing a request is asynchronous, so a single read straight after the removal can still see it. The readback
+/// reads again until the requests are gone or the reads run out, and names a store only if its request is still
+/// there at the last read.
 public enum ReminderReadback {
     /// The prefix of every custom reminder's request identifier.
     public static let customPrefix = "custom-reminder-"
 
-    public static func namesStillPending(in center: PendingReminderCenter) async -> [String] {
-        let identifiers = await center.pendingRequestIdentifiers()
+    /// How many reads the readback makes in all. A request still pending on the last read counts as still on the phone.
+    public static let settleReads = 5
+
+    /// How long the readback waits between two reads, in nanoseconds.
+    public static let settleIntervalNanoseconds: UInt64 = 100_000_000
+
+    public static func namesStillPending(
+        in center: PendingReminderCenter,
+        pause: @escaping @Sendable () async -> Void = {
+            try? await Task.sleep(nanoseconds: ReminderReadback.settleIntervalNanoseconds)
+        }
+    ) async -> [String] {
+        var names = names(in: await center.pendingRequestIdentifiers())
+        var readsLeft = settleReads - 1
+        while !names.isEmpty, readsLeft > 0 {
+            await pause()
+            names = names(in: await center.pendingRequestIdentifiers())
+            readsLeft -= 1
+        }
+        return names
+    }
+
+    private static func names(in identifiers: [String]) -> [String] {
         var names: [String] = []
         if identifiers.contains(ReminderIdentifier.daily) { names.append("reminders") }
         if identifiers.contains(where: { $0.hasPrefix(customPrefix) }) { names.append("custom reminders") }
