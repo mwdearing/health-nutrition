@@ -142,7 +142,17 @@ final class HealthIntakeTotalsTests: XCTestCase {
     func testEmptyJournalAndZeroHealthStaysUnknown() {
         let lines = [unknownLine("energy")]
         XCTAssertEqual(HealthIntakeTotals.combine(lines, outside: .read(values: [:], readKeys: ["energy"])), lines)
-        XCTAssertEqual(HealthIntakeTotals.combine(lines, outside: .failed), lines)
+        XCTAssertEqual(HealthIntakeTotals.combine(lines, outside: .read(values: [:], readKeys: [])), lines)
+    }
+
+    func testIUJournalTotalIsNeverAddedToHealthMicrograms() {
+        // Vitamin D logged in IU on the journal and Health in mcg: the IU amount is not converted or added.
+        let vitaminD = HealthKitWritePlanner.mapping(for: "vitaminD")!.unit
+        let journalIU = NutrientProgressLine(nutrient: "vitaminD", amount: .known(100, .iu), goal: nil)
+        let combined = HealthIntakeTotals.combine(
+            [journalIU], outside: .read(values: ["vitaminD": 5], readKeys: ["vitaminD"]))
+        XCTAssertEqual(combined.first?.isPartial, true)
+        XCTAssertEqual(combined.first?.knownSum, .known(5, vitaminD))
     }
 
     func testWaterLineIsNeverCombined() {

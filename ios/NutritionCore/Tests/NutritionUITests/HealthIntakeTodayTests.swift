@@ -41,6 +41,7 @@ final class HealthIntakeTodayTests: XCTestCase {
         let protein = try XCTUnwrap(model.progress.first { $0.nutrient == "protein" })
         XCTAssertFalse(energy.isPartial)
         XCTAssertTrue(protein.isPartial)
+        XCTAssertEqual(protein.knownSum, NutrientValue.known(48, HealthKitWritePlanner.mapping(for: "protein")!.unit))
     }
 
     /// Changing only the Health side and loading again changes Today's lines.

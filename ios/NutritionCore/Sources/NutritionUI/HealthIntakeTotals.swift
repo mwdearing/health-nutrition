@@ -29,21 +29,30 @@ public enum HealthIntakeTotals {
               let unit = HealthKitWritePlanner.mapping(for: line.nutrient)?.unit
         else { return line }
 
-        // The journal's side: complete when the whole day is known, a known partial sum otherwise.
+        // The journal's side: complete when the whole day is known, a known partial sum otherwise. Its amount is
+        // added only in the Health unit. An amount in another unit (an IU alias total, say) is never converted or
+        // added, so the journal side stays out and the line reads as at least.
         var journalValue: Decimal?
         var journalComplete = false
         var journalEmpty = false
-        if case .known(let value, _) = line.amount {
+        var journalUnit: MeasureUnit?
+        if case .known(let value, let amountUnit) = line.amount {
             journalValue = value
+            journalUnit = amountUnit
             journalComplete = true
-        } else if line.isPartial, case .known(let value, _)? = line.knownSum {
+        } else if line.isPartial, case .known(let value, let amountUnit)? = line.knownSum {
             journalValue = value
+            journalUnit = amountUnit
         } else if case .unknown = line.amount, !line.isPartial, line.missingCount == 0 {
             // No journal entries for the day: the totals builder reads an empty day as unknown, but nothing was
             // left out, so the journal side is a complete nothing.
             journalValue = 0
             journalComplete = true
             journalEmpty = true
+        }
+        if let journalUnit, journalUnit.symbol != unit.symbol {
+            journalValue = nil
+            journalComplete = false
         }
 
         // Health's side: a value Health returned, a known zero for a query that succeeded with no samples,
