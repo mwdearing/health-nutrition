@@ -73,6 +73,8 @@ public enum HealthIntakeTotals {
         // Nothing logged and no Health amount above zero: the day has nothing known, so the line stays "—" rather
         // than reading 0 or "at least 0".
         if journalEmpty, (outsideValue ?? 0) == 0 { return line }
+        // A journal side with entries but no known part, against a Health zero: nothing is known, so the line stays unknown.
+        if journalValue == nil, (outsideValue ?? 0) == 0 { return line }
         let sum = NutrientValue.known((journalValue ?? 0) + (outsideValue ?? 0), unit)
 
         if journalComplete && outsideComplete {

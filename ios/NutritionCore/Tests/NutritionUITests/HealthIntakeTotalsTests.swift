@@ -128,7 +128,7 @@ final class HealthIntakeTotalsTests: XCTestCase {
             let sample = OutsideNutrientSample(
                 quantityTypeIdentifier: identifier, value: 1, unit: mapping?.unit ?? .g, isWrittenByThisApp: false)
             let totals = OutsideIntakeTotals.totals(from: [sample])
-            XCTAssertEqual(Set(totals.keys), [mapping?.nutrientKey].compactMap { $0 }, identifier)
+            XCTAssertEqual(Set(totals.keys), Set([mapping?.nutrientKey].compactMap { $0 }), identifier)
         }
     }
 
@@ -153,6 +153,11 @@ final class HealthIntakeTotalsTests: XCTestCase {
             [journalIU], outside: .read(values: ["vitaminD": 5], readKeys: ["vitaminD"]))
         XCTAssertEqual(combined.first?.isPartial, true)
         XCTAssertEqual(combined.first?.knownSum, .known(5, vitaminD))
+    }
+
+    func testUnknownJournalWithEntriesAndHealthZeroStaysUnknown() {
+        let line = NutrientProgressLine(nutrient: "energy", amount: .unknown, goal: nil, missingCount: 1)
+        XCTAssertEqual(HealthIntakeTotals.combine([line], outside: .read(values: [:], readKeys: ["energy"])), [line])
     }
 
     func testWaterLineIsNeverCombined() {
