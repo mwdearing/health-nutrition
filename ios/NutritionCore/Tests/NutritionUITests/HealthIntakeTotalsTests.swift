@@ -186,6 +186,15 @@ final class HealthIntakeTotalsTests: XCTestCase {
         XCTAssertEqual(combined.first?.isPartial, false)
     }
 
+    func testIUJournalTotalWithAKnownHealthZeroShowsItsOwnIUAmount() {
+        // A known Health zero adds nothing, and the IU amount is not mixed with mcg, so the line shows its own IU amount.
+        let journalIU = NutrientProgressLine(nutrient: "vitaminD", amount: .known(100, .iu), goal: nil)
+        let combined = HealthIntakeTotals.combine(
+            [journalIU], outside: .read(values: [:], readKeys: ["vitaminD"]))
+        XCTAssertEqual(combined.first?.amount, .known(100, .iu))
+        XCTAssertEqual(combined.first?.isPartial, false)
+    }
+
     func testWaterLineIsNeverCombined() {
         let water = line(DailyTotalsBuilder.waterKey, known: 500, unit: .mL)
         let combined = HealthIntakeTotals.combine([water], outside: .read(values: [DailyTotalsBuilder.waterKey: 250], readKeys: [DailyTotalsBuilder.waterKey]))
