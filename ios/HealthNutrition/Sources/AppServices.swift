@@ -150,9 +150,10 @@ final class AppServices {
         }
         // The order the erase runs in, and the order a failure is listed in on the erase screen. The widget
         // eraser runs first so no publish announced before the erase can land after it.
-        let erasers: [JournalErasing] = [widgetSnapshotEraser, savedMealStore, supplementSchedules]
-            + reminderErasers
-            + [journalStore, favoritesStore, recipeStore, goalStore]
+        let erasers = ConnectionsPrivacyViewModel.eraseOrder(
+            widgets: widgetSnapshotEraser, savedMeals: savedMealStore, supplements: supplementSchedules,
+            reminders: reminderErasers, journal: journalStore, favorites: favoritesStore, recipes: recipeStore,
+            goals: goalStore)
         connections = ConnectionsPrivacyViewModel(
             store: journalStore, favorites: favoritesStore, savedMeals: savedMealStore, appVersion: Self.appVersion,
             erasers: erasers,

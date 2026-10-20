@@ -207,6 +207,44 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
         XCTAssertEqual(model.entryCount, 0)
     }
 
+    /// Erase and Retry only ask for confirmation: nothing is erased until the person confirms.
+    func testARequestedEraseErasesNothingUntilConfirmed() async {
+        let eraser = RecordingEraser()
+        let model = makeModel([eraser])
+        model.requestErase()
+        XCTAssertTrue(model.eraseConfirmationPending)
+        XCTAssertEqual(eraser.eraseCount, 0)
+
+        model.cancelEraseRequest()
+        XCTAssertFalse(model.eraseConfirmationPending)
+        XCTAssertEqual(eraser.eraseCount, 0)
+
+        model.requestErase()
+        let erased = await model.confirmErase()
+        XCTAssertTrue(erased)
+        XCTAssertEqual(eraser.eraseCount, 1)
+        XCTAssertFalse(model.eraseConfirmationPending)
+    }
+
+    /// The erase runs the stores in the order the app builds them: widget data first, journal after the lists.
+    func testTheEraseOrderIsWidgetFirstAndJournalAfterTheLists() async {
+        let log = EraseOrderLog()
+        let order = ConnectionsPrivacyViewModel.eraseOrder(
+            widgets: OrderedEraser("widget data", log), savedMeals: OrderedEraser("saved meals", log),
+            supplements: OrderedEraser("supplements", log),
+            reminders: [OrderedEraser("reminders", log), OrderedEraser("custom reminders", log)],
+            journal: OrderedEraser("journal", log), favorites: OrderedEraser("favorites", log),
+            recipes: OrderedEraser("recipes", log), goals: OrderedEraser("goals", log))
+        let model = makeModel(order)
+
+        let erased = await model.eraseAllData()
+        XCTAssertTrue(erased)
+        XCTAssertEqual(log.names, [
+            "widget data", "saved meals", "supplements", "reminders", "custom reminders",
+            "journal", "favorites", "recipes", "goals",
+        ])
+    }
+
     /// Community sharing is paused only once the erase is going ahead. A restore flag that cannot be cleared
     /// stops the erase before the stores, so it must not pause sharing.
     func testBeforeEraseDoesNotRunWhenTheFlagCannotBeCleared() async {
@@ -440,5 +478,24 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
             XCTAssertFalse(message.contains("nothing needs deleting"), message)
             XCTAssertFalse(message.contains("nothing needs to be deleted"), message)
         }
+    }
+}
+
+/// Records the order the erase calls each store in.
+private final class EraseOrderLog: @unchecked Sendable {
+    var names: [String] = []
+}
+
+private final class OrderedEraser: JournalErasing, @unchecked Sendable {
+    let erasureName: String
+    private let log: EraseOrderLog
+
+    init(_ name: String, _ log: EraseOrderLog) {
+        erasureName = name
+        self.log = log
+    }
+
+    func eraseAll() throws {
+        log.names.append(erasureName)
     }
 }
