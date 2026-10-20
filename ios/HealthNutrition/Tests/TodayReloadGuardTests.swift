@@ -30,4 +30,11 @@ final class TodayReloadGuardTests: XCTestCase {
         let readings = BodyActivityReadings()
         XCTAssertFalse(TodayViewModel.needsReload(activeEnergyKcal: nil, outsideIntake: .notConnected, for: readings))
     }
+
+    func testAHealthDisconnectWhileTodayHoldsHealthReloadsToday() {
+        // Health stopped being read (not connected now), while Today still holds a Health side: Today must reload.
+        let readings = BodyActivityReadings()
+        XCTAssertTrue(TodayViewModel.needsReload(
+            activeEnergyKcal: nil, outsideIntake: .read(values: ["energy": 620], readKeys: ["energy"]), for: readings))
+    }
 }

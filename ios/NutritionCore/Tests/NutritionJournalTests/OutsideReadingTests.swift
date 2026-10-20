@@ -70,6 +70,16 @@ final class OutsideReadingTests: XCTestCase {
             .unreadable(nutrientKey: "energy"))
     }
 
+    func testAReadableUnitPlansTheKeyUnitAndIUFactor() {
+        XCTAssertEqual(
+            OutsideIntakeTotals.readPlan(for: energy.quantityTypeIdentifier, unitIsReadable: { _ in true }),
+            .read(nutrientKey: "energy", unit: energy.unit, hasIUFactor: false))
+        let vitaminD = HealthKitWritePlanner.mapping(for: "vitaminD")!
+        XCTAssertEqual(
+            OutsideIntakeTotals.readPlan(for: vitaminD.quantityTypeIdentifier, unitIsReadable: { _ in true }),
+            .read(nutrientKey: "vitaminD", unit: vitaminD.unit, hasIUFactor: true))
+    }
+
     func testAnUnnamedIdentifierPlansNothing() {
         XCTAssertEqual(
             OutsideIntakeTotals.readPlan(for: "HKQuantityTypeIdentifierNotAFood", unitIsReadable: { _ in true }),
