@@ -124,6 +124,13 @@ final class JournalEraseTests: XCTestCase {
 
         let after = try XCTUnwrap(FileManager.default.attributesOfItem(atPath: url.path)[.creationDate] as? Date)
         XCTAssertNotEqual(before, after)
+
+        // The replacement file holds no erased rows: a store reopened on it reads empty.
+        store.close()
+        let reopened = try SwiftDataJournalStore(url: url)
+        XCTAssertTrue(try reopened.activeIntakes().isEmpty)
+        XCTAssertTrue(try reopened.deletedIntakes().isEmpty)
+        reopened.close()
     }
 
     /// A removal that fails on the write-ahead file must keep the main file. The store then reopens on the file
