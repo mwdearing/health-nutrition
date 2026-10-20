@@ -403,6 +403,25 @@ final class JournalLibraryTests: XCTestCase {
         XCTAssertNil(model.copyNotice)
     }
 
+    /// A copy deleted by hand is skipped, not counted: a failed undo of the rest says only what is still here (#535).
+    func testFailedUndoCountsOnlyTheCopiesStillHereAfterAHandDeletedOne() throws {
+        let store = try makeStore()
+        let yesterday = now.addingTimeInterval(-86_400)
+        _ = try addFood(store, name: "Oats", at: yesterday, product: product("snap-a"))
+        _ = try addFood(store, name: "Rice", at: yesterday.addingTimeInterval(60), product: product("snap-b"))
+        _ = try addFood(store, name: "Milk", at: yesterday.addingTimeInterval(120), product: product("snap-c"))
+        let model = JournalViewModel(store: store, timeZoneIdentifier: "UTC")
+        model.load(now: now)
+        let past = try XCTUnwrap(model.sections.first { $0.id != JournalViewModel.dayKey(now, zone: TimeZone(identifier: "UTC")!) })
+        let result = try XCTUnwrap(model.copyDayToToday(past.id, now: now))
+
+        // The first copy is deleted by hand (delete call 1). The undo then deletes the second (call 2) and fails the third (call 3).
+        try store.delete(intakeID: result.createdIDs[0], now: now)
+        store.failDeleteAt = 3
+        XCTAssertFalse(model.undoCopy(now: now))
+        XCTAssertEqual(model.copyNotice, "Couldn't remove 1 copied entry. Tap Undo to try again.")
+    }
+
     /// One copy left behind reads in the singular (#535).
     func testFailedUndoOfOneCopyReadsInTheSingular() throws {
         let store = try makeStore()
