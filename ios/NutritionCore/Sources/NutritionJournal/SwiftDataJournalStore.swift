@@ -1846,7 +1846,6 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             }
             for suffix in ["-shm", "-wal", ""] {
                 // Stop at the first failure, so no later file is removed after an earlier one failed.
-                if removalError != nil { break }
                 let file = URL(fileURLWithPath: storeURL.path + suffix)
                 guard FileManager.default.fileExists(atPath: file.path) else { continue }
                 do {
