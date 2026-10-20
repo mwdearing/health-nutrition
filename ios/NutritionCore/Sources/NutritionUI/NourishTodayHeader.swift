@@ -92,7 +92,7 @@ public struct NourishTodayHeader: View {
         }
         return SummaryFigures(
             remaining: remaining,
-            food: calories.food.map { BodyActivityViewModel.whole($0) } ?? "—",
+            food: calories.food.map { BodyActivityViewModel.whole($0) } ?? "0",
             burned: calories.burned.map { BodyActivityViewModel.whole($0) })
     }
 
