@@ -103,7 +103,8 @@ final class HealthIntakeTotalsTests: XCTestCase {
     func testReadingsMapToOutsideState() {
         XCTAssertEqual(BodyActivityReadings(outsideNutrients: ["energy": 620]).outsideIntake, .notConnected)
         XCTAssertEqual(
-            BodyActivityReadings(outsideNutrients: ["energy": 620], outsideRead: true).outsideIntake,
+            BodyActivityReadings(
+                outsideNutrients: ["energy": 620], outsideRead: true, outsideReadKeys: ["energy"]).outsideIntake,
             .read(values: ["energy": 620], readKeys: ["energy"]))
         XCTAssertEqual(
             BodyActivityReadings(outsideReadFailed: true, outsideRead: true).outsideIntake,
