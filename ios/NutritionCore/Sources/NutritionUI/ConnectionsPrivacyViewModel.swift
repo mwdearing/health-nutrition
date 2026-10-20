@@ -724,14 +724,38 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         return await eraseAllData()
     }
 
+    /// The stores an erase runs, one field per slot, so each slot is named where it is built.
+    public struct EraseStores {
+        public let widgets: JournalErasing
+        public let savedMeals: JournalErasing
+        public let supplements: JournalErasing
+        public let reminders: [JournalErasing]
+        public let journal: JournalErasing
+        public let favorites: JournalErasing
+        public let recipes: JournalErasing
+        public let goals: JournalErasing
+
+        public init(
+            widgets: JournalErasing, savedMeals: JournalErasing, supplements: JournalErasing,
+            reminders: [JournalErasing], journal: JournalErasing, favorites: JournalErasing, recipes: JournalErasing,
+            goals: JournalErasing
+        ) {
+            self.widgets = widgets
+            self.savedMeals = savedMeals
+            self.supplements = supplements
+            self.reminders = reminders
+            self.journal = journal
+            self.favorites = favorites
+            self.recipes = recipes
+            self.goals = goals
+        }
+    }
+
     /// The stores in the order an erase runs them, and so the order a failure is listed in: widget data first, so no
     /// publish announced before the erase lands after it, and journal after the lists it does not depend on.
-    public static func eraseOrder(
-        widgets: JournalErasing, savedMeals: JournalErasing, supplements: JournalErasing,
-        reminders: [JournalErasing], journal: JournalErasing, favorites: JournalErasing, recipes: JournalErasing,
-        goals: JournalErasing
-    ) -> [JournalErasing] {
-        [widgets, savedMeals, supplements] + reminders + [journal, favorites, recipes, goals]
+    public static func eraseOrder(_ stores: EraseStores) -> [JournalErasing] {
+        [stores.widgets, stores.savedMeals, stores.supplements] + stores.reminders
+            + [stores.journal, stores.favorites, stores.recipes, stores.goals]
     }
 
     /// Puts the display preferences back to their defaults and republishes that state, so the screen

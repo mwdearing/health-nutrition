@@ -152,9 +152,10 @@ final class AppServices {
         // first so no publish announced before the erase can land after it. The reminder readback is not in this
         // list: it runs after the stores.
         let erasers = ConnectionsPrivacyViewModel.eraseOrder(
-            widgets: widgetSnapshotEraser, savedMeals: savedMealStore, supplements: supplementSchedules,
-            reminders: reminderErasers, journal: journalStore, favorites: favoritesStore, recipes: recipeStore,
-            goals: goalStore)
+            ConnectionsPrivacyViewModel.EraseStores(
+                widgets: widgetSnapshotEraser, savedMeals: savedMealStore, supplements: supplementSchedules,
+                reminders: reminderErasers, journal: journalStore, favorites: favoritesStore, recipes: recipeStore,
+                goals: goalStore))
         connections = ConnectionsPrivacyViewModel(
             store: journalStore, favorites: favoritesStore, savedMeals: savedMealStore, appVersion: Self.appVersion,
             erasers: erasers,

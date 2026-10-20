@@ -186,13 +186,13 @@ final class AppServicesEraseTests: XCTestCase {
                 store: UserDefaultsCustomReminderStore(), scheduler: CustomCapableReminderScheduler(),
                 erasures: ReminderErasures()))
         }
-        let order = ConnectionsPrivacyViewModel.eraseOrder(
+        let order = ConnectionsPrivacyViewModel.eraseOrder(ConnectionsPrivacyViewModel.EraseStores(
             widgets: WidgetSnapshotEraser(), savedMeals: UserDefaultsSavedMealStore(),
             supplements: UserDefaultsSupplementStackStore(), reminders: reminders,
             journal: try! SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store")),
             favorites: try! SwiftDataFavoritesStore(url: directory.appendingPathComponent("favorites.store")),
             recipes: try! SwiftDataRecipeStore(url: directory.appendingPathComponent("recipes.store")),
-            goals: try! SwiftDataGoalStore(url: directory.appendingPathComponent("goals.store")))
+            goals: try! SwiftDataGoalStore(url: directory.appendingPathComponent("goals.store"))))
         return order.map(\.erasureName)
     }
 
