@@ -38,7 +38,7 @@ public enum OutsideIntakeTotals {
     /// sample is absent, so a caller can tell "nothing logged elsewhere" from "logged as zero".
     public static func totals(from samples: [OutsideNutrientSample]) -> [String: Decimal] {
         var totals: [String: Decimal] = [:]
-        for sample in samples where !sample.isWrittenByThisApp {
+        for sample in samples {
             guard let mapping = HealthKitWritePlanner.mappings.first(where: {
                 $0.quantityTypeIdentifier == sample.quantityTypeIdentifier
             }) else {
