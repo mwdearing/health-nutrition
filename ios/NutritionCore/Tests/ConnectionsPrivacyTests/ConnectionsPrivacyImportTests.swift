@@ -603,6 +603,27 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         XCTAssertEqual(try journal.activeIntakes().map(\.id), [entryID])
     }
 
+    /// An import that is still running when the wait ends leaves the erase with nothing erased, and offers Retry.
+    func testAnErasePastItsWaitErasesNothingAndOffersRetry() async throws {
+        let journal = ImportStubStore()
+        journal.pauseBeforeRestoreForTesting = true
+        let model = ConnectionsPrivacyViewModel(store: journal, erasers: [journal])
+
+        model.importJournal(data: try export(includeFavorite: false))
+        let restorePaused = await waitForSignal(journal.restorePausedBeforeWriteForTesting)
+        XCTAssertTrue(restorePaused)
+
+        let erased = await model.eraseAllData()
+        XCTAssertFalse(erased)
+        XCTAssertEqual(model.errorMessage, ConnectionsPrivacyViewModel.eraseNothingErasedMessage)
+        XCTAssertTrue(model.eraseRetryAvailable)
+
+        journal.resumeRestoreBeforeWriteForTesting.signal()
+        for _ in 0..<200 where model.isImporting {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+    }
+
     func testFailedErasePublishesPartialRestoreThatCompletesDuringOrAfterErase() async throws {
         let journal = ImportStubStore()
         journal.failUndoForTesting = true

@@ -133,9 +133,6 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         "Data was being erased, so nothing was imported. Try again once that is finished."
     public static let partialRestoreWarningMessage =
         "The restore was incomplete; journal entries or saved meals may already be present. Check your journal and saved meals before importing this file again."
-    /// An erase that found a restore still running and would not wait any longer.
-    public static let eraseWaitTimedOutMessage =
-        "An import was still running, so nothing was erased. Try again in a moment."
 
     public static let eraseButtonTitle = "Erase all data"
     /// The confirmation the button is guarded by. It names what goes and says the erase cannot be undone.
@@ -631,7 +628,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         importGeneration += 1
         importTask?.cancel()
         guard importGate.wait(upTo: Self.eraseWaitsForImportSeconds) else {
-            errorMessage = Self.eraseWaitTimedOutMessage
+            // Nothing was erased: the wait ends before any store is touched.
+            errorMessage = Self.eraseNothingErasedMessage
             eraseRetryAvailable = true
             return false
         }
