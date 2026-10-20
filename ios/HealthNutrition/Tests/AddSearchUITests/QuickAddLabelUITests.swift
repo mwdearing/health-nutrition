@@ -9,14 +9,11 @@ final class QuickAddLabelUITests: XCTestCase {
         let getStarted = app.buttons["Get started"]
         if getStarted.waitForExistence(timeout: 5) { getStarted.tap() }
 
-        let addCandidates = app.buttons.matching(NSPredicate(format: "label == %@", "Add food, drink, or supplement"))
-        let deadline = Date().addingTimeInterval(15)
-        while Date() < deadline, !addCandidates.allElementsBoundByIndex.contains(where: { $0.exists && $0.isHittable }) {
-            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
-        }
-        let addButton = addCandidates.allElementsBoundByIndex.first(where: { $0.exists && $0.isHittable })
-        XCTAssertNotNil(addButton, "no hittable Add button on the Today screen")
-        addButton?.tap()
+        // Two buttons share this label and the first is not hittable, so wait for the hittable one.
+        let addButton = app.buttons.matching(
+            NSPredicate(format: "label == %@ AND isHittable == true", "Add food, drink, or supplement")).firstMatch
+        XCTAssertTrue(addButton.waitForExistence(timeout: 15), "no hittable Add button on the Today screen")
+        addButton.tap()
 
         let amountsOnly = app.buttons["Amounts only"]
         XCTAssertTrue(amountsOnly.waitForExistence(timeout: 10), "the Amounts only quick action is not on the Add screen")
