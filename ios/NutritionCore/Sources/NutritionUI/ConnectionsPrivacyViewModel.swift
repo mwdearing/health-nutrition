@@ -291,6 +291,9 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     private let afterSuccessfulErase: @MainActor () -> Void
     /// Forgets an optional community session on this device; the default keeps account-free builds standalone.
     private let eraseLocalAccount: () async throws -> Void
+    /// Reads back the system's pending reminder requests after the reminder erasers ran. True when any of ours remain,
+    /// so the erase names "reminders" as still on the phone. The reminder erasers cannot report a failure themselves.
+    private let remindersStillPending: () async -> Bool
 
     /// Changes whenever this screen creates, clears, or forgets an export. An import may remove only the
     /// copy that was already current when that import began; a later export may contain restored rows.
@@ -309,6 +312,11 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
 
     /// The restore in flight, so an erase can ask it to stop and wait for it. Nil when nothing is running.
     private var importTask: Task<Void, Never>?
+
+    /// Waits for the running import, if any, to finish. Tests await this instead of polling.
+    func waitForImportForTesting() async {
+        await importTask?.value
+    }
     /// Whether the in-flight import has been cancelled, so a test can tell a cancelled import from a running one.
     var importIsCancelledForTesting: Bool { importTask?.isCancelled ?? false }
     /// Whether a restore is running right now, and how to wait for it. A lock rather than an actor,
@@ -349,7 +357,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         preferences: DisplayPreferencesWriting = InMemoryDisplayPreferences(),
         beforeErase: @escaping @MainActor () -> Void = {},
         afterSuccessfulErase: @escaping @MainActor () -> Void = {},
-        eraseLocalAccount: @escaping () async throws -> Void = {}
+        eraseLocalAccount: @escaping () async throws -> Void = {},
+        remindersStillPending: @escaping () async -> Bool = { false }
     ) {
         self.store = store
         self.favorites = favorites
@@ -360,6 +369,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         self.beforeErase = beforeErase
         self.afterSuccessfulErase = afterSuccessfulErase
         self.eraseLocalAccount = eraseLocalAccount
+        self.remindersStillPending = remindersStillPending
         self.remover = remover
         self.preferences = preferences
         self.unitSystem = preferences.unitSystem
@@ -656,6 +666,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         }
         // Every export file this app wrote goes, not only the one this model remembers: the app can be
         // killed after an export, and the next session's model starts with no URL to delete.
+        if await remindersStillPending() { leftBehind.append("reminders") }
         if !removeEveryExportFile() { leftBehind.append("export files") }
         let failed = !leftBehind.isEmpty
         // The handle this screen was holding is one of those files, or is already gone. Clearing it
@@ -721,6 +732,9 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     ) -> [JournalErasing] {
         [widgets, savedMeals, supplements] + reminders + [journal, favorites, recipes, goals]
     }
+
+    /// The names of the stores this model runs, in erase order, for tests that pin the production list.
+    var eraserNamesForTesting: [String] { erasers.map(\.erasureName) }
 
     /// Puts the display preferences back to their defaults and republishes that state, so the screen
     /// shows what a person sees on a fresh install rather than the settings just erased.
