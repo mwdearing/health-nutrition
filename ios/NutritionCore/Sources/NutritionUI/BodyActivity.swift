@@ -131,7 +131,7 @@ public final class BodyActivityViewModel: ObservableObject {
         var parts: [String] = []
         // Only a nutrient whose read completed is shown: a partial sum would look like a complete figure.
         if readings.outsideReadKeys.contains("energy"), let energy = readings.outsideNutrients["energy"] { parts.append("\(Self.whole(energy)) Calories") }
-        if readings.outsideReadKeys.contains("protein"), let protein = readings.outsideNutrients["protein"] { parts.append("\(Self.whole(protein)) g protein") }
+        if let protein = readings.outsideNutrients["protein"] { parts.append("\(Self.whole(protein)) g protein") }
         if readings.outsideReadKeys.contains("water"), let water = readings.outsideNutrients["water"] {
             if unitSystem() == .usCustomary {
                 parts.append("\(Self.whole(water / Self.millilitersPerFluidOunce)) fl oz water")
