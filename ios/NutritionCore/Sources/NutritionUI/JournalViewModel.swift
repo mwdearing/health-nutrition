@@ -22,7 +22,7 @@ public struct JournalRow: Equatable, Identifiable {
 
     public init(
         id: String, title: String, detail: String, occurredAt: Date, timeZoneIdentifier: String,
-        meal: String?, kind: ProductKind = .food, countsAs: ProductKind = .food, isWater: Bool = false
+        meal: String?, kind: ProductKind = .food, countsAs: ProductKind, isWater: Bool = false
     ) {
         self.id = id
         self.title = title
