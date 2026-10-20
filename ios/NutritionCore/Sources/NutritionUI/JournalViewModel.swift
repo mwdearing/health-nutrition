@@ -217,8 +217,7 @@ public final class JournalViewModel: ObservableObject {
                     continue
                 }
                 let snapshot = Self.snapshot(of: current, in: &snapshots, using: store)
-                let rowKind = ProductKindResolution.kind(
-                    snapshotID: current.productSnapshotID, snapshotKind: { _ in snapshot?.kind }, category: intake.category)
+                let rowKind = snapshot?.kind ?? .food
                 let row = JournalRow(
                     id: intake.id, title: QuickAddViewModel.rowTitle(components: current.components, product: snapshot),
                     detail: current.components.isEmpty ? "unknown" : current.components.map { component in
