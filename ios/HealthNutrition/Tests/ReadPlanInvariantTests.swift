@@ -4,6 +4,7 @@ import XCTest
 @testable import HealthNutrition
 
 /// The reader plans a read only for a unit HealthKit has a unit for. Pinned for every mapping, so the two predicates cannot drift.
+@MainActor
 final class ReadPlanInvariantTests: XCTestCase {
     func testEveryMappingIsReadableExactlyWhenHealthKitHasItsUnit() {
         for mapping in HealthKitWritePlanner.mappings {

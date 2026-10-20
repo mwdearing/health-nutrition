@@ -7,6 +7,7 @@ import XCTest
 
 /// How a HealthKit sample is read: in the nutrient's unit when HealthKit says it is compatible, IU only for a nutrient with
 /// a fixed IU amount, and not at all otherwise. Quantities are built directly, so no HealthKit store is needed.
+@MainActor
 final class HealthKitSampleUnitTests: XCTestCase {
     func testAGramSampleIsReadInTheNutrientsUnit() throws {
         let protein = try XCTUnwrap(HealthKitWritePlanner.mapping(for: "protein"))
