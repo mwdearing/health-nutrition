@@ -1797,8 +1797,6 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     /// The store file is then deleted and reopened empty, so the store reads empty and accepts new entries
     /// afterwards. The erased rows are removed from the store file when both companion files were deleted.
     public func eraseAll() throws {
-        // The restore flag goes first so a re-import cannot put erased favorites back. Clearing it twice is harmless.
-        try clearRestoreInProgress()
         _ = try commit { context in
             for row in try context.fetch(FetchDescriptor<JournalSchemaV10.LoggedUnitRecord>()) { context.delete(row) }
             for row in try context.fetch(FetchDescriptor<JournalSchemaV9.LibraryExclusionRecord>()) { context.delete(row) }
