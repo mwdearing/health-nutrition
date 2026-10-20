@@ -647,9 +647,9 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         importGeneration += 1
         beforeErase()
 
-        // Every store and export file that is still on the phone afterwards is named in the order the erase ran;
-        // the reminder readback runs after the stores, so "reminders" is listed last among the stores,
-        // so the person knows exactly what to retry. One failure never stops the rest.
+        // Every store and export file that is still on the phone afterwards is named, so the person knows exactly
+        // what to retry. The stores are named in the order the erase ran; the reminder readback comes after them,
+        // and the export files last. One failure never stops the rest.
         var leftBehind: [String] = []
         var journalEraseSucceeded = false
         // The community session is forgotten locally only. This never calls the server.

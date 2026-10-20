@@ -148,8 +148,9 @@ final class AppServices {
                 store: store, permissions: custom, scheduler: custom, erasures: reminderErasures)
             reminderErasers.append(CustomReminderEraser(store: store, scheduler: custom, erasures: reminderErasures))
         }
-        // The order the erase runs in, and the order a failure is listed in on the erase screen. The widget
-        // eraser runs first so no publish announced before the erase can land after it.
+        // The order the stores are erased in, and so the order their failures are listed in. The widget eraser runs
+        // first so no publish announced before the erase can land after it. The reminder readback is not in this
+        // list: it runs after the stores.
         let erasers = ConnectionsPrivacyViewModel.eraseOrder(
             widgets: widgetSnapshotEraser, savedMeals: savedMealStore, supplements: supplementSchedules,
             reminders: reminderErasers, journal: journalStore, favorites: favoritesStore, recipes: recipeStore,
