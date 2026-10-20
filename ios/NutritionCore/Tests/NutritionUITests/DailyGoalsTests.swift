@@ -1317,6 +1317,6 @@ extension DailyGoalsTests {
         XCTAssertTrue(try goals.goals().contains { $0.nutrient == key }, "the stored goal still loads")
         let progress = try XCTUnwrap(model.progress.first { $0.nutrient == key })
         XCTAssertTrue(progress.hasGoal)
-        XCTAssertFalse((progress.text ?? "").hasPrefix("0"), "an unknown value is not shown as zero")
+        XCTAssertTrue(progress.text.hasSuffix(" unknown"), "an unknown value is shown as unknown, never as zero")
     }
 }
