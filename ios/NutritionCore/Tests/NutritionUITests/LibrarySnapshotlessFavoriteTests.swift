@@ -26,7 +26,7 @@ final class LibrarySnapshotlessFavoriteTests: XCTestCase {
             id: UUID().uuidString.lowercased(), category: category, occurredAt: now.addingTimeInterval(-300),
             timeZoneIdentifier: "UTC", meal: nil)
         try store.create(
-            intake, components: [IntakeComponent(componentID: "typed-dose", name: "Fiber powder", amount: Decimal(string: "19.72")!, unit: .mL)],
+            intake, components: [IntakeComponent(componentID: "typed-dose", name: "Fiber powder", amount: Decimal(string: "19.715686375")!, unit: .mL)],
             product: nil, now: now)
         let model = LibraryViewModel(store: store, favorites: favorites, timeZoneIdentifier: "UTC")
         model.load()

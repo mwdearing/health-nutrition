@@ -16,13 +16,13 @@ final class SnapshotlessSupplementRowsTests: XCTestCase {
         return try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
     }
 
-    /// One typed supplement of 19.72 mL (4 teaspoons), logged today, with no product snapshot.
+    /// One typed supplement of 19.715686375 mL (4 teaspoons), logged today, with no product snapshot.
     private func logTypedEntry(_ store: SwiftDataJournalStore, category: String) throws {
         let intake = Intake(
             id: UUID().uuidString.lowercased(), category: category, occurredAt: now.addingTimeInterval(-300),
             timeZoneIdentifier: "UTC", meal: nil)
         try store.create(
-            intake, components: [IntakeComponent(componentID: "typed-dose", name: "Fiber powder", amount: Decimal(string: "19.72")!, unit: .mL)],
+            intake, components: [IntakeComponent(componentID: "typed-dose", name: "Fiber powder", amount: Decimal(string: "19.715686375")!, unit: .mL)],
             product: nil, now: now)
     }
 
