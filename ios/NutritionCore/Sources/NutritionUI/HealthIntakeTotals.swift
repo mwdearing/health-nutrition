@@ -12,10 +12,10 @@ public enum HealthIntakeTotals {
     public enum Outside: Equatable, Sendable {
         /// Apple Health is not connected, so nothing outside the journal is counted.
         case notConnected
-        /// The read failed, so every nutrient's Health side is unknown.
-        case failed
-        /// The read succeeded, with each canonical key's day total. A key with no value is unknown.
-        case read([String: Decimal])
+        /// The read ran. `values` holds each nutrient's day total in its unit. A key in `readKeys` with no value
+        /// is a known zero: its query succeeded and Health had no samples. A key outside `readKeys` is unknown,
+        /// which is what a failed query leaves.
+        case read(values: [String: Decimal], readKeys: Set<String>)
     }
 
     /// The lines with Health's side added. Water is left alone: its own line already counts drinks.
@@ -39,10 +39,11 @@ public enum HealthIntakeTotals {
             journalValue = value
         }
 
-        // Health's side: a missing key or a failed read is unknown, never zero.
+        // Health's side: a value Health returned, a known zero for a query that succeeded with no samples,
+        // and unknown (nil, never zero) for a query that failed or was not run.
         var outsideValue: Decimal?
-        if case .read(let values) = outside {
-            outsideValue = values[line.nutrient]
+        if case .read(let values, let readKeys) = outside {
+            outsideValue = values[line.nutrient] ?? (readKeys.contains(line.nutrient) ? 0 : nil)
         }
         let outsideComplete = outsideValue != nil
 

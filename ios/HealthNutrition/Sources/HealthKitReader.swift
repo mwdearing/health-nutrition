@@ -55,11 +55,10 @@ final class HealthKitReader: BodyActivityReading {
         readings.steps = await sum(.stepCount, unit: .count(), from: startOfDay, to: now)
         readings.activeEnergyKcal = await sum(.activeEnergyBurned, unit: .kilocalorie(), from: startOfDay, to: now)
         readings.outsideRead = true
-        if let outside = await outsideNutrientTotals(from: startOfDay, to: now) {
-            readings.outsideNutrients = outside
-        } else {
-            readings.outsideReadFailed = true
-        }
+        let outside = await outsideNutrientTotals(from: startOfDay, to: now)
+        readings.outsideNutrients = outside.totals
+        readings.outsideReadKeys = outside.readKeys
+        readings.outsideReadFailed = outside.failed
         if let latest = await latestWeight(before: now) {
             readings.latestWeightKg = latest.kilograms
             readings.latestWeightDate = latest.date
@@ -85,24 +84,35 @@ final class HealthKitReader: BodyActivityReading {
 
     /// Today's nutrient totals from samples other apps wrote. This app's own samples are flagged by
     /// their source and left out by `OutsideIntakeTotals`, so an entry logged here is never counted twice.
-    /// The day's outside totals, or nil when any query fails: a partial total would read as complete.
-    private func outsideNutrientTotals(from start: Date, to end: Date) async -> [String: Decimal]? {
+    /// The day's outside totals per nutrient. A query that succeeds marks its nutrient as read, so an empty
+    /// result is a known zero; a query that fails (or cannot be mapped) leaves its nutrient unread, and `failed`
+    /// is set. Other nutrients still report, so one failed type does not make the whole day unknown.
+    private func outsideNutrientTotals(from start: Date, to end: Date)
+        async -> (totals: [String: Decimal], readKeys: Set<String>, failed: Bool)
+    {
         let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
         let own = HKSource.default()
         var samples: [OutsideNutrientSample] = []
+        var readKeys: Set<String> = []
+        var failed = false
         for identifier in OutsideIntakeTotals.readQuantityTypeIdentifiers {
             guard
                 let mapping = HealthKitWritePlanner.mappings.first(where: { $0.quantityTypeIdentifier == identifier }),
                 let hkUnit = Self.healthKitUnit(for: mapping.unit)
-            else { return nil }
+            else {
+                failed = true
+                continue
+            }
             let found: [HKQuantitySample]
             do {
                 found = try await HKSampleQueryDescriptor(
                     predicates: [.quantitySample(type: HKQuantityType(HKQuantityTypeIdentifier(rawValue: identifier)), predicate: predicate)],
                     sortDescriptors: []).result(for: healthStore)
             } catch {
-                return nil
+                failed = true
+                continue
             }
+            readKeys.insert(mapping.nutrientKey)
             for sample in found {
                 // Another app may store a sample in international units. Each sample is read in a unit it is
                 // compatible with (checked first, so no incompatible conversion is attempted), and IU is passed
@@ -126,7 +136,7 @@ final class HealthKitReader: BodyActivityReading {
                     isWrittenByThisApp: sample.sourceRevision.source == own))
             }
         }
-        return OutsideIntakeTotals.totals(from: samples)
+        return (OutsideIntakeTotals.totals(from: samples), readKeys, failed)
     }
 
     /// The HealthKit unit for each unit the nutrient table uses. A unit not listed here returns nil, which fails the day's read.

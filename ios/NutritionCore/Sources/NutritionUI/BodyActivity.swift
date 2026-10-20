@@ -19,15 +19,19 @@ public struct BodyActivityReadings: Equatable, Sendable {
     public var outsideReadFailed: Bool
     /// True only when the app target actually tried to read other apps' entries this time.
     public var outsideRead: Bool
+    /// The canonical keys whose Health query succeeded this read. A key here with no value is a known zero.
+    public var outsideReadKeys: Set<String>
 
     public init(
         steps: Decimal? = nil, activeEnergyKcal: Decimal? = nil, latestWeightKg: Decimal? = nil,
         latestWeightDate: Date? = nil, earlierWeightKg: Decimal? = nil, earlierWeightDate: Date? = nil,
-        outsideNutrients: [String: Decimal] = [:], outsideReadFailed: Bool = false, outsideRead: Bool = false
+        outsideNutrients: [String: Decimal] = [:], outsideReadFailed: Bool = false, outsideRead: Bool = false,
+        outsideReadKeys: Set<String> = []
     ) {
         self.outsideNutrients = outsideNutrients
         self.outsideReadFailed = outsideReadFailed
         self.outsideRead = outsideRead
+        self.outsideReadKeys = outsideReadKeys
         self.steps = steps
         self.activeEnergyKcal = activeEnergyKcal
         self.latestWeightKg = latestWeightKg
@@ -42,7 +46,7 @@ public struct BodyActivityReadings: Equatable, Sendable {
     /// Health's side of Today's totals, from this read.
     public var outsideIntake: HealthIntakeTotals.Outside {
         guard outsideRead else { return .notConnected }
-        return outsideReadFailed ? .failed : .read(outsideNutrients)
+        return .read(values: outsideNutrients, readKeys: outsideReadKeys)
     }
 }
 
