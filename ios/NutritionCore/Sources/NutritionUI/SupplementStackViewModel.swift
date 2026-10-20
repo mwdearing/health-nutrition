@@ -169,7 +169,7 @@ public final class SupplementStackViewModel: ObservableObject {
                 return found
             }
             func kind(_ snapshotID: String?, category: String) -> ProductKind {
-                ProductKindResolution.kind(snapshotID: snapshotID, snapshotKind: { self.product($0)?.kind }, category: category)
+                ProductKindResolution.kind(snapshotID: snapshotID, snapshotKind: { product($0)?.kind }, category: category)
             }
             let limits = upperLimitRows(now: now, intakes: active)
             bases = planned.compactMap { entry -> RowBasis? in
