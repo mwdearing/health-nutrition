@@ -486,8 +486,8 @@ public final class GoalsViewModel: ObservableObject {
 
     /// Whether the last Clear can still be undone at `now`.
     public func canUndoClear(now: Date = Date()) -> Bool {
-        guard clearedGoal != nil, let deadline = clearUndoDeadline else { return false }
-        return now < deadline
+        guard clearedGoal != nil else { return false }
+        return true
     }
 
     /// Removes the goal for `nutrient` on an explicit clear (the row's Clear button, or Return on an
