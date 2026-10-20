@@ -103,12 +103,15 @@ public struct AddHomeView: View {
                         }
                     }
                 }
+                // Accessibility sizes always use two columns. Otherwise the row is kept while it fits, and falls back
+                // to the two columns when the four labels would not fit side by side.
                 if Self.quickActionLayout(for: dynamicTypeSize) == .grid {
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: DesignSpacing.s) {
-                        ForEach(quickActions) { quickActionButton($0) }
-                    }
+                    quickActionGrid
                 } else {
-                    HStack(spacing: DesignSpacing.s) { ForEach(quickActions) { quickActionButton($0) } }
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: DesignSpacing.s) { ForEach(quickActions) { quickActionButton($0) } }
+                        quickActionGrid
+                    }
                 }
                 // Why a quick action is off is shown in words, not only in its hint.
                 ForEach(quickActions.filter { !$0.available && !$0.explanation.isEmpty }) { action in
@@ -178,6 +181,12 @@ public struct AddHomeView: View {
                 help: "Log calories and macros without choosing a food.",
                 available: true, explanation: "", action: { self.quickAdd = self.model.makeQuickAdd() }),
         ]
+    }
+
+    private var quickActionGrid: some View {
+        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: DesignSpacing.s) {
+            ForEach(quickActions) { quickActionButton($0) }
+        }
     }
 
     private func quickActionButton(_ action: QuickAction) -> some View {
