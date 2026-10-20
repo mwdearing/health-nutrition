@@ -3,7 +3,6 @@ import NutritionDomain
 import SQLite3
 import SwiftData
 
-/// The store's checkpoint failed, so the erase stopped before any companion or main file was removed.
 /// The two file operations an erase performs on the store, so a test can make each one fail.
 struct StoreFileOperations {
     var checkpoint: (URL) throws -> Void
@@ -14,7 +13,8 @@ struct StoreFileOperations {
         remove: { try FileManager.default.removeItem(at: $0) })
 }
 
-private enum StoreFileError: Error {
+/// The store's checkpoint failed, so the erase stopped before any companion or main file was removed.
+enum StoreFileError: Error {
     case checkpointFailed
 }
 

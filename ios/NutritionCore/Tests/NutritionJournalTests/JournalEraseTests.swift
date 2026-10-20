@@ -175,7 +175,9 @@ final class JournalEraseTests: XCTestCase {
         let erasing = try SwiftDataJournalStore(
             url: url, enabledDestinations: [.healthKit, .relay], fileOperations: operations)
 
-        XCTAssertThrowsError(try erasing.eraseAll())
+        XCTAssertThrowsError(try erasing.eraseAll()) {
+            XCTAssertEqual($0 as? StoreFileError, .checkpointFailed)
+        }
         XCTAssertTrue(calls.removed.isEmpty)
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
         erasing.close()
