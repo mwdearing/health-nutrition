@@ -231,6 +231,26 @@ final class DailyGoalsTests: XCTestCase {
         XCTAssertNil(try goals.goal(for: "protein"), "an Undo offered after its window does not restore the goal")
     }
 
+    /// Inside the window, Undo restores the goal; once the window has been expired, the Undo is gone (#526).
+    func testGoalsUndoRestoresInsideItsWindowAndExpiresAfterIt() throws {
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+        let clearedAt = Date(timeIntervalSince1970: 1_700_000_000)
+
+        XCTAssertTrue(model.clearTarget(for: "protein", now: clearedAt))
+        XCTAssertNotNil(model.clearUndoExpiry)
+        XCTAssertTrue(model.undoClear(now: clearedAt.addingTimeInterval(9)))
+        XCTAssertEqual(try goals.goal(for: "protein")?.target, Decimal(60))
+
+        XCTAssertTrue(model.clearTarget(for: "protein", now: clearedAt))
+        model.expireClearUndo()
+        XCTAssertNil(model.clearedGoal)
+        XCTAssertNil(model.clearUndoExpiry)
+    }
+
     /// Clear removes the goal, and Undo puts back the same goal (issue #506).
     func testClearThenUndoRestoresTheGoal() throws {
         let goals = try makeGoalStore()

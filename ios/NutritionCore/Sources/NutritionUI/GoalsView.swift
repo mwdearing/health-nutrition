@@ -56,6 +56,11 @@ public struct GoalsView: View {
             if model.clearedGoal != nil, model.canUndoClear() {
                 UndoToast(GoalsViewModel.clearedMessage) { self.model.undoClear() }
                     .id(model.clearedGoal.map { "\($0.nutrient)-\($0.goal.target)-\($0.goal.unit.symbol)" } ?? "")
+                    .task(id: model.clearUndoExpiry) {
+                        guard let expiry = model.clearUndoExpiry else { return }
+                        try? await Task.sleep(for: .seconds(expiry.timeIntervalSinceNow))
+                        model.expireClearUndo()
+                    }
             }
         }
         .scrollContentBackground(.hidden)

@@ -483,6 +483,14 @@ public final class GoalsViewModel: ObservableObject {
     /// When the Undo for the last Clear closes: ten seconds after it, the same window as the other undos (#526).
     private var clearUndoDeadline: Date?
     private static let clearUndoWindow: TimeInterval = 10
+    /// When the last Clear's Undo closes, for the view to hide its toast then.
+    public var clearUndoExpiry: Date? { clearedGoal == nil ? nil : clearUndoDeadline }
+
+    /// Hides the Undo for the last Clear once its window has closed (#526).
+    public func expireClearUndo() {
+        clearedGoal = nil
+        clearUndoDeadline = nil
+    }
 
     /// Whether the last Clear can still be undone at `now`.
     public func canUndoClear(now: Date = Date()) -> Bool {
