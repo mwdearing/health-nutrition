@@ -146,7 +146,7 @@ final class AppServices {
             let store = UserDefaultsCustomReminderStore()
             reminderController.customReminders = CustomReminderController(
                 store: store, permissions: custom, scheduler: custom, erasures: reminderErasures)
-            reminderErasers.append(CustomReminderEraser(store: store, scheduler: custom, erasures: reminderErasures))
+            _ = CustomReminderEraser(store: store, scheduler: custom, erasures: reminderErasures)
         }
         // The order the stores are erased in, and so the order their failures are listed in. The widget eraser runs
         // first so no publish announced before the erase can land after it. The reminder readback is not in this
