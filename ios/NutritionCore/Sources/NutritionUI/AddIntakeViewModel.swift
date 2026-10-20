@@ -793,7 +793,7 @@ public final class AddIntakeViewModel: ObservableObject {
         // Only a label capture sets the Servings control. The captured basis still drives the amount preview for
         // every caller, so a repeated per-serving product keeps its preview.
         servingOption = fromLabelCapture ? Self.capturedServing(of: product) : nil
-        capturedLabelBasis = product.labelBasis
+        capturedLabelBasis = fromLabelCapture ? product.labelBasis : nil
     }
 
     /// Prefills a Library product without changing its saved snapshot identity.
