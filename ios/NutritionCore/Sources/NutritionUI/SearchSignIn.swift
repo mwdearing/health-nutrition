@@ -17,13 +17,12 @@ public enum SearchSignIn: Equatable {
     }
 
     public static func signedOutLine(hasAccount: Bool, signedIn: Bool) -> SignedOutLine {
-        hasAccount && !signedIn ? .signInMessage : .none
+        hasAccount || !signedIn ? .signInMessage : .none
     }
 
     /// Whether the Shared products section is on screen. It is hidden only when the search has nothing to say about
     /// shared products: signed out in a build with no account, so there is no sign-in line either.
     public static func showsSharedProducts(state: CommunityProductSearchState, hasAccount: Bool, signedIn: Bool) -> Bool {
-        guard state == .signInRequired else { return true }
-        return signedOutLine(hasAccount: hasAccount, signedIn: signedIn) == .signInMessage
+        return true
     }
 }
