@@ -145,7 +145,7 @@ final class HealthKitReader: BodyActivityReading {
         return nil
     }
 
-    /// The HealthKit unit for each unit the nutrient table uses. A unit not listed here returns nil, which fails the day's read.
+    /// The HealthKit unit for each unit the nutrient table uses. A unit not listed here returns nil, which leaves only that nutrient unread.
     static func healthKitUnit(for unit: MeasureUnit) -> HKUnit? {
         switch unit.symbol {
         case "g": return .gram()

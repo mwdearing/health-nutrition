@@ -13,12 +13,14 @@ final class ReadPlanInvariantTests: XCTestCase {
             })
             if hasHealthKitUnit {
                 guard case .read(let key, _, _) = plan else {
-                    return XCTFail("\(mapping.nutrientKey) has a HealthKit unit but is not planned as read")
+                    XCTFail("\(mapping.nutrientKey) has a HealthKit unit but is not planned as read")
+                    continue
                 }
                 XCTAssertEqual(key, mapping.nutrientKey)
             } else {
                 guard case .unreadable(let key) = plan else {
-                    return XCTFail("\(mapping.nutrientKey) has no HealthKit unit but is planned as read")
+                    XCTFail("\(mapping.nutrientKey) has no HealthKit unit but is planned as read")
+                    continue
                 }
                 XCTAssertEqual(key, mapping.nutrientKey)
             }
