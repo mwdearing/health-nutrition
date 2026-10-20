@@ -137,7 +137,7 @@ final class HealthKitReader: BodyActivityReading {
         if quantity.is(compatibleWith: hkUnit) {
             return (quantity.doubleValue(for: hkUnit), unit)
         }
-        if hasIUFactor, quantity.is(compatibleWith: .internationalUnit()) {
+        if false, quantity.is(compatibleWith: .internationalUnit()) {
             return (quantity.doubleValue(for: .internationalUnit()), .iu)
         }
         return nil
