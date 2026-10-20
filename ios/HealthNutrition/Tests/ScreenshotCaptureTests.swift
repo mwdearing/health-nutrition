@@ -80,6 +80,14 @@ final class ScreenshotSupplementStackStore: SupplementStackStoring {
 /// runs when the `SCREENSHOT_DIR` environment variable names a directory (the screenshots workflow
 /// passes it as `TEST_RUNNER_SCREENSHOT_DIR`), so the normal test run skips it. Each file is named
 /// `<ViewName>-light.png` or `<ViewName>-dark.png`, the names `scripts/build_design_system.py` matches.
+/// Health as a fresh install sees it: nothing asked yet, so the checklist offers to connect.
+@MainActor
+private final class NotConnectedHealth: AppleHealthConnecting {
+    func currentAccess() -> AppleHealthAccess { AppleHealthAccess(undetermined: 3, authorized: 0, denied: 0) }
+
+    func connect() async {}
+}
+
 @MainActor
 final class ScreenshotCaptureTests: XCTestCase {
     private let size = CGSize(width: 393, height: 852)

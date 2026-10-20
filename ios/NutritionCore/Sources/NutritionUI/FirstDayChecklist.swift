@@ -28,21 +28,26 @@ public final class FirstDayChecklistModel: ObservableObject {
     private let store: JournalStore
     private let goals: GoalStore?
     private let preferences: DisplayPreferences & FirstRunPreferences
+    private let health: AppleHealthConnectionViewModel?
 
     @Published public private(set) var items: [FirstDayChecklistItem] = []
     @Published public private(set) var isVisible: Bool = false
 
-    /// `goals` is nil for a host with no goal store; the goal step then stays not done.
+    /// `goals` is nil for a host with no goal store; the goal step then stays not done. `health` is nil
+    /// for a host with no Health row; the Health step is then left off the card.
     public init(
-        store: JournalStore, goals: GoalStore?, preferences: DisplayPreferences & FirstRunPreferences
+        store: JournalStore, goals: GoalStore?, preferences: DisplayPreferences & FirstRunPreferences,
+        health: AppleHealthConnectionViewModel? = nil
     ) {
         self.store = store
         self.goals = goals
         self.preferences = preferences
+        self.health = health
     }
 
-    /// Reads the four steps again. A journal or goal read that throws leaves its step not done rather
-    /// than failing the card.
+    /// Reads the steps again. A journal or goal read that throws leaves its step not done rather
+    /// than failing the card. The Health step is done when Health is connected, and is left off when
+    /// this device has no Health to connect to.
     public func load() {
         let hasEntry = (try? store.activeIntakes()).map { !$0.isEmpty } ?? false
         var hasGoal = false
@@ -59,12 +64,24 @@ public final class FirstDayChecklistModel: ObservableObject {
             FirstDayChecklistItem(
                 kind: .chooseUnits, title: "Choose units", detail: Self.unitsName(preferences.unitSystem),
                 isDone: preferences.hasReviewedUnits, isPlaceholder: false),
-            FirstDayChecklistItem(
-                kind: .connectHealth, title: "Connect Apple Health", detail: nil,
-                isDone: false, isPlaceholder: true),
         ]
+        if let health = health {
+            health.refresh()
+            if health.state != .unavailable {
+                items.append(FirstDayChecklistItem(
+                    kind: .connectHealth, title: "Connect Apple Health", detail: nil,
+                    isDone: health.state == .connected, isPlaceholder: false))
+            }
+        }
         let realStepsDone = items.prefix(3).allSatisfy { $0.isDone }
         isVisible = !preferences.isChecklistHidden && !realStepsDone
+    }
+
+    /// Asks Health for access where it can still be asked, then reads the steps again.
+    public func connectHealth() async {
+        guard let health = health else { return }
+        await health.connect()
+        load()
     }
 
     /// Hides the card now and keeps it hidden for later launches.
@@ -177,7 +194,7 @@ public struct FirstDayChecklistView: View {
             model.markUnitsReviewed()
             onUnits()
         case .connectHealth:
-            break
+            Task { await model.connectHealth() }
         }
     }
 }
