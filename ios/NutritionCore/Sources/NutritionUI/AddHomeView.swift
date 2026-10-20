@@ -225,7 +225,7 @@ private struct QuickAddSheet: View {
     @ObservedObject var form: QuickAddViewModel
     let onSaved: (AddUndoToken) -> Void
     let onClose: () -> Void
-    @State private var confirmDiscard = false
+    @State var confirmDiscard = false
 
     var body: some View {
         NavigationStack {

@@ -131,9 +131,9 @@ public final class RecipeEditorViewModel: ObservableObject {
     public var hasTypedInput: Bool { fingerprint != openedWith }
 
     private var fingerprint: String {
-        let yield = [yieldKind == .servings ? "servings" : "amount", yieldAmountText, yieldUnitSymbol]
+        let yieldParts = [yieldKind == .servings ? "servings" : "amount", yieldAmountText, yieldUnitSymbol]
         let rows = ingredients.flatMap { [$0.name, $0.amountText, $0.unitSymbol, $0.densityText] }
-        return ([title, notes] + yield + rows).joined(separator: "\u{1F}")
+        return ([title, notes] + yieldParts + rows).joined(separator: "\u{1F}")
     }
 
     public func addIngredient() {
