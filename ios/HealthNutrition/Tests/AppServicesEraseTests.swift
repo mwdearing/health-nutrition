@@ -140,7 +140,7 @@ final class AppServicesEraseTests: XCTestCase {
 
     /// Every production store is in the erase, in the pinned order: widget data first, journal after the lists. The
     /// custom reminders join only with the system scheduler, which the test scheduler does not provide.
-    func testTheProductionEraseListIsPinnedAndComplete() throws {
+    func testTheProductionEraseListWithoutTheSystemSchedulerIsPinned() throws {
         let (services, _) = try makeServices()
         XCTAssertEqual(services.connections.eraserNamesForTesting, [
             "widget data", "saved meals", "supplements", "reminders",
