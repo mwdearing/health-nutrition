@@ -17,7 +17,6 @@ final class LogSavedMealShortcutTests: XCTestCase {
                 components: [FavoriteComponent(componentID: "oats", name: "Sample oats", amountText: "40", unitSymbol: "g")])])
     }
 
-    /// While an erase or import runs the Shortcut replies with the busy message and writes nothing (#480).
     /// Counts what a run reads and writes, with a meal ready to log.
     private final class Counts {
         var reads = 0, writes = 0, reloads = 0
@@ -52,6 +51,7 @@ final class LogSavedMealShortcutTests: XCTestCase {
         XCTAssertEqual(counts.reloads, 1)
     }
 
+    /// While an erase or import runs the Shortcut replies with the busy message and writes nothing (#480).
     func testABusyAppRepliesWithTheBusyMessageAndLogsNothing() {
         XCTAssertEqual(
             SavedMealShortcut.busyReply(isBusy: true), "The app is busy with an erase or import. Try again in a moment.")
