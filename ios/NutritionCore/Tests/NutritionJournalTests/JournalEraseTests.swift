@@ -118,12 +118,18 @@ final class JournalEraseTests: XCTestCase {
         let url = directory.appendingPathComponent("journal.store")
         let store = try SwiftDataJournalStore(url: url)
         try store.create(sampleIntake(), components: [oats()], product: product(), now: when)
-        let before = try XCTUnwrap(FileManager.default.attributesOfItem(atPath: url.path)[.creationDate] as? Date)
+        let beforeDate = try XCTUnwrap(FileManager.default.attributesOfItem(atPath: url.path)[.creationDate] as? Date)
+        let beforeNumber = try XCTUnwrap(
+            FileManager.default.attributesOfItem(atPath: url.path)[.systemFileNumber] as? UInt64)
 
         try store.eraseAll()
 
-        let after = try XCTUnwrap(FileManager.default.attributesOfItem(atPath: url.path)[.creationDate] as? Date)
-        XCTAssertNotEqual(before, after)
+        let afterDate = try XCTUnwrap(FileManager.default.attributesOfItem(atPath: url.path)[.creationDate] as? Date)
+        let afterNumber = try XCTUnwrap(
+            FileManager.default.attributesOfItem(atPath: url.path)[.systemFileNumber] as? UInt64)
+        // A store wiped in place keeps its file and its identity; a replaced file has a new one.
+        XCTAssertNotEqual(beforeNumber, afterNumber)
+        XCTAssertNotEqual(beforeDate, afterDate)
 
         // The replacement file holds no erased rows: a store reopened on it reads empty.
         store.close()
