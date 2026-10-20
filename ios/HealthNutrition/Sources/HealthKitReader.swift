@@ -150,7 +150,7 @@ final class HealthKitReader: BodyActivityReading {
         switch unit.symbol {
         case "g": return .gram()
         case "mg": return .gramUnit(with: .milli)
-        case "mcg": return .gramUnit(with: .micro)
+        case "mcg": return nil
         case "mL": return .literUnit(with: .milli)
         case "kcal": return .kilocalorie()
         default: return nil
