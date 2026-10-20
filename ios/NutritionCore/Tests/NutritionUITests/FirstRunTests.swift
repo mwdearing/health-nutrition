@@ -212,6 +212,22 @@ final class FirstRunTests: XCTestCase {
 
     // MARK: - Connect Apple Health
 
+    /// Connected but never asked to read is not done: Settings still asks for the read, so the step does
+    /// too, and tapping it asks.
+    func testConnectHealthStepNeedsTheReadAnswerToBeDone() async throws {
+        let health = HealthConnectorFake(AppleHealthAccess(
+            undetermined: 0, authorized: 3, denied: 0, readAsked: false))
+        health.afterConnect = AppleHealthAccess(undetermined: 0, authorized: 3, denied: 0, readAsked: true)
+        let model = FirstDayChecklistModel(
+            store: try makeJournalStore(), goals: try makeGoalStore(),
+            preferences: InMemoryDisplayPreferences(), health: AppleHealthConnectionViewModel(connector: health))
+
+        model.load()
+        XCTAssertEqual(model.items.last?.isDone, false)
+        await model.connectHealth()
+        XCTAssertEqual(model.items.last?.isDone, true)
+    }
+
     /// The Health step is done once Health is connected, and is not a placeholder any more.
     func testConnectHealthStepIsDoneWhenHealthIsConnected() throws {
         let health = HealthConnectorFake(AppleHealthAccess(undetermined: 0, authorized: 3, denied: 0))

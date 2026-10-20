@@ -18,10 +18,10 @@ public struct FirstDayChecklistItem: Equatable, Identifiable {
     public let isPlaceholder: Bool
 }
 
-/// The first-day checklist: four steps a new person can work through, and whether each is done.
+/// The first-day checklist: the steps a new person can work through, and whether each is done.
 ///
 /// The three real steps tick off from what is stored: an entry in the journal, a daily goal, and the
-/// units having been looked at. The fourth is a placeholder. The card is shown until the three real
+/// units having been looked at. The Health step is the last row, when this device has Health. The card is shown until the three real
 /// steps are done or until the person hides it, and the hiding is stored.
 @MainActor
 public final class FirstDayChecklistModel: ObservableObject {
@@ -70,9 +70,10 @@ public final class FirstDayChecklistModel: ObservableObject {
             if health.state != .unavailable {
                 items.append(FirstDayChecklistItem(
                     kind: .connectHealth, title: "Connect Apple Health", detail: nil,
-                    isDone: health.state == .connected, isPlaceholder: false))
+                    isDone: health.state == .connected && health.actionTitle == nil, isPlaceholder: false))
             }
         }
+        // The Health row is appended after the three real steps, so these are the first three.
         let realStepsDone = items.prefix(3).allSatisfy { $0.isDone }
         isVisible = !preferences.isChecklistHidden && !realStepsDone
     }
