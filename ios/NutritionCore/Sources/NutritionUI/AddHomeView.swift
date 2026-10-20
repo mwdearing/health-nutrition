@@ -178,6 +178,8 @@ public struct AddHomeView: View {
             .padding(DesignSpacing.s)
             .background(TokenColors.surface, in: RoundedRectangle(cornerRadius: DesignRadius.control, style: .continuous))
             .foregroundStyle(TokenColors.textPrimary)
+            // Dimmed while unavailable, so the state reads without the reason line.
+            .opacity(action.available ? 1 : 0.4)
         }
         .buttonStyle(.plain)
         .disabled(!action.available)
