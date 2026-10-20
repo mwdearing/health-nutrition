@@ -56,13 +56,7 @@ public struct GoalsView: View {
             if model.clearedGoal != nil, model.canUndoClear() {
                 UndoToast(GoalsViewModel.clearedMessage) { self.model.undoClear() }
                     .id(model.clearedGoal.map { "\($0.nutrient)-\($0.goal.target)-\($0.goal.unit.symbol)" } ?? "")
-                    .task(id: model.clearUndoExpiry) {
-                        // Sleeps again if it wakes before the wall-clock deadline (clock step, early wake).
-                        while let expiry = model.clearUndoExpiry, Date() < expiry {
-                            do { try await Task.sleep(for: .seconds(max(0, expiry.timeIntervalSinceNow))) } catch { return }
-                        }
-                        model.expireClearUndo()
-                    }
+                    .task(id: model.clearUndoExpiry) { await model.runClearUndoExpiry() }
             }
         }
         .scrollContentBackground(.hidden)
