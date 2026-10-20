@@ -136,7 +136,7 @@ private final class ImportStubFavorites: FavoritesStore, FavoritesRestoreTarget,
 
 private final class FailingAncillaryEraser: JournalErasing, @unchecked Sendable {
     struct Failure: Error {}
-    let erasureName = "reminders"
+    let erasureName = "test store"
     func eraseAll() throws { throw Failure() }
 }
 
@@ -692,7 +692,7 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         await release.value
 
         XCTAssertFalse(erased, "the unrelated ancillary eraser still fails the overall operation")
-        XCTAssertEqual(model.errorMessage, ConnectionsPrivacyViewModel.eraseLeftBehindMessage(["reminders"]))
+        XCTAssertEqual(model.errorMessage, ConnectionsPrivacyViewModel.eraseLeftBehindMessage(["test store"]))
         XCTAssertNil(model.incompleteRestoreWarning)
         XCTAssertEqual(model.journalRestoreGeneration, 0)
         XCTAssertTrue(try journal.activeIntakes().isEmpty)
