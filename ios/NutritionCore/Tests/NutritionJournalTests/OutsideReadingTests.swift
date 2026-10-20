@@ -63,6 +63,31 @@ final class OutsideReadingTests: XCTestCase {
         XCTAssertTrue(reading.failed)
     }
 
+    func testAnUnreadableUnitPlansAnUnreadKeyUnderItsOwnName() {
+        let identifier = energy.quantityTypeIdentifier
+        XCTAssertEqual(
+            OutsideIntakeTotals.readPlan(for: identifier, unitIsReadable: { _ in false }),
+            .unreadable(nutrientKey: "energy"))
+    }
+
+    func testAnUnnamedIdentifierPlansNothing() {
+        XCTAssertEqual(
+            OutsideIntakeTotals.readPlan(for: "HKQuantityTypeIdentifierNotAFood", unitIsReadable: { _ in true }),
+            OutsideReadPlan.none)
+    }
+
+    func testOneUnreadableUnitQueryAndOneSuccessLeavesTheKeyUnread() {
+        // Two queries for one nutrient: one has no unit to read, the other succeeds.
+        let unreadable = OutsideIntakeTotals.readPlan(for: energy.quantityTypeIdentifier, unitIsReadable: { _ in false })
+        guard case .unreadable(let key) = unreadable else { return XCTFail("expected an unreadable plan") }
+        let reading = OutsideIntakeTotals.reading([
+            OutsideQuery(nutrientKey: key, outcome: .failed),
+            OutsideQuery(nutrientKey: "energy", outcome: .samples([sample(energy, 620)])),
+        ])
+        XCTAssertFalse(reading.readKeys.contains("energy"))
+        XCTAssertTrue(reading.failed)
+    }
+
     func testTheAppsOwnSampleIsLeftOutButItsQueryStillCountsAsRead() {
         let reading = OutsideIntakeTotals.reading([
             OutsideQuery(nutrientKey: "energy", outcome: .samples([sample(energy, 500, own: true)])),

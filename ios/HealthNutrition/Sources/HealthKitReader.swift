@@ -92,14 +92,11 @@ final class HealthKitReader: BodyActivityReading {
         let own = HKSource.default()
         var queries: [OutsideQuery] = []
         for identifier in OutsideIntakeTotals.readQuantityTypeIdentifiers {
-            guard let mapping = HealthKitWritePlanner.mappings.first(where: { $0.quantityTypeIdentifier == identifier }) else {
-                // An identifier with no nutrient has no line to leave unread.
-                queries.append(OutsideQuery(nutrientKey: "", outcome: .unmapped))
-                continue
-            }
-            guard let hkUnit = Self.healthKitUnit(for: mapping.unit) else {
-                // The nutrient is named, so its key is left unread rather than dropped.
-                queries.append(OutsideQuery(nutrientKey: mapping.nutrientKey, outcome: .failed))
+            let plan = OutsideIntakeTotals.readPlan(for: identifier, unitIsReadable: { Self.healthKitUnit(for: $0) != nil })
+            guard case .read(let key, let unit, let hasIUFactor) = plan, let hkUnit = Self.healthKitUnit(for: unit) else {
+                if case .unreadable(let key) = plan {
+                    queries.append(OutsideQuery(nutrientKey: key, outcome: .failed))
+                }
                 continue
             }
             let found: [HKQuantitySample]
@@ -108,7 +105,7 @@ final class HealthKitReader: BodyActivityReading {
                     predicates: [.quantitySample(type: HKQuantityType(HKQuantityTypeIdentifier(rawValue: identifier)), predicate: predicate)],
                     sortDescriptors: []).result(for: healthStore)
             } catch {
-                queries.append(OutsideQuery(nutrientKey: mapping.nutrientKey, outcome: .failed))
+                queries.append(OutsideQuery(nutrientKey: key, outcome: .failed))
                 continue
             }
             // Another app may store a sample in international units. Each sample is read in a unit it is compatible
@@ -119,8 +116,8 @@ final class HealthKitReader: BodyActivityReading {
                 let unit: MeasureUnit
                 if sample.quantity.is(compatibleWith: hkUnit) {
                     value = sample.quantity.doubleValue(for: hkUnit)
-                    unit = mapping.unit
-                } else if mapping.amountPerInternationalUnit != nil, sample.quantity.is(compatibleWith: .internationalUnit()) {
+                    unit = unit
+                } else if hasIUFactor, sample.quantity.is(compatibleWith: .internationalUnit()) {
                     value = sample.quantity.doubleValue(for: .internationalUnit())
                     unit = .iu
                 } else {
@@ -132,7 +129,7 @@ final class HealthKitReader: BodyActivityReading {
                     unit: unit,
                     isWrittenByThisApp: sample.sourceRevision.source == own))
             }
-            queries.append(OutsideQuery(nutrientKey: mapping.nutrientKey, outcome: .samples(outcomes)))
+            queries.append(OutsideQuery(nutrientKey: key, outcome: .samples(outcomes)))
         }
         return OutsideIntakeTotals.reading(queries)
     }

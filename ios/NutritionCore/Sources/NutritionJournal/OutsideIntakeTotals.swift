@@ -61,6 +61,31 @@ public enum OutsideIntakeTotals {
     }
 }
 
+/// How one identifier is read, decided without HealthKit.
+public enum OutsideReadPlan: Equatable, Sendable {
+    /// The identifier names no nutrient, so there is nothing to read.
+    case none
+    /// The nutrient's unit cannot be read here, so its key is left unread under its own name.
+    case unreadable(nutrientKey: String)
+    /// Read the identifier. `unit` is the nutrient's unit; `hasIUFactor` says whether IU samples can be restated.
+    case read(nutrientKey: String, unit: MeasureUnit, hasIUFactor: Bool)
+}
+
+extension OutsideIntakeTotals {
+    /// The read plan for one identifier. `unitIsReadable` says whether HealthKit has a unit for a nutrient unit.
+    public static func readPlan(for identifier: String, unitIsReadable: (MeasureUnit) -> Bool) -> OutsideReadPlan {
+        guard let mapping = HealthKitWritePlanner.mappings.first(where: { $0.quantityTypeIdentifier == identifier }) else {
+            return .none
+        }
+        guard unitIsReadable(mapping.unit) else {
+            return .unreadable(nutrientKey: mapping.nutrientKey)
+        }
+        return .read(
+            nutrientKey: mapping.nutrientKey, unit: mapping.unit,
+            hasIUFactor: mapping.amountPerInternationalUnit != nil)
+    }
+}
+
 /// One sample from a Health query, after the app target has converted it where it could. HealthKit's own
 /// types stay in the app target, so the rules below can be tested here.
 public enum OutsideSampleOutcome: Sendable, Equatable {
