@@ -16,18 +16,17 @@ final class SaveToLibraryHintTests: XCTestCase {
         return try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
     }
 
-    /// The first accessibility element, anywhere under `root`, whose label is `label`.
-    private func element(labelled label: String, under root: NSObject) -> NSObject? {
-        if root.accessibilityLabel == label { return root }
+    /// Every accessibility element under `root` whose label is `label`, so a container and its inner switch
+    /// are both checked, not just the first one found.
+    private func elements(labelled label: String, under root: NSObject) -> [NSObject] {
+        var found: [NSObject] = root.accessibilityLabel == label ? [root] : []
         for child in root.accessibilityElements ?? [] {
-            if let object = child as? NSObject, let found = element(labelled: label, under: object) { return found }
+            if let object = child as? NSObject { found += elements(labelled: label, under: object) }
         }
         if let view = root as? UIView {
-            for subview in view.subviews {
-                if let found = element(labelled: label, under: subview) { return found }
-            }
+            for subview in view.subviews { found += elements(labelled: label, under: subview) }
         }
-        return nil
+        return found
     }
 
     func testSaveToLibraryToggleHasNoAccessibilityHint() throws {
@@ -46,7 +45,10 @@ final class SaveToLibraryHintTests: XCTestCase {
         host.view.layoutIfNeeded()
         RunLoop.current.run(until: Date().addingTimeInterval(0.3))
 
-        let toggle = try XCTUnwrap(element(labelled: "Save to Library", under: host.view), "the toggle is on screen")
-        XCTAssertTrue((toggle.accessibilityHint ?? "").isEmpty, "the toggle has no stale hint")
+        let toggles = elements(labelled: "Save to Library", under: host.view)
+        XCTAssertFalse(toggles.isEmpty, "the Save to Library toggle is on screen")
+        for toggle in toggles {
+            XCTAssertTrue((toggle.accessibilityHint ?? "").isEmpty, "no element labelled Save to Library has a stale hint")
+        }
     }
 }
