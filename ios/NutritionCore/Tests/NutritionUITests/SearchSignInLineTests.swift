@@ -29,4 +29,8 @@ final class SearchSignInLineTests: XCTestCase {
             XCTAssertTrue(SearchSignIn.showsSharedProducts(state: state, hasAccount: false, signedIn: false), "\(state)")
         }
     }
+
+    func testTheSearchFieldIsNamedSearchFoods() {
+        XCTAssertEqual(CommunityProductSearchView.fieldLabel, "Search foods")
+    }
 }

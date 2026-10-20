@@ -17,6 +17,8 @@ public struct CommunityProductSearchView: View {
     private let library: LibraryViewModel?
     /// Opens the details form prefilled from a favorite or recent. Nothing is logged until Save.
     private let onPick: ((RepeatTemplate) -> Void)?
+    /// The search field's name, shown and spoken. Shared by the field label and its placeholder.
+    public static let fieldLabel = "Search foods"
     @State private var query = ""
     @State private var kind: ProductKind?
     @State private var selectionError: String?
@@ -37,8 +39,8 @@ public struct CommunityProductSearchView: View {
     public var body: some View {
         List {
             Section {
-                LabeledField("Search foods", focus: $searchFocused) { focus in
-                    TextField("Search foods", text: $query).focused(focus).submitLabel(.search)
+                LabeledField(Self.fieldLabel, focus: $searchFocused) { focus in
+                    TextField(Self.fieldLabel, text: $query).focused(focus).submitLabel(.search)
                         .accessibilityIdentifier("sharedProductSearchField")
                 }.onSubmit { search() }
                 if query.trimmingCharacters(in: .whitespaces).count >= 2 {
