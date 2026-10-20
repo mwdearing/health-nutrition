@@ -1,6 +1,12 @@
 import Foundation
 import NutritionDomain
+import SQLite3
 import SwiftData
+
+/// A store file the erase could not checkpoint, so its removal did not start.
+private enum StoreFileError: Error {
+    case checkpointFailed
+}
 
 enum JournalSchemaV1: VersionedSchema {
     static var versionIdentifier: Schema.Version { Schema.Version(1, 0, 0) }
@@ -1810,18 +1816,22 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
         try removeStoreFiles()
     }
 
-    /// Deletes the store file with its write-ahead and shared-memory files, then opens an empty store at the
-    /// same place. The rows the commit deleted are still on disk in pages and the write-ahead file until these
-    /// files are gone. The main file goes last, and only once both companion files are gone: a write-ahead file
-    /// left beside a new main file could replay pages from before the erase. The store reopens even when a
-    /// removal fails, and the removal error is then thrown so the erase reports it.
+    /// Deletes the store file with its write-ahead and shared-memory files, then opens an empty store at the same
+    /// place. The write-ahead file is first checkpointed into the store file and emptied, so the store file alone
+    /// holds the state the erase left: whatever a removal does afterwards, it cannot bring back a row the erase
+    /// deleted. The companion files go before the main file. The store reopens even when a step fails, and the
+    /// first error is thrown afterwards so the erase reports it.
     private func removeStoreFiles() throws {
         try lock.withLock {
             container = nil
             var removalError: Error?
+            do {
+                try checkpointStoreFile()
+            } catch {
+                removalError = error
+            }
             for suffix in ["-shm", "-wal", ""] {
-                // Stop at the first failure: deleting the write-ahead file after another file failed would roll the
-                // store back to its pre-erase main file, so the rows the erase deleted would come back.
+                // Stop at the first failure, so no later file is removed after an earlier one failed.
                 if removalError != nil { break }
                 let file = URL(fileURLWithPath: storeURL.path + suffix)
                 guard FileManager.default.fileExists(atPath: file.path) else { continue }
@@ -1831,13 +1841,34 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
                     removalError = error
                 }
             }
-            // A reopen failure is thrown only when no removal failed, so the removal error is the one reported.
+            // A reopen failure is thrown only when no earlier step failed, so the first error is the one reported.
             do {
                 container = try Self.makeContainer(url: storeURL)
             } catch {
                 throw removalError ?? error
             }
             if let removalError { throw removalError }
+        }
+    }
+
+    /// Moves every page of the write-ahead file into the store file and truncates the write-ahead file to nothing.
+    /// A checkpoint that cannot run to completion (for example, while another connection still reads the store)
+    /// throws, and the erase reports it.
+    private func checkpointStoreFile() throws {
+        guard FileManager.default.fileExists(atPath: storeURL.path) else { return }
+        var database: OpaquePointer?
+        defer { sqlite3_close(database) }
+        guard sqlite3_open_v2(storeURL.path, &database, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK else {
+            throw StoreFileError.checkpointFailed
+        }
+        var logFrames: Int32 = 0
+        var checkpointedFrames: Int32 = 0
+        guard
+            sqlite3_wal_checkpoint_v2(database, nil, SQLITE_CHECKPOINT_TRUNCATE, &logFrames, &checkpointedFrames)
+                == SQLITE_OK,
+            logFrames == checkpointedFrames
+        else {
+            throw StoreFileError.checkpointFailed
         }
     }
 
