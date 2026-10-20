@@ -53,6 +53,19 @@ final class ConnectionsPrivacyPreferenceTests: XCTestCase {
         XCTAssertEqual(second.unitSystem, .usCustomary)
     }
 
+    /// Switching units and back, then saving without typing, keeps the stored amount exact (issue 389).
+    func testUnitRoundTripWithoutTypingKeepsTheStoredQuickWaterExact() throws {
+        let defaults = metricSuite("quick-water-round-trip")
+        defaults.set("400.55", forKey: "display.quickWaterMilliliters")
+        let preferences = UserDefaultsDisplayPreferences(defaults: defaults)
+        let model = ConnectionsPrivacyViewModel(store: try makeStore(), preferences: preferences)
+
+        model.unitSystem = .usCustomary
+        model.unitSystem = .metric
+        XCTAssertTrue(model.saveQuickWaterAmount())
+        XCTAssertEqual(preferences.quickWaterMilliliters, Decimal(string: "400.55")!)
+    }
+
     /// A valid amount is stored exactly and the error is cleared; an amount above zero is all it takes.
     func testQuickWaterPreferenceAcceptsAnAmountAboveZeroAndClearsTheError() throws {
         let preferences = UserDefaultsDisplayPreferences(defaults: metricSuite("quick-water"))
