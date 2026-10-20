@@ -112,7 +112,9 @@ final class HealthKitReader: BodyActivityReading {
                 failed = true
                 continue
             }
-            readKeys.insert(mapping.nutrientKey)
+            // A sample that cannot be converted leaves its nutrient unread, so the day reads as at least rather than
+            // as a known total that quietly left that sample out.
+            var skippedSample = false
             for sample in found {
                 // Another app may store a sample in international units. Each sample is read in a unit it is
                 // compatible with (checked first, so no incompatible conversion is attempted), and IU is passed
@@ -127,6 +129,7 @@ final class HealthKitReader: BodyActivityReading {
                     value = sample.quantity.doubleValue(for: .internationalUnit())
                     unit = .iu
                 } else {
+                    skippedSample = true
                     continue
                 }
                 samples.append(OutsideNutrientSample(
@@ -134,6 +137,11 @@ final class HealthKitReader: BodyActivityReading {
                     value: Decimal(value),
                     unit: unit,
                     isWrittenByThisApp: sample.sourceRevision.source == own))
+            }
+            if skippedSample {
+                failed = true
+            } else {
+                readKeys.insert(mapping.nutrientKey)
             }
         }
         return (OutsideIntakeTotals.totals(from: samples), readKeys, failed)
