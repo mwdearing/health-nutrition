@@ -2,7 +2,7 @@ import Foundation
 import NutritionDomain
 import NutritionJournal
 import NutritionProviders
-import NutritionUI
+@testable import NutritionUI
 import XCTest
 
 @testable import HealthNutrition
