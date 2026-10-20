@@ -21,7 +21,8 @@ public struct FirstDayChecklistItem: Equatable, Identifiable {
 /// The first-day checklist: the steps a new person can work through, and whether each is done.
 ///
 /// The three real steps tick off from what is stored: an entry in the journal, a daily goal, and the
-/// units having been looked at. The Health step is the last row, when this device has Health. The card is shown until the three real
+/// units having been looked at. The Health step is the last row, shown when this device has Health.
+/// The card is shown until the three real
 /// steps are done or until the person hides it, and the hiding is stored.
 @MainActor
 public final class FirstDayChecklistModel: ObservableObject {
@@ -46,8 +47,8 @@ public final class FirstDayChecklistModel: ObservableObject {
     }
 
     /// Reads the steps again. A journal or goal read that throws leaves its step not done rather
-    /// than failing the card. The Health step is done when Health is connected, and is left off when
-    /// this device has no Health to connect to.
+    /// than failing the card. The Health step is done when Health is connected and has nothing left to
+    /// ask, and is left off when this device has no Health to connect to.
     public func load() {
         let hasEntry = (try? store.activeIntakes()).map { !$0.isEmpty } ?? false
         var hasGoal = false
