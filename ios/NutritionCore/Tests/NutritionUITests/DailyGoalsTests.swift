@@ -266,6 +266,9 @@ final class DailyGoalsTests: XCTestCase {
         XCTAssertTrue(model.clearTarget(for: "protein", now: clearedAt))
         XCTAssertTrue(model.clearTarget(for: "fat", now: clearedAt.addingTimeInterval(3)))
         XCTAssertEqual(model.clearedGoal?.nutrient, "fat")
+        // The second Clear has its own window: open at +12, closed at +13, not inherited from the first at +10.
+        XCTAssertTrue(model.canUndoClear(now: clearedAt.addingTimeInterval(12)))
+        XCTAssertFalse(model.canUndoClear(now: clearedAt.addingTimeInterval(13)))
         XCTAssertTrue(model.undoClear(now: clearedAt.addingTimeInterval(3)))
         XCTAssertEqual(try goals.goal(for: "fat")?.target, Decimal(70))
     }
