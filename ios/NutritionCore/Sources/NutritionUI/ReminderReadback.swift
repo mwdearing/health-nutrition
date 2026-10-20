@@ -17,7 +17,7 @@ public enum ReminderReadback {
     public static let customPrefix = "custom-reminder-"
 
     /// How many reads the readback makes in all. A request still pending on the last read counts as still on the phone.
-    public static let settleReads = 5
+    public static let settleReads = 1
 
     /// How long the readback waits between two reads, in nanoseconds.
     public static let settleIntervalNanoseconds: UInt64 = 100_000_000
