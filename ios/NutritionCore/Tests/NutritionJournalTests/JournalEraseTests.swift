@@ -187,6 +187,20 @@ final class JournalEraseTests: XCTestCase {
         XCTAssertTrue(try reopened.activeIntakes().isEmpty)
     }
 
+    /// The checkpoint runs after this store releases its container. Another store instance on the same file, still
+    /// open, must not stop the erase from checkpointing and removing the files.
+    func testAnEraseSucceedsWhileAnotherStoreOnTheSameFileIsOpen() throws {
+        let directory = try makeDirectory()
+        let url = directory.appendingPathComponent("journal.store")
+        let store = try SwiftDataJournalStore(url: url)
+        try store.create(sampleIntake(), components: [oats()], product: product(), now: when)
+        let other = try SwiftDataJournalStore(url: url)
+
+        XCTAssertNoThrow(try store.eraseAll())
+        other.close()
+        store.close()
+    }
+
     func testEraseRemovesEveryFavorite() throws {
         let store = try SwiftDataFavoritesStore(url: try makeDirectory().appendingPathComponent("favorites.store"))
         try store.add(sampleFavorite("fav-1"))
