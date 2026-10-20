@@ -78,7 +78,7 @@ public struct LabeledField<Content: View>: View {
 
     /// The content with the title as its spoken name when opted in; otherwise the content unchanged.
     @ViewBuilder private func spoken(_ view: Content) -> some View {
-        if spokenTitle { view.accessibilityLabel(label) } else { view }
+        if LabeledFieldSpokenTitle.applies(spokenTitle) { view.accessibilityLabel(label) } else { view }
     }
 
     private var focus: FocusState<Bool>.Binding { externalFocus ?? $ownFocus }
@@ -333,4 +333,9 @@ public struct UndoToast: View {
         // again, such as navigating back inside its offer window: the person returns to a live offer, so repeating it is intended.
         .onAppear { AccessibilityNotification.Announcement(message).post() }
     }
+}
+
+/// Whether a LabeledField's content takes the title as its spoken name. Kept as a pure rule so a test can pin it.
+enum LabeledFieldSpokenTitle {
+    static func applies(_ optedIn: Bool) -> Bool { optedIn }
 }
