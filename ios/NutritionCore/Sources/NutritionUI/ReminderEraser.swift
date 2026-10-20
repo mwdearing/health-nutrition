@@ -17,7 +17,7 @@ public final class ReminderEraser: JournalErasing, @unchecked Sendable {
 
     public var erasureName: String { "reminders" }
 
-    public func eraseAll() throws {
+    public func eraseAll() {
         erasures.record()
         scheduler.cancelDaily()
     }
