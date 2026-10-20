@@ -101,6 +101,9 @@ public final class TodayViewModel: ObservableObject {
     /// Today's active energy from Apple Health, set by the activity card after it reads. Only used
     /// when the person switched on adding it to the calorie goal.
     public var activeEnergyKcal: Decimal?
+    /// Health's side of Today's totals, set by the activity card after it reads. Until a read says otherwise
+    /// Health is not connected, so the totals stay journal-only.
+    public var outsideIntake: HealthIntakeTotals.Outside = .notConnected
     /// Says the calorie goal was raised by activity, and by how much; nil when it was not.
     @Published public private(set) var activityGoalNote: String?
     static let energyKey = "energy"
@@ -352,9 +355,9 @@ public final class TodayViewModel: ObservableObject {
                 // drink at all — only water, or only supplements, which are not foods and are excluded
                 // from the count — and "0 of 0 foods lack fiber" tells a reader nothing.
                 .filter { $0.total > 0 }
-            progress = try Self.progressLines(
+            progress = HealthIntakeTotals.combine(try Self.progressLines(
                 tracked: tracked, goals: storedGoals, intakes: intakes, store: store, lookup: lookup,
-                displayNames: Self.printedNames(in: snapshots))
+                displayNames: Self.printedNames(in: snapshots)), outside: outsideIntake)
             mealSections = Self.withMealEnergy(mealSections, intakes: intakes, store: store, lookup: lookup)
             let trackedFood = tracked.filter { $0 != DailyTotalsBuilder.waterKey }
             // A goal switched off on the Goals screen keeps its target and its totals, but no bar.

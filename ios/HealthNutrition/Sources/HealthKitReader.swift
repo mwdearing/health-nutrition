@@ -54,6 +54,7 @@ final class HealthKitReader: BodyActivityReading {
         var readings = BodyActivityReadings()
         readings.steps = await sum(.stepCount, unit: .count(), from: startOfDay, to: now)
         readings.activeEnergyKcal = await sum(.activeEnergyBurned, unit: .kilocalorie(), from: startOfDay, to: now)
+        readings.outsideRead = true
         if let outside = await outsideNutrientTotals(from: startOfDay, to: now) {
             readings.outsideNutrients = outside
         } else {

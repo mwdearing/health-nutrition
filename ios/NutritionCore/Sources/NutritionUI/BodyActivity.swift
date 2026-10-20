@@ -17,14 +17,17 @@ public struct BodyActivityReadings: Equatable, Sendable {
     public var outsideNutrients: [String: Decimal]
     /// True when reading other apps' entries failed, so the card says so instead of showing nothing.
     public var outsideReadFailed: Bool
+    /// True only when the app target actually tried to read other apps' entries this time.
+    public var outsideRead: Bool
 
     public init(
         steps: Decimal? = nil, activeEnergyKcal: Decimal? = nil, latestWeightKg: Decimal? = nil,
         latestWeightDate: Date? = nil, earlierWeightKg: Decimal? = nil, earlierWeightDate: Date? = nil,
-        outsideNutrients: [String: Decimal] = [:], outsideReadFailed: Bool = false
+        outsideNutrients: [String: Decimal] = [:], outsideReadFailed: Bool = false, outsideRead: Bool = false
     ) {
         self.outsideNutrients = outsideNutrients
         self.outsideReadFailed = outsideReadFailed
+        self.outsideRead = outsideRead
         self.steps = steps
         self.activeEnergyKcal = activeEnergyKcal
         self.latestWeightKg = latestWeightKg
@@ -35,6 +38,12 @@ public struct BodyActivityReadings: Equatable, Sendable {
 
     public static let empty = BodyActivityReadings()
     public var isEmpty: Bool { self == .empty }
+
+    /// Health's side of Today's totals, from this read.
+    public var outsideIntake: HealthIntakeTotals.Outside {
+        guard outsideRead else { return .notConnected }
+        return outsideReadFailed ? .failed : .read(outsideNutrients)
+    }
 }
 
 /// The app target's HealthKit reader. This package never imports HealthKit.
