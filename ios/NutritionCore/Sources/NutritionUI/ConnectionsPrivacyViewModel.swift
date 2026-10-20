@@ -497,11 +497,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// Nothing happens to an amount that is not a number: a half-typed entry has no value to convert,
     /// and the field's own error already says what is wrong with it.
     private func convertQuickWaterText(from oldSystem: UnitSystem) {
-        // Still the stored amount, untouched: show it again in the new unit, from the exact stored value.
-        if !quickWaterEditedSinceStored {
-            showStoredQuickWater()
-            return
-        }
+        // Mutated: the untouched guard is removed, so the rounded figure is always converted back.
         guard let typed = AmountParser.parseTyped(quickWaterText) else { return }
         let milliliters = milliliters(
             for: typed, in: AmountDisplay.volumeUnit(for: oldSystem))
