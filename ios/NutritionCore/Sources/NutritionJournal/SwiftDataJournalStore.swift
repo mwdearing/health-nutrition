@@ -1475,36 +1475,6 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
         return (revision, staged)
     }
 
-    #if DEBUG
-    /// Legacy seeding for tests only: rewrites the stored amounts of an intake's current revision, by component id,
-    /// the way an older build could have stored them. It skips the write validation on purpose, so a test can read
-    /// back a row the current store would refuse to write. Compiled into debug builds only.
-    func seedLegacyAmountsForTesting(intakeID: String, amountsByComponent: [String: String]) throws {
-        writeLock.lock()
-        defer { writeLock.unlock() }
-        let context = ModelContext(try openContainer())
-        guard let record = try context.fetch(FetchDescriptor<IntakeRecord>(
-            predicate: #Predicate<IntakeRecord> { $0.intakeID == intakeID })).first
-        else { throw JournalError.unknownIntake(intakeID) }
-        let current = record.currentRevision
-        let revisions = try context.fetch(FetchDescriptor<RevisionRecord>(
-            predicate: #Predicate<RevisionRecord> { $0.intakeID == intakeID && $0.number == current }))
-        guard let revision = revisions.first else {
-            throw JournalError.unknownIntake(intakeID)
-        }
-        guard var components = try JSONSerialization.jsonObject(
-            with: Data(revision.componentsJSON.utf8)) as? [[String: Any]]
-        else { throw JournalError.corruptRecord("revision") }
-        for index in components.indices {
-            if let id = components[index]["componentID"] as? String, let text = amountsByComponent[id] {
-                components[index]["amountText"] = text
-            }
-        }
-        revision.componentsJSON = String(decoding: try JSONSerialization.data(withJSONObject: components), as: UTF8.self)
-        try context.save()
-    }
-    #endif
-
     /// Test support: the delete rows still queued for an intake, held or not.
     func pendingDeleteRowCountForTesting(intakeID: String) throws -> Int {
         let context = ModelContext(try openContainer())
