@@ -217,11 +217,11 @@ public struct JournalView: View {
         if let day = lastRequestedDay, topVisibleID == lastRevealedSection {
             return day
         }
-        return JournalViewModel.arrowBaseDay(sectionIDs: model.sections.map(\.id), visible: visibleDayIDs, zone: model.dayZone, now: now())
+        return JournalViewModel.arrowBaseDay(sectionIDs: model.arrowSectionIDs, visible: visibleDayIDs, zone: model.dayZone, now: now())
     }
 
     private var topVisibleID: String? {
-        model.sections.map(\.id).first { visibleDayIDs.contains($0) }
+        model.arrowSectionIDs.first { visibleDayIDs.contains($0) }
     }
 
     /// Forward is disabled when the arrows already point at today.
