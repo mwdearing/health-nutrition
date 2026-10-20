@@ -92,11 +92,14 @@ final class HealthKitReader: BodyActivityReading {
         let own = HKSource.default()
         var queries: [OutsideQuery] = []
         for identifier in OutsideIntakeTotals.readQuantityTypeIdentifiers {
-            guard
-                let mapping = HealthKitWritePlanner.mappings.first(where: { $0.quantityTypeIdentifier == identifier }),
-                let hkUnit = Self.healthKitUnit(for: mapping.unit)
-            else {
+            guard let mapping = HealthKitWritePlanner.mappings.first(where: { $0.quantityTypeIdentifier == identifier }) else {
+                // An identifier with no nutrient has no line to leave unread.
                 queries.append(OutsideQuery(nutrientKey: "", outcome: .unmapped))
+                continue
+            }
+            guard let hkUnit = Self.healthKitUnit(for: mapping.unit) else {
+                // The nutrient is named, so its key is left unread rather than dropped.
+                queries.append(OutsideQuery(nutrientKey: mapping.nutrientKey, outcome: .failed))
                 continue
             }
             let found: [HKQuantitySample]
