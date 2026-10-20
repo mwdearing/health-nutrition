@@ -518,6 +518,7 @@ final class SavedMealsModelTests: XCTestCase {
         let journal = try makeJournal()
         let yesterday = now.addingTimeInterval(-86_400)
         try addEntry(journal, "Oats", at: yesterday)
+        try addEntry(journal, "Rice", at: yesterday.addingTimeInterval(120), meal: "dinner")
         let model = JournalViewModel(store: journal, timeZoneIdentifier: "UTC")
         let savedMeals = SavedMealsModel(store: UserDefaultsSavedMealStore(defaults: makeDefaults()), journal: journal)
         model.savedMeals = savedMeals
@@ -527,7 +528,9 @@ final class SavedMealsModelTests: XCTestCase {
         _ = try XCTUnwrap(model.copyDayToToday(day.id, now: now))
         XCTAssertTrue(model.canUndoCopy(now: now))
 
+        // The Dinner group has entries, so this is the duplicate-name refusal from the store, not an empty group.
         XCTAssertFalse(model.saveMeal(day.id, groupID: "Dinner", name: "Usual breakfast"))
+        XCTAssertEqual(model.copyNotice, SavedMealError.duplicateName.message)
         XCTAssertTrue(model.canUndoCopy(now: now), "a refused save does not finalize the copy's Undo")
     }
 
