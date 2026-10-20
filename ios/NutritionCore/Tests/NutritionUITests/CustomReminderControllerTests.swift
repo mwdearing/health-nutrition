@@ -45,7 +45,6 @@ private final class FakeCustomScheduler: ReminderScheduling, CustomReminderSched
     func cancel(ids: [UUID]) {
         lock.withLock { ids.forEach { _pending[$0] = nil } }
     }
-    func pendingCustomCount() async -> Int { lock.withLock { _pending.count } }
 }
 
 private final class MemoryStore: CustomReminderStoring {

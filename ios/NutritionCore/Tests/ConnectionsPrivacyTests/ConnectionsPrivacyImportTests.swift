@@ -610,7 +610,6 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
     /// nothing, and offers Retry; the import completes and its rows stay.
     func testAFailedFlagClearAfterTheImportFinishesCancelsNothing() async throws {
         let journal = ImportStubStore()
-        journal.failClearRestoreForTesting = true
         journal.pauseBeforeRestoreForTesting = true
         let model = ConnectionsPrivacyViewModel(store: journal, erasers: [journal])
 
@@ -618,10 +617,10 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         let restorePaused = await waitForSignal(journal.restorePausedBeforeWriteForTesting)
         XCTAssertTrue(restorePaused)
 
-        // The erase waits on the import gate, so releasing the paused import first lets it finish inside the wait.
+        // The import finishes first, so its own flag clears have run; only the erase's clear fails from here on.
         journal.resumeRestoreBeforeWriteForTesting.signal()
-        // The import has finished before the erase starts, so the gate is free and the flag clear is what fails.
         await model.waitForImportForTesting()
+        journal.failClearRestoreForTesting = true
         let erased = await model.eraseAllData()
 
         XCTAssertFalse(erased)

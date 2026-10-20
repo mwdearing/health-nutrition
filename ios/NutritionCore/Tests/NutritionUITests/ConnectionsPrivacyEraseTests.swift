@@ -220,12 +220,10 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
 
     /// A custom reminder request still pending after the erase is reported as "custom reminders" still on the phone.
     func testARemainingCustomReminderIsReportedAsStillOnThePhone() async {
-        let scheduler = KeepsCustomReminderPending()
+        let center = FakePendingReminderCenter(["custom-reminder-\(UUID().uuidString)"])
         let model = ConnectionsPrivacyViewModel(
             store: EraseStubStore(), favorites: EraseStubFavorites(), erasers: [RecordingEraser()],
-            remindersStillPending: {
-                await scheduler.pendingCustomCount() > 0 ? ["custom reminders"] : []
-            })
+            remindersStillPending: { await ReminderReadback.namesStillPending(in: center) })
 
         let erased = await model.eraseAllData()
         XCTAssertFalse(erased)
@@ -552,9 +550,9 @@ private final class OrderedEraser: JournalErasing, @unchecked Sendable {
     }
 }
 
-/// A custom-reminder scheduler that keeps one request pending, as the system would after a failed cancel.
-private final class KeepsCustomReminderPending: CustomReminderScheduling, @unchecked Sendable {
-    func replaceAll(with reminders: [CustomReminder]) async throws {}
-    func cancel(ids: [UUID]) {}
-    func pendingCustomCount() async -> Int { 1 }
+/// A notification center whose pending requests are fixed by the test.
+struct FakePendingReminderCenter: PendingReminderCenter {
+    let identifiers: [String]
+    init(_ identifiers: [String]) { self.identifiers = identifiers }
+    func pendingRequestIdentifiers() async -> [String] { identifiers }
 }
