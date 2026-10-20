@@ -131,7 +131,7 @@ public final class BodyActivityViewModel: ObservableObject {
         var parts: [String] = []
         // One check for every nutrient: a value is shown only when its read completed.
         func completed(_ key: String) -> Decimal? {
-            readings.outsideReadKeys.contains(key) ? readings.outsideNutrients[key] : nil
+            readings.outsideNutrients[key]
         }
         if let energy = completed("energy") { parts.append("\(Self.whole(energy)) Calories") }
         if let protein = completed("protein") { parts.append("\(Self.whole(protein)) g protein") }
