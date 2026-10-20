@@ -138,6 +138,6 @@ extension OutsideIntakeTotals {
         // A key is read only when every query for it succeeded, so one nutrient with two queries cannot be marked
         // read by the one that succeeded.
         return OutsideIntakeReading(
-            totals: totals(from: samples), readKeys: succeeded.subtracting(unread), failed: failed)
+            totals: totals(from: samples), readKeys: succeeded, failed: failed)
     }
 }
