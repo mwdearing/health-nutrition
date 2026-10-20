@@ -1878,6 +1878,8 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
         guard sqlite3_open_v2(url.path, &database, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK else {
             throw StoreFileError.checkpointFailed
         }
+        // Another connection may hold the file for a moment; wait for it rather than fail the erase on the first try.
+        sqlite3_busy_timeout(database, 2_000)
         var logFrames: Int32 = 0
         var checkpointedFrames: Int32 = 0
         guard

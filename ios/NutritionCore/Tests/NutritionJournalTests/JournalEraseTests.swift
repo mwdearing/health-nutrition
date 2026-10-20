@@ -199,6 +199,10 @@ final class JournalEraseTests: XCTestCase {
         XCTAssertNoThrow(try store.eraseAll())
         other.close()
         store.close()
+
+        let reopened = try SwiftDataJournalStore(url: url)
+        XCTAssertTrue(try reopened.activeIntakes().isEmpty)
+        reopened.close()
     }
 
     func testEraseRemovesEveryFavorite() throws {
