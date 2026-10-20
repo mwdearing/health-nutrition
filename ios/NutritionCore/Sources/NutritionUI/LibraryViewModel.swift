@@ -447,8 +447,10 @@ public final class LibraryViewModel: ObservableObject {
     }
     /// True when a search has no match: the list is empty only because of the typed text, so the empty state names
     /// the search rather than the segment (a typo must not read as "no favorites").
+    /// The Products segment also lists standalone products, so a search matched by a product is not empty (#546).
     public var isSearchEmpty: Bool {
-        Self.isSearchEmpty(visibleCount: visibleItems.count, searchText: searchText)
+        let standalone = segment == .products ? filteredProducts.count : 0
+        return Self.isSearchEmpty(visibleCount: visibleItems.count + standalone, searchText: searchText)
     }
 
     static func isSearchEmpty(visibleCount: Int, searchText: String) -> Bool {

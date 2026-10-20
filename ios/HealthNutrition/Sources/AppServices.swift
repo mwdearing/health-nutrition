@@ -231,8 +231,11 @@ final class AppServices {
         // Today counts the active energy toward the calorie goal when the person switched that on;
         // it reloads only when the figure changed, so a foreground does not load Today twice for nothing.
         bodyActivity.onRead = { [today] readings in
-            guard today.activeEnergyKcal != readings.activeEnergyKcal else { return }
+            guard TodayViewModel.needsReload(
+                activeEnergyKcal: today.activeEnergyKcal, outsideIntake: today.outsideIntake, for: readings
+            ) else { return }
             today.activeEnergyKcal = readings.activeEnergyKcal
+            today.outsideIntake = readings.outsideIntake
             today.load(now: Date())
         }
         if let productSharing {

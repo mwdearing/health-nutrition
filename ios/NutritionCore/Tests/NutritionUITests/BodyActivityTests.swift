@@ -49,7 +49,9 @@ final class BodyActivityTests: XCTestCase {
     func testOutsideTotalsNameWhatOtherAppsLoggedInTheRightUnits() async {
         let reader = FakeReader()
         reader.hasAskedForReadAccess = true
-        reader.readings = BodyActivityReadings(outsideNutrients: ["energy": 620, "protein": 48, "water": 473.1765])
+        reader.readings = BodyActivityReadings(
+            outsideNutrients: ["energy": 620, "protein": 48, "water": 473.1765], outsideRead: true,
+            outsideReadKeys: ["energy", "protein", "water"])
         var system = UnitSystem.usCustomary
         let model = BodyActivityViewModel(reader: reader, unitSystem: { system })
         await model.load(now: now)

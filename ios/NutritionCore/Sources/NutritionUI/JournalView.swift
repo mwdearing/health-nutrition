@@ -122,6 +122,13 @@ public struct JournalView: View {
                 model.load(now: now())
                 jumpNotice = nil
             }
+            // A time-zone change while the app is open reloads the days in the new zone (#648).
+            .task {
+                await model.runZoneChangeReloads(
+                    NotificationCenter.default.notifications(named: NSNotification.Name.NSSystemTimeZoneDidChange)
+                        .map { _ in () },
+                    now: now)
+            }
             // Coming back to the app reloads the day titles, so "Yesterday" moves on after midnight.
             .onChange(of: scenePhase) { phase in
                 if phase == .active {

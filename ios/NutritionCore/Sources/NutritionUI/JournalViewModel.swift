@@ -127,9 +127,13 @@ public struct JournalWeekSummary: Equatable {
 
 @MainActor
 public final class JournalViewModel: ObservableObject {
-    @Published public private(set) var sections: [JournalDaySection] = []
+    @Published public private(set) var sections: [JournalDaySection] = [] {
+        didSet { arrowSectionIDs = diarySections.map(\.id) }
+    }
     /// Today's section when it has no entries of its own; nil otherwise. The Diary lists it above `sections`.
-    @Published public private(set) var todaySection: JournalDaySection?
+    @Published public private(set) var todaySection: JournalDaySection? {
+        didSet { arrowSectionIDs = diarySections.map(\.id) }
+    }
 
     /// Every section the Diary lists, today first when it is empty.
     public var diarySections: [JournalDaySection] { (todaySection.map { [$0] } ?? []) + sections }
@@ -164,8 +168,8 @@ public final class JournalViewModel: ObservableObject {
     /// The zone the Diary groups its days in. The arrows and the jump both use it, so they agree with the sections.
     public var dayZone: TimeZone { TimeZone(identifier: journalZoneID()) ?? TimeZone.current }
     /// The day keys the Diary arrows step through, in list order: today's empty day too, which the
-    /// sections leave out (#539).
-    public var arrowSectionIDs: [String] { diarySections.map(\.id) }
+    /// sections leave out (#539). Refreshed by every change to the sections, so no writer can leave them stale (#611).
+    @Published public private(set) var arrowSectionIDs: [String] = []
     private let locale: Locale
     private let preferences: DisplayPreferences
 
@@ -188,6 +192,18 @@ public final class JournalViewModel: ObservableObject {
         self.journalZoneID = zoneID
         self.repeater = IntakeRepeater(store: store, timeZoneProvider: zoneID, makeID: makeID)
         self.copier = IntakeCopier(store: store, timeZoneProvider: zoneID, makeID: makeID)
+    }
+
+    /// Reloads the Diary on each time-zone change, so its days follow the device zone without a relaunch (#648).
+    /// The changes are injected so a test can send one without a system notification.
+    public func runZoneChangeReloads<Changes: AsyncSequence>(
+        _ changes: Changes, now: @escaping () -> Date
+    ) async where Changes.Element == Void {
+        do {
+            for try await _ in changes { load(now: now()) }
+        } catch {
+            return
+        }
     }
 
     /// Groups active intakes by the local day of each intake's own time zone, newest first.
@@ -461,7 +477,6 @@ public final class JournalViewModel: ObservableObject {
     /// Counts each copy, so the Undo control restarts its window when a new copy lands.
     @Published public private(set) var copyCount = 0
 
-
     /// Ends the Undo window for the latest copy without undoing it.
     public func expireCopyUndo() {
         copiedIDs = []
@@ -473,13 +488,11 @@ public final class JournalViewModel: ObservableObject {
     @discardableResult
     public func undoCopy(now: Date) -> Bool {
         guard canUndoCopy(now: now) else { return false }
-        // The copy notice is kept on a failed undo, so the Undo control stays on screen while copies remain. A
-        // successful undo leaves nothing to say, so the notice goes.
-        let notice = copyNotice
         // A copy the person already deleted by hand is not active any more: it is skipped, not counted as a failure.
         guard let active = try? Set(store.activeIntakes().map(\.id)) else {
             load(now: now)
-            copyNotice = notice
+            // A failed read cannot tell which copies are still here, so the notice names no count (#535).
+            copyNotice = "Couldn't remove the copied entries. Tap Undo to try again."
             return false
         }
         var succeeded = true
@@ -494,8 +507,17 @@ public final class JournalViewModel: ObservableObject {
             copiedIDs.removeFirst()
         }
         load(now: now)
-        copyNotice = succeeded ? nil : notice
+        // A failed undo leaves the copies still here, and the Undo control stays so tapping it tries again.
+        // A copy after a failed delete may have been deleted by hand, so count only the ids still active (#535).
+        copyNotice = succeeded ? nil : Self.undoFailureText(copiedIDs.filter { active.contains($0) }.count)
         return succeeded
+    }
+
+    /// The notice after an undo could not remove every copy: `remaining` copies are still here (#535).
+    static func undoFailureText(_ remaining: Int) -> String {
+        remaining == 1
+            ? "Couldn't remove 1 copied entry. Tap Undo to try again."
+            : "Couldn't remove \(remaining) copied entries. Tap Undo to try again."
     }
 
     /// Copies one meal group of a past day to now. "Other" copies the entries with no named meal.
@@ -516,8 +538,6 @@ public final class JournalViewModel: ObservableObject {
     @discardableResult
     public func saveMeal(_ sectionID: String, groupID: String, name: String) -> Bool {
         guard let savedMeals else { return false }
-        // Saving a meal is a newer action than the copy, so the copy's Undo is no longer offered.
-        expireCopyUndo()
         let label = MealLabel.allCases.first { $0.displayName == groupID }
         let selector = label.map(MealSelector.named) ?? .other
         let intakes: [Intake]
@@ -529,6 +549,8 @@ public final class JournalViewModel: ObservableObject {
             return false
         }
         let saved = savedMeals.save(name: name, meal: label, intakes: intakes)
+        // Saving a meal is a newer action than the copy, so the copy's Undo is no longer offered once it has saved.
+        if saved { expireCopyUndo() }
         copyNotice = savedMeals.notice
         copyFailed = savedMeals.noticeIsFailure
         return saved

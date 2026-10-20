@@ -58,20 +58,23 @@ final class UnitReadCountingStore: JournalStore, JournalLoggedUnits, @unchecked 
 extension UnitReadCountingStore {
     struct UnitsUnreadable: Error {}
 
-    func recordLoggedUnit(_ loggedUnit: JournalLoggedUnit) throws {
+    /// The inner store as its logged-units seam, checked once here rather than in each method (#601).
+    private var loggedUnitsStore: JournalLoggedUnits {
         guard let units = inner as? JournalLoggedUnits else { preconditionFailure("inner store must conform to JournalLoggedUnits") }
-        try units.recordLoggedUnit(loggedUnit)
+        return units
+    }
+
+    func recordLoggedUnit(_ loggedUnit: JournalLoggedUnit) throws {
+        try loggedUnitsStore.recordLoggedUnit(loggedUnit)
     }
 
     func loggedUnits() throws -> [JournalLoggedUnit] {
         unitReadCalls += 1
         if unitReadCalls == failsOnUnitReadCall { throw UnitsUnreadable() }
-        guard let units = inner as? JournalLoggedUnits else { preconditionFailure("inner store must conform to JournalLoggedUnits") }
-        return try units.loggedUnits()
+        return try loggedUnitsStore.loggedUnits()
     }
 
     func removeLoggedUnit(intakeID: String, componentID: String) throws {
-        guard let units = inner as? JournalLoggedUnits else { preconditionFailure("inner store must conform to JournalLoggedUnits") }
-        try units.removeLoggedUnit(intakeID: intakeID, componentID: componentID)
+        try loggedUnitsStore.removeLoggedUnit(intakeID: intakeID, componentID: componentID)
     }
 }
