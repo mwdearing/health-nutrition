@@ -738,8 +738,6 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         [widgets, savedMeals, supplements] + reminders + [journal, favorites, recipes, goals]
     }
 
-    /// The names of the stores this model runs, in erase order, for tests that pin the production list.
-    var eraserNamesForTesting: [String] { erasers.map(\.erasureName) }
 
     /// Puts the display preferences back to their defaults and republishes that state, so the screen
     /// shows what a person sees on a fresh install rather than the settings just erased.

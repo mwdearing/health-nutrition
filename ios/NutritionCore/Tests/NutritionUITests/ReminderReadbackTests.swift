@@ -26,8 +26,12 @@ final class ReminderReadbackTests: XCTestCase {
     /// A removal the system is still processing clears within the reads: the store is not reported.
     func testARequestThatClearsWithinTheReadsIsNotReported() async {
         let center = ClearingPendingCenter(identifiers: [ReminderIdentifier.daily], clearsAfterReads: 2)
-        let names = await ReminderReadback.namesStillPending(in: center, pause: {})
+        let waits = WaitCounter()
+        let names = await ReminderReadback.namesStillPending(in: center, pause: { waits.count += 1 })
         XCTAssertEqual(names, [])
+        // Reads 1 and 2 still see it, read 3 does not: two waits, three reads, then nothing is named.
+        XCTAssertEqual(center.reads, 3)
+        XCTAssertEqual(waits.count, 2)
     }
 
     /// A request that never clears is still there at the last read, so it is reported.
