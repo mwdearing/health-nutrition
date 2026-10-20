@@ -61,7 +61,8 @@ final class AddIntakeThisAddsTests: XCTestCase {
         ounces.unit = .oz
         let fromGrams = try XCTUnwrap(grams.amountPreview?.protein)
         let fromOunces = try XCTUnwrap(ounces.amountPreview?.protein)
-        XCTAssertEqual(fromOunces, fromGrams, accuracy: Decimal(string: "0.05")!)
+        XCTAssertEqual(NSDecimalNumber(decimal: fromOunces).doubleValue,
+                       NSDecimalNumber(decimal: fromGrams).doubleValue, accuracy: 0.05)
     }
 
     /// A per-100 g label scales an ounce amount the same as its grams too: 2 oz is 56.7 g, so 13 g per 100 g
