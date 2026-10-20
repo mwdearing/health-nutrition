@@ -116,9 +116,10 @@ final class HealthKitReader: BodyActivityReading {
             // with (checked first, so no incompatible conversion is attempted). IU is passed through only for a
             // nutrient with a fixed IU amount (vitamin D); any other sample is unconvertible.
             let outcomes: [OutsideSampleOutcome] = found.map { sample in
-                guard let (value, sampleUnit) = Self.sampleValue(sample.quantity, hkUnit: hkUnit, unit: unit, hasIUFactor: hasIUFactor) else {
+                guard let converted = Self.sampleValue(sample.quantity, hkUnit: hkUnit, unit: unit, hasIUFactor: hasIUFactor) else {
                     return .unconvertible
                 }
+                let (value, sampleUnit) = converted
                 return .sample(OutsideNutrientSample(
                     quantityTypeIdentifier: identifier,
                     value: Decimal(value),
