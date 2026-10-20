@@ -463,11 +463,11 @@ public final class JournalViewModel: ObservableObject {
     @discardableResult
     public func undoCopy(now: Date) -> Bool {
         guard canUndoCopy(now: now) else { return false }
-        let notice = copyNotice
         // A copy the person already deleted by hand is not active any more: it is skipped, not counted as a failure.
         guard let active = try? Set(store.activeIntakes().map(\.id)) else {
             load(now: now)
-            copyNotice = notice
+            // A failed read cannot tell which copies are still here, so the notice names no count (#535).
+            copyNotice = "Couldn't remove the copied entries. Tap Undo to try again."
             return false
         }
         var succeeded = true
@@ -483,7 +483,7 @@ public final class JournalViewModel: ObservableObject {
         }
         load(now: now)
         // A failed undo leaves the copies still here, and the Undo control stays so tapping it tries again.
-        copyNotice = succeeded ? nil : notice
+        copyNotice = succeeded ? nil : Self.undoFailureText(copiedIDs.count)
         return succeeded
     }
 
@@ -512,7 +512,6 @@ public final class JournalViewModel: ObservableObject {
     @discardableResult
     public func saveMeal(_ sectionID: String, groupID: String, name: String) -> Bool {
         guard let savedMeals else { return false }
-        expireCopyUndo()
         let label = MealLabel.allCases.first { $0.displayName == groupID }
         let selector = label.map(MealSelector.named) ?? .other
         let intakes: [Intake]
@@ -525,6 +524,7 @@ public final class JournalViewModel: ObservableObject {
         }
         let saved = savedMeals.save(name: name, meal: label, intakes: intakes)
         // Saving a meal is a newer action than the copy, so the copy's Undo is no longer offered once it has saved.
+        if saved { expireCopyUndo() }
         copyNotice = savedMeals.notice
         copyFailed = savedMeals.noticeIsFailure
         return saved
