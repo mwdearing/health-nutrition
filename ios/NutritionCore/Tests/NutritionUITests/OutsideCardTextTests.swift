@@ -36,6 +36,12 @@ final class OutsideCardTextTests: XCTestCase {
         XCTAssertFalse(text?.contains("could not be read") ?? true)
     }
 
+    func testSuccessfulQueriesWithNoSamplesDoNotShowTheFailureLine() async {
+        let text = await outsideText(for: BodyActivityReadings(
+            outsideReadFailed: true, outsideRead: true, outsideReadKeys: ["energy", "protein"]))
+        XCTAssertNil(text)
+    }
+
     func testNothingReadShowsTheFailureLine() async {
         let text = await outsideText(for: BodyActivityReadings(outsideReadFailed: true, outsideRead: true))
         XCTAssertEqual(text, "From other apps: could not be read")

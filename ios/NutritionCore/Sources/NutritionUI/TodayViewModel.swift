@@ -187,6 +187,13 @@ public final class TodayViewModel: ObservableObject {
     /// than to the front for a goal, because the order is the fallback's fixed one and a goal does not
     /// reorder a day; `JournalViewModel.totalsText` is what puts a targeted nutrient first, on the
     /// one-line summary where the order is a presentational choice.
+    /// Whether Today must reload for these readings: only when the figures it reads from Health changed.
+    public static func needsReload(
+        activeEnergyKcal: Decimal?, outsideIntake: HealthIntakeTotals.Outside, for readings: BodyActivityReadings
+    ) -> Bool {
+        activeEnergyKcal != readings.activeEnergyKcal || outsideIntake != readings.outsideIntake
+    }
+
     public static func totalsNutrients(
         goals: [NutrientGoal], fallback: [String] = TodayViewModel.defaultTrackedNutrients
     ) -> [String] {

@@ -139,7 +139,8 @@ public final class BodyActivityViewModel: ObservableObject {
             }
         }
         guard !parts.isEmpty else {
-            return readings.outsideReadFailed ? "From other apps: could not be read" : nil
+            // Nothing was read: a failed query and no successful query and no value.
+            return readings.outsideReadFailed && readings.outsideReadKeys.isEmpty ? "From other apps: could not be read" : nil
         }
         return "From other apps: " + parts.joined(separator: ", ")
     }
