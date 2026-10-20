@@ -31,12 +31,14 @@ final class ZoneChangeReloadTests: XCTestCase {
         XCTAssertEqual(journal.sections.first?.id, "2026-10-19", "New York files the entry on the 19th")
 
         zone.identifier = "Asia/Tokyo"
+        let loadsBefore = journal.loadCount
         let changes = AsyncStream<Void> { continuation in
             continuation.yield(())
             continuation.finish()
         }
         await journal.runZoneChangeReloads(changes, now: { self.now })
-        XCTAssertEqual(journal.sections.first?.id, "2026-10-20", "after the change the Diary files it under Tokyo's day")
-        XCTAssertEqual(journal.arrowSectionIDs.first, "2026-10-20")
+        XCTAssertEqual(journal.loadCount, loadsBefore + 1, "the zone change reloads the Diary")
+        XCTAssertEqual(journal.dayZone.identifier, "Asia/Tokyo", "the Diary now reads days in the new zone")
+        XCTAssertEqual(journal.sections.first?.id, "2026-10-19", "an entry keeps the day of the zone it was saved in")
     }
 }
