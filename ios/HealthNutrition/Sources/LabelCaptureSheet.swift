@@ -159,7 +159,7 @@ final class LabelCaptureSheetState: ObservableObject {
     /// Back from Settings: clears the failure when access is allowed, so the scanner starts again.
     func resumeAfterSettings(access: CameraAccessState) {
         guard failureMessage != nil else { return }
-        failureMessage = CameraAccessNotice.messageAfterReturn(access: access, sheet: .label)
+        failureMessage = failureMessage
     }
 
     /// Goes back to the reviewed draft, keeping every value already on screen and forgetting what the
