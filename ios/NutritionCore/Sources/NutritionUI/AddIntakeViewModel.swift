@@ -1060,13 +1060,8 @@ public final class AddIntakeViewModel: ObservableObject {
     private func capturedPreview(labelBasis: String) -> AmountPreview? {
         guard let amount = AmountParser.parseTyped(amountText), unit.dimension == .mass else { return nil }
         // The same stored quantity the "This adds" lines use, so the preview and the saved amount agree.
-        let stored = storedQuantity(amount: amount, unit: unit, name: name)
-        guard stored.unit.dimension == .mass,
-              let converted = try? Quantity(value: stored.amount, unit: stored.unit).converted(to: .g)
-        else { return nil }
-        let component = IntakeComponent(
-            componentID: Self.componentID(forFoodNamed: name, unit: stored.unit),
-            name: name, amount: stored.amount, unit: stored.unit)
+        let converted = Quantity(value: amount, unit: unit)
+        let component = IntakeComponent(componentID: "preview", name: name, amount: amount, unit: unit)
         guard let factor = DailyTotalsBuilder.scalingFactor(labelBasis: labelBasis, logged: [component]) else {
             return nil
         }
