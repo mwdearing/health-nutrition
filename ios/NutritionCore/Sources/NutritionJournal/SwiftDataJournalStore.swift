@@ -1820,13 +1820,15 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             container = nil
             var removalError: Error?
             for suffix in ["-shm", "-wal", ""] {
-                if suffix.isEmpty, removalError != nil { break }
+                // Stop at the first failure: deleting the write-ahead file after another file failed would roll the
+                // store back to its pre-erase main file, so the rows the erase deleted would come back.
+                if removalError != nil { break }
                 let file = URL(fileURLWithPath: storeURL.path + suffix)
                 guard FileManager.default.fileExists(atPath: file.path) else { continue }
                 do {
                     try FileManager.default.removeItem(at: file)
                 } catch {
-                    removalError = removalError ?? error
+                    removalError = error
                 }
             }
             // A reopen failure is thrown only when no removal failed, so the removal error is the one reported.
