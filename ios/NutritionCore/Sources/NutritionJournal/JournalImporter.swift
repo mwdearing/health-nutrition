@@ -401,7 +401,6 @@ public enum JournalImporter {
                 if let savedMealsTarget, savedMealsWritten {
                     do { try savedMealsTarget.clearRestoredSavedMeals(plan.savedMeals) } catch { savedMealsLeft = true }
                     // The saved meals the undo could not take back keep the journal, so the flag stays set for a resume too.
-                    if savedMealsLeft { keepFlag = true }
                 }
                 let retainedIntakes = receipt.intakes.filter { $0.lifecycle == .active }.count
                 let retainedTombstones = receipt.intakes.filter { $0.lifecycle == .deleted }.count
