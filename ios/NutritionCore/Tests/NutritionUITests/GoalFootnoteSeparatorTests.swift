@@ -1,9 +1,12 @@
 import Foundation
+import NutritionDomain
+import NutritionJournal
 import XCTest
 
 @testable import NutritionUI
 
 /// The calorie goal footnote groups its thousands the way the remaining figure does: "of 2,357 Calories goal".
+@MainActor
 final class GoalFootnoteSeparatorTests: XCTestCase {
     func testAFourDigitCalorieGoalIsGrouped() {
         XCTAssertEqual(

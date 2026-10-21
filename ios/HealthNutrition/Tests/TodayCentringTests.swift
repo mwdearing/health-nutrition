@@ -1,6 +1,7 @@
 import NutritionDomain
 import NutritionJournal
 import NutritionUI
+import SwiftUI
 import UIKit
 import XCTest
 
