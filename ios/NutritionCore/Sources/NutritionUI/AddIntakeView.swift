@@ -94,7 +94,6 @@ public struct AddIntakeView: View {
                                 .font(.body)
                                 .digitsOnlyKeyboard()
                                 .focused(focus)
-                                .accessibilityLabel("Barcode (optional)")
                                 .accessibilityHint("Type the 8, 12 or 13 digits on the package, then look up")
                                 .onSubmit { Task { await self.model.lookUpBarcode() } }
                                 Button("Look up") {
