@@ -1739,6 +1739,8 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
 
     // MARK: Erasing
 
+    public var erasureName: String { "journal" }
+
     /// Removes every row the journal file holds: intakes, their revision history, product snapshots,
     /// projections and queued outbox operations. A deleted entry leaves no tombstone behind either,
     /// because a tombstone only exists so a later export can retract the entry.
@@ -1751,10 +1753,8 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     ///
     /// The container is not closed: the store reads empty and accepts new entries afterwards.
     public func eraseAll() throws {
-        // A restore flag left behind would let the next import of that file put back favorites the person is
-        // erasing, so it goes first: an erase that fails partway (this store or another) can then leave journal
-        // rows, but never a way for a re-import to bring erased favorites back. A flag that cannot be removed
-        // fails the erase before anything is deleted, so the screen reports it.
+        // The store clears its own restore flag too: a direct caller of the store must not leave a flag that lets a
+        // re-import put erased favorites back. The erase screen clears it first, so this second clear is a no-op there.
         try clearRestoreInProgress()
         _ = try commit { context in
             for row in try context.fetch(FetchDescriptor<JournalSchemaV10.LoggedUnitRecord>()) { context.delete(row) }

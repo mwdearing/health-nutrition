@@ -29,3 +29,6 @@ __pycache__/
 .paperclip/
 
 .DS_Store
+
+# Local agent worktrees and settings: never commit nested checkouts
+.claude/

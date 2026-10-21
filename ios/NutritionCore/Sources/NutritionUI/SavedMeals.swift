@@ -95,6 +95,8 @@ public final class UserDefaultsSavedMealStore: SavedMealStoring, JournalErasing,
         }
     }
 
+    public var erasureName: String { "saved meals" }
+
     public func eraseAll() throws {
         lock.withLock {
             defaults.removeObject(forKey: Self.key)
