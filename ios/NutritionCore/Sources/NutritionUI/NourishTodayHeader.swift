@@ -47,7 +47,7 @@ public struct NourishTodayHeader: View {
         guard let goal else { return nil }
         // The goal is a whole amount, grouped the way the remaining figure is ("2,357"), so the footnote and the figure agree.
         let target = AmountDisplay.nutrient(goal.target, unit: goal.unit)
-        let grouped = AmountDisplay.DisplayAmount(amount: target.amount, unit: goal.unit, groupsWholeAmount: true)
+        let grouped = DisplayAmount(amount: target.amount, unit: goal.unit, groupsWholeAmount: true)
         return "of \(grouped.text) goal"
     }
 

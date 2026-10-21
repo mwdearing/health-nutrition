@@ -27,6 +27,8 @@ final class TodayCentringTests: XCTestCase {
     private func hostedToday() throws -> (UIHostingController<AnyView>, UIView, AppServices) {
         let services = try makeSeededAppServices()
         try services.goalStore.setGoal(NutrientGoal(nutrient: "energy", target: 2357, unit: .kcal))
+        try services.goalStore.setGoal(NutrientGoal(nutrient: "carbohydrate", target: 250, unit: .g))
+        try services.goalStore.setGoal(NutrientGoal(nutrient: "fat", target: 70, unit: .g))
         services.today.load(now: Date())
         let root = AnyView(TodayView(model: services.today, onAddIntake: {}).frame(width: 390))
         let host = UIHostingController(rootView: root)
@@ -55,12 +57,20 @@ final class TodayCentringTests: XCTestCase {
         XCTAssertEqual(goal.accessibilityLabel, "of 2,357 Calories goal")
     }
 
-    func testTheProteinLabelAndFigureAreCentredInTheirColumn() throws {
+    func testEachMacroLabelAndFigureIsCentredInItsOwnEqualColumn() throws {
         let (_, host, _) = try hostedToday()
-        let column = try XCTUnwrap(element("macroColumn-Protein", in: host), "the protein column is on screen")
-        let label = try XCTUnwrap(element("macroLabel-Protein", in: host))
-        let figure = try XCTUnwrap(element("macroFigure-Protein", in: host))
-        XCTAssertEqual(centreX(label, in: host), centreX(column, in: host), accuracy: 1, "protein label")
-        XCTAssertEqual(centreX(figure, in: host), centreX(column, in: host), accuracy: 1, "protein figure")
+        var widths: [CGFloat] = []
+        for nutrient in ["Protein", "Carbohydrate", "Fat"] {
+            let column = try XCTUnwrap(element("macroColumn-\(nutrient)", in: host), "\(nutrient) column is on screen")
+            let label = try XCTUnwrap(element("macroLabel-\(nutrient)", in: host))
+            let figure = try XCTUnwrap(element("macroFigure-\(nutrient)", in: host))
+            XCTAssertEqual(centreX(label, in: host), centreX(column, in: host), accuracy: 1, "\(nutrient) label")
+            XCTAssertEqual(centreX(figure, in: host), centreX(column, in: host), accuracy: 1, "\(nutrient) figure")
+            widths.append(column.convert(column.bounds, to: host).width)
+        }
+        let first = try XCTUnwrap(widths.first)
+        for width in widths {
+            XCTAssertEqual(width, first, accuracy: 1, "the three macro columns are equal width")
+        }
     }
 }

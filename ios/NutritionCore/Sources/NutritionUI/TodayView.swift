@@ -103,7 +103,9 @@ public struct TodayView: View {
         .background(TokenColors.background)
         // The title is drawn in the content, centred, as a heading; the bar keeps the gear and no title of its own.
         .navigationTitle("")
+#if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+#endif
         .onAppear { model.load(now: now()) }
     }
 
