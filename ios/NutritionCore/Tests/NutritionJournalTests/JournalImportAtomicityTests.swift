@@ -87,7 +87,7 @@ final class JournalImportAtomicityTests: JournalImportTestCase {
         favoritesStore.failNextSaveForTesting = true
 
         XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: favoritesStore)) {
-            XCTAssertEqual($0 as? FavoritesError, .injectedSaveFailure)
+            XCTAssertEqual($0 as? JournalImportError, .rolledBack)
         }
         XCTAssertTrue(try journal.activeIntakes().isEmpty)
         XCTAssertTrue(try journal.deletedIntakes().isEmpty)

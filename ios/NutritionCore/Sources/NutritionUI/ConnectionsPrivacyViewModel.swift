@@ -968,7 +968,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         case .imported(let summary):
             importSummary = summary
             importState = .imported
-            importMessage = Self.importSummaryText(summary)
+            importMessage = Self.importSummaryText(summary, locale: .current)
         case .failed(let failure):
             importSummary = nil
             importState = .failed
@@ -1064,16 +1064,18 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     }
 
     /// One line saying what came back, so a restore that quietly did nothing still looks like an answer.
-    public static func importSummaryText(_ summary: JournalImportSummary) -> String {
-        let entries = summary.intakes == 1 ? "1 entry" : "\(summary.intakes) entries"
-        let deleted = summary.tombstones == 0 ? "" : " and \(summary.tombstones) deleted"
-        let favorites = summary.favorites == 0 ? "" : ", \(summary.favorites) favorites"
+    public static func importSummaryText(_ summary: JournalImportSummary, locale: Locale) -> String {
+        // Every count carries grouping separators (1,234 entries), in the locale the screen is shown in.
+        func count(_ n: Int) -> String { n.formatted(.number.locale(locale)) }
+        let entries = summary.intakes == 1 ? "1 entry" : "\(count(summary.intakes)) entries"
+        let deleted = summary.tombstones == 0 ? "" : " and \(count(summary.tombstones)) deleted"
+        let favorites = summary.favorites == 0 ? "" : ", \(count(summary.favorites)) favorites"
         let savedMeals = summary.savedMeals == 0 ? ""
-            : summary.savedMeals == 1 ? ", 1 saved meal" : ", \(summary.savedMeals) saved meals"
-        let goals = summary.goals == 0 ? "" : summary.goals == 1 ? ", 1 goal" : ", \(summary.goals) goals"
+            : summary.savedMeals == 1 ? ", 1 saved meal" : ", \(count(summary.savedMeals)) saved meals"
+        let goals = summary.goals == 0 ? "" : summary.goals == 1 ? ", 1 goal" : ", \(count(summary.goals)) goals"
         let kept = summary.keptOutOfLibrary == 0 ? ""
             : summary.keptOutOfLibrary == 1 ? ", 1 entry kept out of Library > Products"
-            : ", \(summary.keptOutOfLibrary) entries kept out of Library > Products"
+            : ", \(count(summary.keptOutOfLibrary)) entries kept out of Library > Products"
         return "Imported \(entries)\(deleted)\(favorites)\(savedMeals)\(goals)\(kept)."
     }
 

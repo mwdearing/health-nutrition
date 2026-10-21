@@ -351,7 +351,7 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         await importAndSettle(model, data: try export(includeFavorite: true))
 
         XCTAssertEqual(model.importState, .failed)
-        XCTAssertEqual(model.importMessage, ConnectionsPrivacyViewModel.importFailedMessage)
+        XCTAssertEqual(model.importMessage, ConnectionsPrivacyViewModel.importRolledBackMessage)
         XCTAssertEqual(model.journalRestoreGeneration, 0)
         XCTAssertTrue(try journal.activeIntakes().isEmpty)
         XCTAssertEqual(model.exportFileURL, originalExport)
@@ -841,8 +841,18 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
     func testTheSuccessLineCountsGoals() {
         let one = JournalImportSummary(
             intakes: 1, revisions: 1, tombstones: 0, favorites: 0, products: 0, goals: 2)
-        XCTAssertEqual(ConnectionsPrivacyViewModel.importSummaryText(one), "Imported 1 entry, 2 goals.")
+        XCTAssertEqual(ConnectionsPrivacyViewModel.importSummaryText(one, locale: Locale(identifier: "en_US")), "Imported 1 entry, 2 goals.")
         let none = JournalImportSummary(intakes: 1, revisions: 1, tombstones: 0, favorites: 0, products: 0)
-        XCTAssertEqual(ConnectionsPrivacyViewModel.importSummaryText(none), "Imported 1 entry.")
+        XCTAssertEqual(ConnectionsPrivacyViewModel.importSummaryText(none, locale: Locale(identifier: "en_US")), "Imported 1 entry.")
+    }
+
+    /// Every count in the success line is grouped in the locale the screen uses, pinned to en_US here so the result is
+    /// the same on any runner. Fails when the count drops its grouping and prints the bare number.
+    func testTheSuccessLineGroupsEveryCount() {
+        let summary = JournalImportSummary(
+            intakes: 1234, revisions: 1234, tombstones: 0, favorites: 0, products: 0, goals: 1000)
+        XCTAssertEqual(
+            ConnectionsPrivacyViewModel.importSummaryText(summary, locale: Locale(identifier: "en_US")),
+            "Imported 1,234 entries, 1,000 goals.")
     }
 }
