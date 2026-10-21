@@ -1801,7 +1801,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     /// person cannot tell which half is gone.
     ///
     /// The store file is then deleted and reopened empty, so the store reads empty and accepts new entries
-    /// afterwards. The erased rows are removed from the store file when both companion files were deleted.
+    /// afterwards. The erased rows leave the store when the store file itself is deleted and recreated empty.
     public func eraseAll() throws {
         // The store clears its own restore flag too: a direct caller of the store must not leave a flag that lets a
         // re-import put erased favorites back. The erase screen clears it first, so this second clear is a no-op there.
@@ -1850,7 +1850,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     /// journal as still on the phone. The companion files go before the main file: once the checkpoint has emptied
     /// the write-ahead file, the shared-memory file is only an index, so removing the companions first leaves a
     /// complete main file if the erase stops partway. The store reopens when it can; if
-    /// that reopen fails the store stays closed, later calls throw JournalError.closed, and the error is thrown.
+    /// that reopen fails, the next call retries it (reopenPending) and throws the reopen error if it fails again; `close()` leaves the store closed.
     private func removeStoreFiles() throws {
         try lock.withLock {
             container = nil
