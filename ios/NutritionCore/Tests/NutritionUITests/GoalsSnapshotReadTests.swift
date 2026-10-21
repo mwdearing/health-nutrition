@@ -74,7 +74,7 @@ final class GoalsSnapshotReadTests: XCTestCase {
             labelBasis: "per serving (30 g)", catalogOrigin: "label_capture", catalogVersion: "unknown",
             nutrients: ["creatine-monohydrate": .known(Decimal(3), .g)])
         try inner.create(
-            Intake(id: "gummies-entry", category: "food", occurredAt: now, timeZoneIdentifier: "UTC"),
+            Intake(id: UUID().uuidString.lowercased(), category: "food", occurredAt: now, timeZoneIdentifier: "UTC"),
             components: [IntakeComponent(componentID: "gummies", name: "Gummies", amount: Decimal(30), unit: .g)],
             product: product, now: now)
         return SnapshotReadFailingStore(inner: inner)
