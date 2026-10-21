@@ -15,7 +15,14 @@ final class AddIntakeSpokenNamesUITests: XCTestCase {
         // Any element named Unit that is not plain text. A stray static text with that name would not pass.
         let unit = app.descendants(matching: .any).matching(NSPredicate(
             format: "label == %@ AND elementType != %d", "Unit", XCUIElement.ElementType.staticText.rawValue)).firstMatch
-        XCTAssertTrue(unit.exists, "the Unit picker lost its own name")
+        if !unit.exists {
+            // Diagnostic: the element tree, so the CI log shows what the Unit picker exposes.
+            let dump = app.debugDescription
+            let attachment = XCTAttachment(string: dump)
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            XCTFail("the Unit picker lost its own name. Element tree: \(dump)")
+        }
     }
 
     /// The barcode field is named "Barcode (optional)" and the Look up button keeps its own name. The app always
