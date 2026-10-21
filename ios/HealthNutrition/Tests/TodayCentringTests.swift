@@ -1,56 +1,66 @@
+import NutritionDomain
+import NutritionJournal
 import NutritionUI
 import UIKit
 import XCTest
 
 @testable import HealthNutrition
 
-/// The calorie summary block is centred on the screen: its Food figure's centre is the centre of the view.
+/// The Today summary is centred on the screen: the title, the date, the calorie figure, its label and goal line, the
+/// Food row, and each macro label and figure centred in its own column. Measured on a seeded day with a calorie goal.
 @MainActor
 final class TodayCentringTests: XCTestCase {
-    private let now = Date(timeIntervalSince1970: 1_700_000_000)
-
-    private func makeJournal() throws -> SwiftDataJournalStore {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
-        return try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
-    }
-
-    /// The on-screen frame, in the hosting view's coordinates, of the first accessibility element with this identifier.
-    private func frame(of identifier: String, in view: UIView) -> CGRect? {
-        if view.accessibilityIdentifier == identifier {
-            return view.convert(view.bounds, to: nil)
-        }
+    /// The on-screen view with this identifier, if any, found by walking the hosted view tree.
+    private func element(_ identifier: String, in view: UIView) -> UIView? {
+        if view.accessibilityIdentifier == identifier { return view }
         for subview in view.subviews {
-            if let found = frame(of: identifier, in: subview) { return found }
+            if let found = element(identifier, in: subview) { return found }
         }
         return nil
     }
 
-    func testTheTitleAndDateAreCentredOnTheScreen() throws {
-        let model = TodayViewModel(store: try makeJournal(), timeZoneIdentifier: "UTC")
-        model.load(now: now)
-        let host = UIHostingController(rootView: TodayView(model: model, onAddIntake: {}).frame(width: 390))
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 800))
+    /// The horizontal centre of a view, in the hosting view's coordinates.
+    private func centreX(_ view: UIView, in host: UIView) -> CGFloat {
+        view.convert(view.bounds, to: host).midX
+    }
+
+    private func hostedToday() throws -> (UIHostingController<AnyView>, UIView, AppServices) {
+        let services = try makeSeededAppServices()
+        try services.goalStore.setGoal(NutrientGoal(nutrient: "energy", target: 2357, unit: .kcal))
+        services.today.load(now: Date())
+        let root = AnyView(TodayView(model: services.today, onAddIntake: {}).frame(width: 390))
+        let host = UIHostingController(rootView: root)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
         window.rootViewController = host
         window.makeKeyAndVisible()
         host.view.layoutIfNeeded()
-        for identifier in ["todayHeader", "todayDate"] {
-            let element = try XCTUnwrap(frame(of: identifier, in: host.view), "\(identifier) is on screen")
-            XCTAssertEqual(element.midX, host.view.bounds.midX, accuracy: 1, identifier)
+        return (host, host.view, services)
+    }
+
+    func testTheTitleDateAndCalorieBlockAreCentredOnTheScreen() throws {
+        let (_, host, _) = try hostedToday()
+        let centre = host.bounds.midX
+        for identifier in [
+            "todayHeader", "todayDate", "calorieRemainingFigure", "calorieRemainingLabel", "calorieGoalLine",
+            "calorieFoodBurnedRow",
+        ] {
+            let view = try XCTUnwrap(element(identifier, in: host), "\(identifier) is on screen")
+            XCTAssertEqual(centreX(view, in: host), centre, accuracy: 1, identifier)
         }
     }
 
-    func testTheCalorieFoodFigureIsCentredOnTheScreen() throws {
-        let model = TodayViewModel(store: try makeJournal(), timeZoneIdentifier: "UTC")
-        model.load(now: now)
-        let host = UIHostingController(rootView: NourishTodayHeader(model: model).frame(width: 390))
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 800))
-        window.rootViewController = host
-        window.makeKeyAndVisible()
-        host.view.layoutIfNeeded()
+    func testTheGoalLineReadsWithItsThousandsSeparator() throws {
+        let (_, host, _) = try hostedToday()
+        let goal = try XCTUnwrap(element("calorieGoalLine", in: host))
+        XCTAssertEqual(goal.accessibilityLabel, "of 2,357 Calories goal")
+    }
 
-        let food = try XCTUnwrap(frame(of: "calorieFoodLabel", in: host.view), "the Food figure is on screen")
-        XCTAssertEqual(food.midX, host.view.bounds.midX, accuracy: 1)
+    func testTheProteinLabelAndFigureAreCentredInTheirColumn() throws {
+        let (_, host, _) = try hostedToday()
+        let column = try XCTUnwrap(element("macroColumn-Protein", in: host), "the protein column is on screen")
+        let label = try XCTUnwrap(element("macroLabel-Protein", in: host))
+        let figure = try XCTUnwrap(element("macroFigure-Protein", in: host))
+        XCTAssertEqual(centreX(label, in: host), centreX(column, in: host), accuracy: 1, "protein label")
+        XCTAssertEqual(centreX(figure, in: host), centreX(column, in: host), accuracy: 1, "protein figure")
     }
 }

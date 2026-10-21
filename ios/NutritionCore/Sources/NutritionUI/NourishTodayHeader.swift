@@ -146,6 +146,7 @@ public struct NourishTodayHeader: View {
                     .accessibilityElement(children: .combine)
                 }
             }
+            .accessibilityIdentifier("calorieFoodBurnedRow")
             if let note = partial {
                 Text(note).font(.footnote).foregroundStyle(TokenColors.textSecondary)
             }
