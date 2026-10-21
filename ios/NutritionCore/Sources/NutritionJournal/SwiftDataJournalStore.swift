@@ -1855,6 +1855,9 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
         try lock.withLock {
             container = nil
             var removalError: Error?
+            // The checkpoint runs while `lock` is held. A read that needs the container during an erase waits here for at
+            // most the 2 s busy timeout in checkpointStoreFile, then fails as an ordinary failed read. Erase is started by
+            // the person from Settings, and this wait is accepted rather than changing reads during an erase.
             do {
                 try fileOperations.checkpoint(storeURL)
             } catch {
