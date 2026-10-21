@@ -335,7 +335,6 @@ public enum JournalImporter {
             // The flag is gone, so the receipts have nothing left to answer; one left by a stop here is harmless.
             try? favoritesTarget?.removeRestoreReceipt(digest)
             try? savedMealsTarget?.removeSavedMealsRestoreReceipt(digest)
-            try? goalsTarget?.removeGoalRestoreReceipt(digest)
             return summary(of: plan, goals: goalKeysSet.count)
         }
 
