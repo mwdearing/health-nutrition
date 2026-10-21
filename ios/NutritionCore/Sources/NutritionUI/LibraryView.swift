@@ -113,6 +113,9 @@ public struct LibraryView: View {
             if model.segment == .products { standaloneRows }
             if model.isSearchEmpty {
                 ContentUnavailableView.search(text: model.searchText)
+                if let onSearchProducts {
+                    Button("Find shared products", action: onSearchProducts).frame(minHeight: 44)
+                }
             } else if model.visibleItems.isEmpty && (model.segment != .products || model.filteredProducts.isEmpty) {
                 emptyState(for: model.segment)
             } else {
