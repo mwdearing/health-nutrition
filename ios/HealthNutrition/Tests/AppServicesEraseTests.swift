@@ -140,7 +140,7 @@ final class AppServicesEraseTests: XCTestCase {
 
     /// Every production store is in the erase, in the pinned order: widget data first, journal after the lists. The
     /// custom reminders join only with the system scheduler, which the test scheduler does not provide.
-    func testTheProductionEraseListWithoutTheSystemSchedulerIsPinned() throws {
+    func testTheBuilderNamesWithoutTheSystemSchedulerAreInOrder() throws {
         let (services, _) = try makeServices()
         XCTAssertEqual(eraseNamesFromBuilderInputs(withCustomReminders: false), [
             "widget data", "saved meals", "supplements", "reminders",
@@ -150,7 +150,7 @@ final class AppServicesEraseTests: XCTestCase {
 
     /// A system scheduler that also supports custom reminders adds "custom reminders" to the erase, after the
     /// daily reminders and before the journal, so a custom request is cleared too.
-    func testTheEraseListIncludesCustomRemindersWhenTheSchedulerSupportsThem() throws {
+    func testTheBuilderNamesIncludeCustomRemindersWhenTheSchedulerSupportsThem() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("HealthNutritionTests", isDirectory: true)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

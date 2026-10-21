@@ -314,7 +314,6 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     private var deferredImportEffectsDuringErase: [DeferredImportEffects] = []
 
     /// The restore in flight, so an erase can ask it to stop and wait for it. Nil when nothing is running.
-    private var importTask: Task<Void, Never>?
     /// Whether a restore is running right now, and how to wait for it. A lock rather than an actor,
     /// because the two sides of that wait are on different actors: the restore finishes on a background
     /// thread and the erase waits here, on the main actor, so they have to meet somewhere both can reach.
@@ -904,7 +903,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
                 return .failed(.other)
             }
         }
-        importTask = Task { [weak self] in
+        Task { [weak self] in
             let outcome = await restore.value
             // Named rather than inherited: the task's own isolation decides where this would run, and the
             // state it updates is main-actor state, so the hop is stated instead of assumed.
