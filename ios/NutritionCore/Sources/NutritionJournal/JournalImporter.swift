@@ -389,7 +389,7 @@ public enum JournalImporter {
                 // not write is never removed, whatever its value.
                 let goalsLeft = !undoGoals(recordedGoals.filter { goalKeysSet.contains($0.nutrient) }, in: goalsTarget)
                 // The receipt names any goal that could not be removed, so it stays while one is left.
-                if !goalsLeft { try? goalsTarget?.removeGoalRestoreReceipt(digest) }
+                try? goalsTarget?.removeGoalRestoreReceipt(digest)
                 // The list was empty before this restore, so putting it back is emptying it, but only while it
                 // still holds exactly what this restore wrote: a meal saved meanwhile is not thrown away.
                 var savedMealsLeft = false
