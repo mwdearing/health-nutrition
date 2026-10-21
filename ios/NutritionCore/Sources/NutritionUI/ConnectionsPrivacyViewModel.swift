@@ -120,6 +120,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     public static let exportFailedMessage = "Could not export the journal."
     public static let importButtonTitle = "Import a journal export"
     public static let importFailedMessage = "Could not import that file."
+    /// The approved rollback wording: a write failed, and the undo put everything back.
+    public static let importRolledBackMessage = "Nothing was imported. Try again."
     /// What the importer refused and why, in the words a person can act on.
     public static let importUnsupportedVersionMessage =
         "That file was made by a newer version of the app, so this one cannot read it."
@@ -1068,10 +1070,11 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         let favorites = summary.favorites == 0 ? "" : ", \(summary.favorites) favorites"
         let savedMeals = summary.savedMeals == 0 ? ""
             : summary.savedMeals == 1 ? ", 1 saved meal" : ", \(summary.savedMeals) saved meals"
+        let goals = summary.goals == 0 ? "" : summary.goals == 1 ? ", 1 goal" : ", \(summary.goals) goals"
         let kept = summary.keptOutOfLibrary == 0 ? ""
             : summary.keptOutOfLibrary == 1 ? ", 1 entry kept out of Library > Products"
             : ", \(summary.keptOutOfLibrary) entries kept out of Library > Products"
-        return "Imported \(entries)\(deleted)\(favorites)\(savedMeals)\(kept)."
+        return "Imported \(entries)\(deleted)\(favorites)\(savedMeals)\(goals)\(kept)."
     }
 
     public static func importFailureText(for error: JournalImportError) -> String {
@@ -1088,6 +1091,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             return importFailedMessage
         case .partialRestore:
             return partialRestoreWarningMessage
+        case .rolledBack:
+            return importRolledBackMessage
         }
     }
 

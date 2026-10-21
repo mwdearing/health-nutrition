@@ -23,6 +23,8 @@ public enum JournalImportError: Error, Sendable, Equatable {
     /// Favorites could not be restored and the journal refused its narrow undo. These counts describe
     /// rows from the restore that may remain; no entry content or underlying store error is exposed.
     case partialRestore(retainedIntakes: Int, retainedTombstones: Int)
+    /// A write failed after the journal was written, and the undo put everything back. Nothing from the file remains.
+    case rolledBack
 }
 
 /// What one import wrote. Counts, not content: the journal itself is the record of what was restored.
@@ -411,7 +413,9 @@ public enum JournalImporter {
                     throw JournalImportError.partialRestore(
                         retainedIntakes: retainedIntakes, retainedTombstones: retainedTombstones)
                 }
-                throw secondPhaseFailure
+                // The undo ran and left nothing behind, so the person is told nothing was imported, not that the file was bad.
+                _ = secondPhaseFailure
+                throw JournalImportError.rolledBack
             }
             // The goals are all written, so the receipt is marked done before the flag clears: a resume that still finds
             // the flag then adds nothing, even after the person has deleted a goal. A failed mark only costs that case.

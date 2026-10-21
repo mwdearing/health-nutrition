@@ -823,4 +823,26 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         XCTAssertEqual(model.importState, .imported)
         XCTAssertEqual(try goals.goal(for: "energy")?.target, Decimal(2000))
     }
+
+    /// A write that failed and was rolled back says nothing was imported. The generic wording would tell the person the
+    /// file was bad. Fails when the rolledBack case is mapped back to the generic message.
+    func testARolledBackFailureSaysNothingWasImported() {
+        XCTAssertEqual(
+            ConnectionsPrivacyViewModel.importFailureText(for: .rolledBack), "Nothing was imported. Try again.")
+    }
+
+    /// A file that cannot be read is still reported as a bad file.
+    func testAMalformedFileStillSaysItCouldNotBeImported() {
+        XCTAssertEqual(
+            ConnectionsPrivacyViewModel.importFailureText(for: .malformed("x")), "Could not import that file.")
+    }
+
+    /// The success line counts goals, with the singular and plural forms, and leaves them out at zero.
+    func testTheSuccessLineCountsGoals() {
+        let one = JournalImportSummary(
+            intakes: 1, revisions: 1, tombstones: 0, favorites: 0, products: 0, goals: 2)
+        XCTAssertEqual(ConnectionsPrivacyViewModel.importSummaryText(one), "Imported 1 entry, 2 goals.")
+        let none = JournalImportSummary(intakes: 1, revisions: 1, tombstones: 0, favorites: 0, products: 0)
+        XCTAssertEqual(ConnectionsPrivacyViewModel.importSummaryText(none), "Imported 1 entry.")
+    }
 }
