@@ -122,6 +122,13 @@ public struct JournalView: View {
                 model.load(now: now())
                 jumpNotice = nil
             }
+            // A time-zone change while the app is open reloads the days in the new zone (#648).
+            .task {
+                await model.runZoneChangeReloads(
+                    NotificationCenter.default.notifications(named: NSNotification.Name.NSSystemTimeZoneDidChange)
+                        .map { _ in () },
+                    now: now)
+            }
             // Coming back to the app reloads the day titles, so "Yesterday" moves on after midnight.
             .onChange(of: scenePhase) { phase in
                 if phase == .active {
@@ -145,7 +152,7 @@ public struct JournalView: View {
                 LabeledField("Meal name") { focus in
                     TextField("Such as Usual breakfast", text: $saveMealName).focused(focus)
                 }
-                Text("Keeps the \(target.entryCountText) of \(target.title) together, so you can log them again in one go from Add, in Find products.")
+                Text("Keeps the \(target.entryCountText) of \(target.title) together, so you can log them again in one go from Add, in Search foods.")
                     .font(.footnote)
                     .foregroundStyle(TokenColors.textSecondary)
                 // A refusal keeps the prompt open with the typed name, so the person can change it.
@@ -217,11 +224,11 @@ public struct JournalView: View {
         if let day = lastRequestedDay, topVisibleID == lastRevealedSection {
             return day
         }
-        return JournalViewModel.arrowBaseDay(sectionIDs: model.sections.map(\.id), visible: visibleDayIDs, zone: model.dayZone, now: now())
+        return JournalViewModel.arrowBaseDay(sectionIDs: model.arrowSectionIDs, visible: visibleDayIDs, zone: model.dayZone, now: now())
     }
 
     private var topVisibleID: String? {
-        model.sections.map(\.id).first { visibleDayIDs.contains($0) }
+        model.arrowSectionIDs.first { visibleDayIDs.contains($0) }
     }
 
     /// Forward is disabled when the arrows already point at today.

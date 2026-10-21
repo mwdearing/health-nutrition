@@ -292,6 +292,49 @@ final class SupplementStackTests: XCTestCase {
         XCTAssertNotEqual(first.intakeID, second.intakeID)
     }
 
+    /// The supplement load reads the logged units 3 times when nothing fails: call 1 is the read at load (in `load`), call 2
+    /// the read in `makeCandidates`, call 3 the recents read. Failing call 1 throws at load, so only 1 read runs (#415).
+    func testSupplementLoadShowsNothingWhenItsOwnUnitReadFails() throws {
+        let store = UnitReadCountingStore(inner: try makeStore())
+        store.failsOnUnitReadCall = 1
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        try saveFavorite(favorites)
+        let model = makeModel(store: store, favorites: favorites, schedules: schedules)
+        model.load(now: now)
+        XCTAssertEqual(store.unitReadCalls, 1)
+        XCTAssertNotNil(model.errorMessage)
+        XCTAssertTrue(model.rows.isEmpty)
+        XCTAssertTrue(model.candidates.isEmpty)
+    }
+
+    /// Guards the read order: a full supplement load makes exactly 3 logged-unit reads and shows no error (#415).
+    func testFullSupplementLoadReadsLoggedUnitsExactlyThreeTimes() throws {
+        let store = UnitReadCountingStore(inner: try makeStore())
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        try saveFavorite(favorites)
+        let model = makeModel(store: store, favorites: favorites, schedules: schedules)
+        model.load(now: now)
+        XCTAssertEqual(store.unitReadCalls, 3)
+        XCTAssertNil(model.errorMessage)
+    }
+
+    /// The supplement load reads the logged units 3 times when nothing fails. This test fails call 2, the read in
+    /// `makeCandidates`, so call 1 succeeds and the load stops at 2 reads (#415).
+    func testSupplementCandidatesShowNothingWhenTheirOwnUnitReadFails() throws {
+        let store = UnitReadCountingStore(inner: try makeStore())
+        store.failsOnUnitReadCall = 2
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        try saveFavorite(favorites)
+        let model = makeModel(store: store, favorites: favorites, schedules: schedules)
+        model.load(now: now)
+        XCTAssertEqual(store.unitReadCalls, 2)
+        XCTAssertNotNil(model.errorMessage)
+        XCTAssertTrue(model.candidates.isEmpty)
+    }
+
     func testTakenLogsTheFavoriteWithItsLabelSnapshotAndUndoUnmarksIt() throws {
         let store = try makeStore()
         let favorites = try makeFavorites()

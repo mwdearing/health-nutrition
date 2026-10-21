@@ -1,6 +1,7 @@
 import Foundation
 import NutritionDomain
 import NutritionJournal
+import SwiftUI
 import XCTest
 @testable import NutritionUI
 
@@ -128,6 +129,49 @@ final class AddHomeTests: XCTestCase {
         XCTAssertTrue(home.undo())
         XCTAssertFalse(try store.activeIntakes().contains { $0.id == token.intakeID })
         XCTAssertEqual(try store.activeIntakes().count, 1)
+    }
+
+    /// The four quick actions sit in one row at normal text sizes and in two columns at accessibility sizes.
+    func testQuickActionsGoToTwoColumnsOnlyAtAccessibilitySizes() {
+        XCTAssertEqual(AddHomeView.quickActionLayout(for: .large), .row)
+        XCTAssertEqual(AddHomeView.quickActionLayout(for: .xxxLarge), .row)
+        XCTAssertEqual(AddHomeView.quickActionLayout(for: .accessibility1), .grid)
+        XCTAssertEqual(AddHomeView.quickActionLayout(for: .accessibility3), .grid)
+    }
+
+    /// The Meal row names the current choice, so the value shows without opening the picker.
+    func testMealRowNamesTheCurrentMeal() {
+        XCTAssertEqual(AddHomeView.mealRowTitle(nil), "Meal: None")
+        XCTAssertEqual(AddHomeView.mealRowTitle(.breakfast), "Meal: Breakfast")
+    }
+
+    /// The Recent row subtitle shows the item's meal after its amounts, the same as the Library row.
+    func testRecentSubtitleShowsTheMealAfterTheAmounts() throws {
+        let store = try makeStore()
+        let seed = AddIntakeViewModel(store: store, now: now, timeZoneIdentifier: "UTC")
+        seed.name = "Oats"
+        seed.amountText = "40"
+        seed.meal = .breakfast
+        XCTAssertTrue(seed.save(now: now))
+        let home = AddHomeViewModel(store: store, meal: nil, now: { self.now })
+        home.load()
+        let recent = try XCTUnwrap(home.recents.first)
+        XCTAssertEqual(
+            home.recentSubtitle(of: recent.template),
+            "\(home.amountSummary(of: recent.template)) · Breakfast")
+    }
+
+    /// A Recent with no meal recorded shows its amounts alone, with no separator.
+    func testRecentSubtitleWithNoMealShowsOnlyTheAmounts() throws {
+        let store = try makeStore()
+        let seed = AddIntakeViewModel(store: store, now: now, timeZoneIdentifier: "UTC")
+        seed.name = "Oats"
+        seed.amountText = "40"
+        XCTAssertTrue(seed.save(now: now))
+        let home = AddHomeViewModel(store: store, meal: nil, now: { self.now })
+        home.load()
+        let recent = try XCTUnwrap(home.recents.first)
+        XCTAssertEqual(home.recentSubtitle(of: recent.template), home.amountSummary(of: recent.template))
     }
 
     /// Logging the same Recent twice gives two offers with the same text and different intake ids, so each offer is a

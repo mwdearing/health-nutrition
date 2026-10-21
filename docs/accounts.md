@@ -21,7 +21,7 @@ Open Food Facts is asked first when you submit the barcode field, tap Look up, o
 
 ## Searching and sharing a product you create
 
-When you are signed in and submit two or more characters in Find products, the words you typed are sent to the project's server with your signed-in account to search shared products, whether or not Share labels is on. A signed-out person does not make this request. A new custom product entered by hand is shared under the same conditions as a saved label (signed in, disclosure acknowledged for the account, sharing on at save time); it can send its kind, name, brand, any barcode, serving and each nutrient's name, state and amount, linked to your account.
+When you are signed in and submit two or more characters in Search foods, the words you typed are sent to the project's server with your signed-in account to search shared products, whether or not Share labels is on. A signed-out person does not make this request. A new custom product entered by hand is shared under the same conditions as a saved label (signed in, disclosure acknowledged for the account, sharing on at save time); it can send its kind, name, brand, any barcode, serving and each nutrient's name, state and amount, linked to your account.
 
 ## Sharing a saved label
 

@@ -51,8 +51,9 @@ public enum ConnectionsPrivacyImportState: Equatable {
 /// waits on the main actor. `begin` is called before a restore starts and `end` when it has finished, whether
 /// it succeeded or failed; `wait` reports whether every restore in flight had finished within the time it was
 /// given, so a caller never blocks forever on work that cannot arrive.
-private final class ImportGate: @unchecked Sendable {
+public final class ImportGate: @unchecked Sendable {
     private let condition = NSCondition()
+    public init() {}
     /// How many restores are in flight. A count rather than a flag: two imports can overlap, and the first
     /// of them to finish must not report the gate idle while the second is still writing.
     private var inFlight = 0
@@ -103,7 +104,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         "Your journal stays on this device and is not uploaded as a whole. Signing in sends your account email, "
         + "account ID and optional display name to the project's server. A barcode lookup you start sends the "
         + "barcode to Open Food Facts and, if no product is found and you are signed in, to the community catalog. "
-        + "A name search in Find products sends the words you typed to Open Food Facts. "
+        + "A name search in Search foods sends the words you typed to Open Food Facts. "
         + "Share labels off stops new label submissions but does not disable barcode lookup. A label submission is "
         + "linked to your signed-in account, but does not include your journal entries or photo. A product you create "
         + "and share is linked the same way. Searching shared products sends your search words to the project's server "
@@ -210,7 +211,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     @Published public private(set) var eraseRetryAvailable = false
     /// True from the moment the person asks to erase (Erase or Retry) until they confirm or cancel. Nothing is erased
     /// while this is only requested.
-    @Published public var eraseConfirmationPending = false
+    @Published public private(set) var eraseConfirmationPending = false
     @Published public private(set) var importState: ConnectionsPrivacyImportState = .idle
     @Published public private(set) var isImporting = false
     /// Main-actor count of restores whose outcomes have not yet reached `apply`. The store-write gate is
@@ -313,18 +314,10 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     private var deferredImportEffectsDuringErase: [DeferredImportEffects] = []
 
     /// The restore in flight, so an erase can ask it to stop and wait for it. Nil when nothing is running.
-    private var importTask: Task<Void, Never>?
-
-    /// Waits for the running import, if any, to finish. Tests await this instead of polling.
-    func waitForImportForTesting() async {
-        await importTask?.value
-    }
-    /// Whether the in-flight import has been cancelled, so a test can tell a cancelled import from a running one.
-    var importIsCancelledForTesting: Bool { importTask?.isCancelled ?? false }
     /// Whether a restore is running right now, and how to wait for it. A lock rather than an actor,
     /// because the two sides of that wait are on different actors: the restore finishes on a background
     /// thread and the erase waits here, on the main actor, so they have to meet somewhere both can reach.
-    private let importGate = ImportGate()
+    private let importGate: ImportGate
     /// Counts imports and erases. An import publishes only while its own number is still the current one,
     /// which is how the outcome of an import an erase overtook is dropped rather than shown.
     private var importGeneration = 0
@@ -361,8 +354,10 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         afterSuccessfulErase: @escaping @MainActor () -> Void = {},
         eraseLocalAccount: @escaping () async throws -> Void = {},
         remindersStillPending: @escaping () async -> [String] = { [] },
-        importWaitSeconds: TimeInterval = ConnectionsPrivacyViewModel.eraseWaitsForImportSeconds
+        importWaitSeconds: TimeInterval = ConnectionsPrivacyViewModel.eraseWaitsForImportSeconds,
+        importGate: ImportGate = ImportGate()
     ) {
+        self.importGate = importGate
         self.store = store
         self.favorites = favorites
         self.savedMeals = savedMeals
@@ -695,13 +690,10 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// Retry, and the import effects deferred during the erase are resolved. Returns whether the flag is clear.
     private func clearRestoreFlagOrStop() -> Bool {
         // A store that cannot clear the flag fails closed: erasing it would leave the flag set for a re-import.
-        guard let progress = store as? JournalRestoreProgress else {
-            errorMessage = Self.eraseNothingErasedMessage
-            eraseRetryAvailable = true
-            resolveDeferredImportEffectsAfterErase(journalEraseSucceeded: false)
-            return false
-        }
         do {
+            guard let progress = store as? JournalRestoreProgress else {
+                throw CocoaError(.featureUnsupported)
+            }
             try progress.clearRestoreInProgress()
             return true
         } catch {
@@ -728,16 +720,39 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         return await eraseAllData()
     }
 
-    /// The stores in the order an erase runs them, and so the order a failure is listed in: widget data first, so no
-    /// publish announced before the erase lands after it, and journal after the lists it does not depend on.
-    public static func eraseOrder(
-        widgets: JournalErasing, savedMeals: JournalErasing, supplements: JournalErasing,
-        reminders: [JournalErasing], journal: JournalErasing, favorites: JournalErasing, recipes: JournalErasing,
-        goals: JournalErasing
-    ) -> [JournalErasing] {
-        [widgets, savedMeals, supplements] + reminders + [journal, favorites, recipes, goals]
+    /// The stores an erase runs, one field per slot, so each slot is named where it is built.
+    public struct EraseStores {
+        public let widgets: JournalErasing
+        public let savedMeals: JournalErasing
+        public let supplements: JournalErasing
+        public let reminders: [JournalErasing]
+        public let journal: JournalErasing
+        public let favorites: JournalErasing
+        public let recipes: JournalErasing
+        public let goals: JournalErasing
+
+        public init(
+            widgets: JournalErasing, savedMeals: JournalErasing, supplements: JournalErasing,
+            reminders: [JournalErasing], journal: JournalErasing, favorites: JournalErasing, recipes: JournalErasing,
+            goals: JournalErasing
+        ) {
+            self.widgets = widgets
+            self.savedMeals = savedMeals
+            self.supplements = supplements
+            self.reminders = reminders
+            self.journal = journal
+            self.favorites = favorites
+            self.recipes = recipes
+            self.goals = goals
+        }
     }
 
+    /// The stores in the order an erase runs them, and so the order a failure is listed in: widget data first, so no
+    /// publish announced before the erase lands after it, and journal after the lists it does not depend on.
+    public static func eraseOrder(_ stores: EraseStores) -> [JournalErasing] {
+        [stores.widgets, stores.savedMeals, stores.supplements] + stores.reminders
+            + [stores.journal, stores.favorites, stores.recipes, stores.goals]
+    }
 
     /// Puts the display preferences back to their defaults and republishes that state, so the screen
     /// shows what a person sees on a fresh install rather than the settings just erased.
@@ -885,7 +900,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
                 return .failed(.other)
             }
         }
-        importTask = Task { [weak self] in
+        Task { [weak self] in
             let outcome = await restore.value
             // Named rather than inherited: the task's own isolation decides where this would run, and the
             // state it updates is main-actor state, so the hop is stated instead of assumed.

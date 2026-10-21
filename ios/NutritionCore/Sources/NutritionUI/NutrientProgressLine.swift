@@ -29,12 +29,14 @@ public struct NutrientProgressLine: Equatable, Identifiable {
     public let knownSum: NutrientValue?
     /// How many entries of the day have no value for this nutrient, from the same pass that built the total.
     public let missingCount: Int
+    /// True when the journal side of a partial day is complete and only Health's side is short (unread or unconvertible).
+    public let healthGap: Bool
 
     public var id: String { nutrient }
 
     public init(
         nutrient: String, amount: NutrientValue, goal: NutrientGoal?, displayName: String? = nil,
-        isPartial: Bool = false, knownSum: NutrientValue? = nil, missingCount: Int = 0
+        isPartial: Bool = false, knownSum: NutrientValue? = nil, missingCount: Int = 0, healthGap: Bool = false
     ) {
         self.nutrient = nutrient
         self.label = displayName ?? NutrientNames.displayName(for: nutrient)
@@ -43,6 +45,7 @@ public struct NutrientProgressLine: Equatable, Identifiable {
         self.isPartial = isPartial
         self.knownSum = knownSum
         self.missingCount = missingCount
+        self.healthGap = healthGap
     }
 
     /// The amount a partial-aware screen shows: the known sum on a partial day, otherwise `amount`.

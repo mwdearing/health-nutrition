@@ -116,6 +116,11 @@ final class ScreenshotCaptureTests: XCTestCase {
         let services = try AppServices.make(directory: directory, reminderScheduler: RecordingReminderScheduler(), productService: productService)
         let start = Calendar.current.startOfDay(for: Date())
         let zone = TimeZone.current.identifier
+        // Protein is known only when the entry carries its product's facts, so the oats carry them.
+        let oats = ProductDefinition(
+            snapshotID: "screenshot-oats", productID: "screenshot-oats-product", name: "Rolled oats", brand: nil,
+            barcode: nil, labelBasis: "per100g", catalogOrigin: "sample", catalogVersion: "1",
+            nutrients: ["protein": .known(Decimal(13), .g)])
         let entries: [(String, String, String?, [IntakeComponent])] = [
             (intakeIDs[0], "food", "breakfast",
              [IntakeComponent(componentID: "oats", name: "Rolled oats", amount: 40, unit: .g),
@@ -129,7 +134,7 @@ final class ScreenshotCaptureTests: XCTestCase {
             let intake = Intake(
                 id: entry.0, category: entry.1, occurredAt: start.addingTimeInterval(Double(60 * (index + 1))),
                 timeZoneIdentifier: zone, meal: entry.2)
-            try services.journalStore.create(intake, components: entry.3, product: nil, now: Date())
+            try services.journalStore.create(intake, components: entry.3, product: index == 0 ? oats : nil, now: Date())
         }
         try services.goalStore.setGoal(NutrientGoal(nutrient: "protein", target: 90, unit: .g))
         try services.goalStore.setGoal(NutrientGoal(nutrient: "water", target: 2000, unit: .mL))
@@ -184,6 +189,23 @@ final class ScreenshotCaptureTests: XCTestCase {
         _ = try outputDirectory()
         let services = try makeSeededServices()
         try captureProductSizes("RootView") { RootView(services: services) }
+    }
+
+    // The Today header on its own, so the design-system check finds a capture for it.
+    func testNourishTodayHeader() throws {
+        let services = try makeSeededServices()
+        // The header only shows what the model has loaded, and nothing loads it on its own here.
+        services.today.load(now: Date())
+        // A blank header would still be a picture, so the test fails unless protein has a known total.
+        let protein = try XCTUnwrap(services.today.progress.first { $0.nutrient == "protein" })
+        guard case .known = protein.shownAmount else {
+            return XCTFail("Protein has no known total on the seeded day, so the header would show a dash")
+        }
+        try capture("NourishTodayHeader") {
+            ScrollView {
+                NourishTodayHeader(model: services.today, onEditGoals: {}).padding()
+            }
+        }
     }
 
     func testTodayView() throws {
@@ -325,14 +347,18 @@ final class ScreenshotCaptureTests: XCTestCase {
         let services = try makeSeededServices()
         let home = AddHomeViewModel(store: services.journalStore, meal: .lunch,
                                     lookup: services.barcodeLookup, preferences: services.displayPreferences)
-        try capture("AddHomeView") {
-            NavigationStack {
-                AddHomeView(model: home, onBarcode: {}, onLabel: {}, onLibrary: {}, onType: {}, onChanged: {},
-                            onSearchProducts: {})
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) { Button("Cancel") {} }
-                    }
-            }
+        try capture("AddHomeView") { addHomePage(home) }
+        // The quick actions at the largest accessibility size, where they wrap to two columns.
+        try capture("AddHomeView-accessibility", dynamicType: .accessibility3) { addHomePage(home) }
+    }
+
+    private func addHomePage(_ home: AddHomeViewModel) -> some View {
+        NavigationStack {
+            AddHomeView(model: home, onBarcode: {}, onLabel: {}, onLibrary: {}, onType: {}, onChanged: {},
+                        onSearchProducts: {})
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("Cancel") {} }
+                }
         }
     }
 

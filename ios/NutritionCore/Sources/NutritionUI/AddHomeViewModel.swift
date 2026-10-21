@@ -11,6 +11,12 @@ public struct AddScannerAvailability {
         self.barcode = barcode
         self.label = label
     }
+
+    /// The Add tiles follow hardware support only. A denied or restricted camera stays reachable so its message
+    /// and Open Settings action can show; a busy camera is handled by the sheet's own start failure.
+    public static func forSupport(_ isSupported: Bool) -> AddScannerAvailability {
+        AddScannerAvailability(barcode: isSupported, label: isSupported)
+    }
 }
 
 public struct AddUndoToken: Equatable {
@@ -78,6 +84,13 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
         return AmountText.summary(
             template.components, unitSystem: preferences.unitSystem,
             loggedUnits: kind == .supplement ? template.loggedUnits : [:], isSupplement: kind == .supplement)
+    }
+
+    /// A Recent row's second line: its amounts, then its meal, separated the way the Library row shows them.
+    public func recentSubtitle(of template: RepeatTemplate) -> String {
+        let amounts = amountSummary(of: template)
+        guard let meal = MealLabel.displayName(for: template.meal) else { return amounts }
+        return "\(amounts) · \(meal)"
     }
 
     public func makeDetails(product: CustomProductRevision, now: Date) throws -> AddIntakeViewModel {

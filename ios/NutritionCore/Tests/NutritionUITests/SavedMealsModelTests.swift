@@ -106,6 +106,84 @@ final class SavedMealsModelTests: XCTestCase {
         return intake
     }
 
+    // MARK: Removing
+
+    /// Remove on a saved meal offers Undo, and Undo puts the meal back where it was in the list.
+    func testUndoPutsARemovedSavedMealBackInItsPlace() throws {
+        let journal = try makeJournal()
+        let milk = try addEntry(journal, "Milk", at: now.addingTimeInterval(-60))
+        let oats = try addEntry(journal, "Oats", at: now.addingTimeInterval(-120))
+        let model = SavedMealsModel(store: UserDefaultsSavedMealStore(defaults: makeDefaults()), journal: journal)
+        XCTAssertTrue(model.save(name: "First", meal: .breakfast, intakes: [milk]))
+        XCTAssertTrue(model.save(name: "Second", meal: .lunch, intakes: [oats]))
+        XCTAssertTrue(model.save(name: "Third", meal: .dinner, intakes: [milk]))
+        let before = model.meals.map(\.id)
+
+        model.remove(model.meals[1])
+        XCTAssertEqual(model.meals.map(\.name), ["Third", "First"])
+        XCTAssertEqual(model.removalUndo?.message, "Removed Second.")
+
+        XCTAssertTrue(model.undoRemove())
+        XCTAssertEqual(model.meals.map(\.id), before)
+        XCTAssertNil(model.removalUndo)
+    }
+
+    /// Saving a meal after a removal is a newer action, so the removal's Undo goes and the removal is final.
+    func testSavingAfterARemovalClearsTheRemovalOffer() throws {
+        let journal = try makeJournal()
+        let milk = try addEntry(journal, "Milk", at: now.addingTimeInterval(-60))
+        let oats = try addEntry(journal, "Oats", at: now.addingTimeInterval(-120))
+        let model = SavedMealsModel(store: UserDefaultsSavedMealStore(defaults: makeDefaults()), journal: journal)
+        XCTAssertTrue(model.save(name: "First", meal: .breakfast, intakes: [milk]))
+        model.remove(model.meals[0])
+        XCTAssertNotNil(model.removalUndo)
+
+        XCTAssertTrue(model.save(name: "Second", meal: .lunch, intakes: [oats]))
+
+        XCTAssertNil(model.removalUndo)
+        XCTAssertFalse(model.undoRemove())
+        XCTAssertEqual(model.meals.map(\.name), ["Second"])
+    }
+
+    /// A restore whose name a newer meal now uses fails, says so, and writes no duplicate.
+    func testRestoreWithAClashingNameFailsWithoutADuplicate() throws {
+        let journal = try makeJournal()
+        let milk = try addEntry(journal, "Milk", at: now.addingTimeInterval(-60))
+        let defaults = makeDefaults()
+        let store = UserDefaultsSavedMealStore(defaults: defaults)
+        let model = SavedMealsModel(store: store, journal: journal)
+        XCTAssertTrue(model.save(name: "Usual", meal: .breakfast, intakes: [milk]))
+        let original = try XCTUnwrap(model.meals.first)
+        model.remove(original)
+        // A meal named "usual" (any case) is saved by another route while the removal's Undo is still up.
+        var clash = original
+        clash.id = "clashing-meal"
+        clash.name = "usual"
+        try store.update { $0.insert(clash, at: 0) }
+
+        XCTAssertFalse(model.undoRemove())
+
+        XCTAssertEqual(try store.meals().map(\.name), ["usual"])
+        XCTAssertTrue(model.noticeIsFailure)
+        XCTAssertEqual(model.notice, "Couldn't put back Usual. Tap Undo to try again.")
+    }
+
+    /// Once the Undo window has passed, the removal stays and Undo has nothing to put back.
+    func testExpiredRemovalCannotBeUndone() throws {
+        let journal = try makeJournal()
+        let milk = try addEntry(journal, "Milk", at: now.addingTimeInterval(-60))
+        let model = SavedMealsModel(store: UserDefaultsSavedMealStore(defaults: makeDefaults()), journal: journal)
+        XCTAssertTrue(model.save(name: "Only", meal: nil, intakes: [milk]))
+
+        model.remove(model.meals[0])
+        let removal = try XCTUnwrap(model.removalUndo)
+        model.expireRemoval(removal)
+
+        XCTAssertNil(model.removalUndo)
+        XCTAssertFalse(model.undoRemove())
+        XCTAssertTrue(model.meals.isEmpty)
+    }
+
     /// Logging the same saved meal twice gives two offers with the same text and different ids, so the toast keys
     /// each offer on its own id.
     func testLoggingTheSameSavedMealTwiceGivesTwoOffersWithDifferentIds() throws {
@@ -435,6 +513,27 @@ final class SavedMealsModelTests: XCTestCase {
 
     // MARK: Save as meal from the Journal
 
+    /// A saved meal that is refused keeps the copy's Undo, because only a saved meal finalizes it (#535).
+    func testARefusedSavedMealKeepsTheCopysUndo() throws {
+        let journal = try makeJournal()
+        let yesterday = now.addingTimeInterval(-86_400)
+        try addEntry(journal, "Oats", at: yesterday)
+        try addEntry(journal, "Rice", at: yesterday.addingTimeInterval(120), meal: "dinner")
+        let model = JournalViewModel(store: journal, timeZoneIdentifier: "UTC")
+        let savedMeals = SavedMealsModel(store: UserDefaultsSavedMealStore(defaults: makeDefaults()), journal: journal)
+        model.savedMeals = savedMeals
+        model.load(now: now)
+        let day = try XCTUnwrap(model.sections.first)
+        XCTAssertTrue(model.saveMeal(day.id, groupID: "Breakfast", name: "Usual breakfast"))
+        _ = try XCTUnwrap(model.copyDayToToday(day.id, now: now))
+        XCTAssertTrue(model.canUndoCopy(now: now))
+
+        // The Dinner group has entries, so this is the duplicate-name refusal from the store, not an empty group.
+        XCTAssertFalse(model.saveMeal(day.id, groupID: "Dinner", name: "Usual breakfast"))
+        XCTAssertEqual(model.copyNotice, SavedMealError.duplicateName.message)
+        XCTAssertTrue(model.canUndoCopy(now: now), "a refused save does not finalize the copy's Undo")
+    }
+
     func testJournalSavesOneMealGroupOfADay() throws {
         let journal = try makeJournal()
         let yesterday = now.addingTimeInterval(-86_400)
@@ -450,7 +549,7 @@ final class SavedMealsModelTests: XCTestCase {
         XCTAssertTrue(model.saveMeal(day.id, groupID: "Breakfast", name: "Usual breakfast"))
         XCTAssertEqual(savedMeals.meals.first?.items.map(\.displayName), ["Oats", "Milk"])
         XCTAssertEqual(savedMeals.meals.first?.meal, .breakfast)
-        XCTAssertEqual(model.copyNotice, "Saved Usual breakfast. Log it again from Add, in Find products.")
+        XCTAssertEqual(model.copyNotice, "Saved Usual breakfast. Log it again from Add, in Search foods.")
         XCTAssertFalse(model.copyFailed)
 
         XCTAssertFalse(model.saveMeal(day.id, groupID: "Dinner", name: "Usual breakfast"))

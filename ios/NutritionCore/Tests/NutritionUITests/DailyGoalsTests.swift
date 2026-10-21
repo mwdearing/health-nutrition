@@ -215,6 +215,103 @@ final class DailyGoalsTests: XCTestCase {
         XCTAssertEqual(model.draftText["protein"], "")
     }
 
+    /// The Goals Undo closes ten seconds after the Clear, like the other undos (#526).
+    func testGoalsUndoWindowIsOpenAtNineSecondsAndClosedAtTen() throws {
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+        let clearedAt = Date(timeIntervalSince1970: 1_700_000_000)
+
+        XCTAssertTrue(model.clearTarget(for: "protein", now: clearedAt))
+        XCTAssertTrue(model.canUndoClear(now: clearedAt.addingTimeInterval(9)))
+        XCTAssertFalse(model.canUndoClear(now: clearedAt.addingTimeInterval(10)))
+        XCTAssertFalse(model.undoClear(now: clearedAt.addingTimeInterval(10)))
+        XCTAssertNil(try goals.goal(for: "protein"), "an Undo offered after its window does not restore the goal")
+    }
+
+    /// Inside the window, Undo restores the goal; once the window has been expired, the Undo is gone (#526).
+    func testGoalsUndoRestoresInsideItsWindowAndExpiresAfterIt() throws {
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+        let clearedAt = Date(timeIntervalSince1970: 1_700_000_000)
+
+        XCTAssertTrue(model.clearTarget(for: "protein", now: clearedAt))
+        XCTAssertNotNil(model.clearUndoExpiry)
+        XCTAssertTrue(model.undoClear(now: clearedAt.addingTimeInterval(9)))
+        XCTAssertEqual(try goals.goal(for: "protein")?.target, Decimal(60))
+
+        XCTAssertTrue(model.clearTarget(for: "protein", now: clearedAt))
+        model.expireClearUndo(now: clearedAt.addingTimeInterval(5))
+        XCTAssertNotNil(model.clearedGoal, "expiry before the deadline does nothing")
+        model.expireClearUndo(now: clearedAt.addingTimeInterval(10))
+        XCTAssertNil(model.clearedGoal)
+        XCTAssertNil(model.clearUndoExpiry)
+    }
+
+    /// The expiry waits out an early wake and expires exactly at the deadline (#526).
+    func testExpiryWaitsOutAnEarlyWakeAndExpiresAtTheDeadline() async throws {
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+        let clearedAt = Date(timeIntervalSince1970: 1_700_000_000)
+        XCTAssertTrue(model.clearTarget(for: "protein", now: clearedAt))
+        let clock = FakeClock(now: clearedAt)
+        var sleeps: [TimeInterval] = []
+        // Wake one second early on each sleep until the last second: an early wake, as a clock step can cause.
+        // A fixed margin keeps the gap shrinking, so the loop finishes exactly at the deadline.
+        await model.runClearUndoExpiry(
+            sleep: { seconds in
+                sleeps.append(seconds)
+                clock.now = clock.now.addingTimeInterval(seconds > 1 ? seconds - 1 : seconds)
+            },
+            now: { clock.now })
+        XCTAssertGreaterThan(sleeps.count, 1, "an early wake sleeps again")
+        XCTAssertNil(model.clearedGoal)
+        XCTAssertEqual(clock.now, clearedAt.addingTimeInterval(10), "the Undo expires at the deadline")
+    }
+
+    /// A cancelled wait returns without hiding the Undo, so it cannot expire a newer Clear (#526).
+    func testCancelledExpiryLeavesTheUndoAlone() async throws {
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+        let clearedAt = Date(timeIntervalSince1970: 1_700_000_000)
+        XCTAssertTrue(model.clearTarget(for: "protein", now: clearedAt))
+        let clock = FakeClock(now: clearedAt)
+        await model.runClearUndoExpiry(
+            sleep: { _ in throw CancellationError() }, now: { clock.now })
+        XCTAssertNotNil(model.clearedGoal, "a cancelled wait does not hide the Undo")
+    }
+
+    /// A second Clear inside the first's window replaces the first Undo, and its Undo still works at +3 (#526).
+    func testSecondClearInsideTheWindowKeepsItsOwnUndo() throws {
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        try goals.setGoal(NutrientGoal(nutrient: "fat", target: Decimal(70), unit: .g))
+        let model = GoalsViewModel(
+            store: goals, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        model.load()
+        let clearedAt = Date(timeIntervalSince1970: 1_700_000_000)
+
+        XCTAssertTrue(model.clearTarget(for: "protein", now: clearedAt))
+        XCTAssertTrue(model.clearTarget(for: "fat", now: clearedAt.addingTimeInterval(3)))
+        XCTAssertEqual(model.clearedGoal?.nutrient, "fat")
+        // The second Clear has its own window: open at +12, closed at +13, not inherited from the first at +10.
+        XCTAssertTrue(model.canUndoClear(now: clearedAt.addingTimeInterval(12)))
+        XCTAssertFalse(model.canUndoClear(now: clearedAt.addingTimeInterval(13)))
+        XCTAssertTrue(model.undoClear(now: clearedAt.addingTimeInterval(3)))
+        XCTAssertEqual(try goals.goal(for: "fat")?.target, Decimal(70))
+    }
+
     /// Clear removes the goal, and Undo puts back the same goal (issue #506).
     func testClearThenUndoRestoresTheGoal() throws {
         let goals = try makeGoalStore()
@@ -1300,4 +1397,29 @@ extension DailyGoalsTests {
         XCTAssertNil(model.calorieRemaining.remaining)
         XCTAssertEqual(model.calorieRemaining.food, 400)
     }
+
+    /// #521 item 5: a stored goal for a key outside NutrientGoalChoices still loads, and a day with no value for
+    /// that key shows it as unknown, never as a zero against the target.
+    func testAGoalForAKeyOutsideTheChoicesReadsAsUnknownNeverZero() throws {
+        let journal = try makeJournalStore()
+        let goals = try makeGoalStore()
+        let key = "creatine-test-only"
+        XCTAssertFalse(NutrientGoalChoices.keys.contains(key))
+        try goals.setGoal(NutrientGoal(nutrient: key, target: Decimal(5), unit: .g))
+        try logOats(journal, grams: 40)
+
+        let model = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts())
+        model.load(now: when)
+
+        XCTAssertTrue(try goals.goals().contains { $0.nutrient == key }, "the stored goal still loads")
+        let progress = try XCTUnwrap(model.progress.first { $0.nutrient == key })
+        XCTAssertTrue(progress.hasGoal)
+        XCTAssertTrue(progress.text.hasSuffix(" unknown"), "an unknown value is shown as unknown, never as zero")
+    }
+}
+
+/// A clock the tests move by hand, so the Undo window needs no real time.
+private final class FakeClock {
+    var now: Date
+    init(now: Date) { self.now = now }
 }

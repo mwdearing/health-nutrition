@@ -244,9 +244,9 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
         let recipes = OrderedEraser("recipes", log)
         let goals = OrderedEraser("goals", log)
 
-        let order = ConnectionsPrivacyViewModel.eraseOrder(
+        let order = ConnectionsPrivacyViewModel.eraseOrder(ConnectionsPrivacyViewModel.EraseStores(
             widgets: widgets, savedMeals: savedMeals, supplements: supplements,
-            reminders: [daily, custom], journal: journal, favorites: favorites, recipes: recipes, goals: goals)
+            reminders: [daily, custom], journal: journal, favorites: favorites, recipes: recipes, goals: goals))
 
         let expected: [JournalErasing] = [
             widgets, savedMeals, supplements, daily, custom, journal, favorites, recipes, goals,
@@ -279,12 +279,12 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
     /// The erase runs the stores in the order the app builds them: widget data first, journal after the lists.
     func testTheEraseOrderIsWidgetFirstAndJournalAfterTheLists() async {
         let log = EraseOrderLog()
-        let order = ConnectionsPrivacyViewModel.eraseOrder(
+        let order = ConnectionsPrivacyViewModel.eraseOrder(ConnectionsPrivacyViewModel.EraseStores(
             widgets: OrderedEraser("widget data", log), savedMeals: OrderedEraser("saved meals", log),
             supplements: OrderedEraser("supplements", log),
             reminders: [OrderedEraser("reminders", log), OrderedEraser("custom reminders", log)],
             journal: OrderedEraser("journal", log), favorites: OrderedEraser("favorites", log),
-            recipes: OrderedEraser("recipes", log), goals: OrderedEraser("goals", log))
+            recipes: OrderedEraser("recipes", log), goals: OrderedEraser("goals", log)))
         let model = makeModel(order)
 
         let erased = await model.eraseAllData()

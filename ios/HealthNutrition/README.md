@@ -5,7 +5,7 @@ data from the `NutritionJournal` store, both in the `NutritionCore` Swift packag
 `../NutritionCore`.
 
 The app makes three kinds of network request. One is a barcode lookup in Add intake, when the user asks for
-one. Another is a name search in Find products, which sends only the words typed to Open Food Facts when the
+one. Another is a name search in Search foods, which sends only the words typed to Open Food Facts when the
 person submits the field, signed in or not. The third is the account and community catalog, which exists only
 in a build that carries the project settings and only after the person signs in (see
 [docs/accounts.md](../../docs/accounts.md)); it also receives the search words of a signed-in person. Nothing

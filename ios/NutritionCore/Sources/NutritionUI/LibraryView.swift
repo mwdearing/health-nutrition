@@ -49,7 +49,7 @@ public struct LibraryView: View {
                 LabeledField("Search on this phone") { focus in
                     TextField("Search on this phone", text: $model.searchText).focused(focus)
                 }
-                if let onSearchProducts { Button("Find shared products", action: onSearchProducts) }
+                if let onSearchProducts { Button("Search foods", action: onSearchProducts) }
                 if let onNewProduct { Button("Create product", action: onNewProduct) }
                 if let stack = model.supplementStack {
                     NavigationLink("My supplements") { SupplementStackView(model: stack, now: now, onLogged: onAdded) }
@@ -111,7 +111,7 @@ public struct LibraryView: View {
         switch model.segment {
         case .favorites, .recent, .products:
             if model.segment == .products { standaloneRows }
-            if model.isSearchEmpty && (model.segment != .products || model.filteredProducts.isEmpty) {
+            if model.isSearchEmpty {
                 ContentUnavailableView.search(text: model.searchText)
             } else if model.visibleItems.isEmpty && (model.segment != .products || model.filteredProducts.isEmpty) {
                 emptyState(for: model.segment)

@@ -18,14 +18,12 @@ private final class ImportStubStore: JournalStore, JournalTombstoneSource, Journ
 {
     struct Unsupported: Error {}
     var failClearRestoreForTesting = false
-    var failClearRestoreFromCallForTesting: Int?
     var clearRestoreCallsForTesting = 0
     func markRestoreInProgress(fileDigest: String) throws {}
     func restoreInProgressDigest() throws -> String? { nil }
     func clearRestoreInProgress() throws {
         clearRestoreCallsForTesting += 1
         if failClearRestoreForTesting { throw Unsupported() }
-        if let from = failClearRestoreFromCallForTesting, clearRestoreCallsForTesting >= from { throw Unsupported() }
     }
     let erasureName = "journal"
 
@@ -581,12 +579,18 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         XCTAssertEqual(model.eraseGeneration, 1)
     }
 
+    /// Waits, off the main actor, until the gate reports every import it knows about has finished, or the time runs out.
+    private func awaitImport(_ gate: ImportGate, within seconds: TimeInterval = 5) async -> Bool {
+        await Task.detached { gate.wait(upTo: seconds) }.value
+    }
+
     /// An import that is still running when the wait ends leaves the erase with nothing erased, and offers Retry.
     func testAnErasePastItsWaitErasesNothingAndOffersRetry() async throws {
         let journal = ImportStubStore()
         journal.pauseBeforeRestoreForTesting = true
+        let gate = ImportGate()
         let model = ConnectionsPrivacyViewModel(
-            store: journal, erasers: [journal], importWaitSeconds: 0.05)
+            store: journal, erasers: [journal], importWaitSeconds: 0.05, importGate: gate)
 
         model.importJournal(data: try export(includeFavorite: false))
         let restorePaused = await waitForSignal(journal.restorePausedBeforeWriteForTesting)
@@ -596,13 +600,20 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         XCTAssertFalse(erased)
         XCTAssertEqual(model.errorMessage, ConnectionsPrivacyViewModel.eraseNothingErasedMessage)
         XCTAssertTrue(model.eraseRetryAvailable)
-        XCTAssertFalse(model.importIsCancelledForTesting, "a timed-out erase must not cancel the import")
+        // The import is paused, so the gate still reports it busy: the timed-out erase did not stop it.
+        let finishedEarly = await awaitImport(gate, within: 0.01)
+        XCTAssertFalse(finishedEarly)
         XCTAssertEqual(journal.clearRestoreCallsForTesting, 0, "a timed-out erase must not touch the restore flag")
 
         journal.resumeRestoreBeforeWriteForTesting.signal()
-        await model.waitForImportForTesting()
+        let finished = await awaitImport(gate)
+        XCTAssertTrue(finished)
+        // The gate clears on the import thread; the outcome reaches the model on the main actor afterwards.
+        await waitForImportToSettle(model)
         // The import finishes after the timed-out erase and its effects are applied, not dropped.
         XCTAssertEqual(model.journalRestoreGeneration, 1)
+        // Each effect of the import ran exactly once: one restore, one generation bump.
+        XCTAssertEqual(journal.restoredPlans.count, 1)
         XCTAssertEqual(try journal.activeIntakes().map(\.id), [entryID])
     }
 
@@ -611,7 +622,8 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
     func testAFailedFlagClearAfterTheImportFinishesCancelsNothing() async throws {
         let journal = ImportStubStore()
         journal.pauseBeforeRestoreForTesting = true
-        let model = ConnectionsPrivacyViewModel(store: journal, erasers: [journal])
+        let gate = ImportGate()
+        let model = ConnectionsPrivacyViewModel(store: journal, erasers: [journal], importGate: gate)
 
         model.importJournal(data: try export(includeFavorite: false))
         let restorePaused = await waitForSignal(journal.restorePausedBeforeWriteForTesting)
@@ -619,14 +631,16 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
 
         // The import finishes first, so its own flag clears have run; only the erase's clear fails from here on.
         journal.resumeRestoreBeforeWriteForTesting.signal()
-        await model.waitForImportForTesting()
+        let finished = await awaitImport(gate)
+        XCTAssertTrue(finished)
+        // The gate clears on the import thread; the outcome reaches the model on the main actor afterwards.
+        await waitForImportToSettle(model)
         journal.failClearRestoreForTesting = true
         let erased = await model.eraseAllData()
 
         XCTAssertFalse(erased)
         XCTAssertEqual(model.errorMessage, ConnectionsPrivacyViewModel.eraseNothingErasedMessage)
         XCTAssertTrue(model.eraseRetryAvailable)
-        XCTAssertFalse(model.importIsCancelledForTesting, "the import finished before the flag clear")
         XCTAssertEqual(try journal.activeIntakes().map(\.id), [entryID])
     }
 

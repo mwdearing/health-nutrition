@@ -35,7 +35,7 @@ public struct RecipeDetailView: View {
             }
             Section("Log a portion") {
                 HStack {
-                    LabeledField("Portion") { focus in
+                    LabeledField("Portion", spokenTitle: true) { focus in
                         TextField(text: $model.portionText, prompt: Text("For example, 1")) {
                             Text("Portion")
                         }

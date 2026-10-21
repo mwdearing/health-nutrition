@@ -486,7 +486,9 @@ public final class NutrientGapsViewModel: ObservableObject {
             guard let current = revisions.first(where: { $0.number == intake.currentRevision }) else { continue }
             if intake.category != DailyTotalsBuilder.waterCategory { logged.insert(day.date) }
             let snapshot = current.productSnapshotID.flatMap { try? store.product(snapshotID: $0) }
+            // A hand-typed entry has no snapshot, so its category says whether it is a supplement (#364).
             let isSupplement = snapshot?.kind == .supplement
+                || (current.productSnapshotID == nil && intake.category == SupplementStackViewModel.supplementCategory)
             // Every entry goes through the one totals path, so the negative-amount rule and the partial sums
             // are the same here as on Today. The known part of a partial entry is kept; the entry counts once
             // as missing for each nutrient it leaves unknown.
