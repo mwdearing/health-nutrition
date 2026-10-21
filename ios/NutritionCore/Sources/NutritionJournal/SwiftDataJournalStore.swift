@@ -1298,7 +1298,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     func openContainer() throws -> ModelContainer {
         try lock.withLock {
             if let container { return container }
-            guard reopenPending else { throw JournalError.closed }
+            throw JournalError.closed
             let reopened = try fileOperations.openContainer(storeURL)
             container = reopened
             reopenPending = false
