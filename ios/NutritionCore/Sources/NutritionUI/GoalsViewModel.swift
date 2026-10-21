@@ -153,6 +153,13 @@ public final class GoalsViewModel: ObservableObject {
     /// no longer describes the goals (the three gram goals are not its output for the stored energy
     /// goal) is not reported, so the screen never says goals follow when they would not.
     @Published public private(set) var followedMacroSplit: MacroSplit?
+    /// True when the stored goals could not be read, so `followedMacroSplit` is unknown rather than unset.
+    @Published public private(set) var followReadFailed = false
+    /// The line under the macro split: what the goals follow, or the setup copy. Nil when the goals read failed,
+    /// so the setup copy never reads as "no split set" on a failed read.
+    public var followCopy: String? {
+        followReadFailed ? nil : MacroSplitCopy.followText(followedMacroSplit)
+    }
 
     public let footerText = "A goal is a number you set. The app compares your day against it and gives no advice or rating."
 
@@ -311,9 +318,11 @@ public final class GoalsViewModel: ObservableObject {
             self.loadedUnitSystem = self.preferences.unitSystem
             errorMessage = nil
             // From the goals just read, so a load costs no further store reads for it.
+            followReadFailed = false
             followedMacroSplit = Self.followedSplit(macroSplitPreferences?.macroSplit, in: byNutrient)
         } catch {
             rows = []
+            followReadFailed = true
             followedMacroSplit = nil
             errorMessage = Self.readFailedMessage
         }
@@ -718,7 +727,13 @@ public final class GoalsViewModel: ObservableObject {
 
     /// Works `followedMacroSplit` out again from the stored split and the stored goals, in one read.
     func refreshFollowedMacroSplit() {
-        followedMacroSplit = storedGoalsByKey().flatMap { Self.followedSplit(macroSplitPreferences?.macroSplit, in: $0) }
+        guard let byKey = storedGoalsByKey() else {
+            followReadFailed = true
+            followedMacroSplit = nil
+            return
+        }
+        followReadFailed = false
+        followedMacroSplit = Self.followedSplit(macroSplitPreferences?.macroSplit, in: byKey)
     }
 
     /// Shown when the new energy goal saved but is too small for the followed split to share out, so the
