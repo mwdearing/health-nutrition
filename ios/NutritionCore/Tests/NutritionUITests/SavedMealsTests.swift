@@ -264,8 +264,8 @@ final class SavedMealsTests: XCTestCase {
         XCTAssertNoThrow(try logger.undo(result, now: now))
     }
 
-    /// Store-level: a restore whose generation is stale is refused and writes nothing.
-    func testRestoreRefusesAStaleEraseGenerationAndWritesNothing() throws {
+    /// Store-level: a restore whose epoch is stale is refused and writes nothing.
+    func testRestoreRefusesAStaleEraseEpochAndWritesNothing() throws {
         let suite = "saved-meals-epoch-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
