@@ -229,12 +229,12 @@ public struct SavedMealBook {
         return position
     }
 
-    /// Puts back a meal `remove` took out, at the position it had. Returns false, and changes nothing, when the
-    /// meal is already listed.
-    @discardableResult
     /// The erase generation now. A removal records it, so its Undo can tell whether data was erased since.
     public var eraseGeneration: Int { store.eraseGeneration }
 
+    /// Puts back a meal `remove` took out, at the position it had. Returns false, and changes nothing, when the
+    /// meal is already listed. Refuses, throwing `erasedSinceRemoval`, when data was erased since the removal.
+    @discardableResult
     public func restore(_ saved: SavedMeal, at index: Int, generation: Int) throws -> Bool {
         var restored = false
         try store.update { list in
