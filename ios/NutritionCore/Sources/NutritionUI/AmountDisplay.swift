@@ -185,7 +185,7 @@ public enum AmountDisplay {
         let rounded = DisplayRounding.rounded(amount, fractionDigits: digits)
         return DisplayAmount(
             amount: rounded, unit: unit, isBelowSmallest: rounded == 0 && amount > 0,
-            groupsWholeAmount: true, smallestAmount: smallest)
+            smallestAmount: smallest)
     }
 
     /// The most fraction digits a figure printed on a label carries: the catalog states none with more
