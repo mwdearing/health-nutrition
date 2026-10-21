@@ -57,7 +57,7 @@ public final class SwiftDataGoalStore: GoalStore, JournalErasing, @unchecked Sen
         let context = ModelContext(try openContainer())
         let rows = try context.fetch(FetchDescriptor<NutrientGoalRecord>(
             sortBy: [SortDescriptor(\.nutrient)]))
-        return try rows.filter { !$0.nutrient.hasPrefix(Self.receiptPrefix) }.map(Self.decode)
+        return try rows.map(Self.decode)
     }
 
     /// A restore receipt is a row of this same table under a prefix no nutrient key can start with, so it is
