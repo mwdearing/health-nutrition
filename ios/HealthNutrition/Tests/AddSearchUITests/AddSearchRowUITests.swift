@@ -6,6 +6,7 @@ final class AddSearchRowUITests: XCTestCase {
     func testSearchRowIsOnAddAndTapFocusesTheSearchField() throws {
         let app = XCUIApplication()
         app.launch()
+        addTeardownBlock { app.terminate() }
 
         // A fresh install shows the welcome cover over Today until it is dismissed. Get started is what
         // a first-time user taps, so the test does the same before it looks for Add.
