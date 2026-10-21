@@ -1796,9 +1796,9 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     ///
     /// The rows are fetched and deleted one at a time rather than with the batch delete, which runs
     /// against the persistent store immediately, outside the save and outside the rollback. Fetching
-    /// keeps the whole erase inside one commit, so a failure anywhere in it leaves the journal exactly
-    /// as it was: a journal emptied by a failed save would be worse than an unerased one, because the
-    /// person cannot tell which half is gone.
+    /// keeps the whole erase inside one commit. A failure before that commit leaves the journal unchanged. A failure
+    /// after it leaves no rows, with the store files still on disk, and the erase reports it as a partial erase so
+    /// Retry removes the files (the #566 partial-erase design).
     ///
     /// The store file is then deleted and reopened empty, so the store reads empty and accepts new entries
     /// afterwards. The erased rows leave the store when the store file itself is deleted and recreated empty.
@@ -1845,9 +1845,9 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
 
     /// Deletes the store file with its write-ahead and shared-memory files, then opens an empty store at the same
     /// place. On success the write-ahead file is first checkpointed into the store file and emptied, so the store
-    /// file alone holds the erased state. If the checkpoint fails, nothing is removed and the deleted rows are still
-    /// in the write-ahead file on disk. The thrown error is StoreFileError.checkpointFailed; the erase screen names the
-    /// journal as still on the phone. The companion files go before the main file: once the checkpoint has emptied
+    /// file alone holds the erased state. If the checkpoint fails, nothing is removed, the deleted rows are still in
+    /// the write-ahead file on disk, and the error is StoreFileError.checkpointFailed. The erase screen names the
+    /// journal as still on the phone; a retry removes the files. The companion files go before the main file: once the checkpoint has emptied
     /// the write-ahead file, the shared-memory file is only an index, so removing the companions first leaves a
     /// complete main file if the erase stops partway. The store reopens when it can; if
     /// that reopen fails, the next call retries it (reopenPending) and throws the reopen error if it fails again; `close()` leaves the store closed.
@@ -1855,9 +1855,9 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
         try lock.withLock {
             container = nil
             var removalError: Error?
-            // The checkpoint runs while `lock` is held. A read that needs the container during an erase waits here for at
-            // most the 2 s busy timeout in checkpointStoreFile, then fails as an ordinary failed read. Erase is started by
-            // the person from Settings, and this wait is accepted rather than changing reads during an erase.
+            // The checkpoint, the file removal and the reopen all run while `lock` is held, so a read that needs the
+            // container during an erase waits for them. The checkpoint's own busy timeout (2 s, in checkpointStoreFile)
+            // is the only bound on the checkpoint; the removal and the reopen have none. This wait is accepted as is.
             do {
                 try fileOperations.checkpoint(storeURL)
             } catch {
