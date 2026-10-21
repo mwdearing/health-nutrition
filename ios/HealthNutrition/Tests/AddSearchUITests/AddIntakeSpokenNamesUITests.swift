@@ -12,9 +12,11 @@ final class AddIntakeSpokenNamesUITests: XCTestCase {
         XCTAssertTrue(amount.waitForExistence(timeout: 10), "the amount field is not named Amount")
         XCTAssertEqual(amount.label, "Amount")
 
-        // Any element named Unit that is not plain text. A stray static text with that name would not pass.
-        let unit = app.descendants(matching: .any).matching(NSPredicate(
-            format: "label == %@ AND elementType != %d", "Unit", XCUIElement.ElementType.staticText.rawValue)).firstMatch
+        // The Unit picker is a menu button named by its unit: "Unit, oz". Query that shape exactly, and require one.
+        let unitButtons = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Unit, "))
+        XCTAssertEqual(unitButtons.count, 1, "expected exactly one Unit picker button")
+        let unit = unitButtons.firstMatch
+        XCTAssertEqual(unit.label, "Unit, oz", "the Unit picker lost its own name, or its unit changed")
         if !unit.exists {
             // Diagnostic: the element tree, so the CI log shows what the Unit picker exposes.
             let dump = app.debugDescription
