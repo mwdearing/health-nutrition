@@ -832,7 +832,7 @@ public enum JournalImporter {
         var seen = Set<String>()
         return try items.map { item in
             // The "restore-receipt:" prefix is the goal table's own receipt rows, so a goal can never use it.
-            guard !item.nutrient.isEmpty, item.nutrient.count <= 64, !item.nutrient.hasPrefix("restore-receipt:"),
+            guard !item.nutrient.isEmpty, item.nutrient.count <= 64,
                   seen.insert(item.nutrient).inserted
             else {
                 throw JournalImportError.corrupt("the export lists a goal with no name or more than once")
