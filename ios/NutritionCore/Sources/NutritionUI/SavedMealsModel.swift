@@ -16,6 +16,8 @@ public struct SavedMealRemoval: Equatable {
     public let meal: SavedMeal
     public let index: Int
     public let message: String
+    /// The erase generation when the meal was removed. An erase since then means the meal is not written back.
+    public let generation: Int
 }
 
 /// The saved meals screens share: the list, saving a Journal meal, logging one and undoing it.
@@ -209,7 +211,8 @@ public final class SavedMealsModel: ObservableObject {
             load()
             notice = nil
             noticeIsFailure = false
-            removalUndo = SavedMealRemoval(meal: saved, index: index, message: "Removed \(saved.name).")
+            removalUndo = SavedMealRemoval(meal: saved, index: index, message: "Removed \(saved.name).",
+                generation: book.eraseGeneration)
         } catch let error as SavedMealError {
             finish(failure: error.message)
         } catch {
@@ -222,10 +225,14 @@ public final class SavedMealsModel: ObservableObject {
     public func undoRemove() -> Bool {
         guard let removal = removalUndo else { return false }
         do {
-            let restored = try book.restore(removal.meal, at: removal.index)
+            let restored = try book.restore(removal.meal, at: removal.index, generation: removal.generation)
             removalUndo = nil
             load()
             return restored
+        } catch SavedMealError.erasedSinceRemoval {
+            // Erased data is not put back: the offer ends with the notice, and nothing is written.
+            removalUndo = nil
+            return finish(failure: SavedMealError.erasedSinceRemoval.message)
         } catch {
             // The offer stays up, so the meal can still be put back once there is room for it.
             return finish(failure: "Couldn't put back \(removal.meal.name). Tap Undo to try again.")

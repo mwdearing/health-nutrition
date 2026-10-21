@@ -168,6 +168,25 @@ final class SavedMealsModelTests: XCTestCase {
         XCTAssertEqual(model.notice, "Couldn't put back Usual. Tap Undo to try again.")
     }
 
+    /// An erase after a removal is a newer action: Undo must not write the meal back into the erased data.
+    func testUndoAfterAnEraseDoesNotWriteTheMealBack() throws {
+        let journal = try makeJournal()
+        let milk = try addEntry(journal, "Milk", at: now.addingTimeInterval(-60))
+        let defaults = makeDefaults()
+        let store = UserDefaultsSavedMealStore(defaults: defaults)
+        let model = SavedMealsModel(store: store, journal: journal)
+        XCTAssertTrue(model.save(name: "Usual", meal: .breakfast, intakes: [milk]))
+        model.remove(model.meals[0])
+        XCTAssertNotNil(model.removalUndo)
+
+        try store.eraseAll()
+
+        XCTAssertFalse(model.undoRemove())
+        XCTAssertEqual(try store.meals().count, 0)
+        XCTAssertNil(model.removalUndo)
+        XCTAssertTrue(model.noticeIsFailure)
+    }
+
     /// Once the Undo window has passed, the removal stays and Undo has nothing to put back.
     func testExpiredRemovalCannotBeUndone() throws {
         let journal = try makeJournal()

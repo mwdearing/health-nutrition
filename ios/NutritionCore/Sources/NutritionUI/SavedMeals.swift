@@ -24,6 +24,9 @@ public struct SavedMeal: Sendable, Hashable, Codable, Identifiable {
 
 /// Why a saved meal was refused or could not be read. Nothing is written when one is thrown.
 public enum SavedMealError: Error, Equatable, Sendable {
+    /// The data was erased after the removal, so the removed meal must not come back.
+    case erasedSinceRemoval
+
     /// The name is empty once spaces are trimmed.
     case emptyName
     /// The name is longer than `SavedMealBook.maximumNameLength` characters.
@@ -51,6 +54,7 @@ public enum SavedMealError: Error, Equatable, Sendable {
         case .tooManyMeals: return "You can keep up to \(SavedMealBook.maximumMeals) saved meals. Remove one first."
         case .unsavableAmount: return "An item has an amount that cannot be saved."
         case .notFound: return "This saved meal is no longer available."
+        case .erasedSinceRemoval: return "Couldn't put back this saved meal."
         case .unreadable: return "Could not read your saved meals."
         }
     }
@@ -64,6 +68,13 @@ public protocol SavedMealStoring: AnyObject, Sendable {
     /// Reads the list, lets `change` edit it and writes the result, as one step no other update on this
     /// store can interleave with. Nothing is written when the read or `change` throws.
     func update(_ change: (inout [SavedMeal]) throws -> Void) throws
+    /// Counts erases of this store's data. A removal's Undo is only good in the generation it was issued in.
+    var eraseGeneration: Int { get }
+}
+
+extension SavedMealStoring {
+    /// Stores with no erase of their own never advance the generation.
+    public var eraseGeneration: Int { 0 }
 }
 
 /// Saved meals in the app's defaults domain, as one JSON list under `key`. `eraseAll()` removes the key and the
@@ -76,6 +87,7 @@ public final class UserDefaultsSavedMealStore: SavedMealStoring, JournalErasing,
     public static let key = "library.savedMeals.v1"
     /// The file digest of the last restore that wrote this list, kept until the restore is marked finished.
     public static let restoreReceiptKey = "library.savedMeals.restoreReceipt.v1"
+    public static let eraseGenerationKey = "library.savedMeals.eraseGeneration.v1"
     private let defaults: UserDefaults
     private let lock = NSLock()
 
@@ -101,8 +113,12 @@ public final class UserDefaultsSavedMealStore: SavedMealStoring, JournalErasing,
         lock.withLock {
             defaults.removeObject(forKey: Self.key)
             defaults.removeObject(forKey: Self.restoreReceiptKey)
+            // Under its own key, absent is 0, and kept out of exports: only Undo reads it.
+            defaults.set(eraseGeneration + 1, forKey: Self.eraseGenerationKey)
         }
     }
+
+    public var eraseGeneration: Int { defaults.integer(forKey: Self.eraseGenerationKey) }
 
     public func journalSavedMeals() throws -> [JournalSavedMeal] {
         try meals().map { JournalSavedMeal(id: $0.id, name: $0.name, meal: $0.meal, items: $0.items) }
@@ -216,9 +232,14 @@ public struct SavedMealBook {
     /// Puts back a meal `remove` took out, at the position it had. Returns false, and changes nothing, when the
     /// meal is already listed.
     @discardableResult
-    public func restore(_ saved: SavedMeal, at index: Int) throws -> Bool {
+    /// The erase generation now. A removal records it, so its Undo can tell whether data was erased since.
+    public var eraseGeneration: Int { store.eraseGeneration }
+
+    public func restore(_ saved: SavedMeal, at index: Int, generation: Int) throws -> Bool {
         var restored = false
         try store.update { list in
+            // An Undo issued before an erase must not write its meal back into the erased data.
+            guard store.eraseGeneration == generation else { throw SavedMealError.erasedSinceRemoval }
             guard !list.contains(where: { $0.id == saved.id }) else { return }
             guard list.count < Self.maximumMeals else { throw SavedMealError.tooManyMeals }
             // A name saved since the removal can clash; the restore then fails rather than writing a duplicate.
