@@ -246,6 +246,14 @@ final class JournalImportGoalsTests: XCTestCase {
         XCTAssertEqual(try base.goals().map(\.nutrient), ["sodium"])
     }
 
+    /// A goal named with the receipt prefix would be hidden from every read, so the file is refused instead.
+    func testAGoalNamedLikeAReceiptIsRefused() throws {
+        let data = try goalsExport([JournalExportGoal(nutrient: "restore-receipt:x", target: "1", unit: "g")])
+        XCTAssertThrowsError(
+            try JournalImporter.importExport(data, into: try journal(), favorites: nil, goals: try goalStore())
+        )
+    }
+
     func testAVersion7FileHasNoGoalsAndStillImports() throws {
         let goals = try goalStore()
         let summary = try JournalImporter.importExport(

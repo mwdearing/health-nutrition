@@ -361,7 +361,7 @@ public enum JournalImporter {
                     let missing = try plan.goals.filter { try goalsTarget.goal(for: $0.nutrient) == nil }
                     try goalsTarget.recordGoalRestoreReceipt(digest, goals: missing)
                     recordedGoals = missing
-                    try addMissingGoals(plan.goals, into: goalsTarget, added: &goalKeysSet)
+                    try addMissingGoals(missing, into: goalsTarget, added: &goalKeysSet)
                 }
                 // Saved meals first: a replace of an empty list can be written again, so a resume after a stop
                 // between the two saves only has the favorites left to write.
@@ -377,7 +377,8 @@ public enum JournalImporter {
                 // The goals this run set go with the journal. A goal that cannot be removed is kept and reported
                 // as a partial restore below, so a retry is never told the device is clean when it is not.
                 let goalsLeft = !undoGoals(recordedGoals, in: goalsTarget)
-                try? goalsTarget?.removeGoalRestoreReceipt(digest)
+                // The receipt names any goal that could not be removed, so it stays while one is left.
+                if !goalsLeft { try? goalsTarget?.removeGoalRestoreReceipt(digest) }
                 // The list was empty before this restore, so putting it back is emptying it, but only while it
                 // still holds exactly what this restore wrote: a meal saved meanwhile is not thrown away.
                 var savedMealsLeft = false
@@ -816,7 +817,10 @@ public enum JournalImporter {
     private static func restoredGoals(_ items: [JournalExportGoal]) throws -> [NutrientGoal] {
         var seen = Set<String>()
         return try items.map { item in
-            guard !item.nutrient.isEmpty, item.nutrient.count <= 64, seen.insert(item.nutrient).inserted else {
+            // The "restore-receipt:" prefix is the goal table's own receipt rows, so a goal can never use it.
+            guard !item.nutrient.isEmpty, item.nutrient.count <= 64, !item.nutrient.hasPrefix("restore-receipt:"),
+                  seen.insert(item.nutrient).inserted
+            else {
                 throw JournalImportError.corrupt("the export lists a goal with no name or more than once")
             }
             guard DecimalText.isValidDecimalText(item.target), let target = DecimalText.decode(item.target),
