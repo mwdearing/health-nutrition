@@ -179,7 +179,10 @@ final class SavedMealsModelTests: XCTestCase {
         model.remove(model.meals[0])
         XCTAssertNotNil(model.removalUndo)
 
-        try store.eraseAll()
+        // The Erase button runs each store through JournalErasing (AppServices.eraseStores lists this store), so the
+        // test erases through that same protocol rather than calling the store's method directly.
+        let eraser: JournalErasing = store
+        try eraser.eraseAll()
 
         XCTAssertFalse(model.undoRemove())
         XCTAssertEqual(try store.meals().count, 0)

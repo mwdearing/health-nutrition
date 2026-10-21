@@ -54,7 +54,7 @@ public enum SavedMealError: Error, Equatable, Sendable {
         case .tooManyMeals: return "You can keep up to \(SavedMealBook.maximumMeals) saved meals. Remove one first."
         case .unsavableAmount: return "An item has an amount that cannot be saved."
         case .notFound: return "This saved meal is no longer available."
-        case .erasedSinceRemoval: return "Couldn't put back this saved meal."
+        case .erasedSinceRemoval: return SavedMealError.notFound.message
         case .unreadable: return "Could not read your saved meals."
         }
     }

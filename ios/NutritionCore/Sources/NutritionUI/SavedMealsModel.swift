@@ -232,7 +232,7 @@ public final class SavedMealsModel: ObservableObject {
         } catch SavedMealError.erasedSinceRemoval {
             // Erased data is not put back: the offer ends with the notice, and nothing is written.
             removalUndo = nil
-            return finish(failure: SavedMealError.erasedSinceRemoval.message)
+            return finish(failure: "Couldn't put back \(removal.meal.name).")
         } catch {
             // The offer stays up, so the meal can still be put back once there is room for it.
             return finish(failure: "Couldn't put back \(removal.meal.name). Tap Undo to try again.")
