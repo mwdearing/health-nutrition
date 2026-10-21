@@ -380,7 +380,9 @@ public enum JournalImporter {
                 defer { try? progress?.clearRestoreInProgress() }
                 // The goals this run set go with the journal. A goal that cannot be removed is kept and reported
                 // as a partial restore below, so a retry is never told the device is clean when it is not.
-                let goalsLeft = !undoGoals(recordedGoals, in: goalsTarget)
+                // Only the goals this run wrote are removed. A recorded goal the person set during the restore was not
+                // written by it, so it stays even when its value matches.
+                let goalsLeft = !undoGoals(recordedGoals.filter { goalKeysSet.contains($0.nutrient) }, in: goalsTarget)
                 // The receipt names any goal that could not be removed, so it stays while one is left.
                 if !goalsLeft { try? goalsTarget?.removeGoalRestoreReceipt(digest) }
                 // The list was empty before this restore, so putting it back is emptying it, but only while it
