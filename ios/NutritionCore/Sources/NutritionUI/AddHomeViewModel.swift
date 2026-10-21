@@ -107,9 +107,7 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
         if prefill.components.count > 1 {
             // The current Details form has one amount. Present the whole recorded combination as
             // one serving, spelling out all original amounts rather than silently dropping any.
-            let comboKind = ProductKindResolution.kind(
-                snapshotID: prefill.productSnapshotID, snapshotKind: { (try? store.product(snapshotID: $0))?.kind },
-                category: prefill.category)
+            let comboKind = prefill.productSnapshotID.flatMap { try? store.product(snapshotID: $0) }?.kind
             model.name = prefill.components.map {
                 let loggedUnit = comboKind == .supplement ? prefill.loggedUnits[$0.componentID] : nil
                 return "\($0.name) (\(AmountText.describe($0, unitSystem: preferences.unitSystem, loggedUnit: loggedUnit, isSupplement: comboKind == .supplement)))"
