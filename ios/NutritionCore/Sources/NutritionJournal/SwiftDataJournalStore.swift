@@ -1822,6 +1822,8 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
         lock.lock()
         defer { lock.unlock() }
         try deleteRows()
+        lock.unlock()
+        lock.lock()
         try removeFiles()
     }
 
