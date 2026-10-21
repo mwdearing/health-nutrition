@@ -141,7 +141,6 @@ final class AppServicesEraseTests: XCTestCase {
     /// Every production store is in the erase, in the pinned order: widget data first, journal after the lists. The
     /// custom reminders join only with the system scheduler, which the test scheduler does not provide.
     func testTheBuilderNamesWithoutTheSystemSchedulerAreInOrder() throws {
-        let (services, _) = try makeServices()
         XCTAssertEqual(eraseNamesFromBuilderInputs(withCustomReminders: false), [
             "widget data", "saved meals", "supplements", "reminders",
             "journal", "favorites", "recipes", "goals",
@@ -155,8 +154,6 @@ final class AppServicesEraseTests: XCTestCase {
             .appendingPathComponent("HealthNutritionTests", isDirectory: true)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
-        let services = try AppServices.make(
-            directory: directory, reminderScheduler: CustomCapableReminderScheduler())
         XCTAssertEqual(eraseNamesFromBuilderInputs(withCustomReminders: true), [
             "widget data", "saved meals", "supplements", "reminders", "custom reminders",
             "journal", "favorites", "recipes", "goals",
