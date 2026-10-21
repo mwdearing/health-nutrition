@@ -18,6 +18,24 @@ private func makeFirstRunSuite(_ label: String, _ teardown: XCTestCase) -> UserD
     return defaults
 }
 
+/// Stands in for the app's Health connector. `access` is what Health reports now; a connect moves it to
+/// `afterConnect` when that is set.
+@MainActor
+private final class HealthConnectorFake: AppleHealthConnecting {
+    var access: AppleHealthAccess
+    var afterConnect: AppleHealthAccess?
+    private(set) var connectCalls = 0
+
+    init(_ access: AppleHealthAccess) { self.access = access }
+
+    func currentAccess() -> AppleHealthAccess { access }
+
+    func connect() async {
+        connectCalls += 1
+        if let afterConnect { access = afterConnect }
+    }
+}
+
 /// The first-run state: the welcome shown once, the first-day checklist and its Hide action.
 @MainActor
 final class FirstRunTests: XCTestCase {
@@ -126,7 +144,10 @@ final class FirstRunTests: XCTestCase {
         let journal = try makeJournalStore()
         let goals = try makeGoalStore()
         let preferences: DisplayPreferences & FirstRunPreferences = InMemoryDisplayPreferences()
-        let model = FirstDayChecklistModel(store: journal, goals: goals, preferences: preferences)
+        let health = HealthConnectorFake(AppleHealthAccess(undetermined: 3, authorized: 0, denied: 0))
+        let model = FirstDayChecklistModel(
+            store: journal, goals: goals, preferences: preferences,
+            health: AppleHealthConnectionViewModel(connector: health))
 
         model.load()
         XCTAssertEqual(
@@ -135,7 +156,6 @@ final class FirstRunTests: XCTestCase {
             model.items.map(\.title),
             ["Log your first food, drink, or supplement", "Set a daily goal", "Choose units", "Connect Apple Health"])
         XCTAssertEqual(model.items.map(\.isDone), [false, false, false, false])
-        XCTAssertEqual(model.items.map(\.isPlaceholder), [false, false, false, true])
         XCTAssertEqual(model.items[2].detail, "Metric")
         XCTAssertTrue(model.isVisible)
 
@@ -187,5 +207,64 @@ final class FirstRunTests: XCTestCase {
         let rebuilt = FirstDayChecklistModel(store: journal, goals: goals, preferences: preferences)
         rebuilt.load()
         XCTAssertFalse(rebuilt.isVisible)
+    }
+
+    // MARK: - Connect Apple Health
+
+    /// Connected but never asked to read is not done: Settings still asks for the read, so the step does
+    /// too, and tapping it asks.
+    func testConnectHealthStepNeedsTheReadAnswerToBeDone() async throws {
+        let health = HealthConnectorFake(AppleHealthAccess(
+            undetermined: 0, authorized: 3, denied: 0, readAsked: false))
+        health.afterConnect = AppleHealthAccess(undetermined: 0, authorized: 3, denied: 0, readAsked: true)
+        let model = FirstDayChecklistModel(
+            store: try makeJournalStore(), goals: try makeGoalStore(),
+            preferences: InMemoryDisplayPreferences(), health: AppleHealthConnectionViewModel(connector: health))
+
+        model.load()
+        XCTAssertEqual(model.items.last?.isDone, false)
+        await model.connectHealth()
+        XCTAssertEqual(model.items.last?.isDone, true)
+    }
+
+    /// The Health step is done once Health is connected and has been asked to read. The connected case that has
+    /// not been asked is covered by testConnectHealthStepNeedsTheReadAnswerToBeDone.
+    func testConnectHealthStepIsDoneWhenHealthIsConnected() throws {
+        let health = HealthConnectorFake(AppleHealthAccess(undetermined: 0, authorized: 3, denied: 0))
+        let model = FirstDayChecklistModel(
+            store: try makeJournalStore(), goals: try makeGoalStore(),
+            preferences: InMemoryDisplayPreferences(), health: AppleHealthConnectionViewModel(connector: health))
+
+        model.load()
+        let row = try XCTUnwrap(model.items.first { $0.kind == .connectHealth })
+        XCTAssertEqual(row.title, "Connect Apple Health")
+        XCTAssertTrue(row.isDone)
+    }
+
+    /// Until Health is connected the step is not done, and tapping it asks Health and then ticks off.
+    func testConnectHealthStepCompletesAfterTheConnectAction() async throws {
+        let health = HealthConnectorFake(AppleHealthAccess(undetermined: 3, authorized: 0, denied: 0))
+        health.afterConnect = AppleHealthAccess(undetermined: 0, authorized: 3, denied: 0)
+        let model = FirstDayChecklistModel(
+            store: try makeJournalStore(), goals: try makeGoalStore(),
+            preferences: InMemoryDisplayPreferences(), health: AppleHealthConnectionViewModel(connector: health))
+
+        model.load()
+        XCTAssertEqual(model.items.last?.isDone, false)
+        await model.connectHealth()
+        XCTAssertEqual(health.connectCalls, 1)
+        XCTAssertEqual(model.items.last?.isDone, true)
+    }
+
+    /// A device with no Health gets no Health step at all, rather than a row that cannot be done.
+    func testConnectHealthStepIsLeftOffWhenHealthIsUnavailable() throws {
+        let health = HealthConnectorFake(.unavailable)
+        let model = FirstDayChecklistModel(
+            store: try makeJournalStore(), goals: try makeGoalStore(),
+            preferences: InMemoryDisplayPreferences(), health: AppleHealthConnectionViewModel(connector: health))
+
+        model.load()
+        XCTAssertNil(model.items.first { $0.kind == .connectHealth })
+        XCTAssertEqual(model.items.count, 3)
     }
 }

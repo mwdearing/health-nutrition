@@ -134,8 +134,6 @@ final class AppServices {
             lookup: SnapshotNutrientFacts(), referencePreferences: displayPreferences,
             preferences: displayPreferences)
         goals = GoalsViewModel(store: goalStore, journal: journalStore, preferences: displayPreferences)
-        firstDayChecklist = FirstDayChecklistModel(
-            store: journalStore, goals: goalStore, preferences: displayPreferences)
         let savedMealStore = UserDefaultsSavedMealStore()
         let savedMeals = SavedMealsModel(store: savedMealStore, journal: journalStore)
         self.savedMeals = savedMeals
@@ -217,6 +215,8 @@ final class AppServices {
             }
         }
         appleHealth = AppleHealthConnectionViewModel(connector: healthKitDeliveryStatus)
+        firstDayChecklist = FirstDayChecklistModel(
+            store: journalStore, goals: goalStore, preferences: displayPreferences, health: appleHealth)
         bodyActivity = BodyActivityViewModel(
             reader: HealthKitReader(), unitSystem: { [displayPreferences] in displayPreferences.unitSystem })
         // Set after every stored property, so the Library can link to the supplement list.

@@ -42,7 +42,11 @@ final class UnitReadFailingStore: JournalStore, JournalLoggedUnits, @unchecked S
             occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier, unitRemovals: unitRemovals)
     }
     func delete(intakeID: String, now: Date) throws { try inner.delete(intakeID: intakeID, now: now) }
+    /// Set to true to make the active-intakes read throw, as a failed journal read would.
+    var failsActiveIntakes = false
+
     func activeIntakes() throws -> [Intake] {
+        if failsActiveIntakes { throw UnitsUnreadable() }
         return try inner.activeIntakes()
     }
     func revisions(of intakeID: String) throws -> [IntakeRevision] {
