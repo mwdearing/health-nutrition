@@ -3,8 +3,8 @@ import NutritionJournal
 import XCTest
 @testable import NutritionUI
 
-/// A failed read on the first-day checklist hides the card until a read succeeds: no empty state, no 0 and no
-/// guessed done state (#775).
+/// A failed read on the first-day checklist hides the card for that load: no empty state, no 0 and no guessed
+/// done state.
 @MainActor
 final class FirstDayChecklistReadFailureTests: XCTestCase {
     private func makeJournal() throws -> UnitReadFailingStore {
@@ -15,7 +15,7 @@ final class FirstDayChecklistReadFailureTests: XCTestCase {
         return UnitReadFailingStore(inner: inner)
     }
 
-    /// The journal read throws: the card must not show the log step as not done.
+    /// The journal read throws: the card is hidden and has no rows, so no step is shown as not done.
     func testChecklistHidesWhenTheJournalReadFails() throws {
         let journal = try makeJournal()
         journal.failsActiveIntakes = true
