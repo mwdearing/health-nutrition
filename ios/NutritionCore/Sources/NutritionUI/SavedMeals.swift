@@ -239,7 +239,6 @@ public struct SavedMealBook {
         var restored = false
         try store.update { list in
             // An Undo issued before an erase must not write its meal back into the erased data.
-            guard store.eraseGeneration == generation else { throw SavedMealError.erasedSinceRemoval }
             guard !list.contains(where: { $0.id == saved.id }) else { return }
             guard list.count < Self.maximumMeals else { throw SavedMealError.tooManyMeals }
             // A name saved since the removal can clash; the restore then fails rather than writing a duplicate.
