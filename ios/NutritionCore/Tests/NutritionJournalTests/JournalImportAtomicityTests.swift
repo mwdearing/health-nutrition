@@ -364,9 +364,9 @@ final class JournalImportAtomicityTests: JournalImportTestCase {
         XCTAssertEqual(try journal.revisions(of: oatsID).count, 1)
     }
 
-    /// A goal removal refused after a file with entries: the journal keeps its entries, and a re-import of the same file
-    /// finishes with the right counts and no duplicates. Fails when the restore flag is cleared on that rollback, since the
-    /// re-import is then refused as not empty, and the assertion on the re-import is the one that goes red.
+    /// A goal removal refused after a file with entries: the journal is rolled back first, as the order requires, and the
+    /// goal and the flag stay for a re-import of the same file, which finishes with the right counts and no duplicates.
+    /// Fails when the restore flag is cleared on that rollback, since the re-import is then refused as not empty.
     func testAReimportAfterAGoalLeftBehindFinishesWithTheRightCounts() throws {
         let directory = try self.directory()
         let base = try SwiftDataGoalStore(url: directory.appendingPathComponent("goals.store"))
@@ -385,7 +385,8 @@ final class JournalImportAtomicityTests: JournalImportTestCase {
             if calls == 2 { throw JournalImportError.corrupt("stopped") }
         }
         XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: nil, goals: refusing))
-        XCTAssertFalse(try journal.activeIntakes().isEmpty, "a rollback that keeps a goal keeps the journal's entries")
+        XCTAssertTrue(try journal.activeIntakes().isEmpty, "the journal rolls back before the goal step")
+        XCTAssertNotNil(try journal.restoreInProgressDigest(), "the flag is kept for the goal resume")
 
         var summary: JournalImportSummary?
         XCTAssertNoThrow(summary = try JournalImporter.importExport(data, into: journal, favorites: nil, goals: base))
