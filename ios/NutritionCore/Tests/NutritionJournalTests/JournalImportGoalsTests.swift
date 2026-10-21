@@ -117,9 +117,14 @@ final class JournalImportGoalsTests: XCTestCase {
     private final class ScriptedGoalStore: GoalStore, @unchecked Sendable {
         let base: SwiftDataGoalStore
         let onSet: (NutrientGoal, SwiftDataGoalStore) throws -> Void
+        let refusesRemoval: Bool
 
-        init(base: SwiftDataGoalStore, onSet: @escaping (NutrientGoal, SwiftDataGoalStore) throws -> Void) {
+        init(
+            base: SwiftDataGoalStore, refusesRemoval: Bool = false,
+            onSet: @escaping (NutrientGoal, SwiftDataGoalStore) throws -> Void
+        ) {
             self.base = base
+            self.refusesRemoval = refusesRemoval
             self.onSet = onSet
         }
 
@@ -129,7 +134,14 @@ final class JournalImportGoalsTests: XCTestCase {
             try onSet(goal, base)
             try base.setGoal(goal)
         }
-        func removeGoal(nutrient: String) throws { try base.removeGoal(nutrient: nutrient) }
+        func removeGoal(nutrient: String) throws {
+            if refusesRemoval { throw JournalImportError.corrupt("removal refused") }
+            try base.removeGoal(nutrient: nutrient)
+        }
+        func markGoalRestoreReceiptDone(_ receipt: String) throws {
+            try base.markGoalRestoreReceiptDone(receipt)
+        }
+        func goalRestoreReceiptDone(_ receipt: String) throws -> Bool? { try base.goalRestoreReceiptDone(receipt) }
         func close() { base.close() }
         func recordGoalRestoreReceipt(_ receipt: String, goals: [NutrientGoal]) throws {
             try base.recordGoalRestoreReceipt(receipt, goals: goals)
@@ -244,6 +256,56 @@ final class JournalImportGoalsTests: XCTestCase {
 
         XCTAssertTrue(JournalImporter.undoGoals(recorded, in: base))
         XCTAssertEqual(try base.goals().map(\.nutrient), ["sodium"])
+    }
+
+    /// Rollback keeps the receipt when a goal could not be removed, so the receipt still names it. Fails without the
+    /// receipt-kept rule, which deletes the receipt regardless of the removal.
+    func testAFailedGoalRemovalKeepsTheReceipt() throws {
+        let base = try goalStore()
+        let data = try goalsExport([protein, energy])
+        let digest = JournalImporter.fileDigest(data)
+        var calls = 0
+        let store = ScriptedGoalStore(base: base, refusesRemoval: true) { _, _ in
+            calls += 1
+            if calls == 2 { throw JournalImportError.corrupt("stopped") }
+        }
+        XCTAssertThrowsError(try JournalImporter.importExport(
+            data, into: try journal(), favorites: nil, goals: store))
+        XCTAssertNotNil(try base.goalRestoreReceipt(digest), "a goal is left, so the receipt still names it")
+    }
+
+    /// A goal the restore set, then the person deleted after every goal was written, is not added back when the same
+    /// file is imported again while the flag is still set. Fails without the done marker, which makes resume add it.
+    func testAGoalDeletedAfterTheGoalsFinishedIsNotReAdded() throws {
+        let base = try goalStore()
+        let data = try goalsExport([protein, energy])
+        let digest = JournalImporter.fileDigest(data)
+        let journal = try journal()
+        try journal.markRestoreInProgress(fileDigest: digest)
+        try base.recordGoalRestoreReceipt(digest, goals: [
+            NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g),
+            NutrientGoal(nutrient: "energy", target: Decimal(2000), unit: .kcal),
+        ])
+        try base.markGoalRestoreReceiptDone(digest)
+        try base.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        // The person deletes energy after the goals were written.
+
+        XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: nil, goals: base))
+        XCTAssertNil(try base.goal(for: "energy"), "a goal the person deleted must not come back")
+    }
+
+    /// Every goal the restore writes is one its receipt names. A check inside the write: this passes today, and it
+    /// guards against a later change that writes a goal the receipt does not record.
+    func testEveryGoalWrittenIsOneTheReceiptNames() throws {
+        let base = try goalStore()
+        let data = try goalsExport([protein, energy])
+        let digest = JournalImporter.fileDigest(data)
+        let store = ScriptedGoalStore(base: base) { goal, base in
+            let recorded = try base.goalRestoreReceipt(digest)?.map(\.nutrient) ?? []
+            XCTAssertTrue(recorded.contains(goal.nutrient), "\(goal.nutrient) written but not recorded")
+        }
+        let summary = try JournalImporter.importExport(data, into: try journal(), favorites: nil, goals: store)
+        XCTAssertEqual(summary.goals, 2)
     }
 
     /// A goal named with the receipt prefix would be hidden from every read, so the file is refused instead.

@@ -79,7 +79,7 @@ public final class SwiftDataGoalStore: GoalStore, JournalErasing, @unchecked Sen
         let entries = goals.map {
             ReceiptEntry(nutrient: $0.nutrient, target: DecimalText.encode($0.target), unit: $0.unit.symbol)
         }
-        let text = String(decoding: try JSONEncoder().encode(entries), as: UTF8.self)
+        let text = try Self.encodeReceipt(ReceiptPayload(done: false, goals: entries))
         let context = ModelContext(try openContainer())
         for old in try context.fetch(FetchDescriptor<NutrientGoalRecord>(
             predicate: #Predicate<NutrientGoalRecord> { $0.nutrient == id })) {
@@ -89,12 +89,47 @@ public final class SwiftDataGoalStore: GoalStore, JournalErasing, @unchecked Sen
         try context.save()
     }
 
+    /// Marks the restore's goals as all written, so a resume that finds this receipt does not add any of them again.
+    /// A goal the person deleted after this point stays deleted.
+    public func markGoalRestoreReceiptDone(_ receipt: String) throws {
+        writeLock.lock()
+        defer { writeLock.unlock() }
+        let id = Self.receiptPrefix + receipt
+        let context = ModelContext(try openContainer())
+        guard let row = try context.fetch(FetchDescriptor<NutrientGoalRecord>(
+            predicate: #Predicate<NutrientGoalRecord> { $0.nutrient == id })).first else { return }
+        let payload = try Self.decodeReceipt(row.targetText)
+        row.targetText = try Self.encodeReceipt(ReceiptPayload(done: true, goals: payload.goals))
+        try context.save()
+    }
+
+    public func goalRestoreReceiptDone(_ receipt: String) throws -> Bool? {
+        let id = Self.receiptPrefix + receipt
+        let context = ModelContext(try openContainer())
+        guard let row = try context.fetch(FetchDescriptor<NutrientGoalRecord>(
+            predicate: #Predicate<NutrientGoalRecord> { $0.nutrient == id })).first else { return nil }
+        return try Self.decodeReceipt(row.targetText).done
+    }
+
+    private struct ReceiptPayload: Codable {
+        let done: Bool
+        let goals: [ReceiptEntry]
+    }
+
+    private static func encodeReceipt(_ payload: ReceiptPayload) throws -> String {
+        String(decoding: try JSONEncoder().encode(payload), as: UTF8.self)
+    }
+
+    private static func decodeReceipt(_ text: String) throws -> ReceiptPayload {
+        try JSONDecoder().decode(ReceiptPayload.self, from: Data(text.utf8))
+    }
+
     public func goalRestoreReceipt(_ receipt: String) throws -> [NutrientGoal]? {
         let id = Self.receiptPrefix + receipt
         let context = ModelContext(try openContainer())
         guard let row = try context.fetch(FetchDescriptor<NutrientGoalRecord>(
             predicate: #Predicate<NutrientGoalRecord> { $0.nutrient == id })).first else { return nil }
-        let entries = try JSONDecoder().decode([ReceiptEntry].self, from: Data(row.targetText.utf8))
+        let entries = try Self.decodeReceipt(row.targetText).goals
         return try entries.map { entry in
             guard let target = DecimalText.decode(entry.target), let unit = try? MeasureUnit(symbol: entry.unit)
             else { throw JournalImportError.corrupt("the goal restore receipt holds a target this build cannot read") }

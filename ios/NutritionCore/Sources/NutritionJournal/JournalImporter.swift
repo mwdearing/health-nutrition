@@ -293,12 +293,14 @@ public enum JournalImporter {
             }
             // A flag that outlived every part of the second phase (a stop after the last save, before the flag
             // was cleared) is not an unfinished restore, however much of it was deleted since.
-            // The goals part is unfinished while its receipt is there (the receipt goes last) or while a goal it names
-            // is still missing: a stop before the receipt leaves no receipt but nothing written either.
+            // The goals part is unfinished while its receipt is not marked done. With no receipt, the restore stopped
+            // before recording, so it is unfinished while a goal it would set is still missing.
             var goalsPending = false
             if let goalsTarget {
-                goalsPending = try goalsTarget.goalRestoreReceipt(digest) != nil
-                    || plan.goals.contains { goal in (try? goalsTarget.goal(for: goal.nutrient)) == nil }
+                switch try goalsTarget.goalRestoreReceiptDone(digest) {
+                case .some(let done): goalsPending = !done
+                case .none: goalsPending = plan.goals.contains { goal in (try? goalsTarget.goal(for: goal.nutrient)) == nil }
+                }
             }
             guard !(savedMealsWritten && favoritesWritten && !goalsPending) else { throw JournalImportError.notEmpty }
             if let savedMealsTarget, !savedMealsWritten {
@@ -308,9 +310,10 @@ public enum JournalImporter {
                 try favoritesTarget.restore(plan.favorites, receipt: digest)
             }
             // Goals are add-only, so writing the missing ones again is safe whatever was written before the stop.
-            if let goalsTarget {
-                // A receipt means the stopped run recorded these before writing any goal, so resume adds exactly
-                // them. No receipt means it never reached the goals, so the missing ones are recorded now, first.
+            // A receipt marked done means every goal was written already, so nothing is added again, even if the person
+            // has since deleted one. A receipt not yet marked done names what the stopped run recorded, and resume adds
+            // exactly those. No receipt means it never reached the goals, so the missing ones are recorded now, first.
+            if let goalsTarget, try goalsTarget.goalRestoreReceiptDone(digest) != true {
                 let recorded: [NutrientGoal]
                 if let existing = try goalsTarget.goalRestoreReceipt(digest) {
                     recorded = existing
@@ -320,6 +323,7 @@ public enum JournalImporter {
                 }
                 recordedGoals = recorded
                 try addMissingGoals(recorded, into: goalsTarget, added: &goalKeysSet)
+                try goalsTarget.markGoalRestoreReceiptDone(digest)
             }
             // A flag that outlived a finished resume would let a later import of this file write rows the
             // person deleted since, so a failure to clear it is reported rather than swallowed.
@@ -402,6 +406,9 @@ public enum JournalImporter {
                 }
                 throw secondPhaseFailure
             }
+            // The goals are all written, so the receipt is marked done before the flag clears: a resume that still finds
+            // the flag then adds nothing, even after the person has deleted a goal. A failed mark only costs that case.
+            try? goalsTarget?.markGoalRestoreReceiptDone(digest)
             // A flag that cannot be cleared is reported rather than swallowed. It cannot start a resume over this
             // second phase: every part of it now has its receipt.
             try progress?.clearRestoreInProgress()

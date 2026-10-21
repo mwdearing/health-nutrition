@@ -78,6 +78,10 @@ public protocol GoalStore: AnyObject, Sendable {
     func goalRestoreReceipt(_ receipt: String) throws -> [NutrientGoal]?
     /// Forgets the receipt once nothing needs it. A receipt that is not there is not an error.
     func removeGoalRestoreReceipt(_ receipt: String) throws
+    /// Whether the restore's goals were all written, or nil when there is no receipt.
+    func goalRestoreReceiptDone(_ receipt: String) throws -> Bool?
+    /// Marks the receipt's goals as all written, so a resume does not add them again.
+    func markGoalRestoreReceiptDone(_ receipt: String) throws
 }
 
 /// A store that keeps no receipts refuses a goal restore, so a goal is never written without the record that
@@ -88,6 +92,10 @@ extension GoalStore {
     }
     public func goalRestoreReceipt(_ receipt: String) throws -> [NutrientGoal]? { nil }
     public func removeGoalRestoreReceipt(_ receipt: String) throws {}
+    public func goalRestoreReceiptDone(_ receipt: String) throws -> Bool? { nil }
+    public func markGoalRestoreReceiptDone(_ receipt: String) throws {
+        throw JournalImportError.corrupt("this goal store keeps no restore receipt")
+    }
 }
 
 /// A goal store held in memory, for tests and for a caller that has nowhere to persist to.
