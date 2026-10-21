@@ -400,9 +400,6 @@ public struct JournalExportFavorite: Sendable, Hashable, Codable {
     }
 }
 
-/// The unit one component of an entry or a favorite was logged in, from version 6: `intake_id` (the id of the
-/// entry, or of the favorite made from it), `component_id` and the unit's `unit` symbol (`tsp`, `tbsp`, `cup` or
-/// `fl oz`). The component's own amount is still stored in milliliters.
 /// One daily goal, from version 8: the nutrient key, its target as exact decimal text and the unit symbol.
 public struct JournalExportGoal: Sendable, Hashable, Codable {
     public var nutrient: String
@@ -416,6 +413,9 @@ public struct JournalExportGoal: Sendable, Hashable, Codable {
     }
 }
 
+/// The unit one component of an entry or a favorite was logged in, from version 6: `intake_id` (the id of the
+/// entry, or of the favorite made from it), `component_id` and the unit's `unit` symbol (`tsp`, `tbsp`, `cup` or
+/// `fl oz`). The component's own amount is still stored in milliliters.
 public struct JournalExportLoggedUnit: Sendable, Hashable, Codable {
     public var intakeID: String
     public var componentID: String

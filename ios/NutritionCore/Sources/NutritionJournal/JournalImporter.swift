@@ -344,8 +344,12 @@ public enum JournalImporter {
                 // The journal is undone or reported as partial, so there is no unfinished restore of this file
                 // to finish, and a flag left here could only be misread later.
                 defer { try? progress?.clearRestoreInProgress() }
-                // The goals this run set go with the journal, so a retry starts from an empty device again.
-                for nutrient in goalKeysSet { try? goalsTarget?.removeGoal(nutrient: nutrient) }
+                // The goals this run set go with the journal. A goal that cannot be removed is kept and reported
+                // as a partial restore below, so a retry is never told the device is clean when it is not.
+                var goalsLeft = false
+                for nutrient in goalKeysSet {
+                    do { try goalsTarget?.removeGoal(nutrient: nutrient) } catch { goalsLeft = true }
+                }
                 // The list was empty before this restore, so putting it back is emptying it, but only while it
                 // still holds exactly what this restore wrote: a meal saved meanwhile is not thrown away.
                 var savedMealsLeft = false
@@ -357,7 +361,7 @@ public enum JournalImporter {
                 // Saved meals that could not be taken back still name the product snapshots this restore wrote,
                 // which the journal's undo would remove. So the journal stays as well, and the restore is reported
                 // as partial: both are there, and the person can check them before importing again.
-                guard !savedMealsLeft else {
+                guard !savedMealsLeft, !goalsLeft else {
                     throw JournalImportError.partialRestore(
                         retainedIntakes: retainedIntakes, retainedTombstones: retainedTombstones)
                 }
