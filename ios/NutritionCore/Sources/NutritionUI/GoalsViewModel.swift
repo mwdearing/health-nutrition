@@ -337,7 +337,7 @@ public final class GoalsViewModel: ObservableObject {
         guard let journal else { return [] }
         let standard = Set(NutritionFactKey.allCases.map(\.rawValue))
         var keys: Set<String> = []
-        for intake in ((try? journal.activeIntakes()) ?? []) {
+        for intake in try journal.activeIntakes() {
             let revisions = try journal.revisions(of: intake.id)
             guard let current = revisions.first(where: { $0.number == intake.currentRevision }),
                   let snapshotID = current.productSnapshotID,
