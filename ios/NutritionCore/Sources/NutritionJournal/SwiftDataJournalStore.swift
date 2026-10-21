@@ -1110,8 +1110,8 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     private let writeLock = NSLock()
     private var failFlag = false
     private var container: ModelContainer?
-    /// Set when an erase removed the files and could not reopen them. The next call retries the reopen; it does not
-    /// stay closed for good. `close()` clears it, so a closed store stays closed.
+    /// Set when an erase could not finish reopening the store: after a failed checkpoint, or after the files were removed
+    /// and the reopen failed. The next call retries the reopen; it does not stay closed for good. `close()` clears it, so a closed store stays closed.
     private var reopenPending = false
     /// Where `markRestoreInProgress(fileDigest:)` keeps its flag, beside the store file.
     private let restoreMarkerURL: URL
@@ -1797,8 +1797,9 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     /// The rows are fetched and deleted one at a time rather than with the batch delete, which runs
     /// against the persistent store immediately, outside the save and outside the rollback. Fetching
     /// keeps the whole erase inside one commit. A failure before that commit leaves the journal unchanged. A failure
-    /// after it leaves no rows, with the store files still on disk, and the erase reports it as a partial erase so
-    /// Retry removes the files (the #566 partial-erase design).
+    /// after it leaves no rows. If the files were not yet removed they are still on disk; if the reopen failed after
+    /// they were removed, the next call retries the reopen. The erase reports either case as a partial erase, so
+    /// Retry finishes it (the #566 partial-erase design).
     ///
     /// The store file is then deleted and reopened empty, so the store reads empty and accepts new entries
     /// afterwards. The erased rows leave the store when the store file itself is deleted and recreated empty.
@@ -1845,8 +1846,8 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
 
     /// Deletes the store file with its write-ahead and shared-memory files, then opens an empty store at the same
     /// place. On success the write-ahead file is first checkpointed into the store file and emptied, so the store
-    /// file alone holds the erased state. If the checkpoint fails, nothing is removed, the deleted rows are still in
-    /// the write-ahead file on disk, and the error is StoreFileError.checkpointFailed. The erase screen names the
+    /// file alone holds the erased state. If the checkpoint fails, nothing is removed, the deleted rows are not yet
+    /// checkpointed into the store file, and the error is StoreFileError.checkpointFailed. The erase screen names the
     /// journal as still on the phone; a retry removes the files. The companion files go before the main file: once the checkpoint has emptied
     /// the write-ahead file, the shared-memory file is only an index, so removing the companions first leaves a
     /// complete main file if the erase stops partway. The store reopens when it can; if
