@@ -202,7 +202,7 @@ public struct NutrientGapRow: Equatable, Identifiable {
         let rounded = DisplayRounding.rounded(amount, fractionDigits: amount < 1 ? 2 : 1)
         return DisplayAmount(
             amount: rounded, unit: unit, isBelowSmallest: rounded == 0 && amount > 0,
-            groupsWholeAmount: true, smallestAmount: Decimal(string: "0.01", locale: AmountParser.locale)!
+            groupsWholeAmount: false, smallestAmount: Decimal(string: "0.01", locale: AmountParser.locale)!
         ).text
     }
 }
