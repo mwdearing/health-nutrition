@@ -528,6 +528,7 @@ public struct JournalExport: Sendable, Hashable, Codable {
         case savedMeals = "saved_meals"
         case keptOutOfLibrary = "kept_out_of_library"
         case loggedUnits = "logged_units"
+        case goals
     }
 
     public init(

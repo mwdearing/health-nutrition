@@ -776,7 +776,7 @@ public enum JournalImporter {
     private static func restoredGoals(_ items: [JournalExportGoal]) throws -> [NutrientGoal] {
         var seen = Set<String>()
         return try items.map { item in
-            guard !item.nutrient.isEmpty, seen.insert(item.nutrient).inserted else {
+            guard !item.nutrient.isEmpty, item.nutrient.count <= 64, seen.insert(item.nutrient).inserted else {
                 throw JournalImportError.corrupt("the export lists a goal with no name or more than once")
             }
             guard DecimalText.isValidDecimalText(item.target), let target = DecimalText.decode(item.target),
