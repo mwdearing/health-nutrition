@@ -61,6 +61,8 @@ public struct TodayView: View {
                 Text(model.dateSubtitle)
                     .font(.subheadline)
                     .foregroundStyle(TokenColors.textSecondary)
+                    .frame(maxWidth: .infinity)
+                    .multilineTextAlignment(.center)
                 notices
                 if let checklist {
                     FirstDayChecklistCard(
@@ -92,6 +94,7 @@ public struct TodayView: View {
         }
         .background(TokenColors.background)
         .navigationTitle("Today")
+        .navigationBarTitleDisplayMode(.inline)
         .onAppear { model.load(now: now()) }
     }
 

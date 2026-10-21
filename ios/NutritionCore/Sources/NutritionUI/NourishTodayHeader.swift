@@ -109,16 +109,19 @@ public struct NourishTodayHeader: View {
         // The note comes from the calorie model, which builds it from the same missing count as its partial flag.
         let partial = calories.partialNote
         let spoken = Self.spokenSummary(calories, partial: partial, footnote: calories.showsRemaining ? ringFootnote : nil)
-        return VStack(alignment: .leading, spacing: DesignSpacing.s) {
+        return VStack(alignment: .center, spacing: DesignSpacing.s) {
             if let remaining = figures.remaining {
                 Text(remaining)
                     .font(.largeTitle.weight(.semibold))
                     .foregroundStyle(TokenColors.textPrimary)
+                    .accessibilityIdentifier("calorieRemainingFigure")
                 Text("Calories remaining")
                     .font(.subheadline)
                     .foregroundStyle(TokenColors.textSecondary)
+                    .multilineTextAlignment(.center)
                 if let ringFootnote {
                     Text(ringFootnote).font(.footnote).foregroundStyle(TokenColors.textSecondary)
+                        .multilineTextAlignment(.center)
                 }
             }
             HStack(alignment: .top, spacing: DesignSpacing.l) {
@@ -145,6 +148,7 @@ public struct NourishTodayHeader: View {
                 Text(note).font(.footnote).foregroundStyle(TokenColors.textSecondary)
             }
         }
+        .frame(maxWidth: .infinity)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(spoken)
     }
@@ -159,6 +163,7 @@ public struct NourishTodayHeader: View {
                         MacroColumn(
                             label: macro.label, figure: figure(key), fraction: fraction(macro),
                             spoken: macro.accessibilityText, note: partialNote(key))
+                        .frame(maxWidth: .infinity)
                     }
                 }
             }
