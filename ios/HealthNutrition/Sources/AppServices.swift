@@ -300,6 +300,13 @@ final class AppServices {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
     }
 
+    /// The custom-reminder side of a scheduler, when it takes custom reminders. The system scheduler does; a fake may not.
+    static func customReminderScheduling(
+        of scheduler: ReminderScheduling
+    ) -> (ReminderScheduling & CustomReminderScheduling)? {
+        scheduler as? (ReminderScheduling & CustomReminderScheduling)
+    }
+
     /// Opens all four store files in `directory`, creating the directory and the files if needed.
     ///
     /// The directory is a parameter so a test can build a whole app on throwaway files instead of the
@@ -310,13 +317,6 @@ final class AppServices {
     ///   no notification is scheduled on the test device.
     /// - Parameter accountServiceOverride: a synthetic account service for checking the local-session erase
     ///   wiring. Nil in the app, where the account uses the community client.
-    /// The custom-reminder side of a scheduler, when it takes custom reminders. The system scheduler does; a fake may not.
-    static func customReminderScheduling(
-        of scheduler: ReminderScheduling
-    ) -> (ReminderScheduling & CustomReminderScheduling)? {
-        scheduler as? (ReminderScheduling & CustomReminderScheduling)
-    }
-
     static func make(
         directory: URL = defaultDirectory,
         displayPreferences: UserDefaultsDisplayPreferences = UserDefaultsDisplayPreferences(),
