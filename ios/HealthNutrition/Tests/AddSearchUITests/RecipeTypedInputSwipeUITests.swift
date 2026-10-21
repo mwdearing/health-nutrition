@@ -15,6 +15,12 @@ final class RecipeTypedInputSwipeUITests: XCTestCase {
         XCTAssertTrue(library.waitForExistence(timeout: 10), "no Library tab")
         library.tap()
 
+        // "Open recipes" only shows inside the Recipes segment of Library, so select that segment first.
+        let segment = app.segmentedControls.buttons["Recipes"].firstMatch
+        let recipesTab = segment.waitForExistence(timeout: 5) ? segment : app.buttons["Recipes"].firstMatch
+        XCTAssertTrue(recipesTab.waitForExistence(timeout: 10), "Library has no Recipes segment")
+        recipesTab.tap()
+
         let openRecipes = app.buttons["Open recipes"]
         XCTAssertTrue(openRecipes.waitForExistence(timeout: 10), "Library has no Open recipes control")
         openRecipes.tap()
