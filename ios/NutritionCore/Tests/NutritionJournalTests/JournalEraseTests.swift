@@ -202,20 +202,17 @@ final class JournalEraseTests: XCTestCase {
         XCTAssertTrue(try reopened.activeIntakes().isEmpty)
     }
 
-    /// The checkpoint runs after this store releases its container. Another store instance on the same file, still
-    /// open, must not stop the erase from checkpointing and removing the files.
-    /// When the reopen after an erase fails, the erase reports the failure and the store stays closed: later journal
-    /// calls throw JournalError.closed rather than reading a container the erase has already released.
-    func testAFailedReopenReportsTheFailureAndLeavesTheStoreClosed() throws {
+    /// When the reopen after an erase fails, the erase reports the failure. The next call retries the reopen: while it
+    /// still fails that call throws the reopen error, and once it succeeds the store works again.
+    func testAFailedReopenIsRetriedByTheNextCall() throws {
         let directory = try makeDirectory()
         let url = directory.appendingPathComponent("journal.store")
-        let opens = OpenCounter()
+        let reopen = ReopenGate()
         let operations = StoreFileOperations(
             checkpoint: { _ in },
             remove: { try FileManager.default.removeItem(at: $0) },
             openContainer: { url in
-                opens.count += 1
-                if opens.count > 1 { throw CocoaError(.fileWriteNoPermission) }
+                if reopen.fails { throw CocoaError(.fileWriteNoPermission) }
                 return try SwiftDataJournalStore.makeContainer(url: url)
             })
         let store = try SwiftDataJournalStore(
@@ -226,11 +223,35 @@ final class JournalEraseTests: XCTestCase {
             XCTAssertEqual(($0 as? CocoaError)?.code, .fileWriteNoPermission)
         }
         XCTAssertThrowsError(try store.activeIntakes()) {
-            XCTAssertEqual($0 as? JournalError, .closed)
+            XCTAssertEqual(($0 as? CocoaError)?.code, .fileWriteNoPermission)
         }
+        reopen.fails = false
+        XCTAssertTrue(try store.activeIntakes().isEmpty)
         store.close()
     }
 
+    /// The erase's row delete and file removal run in that order inside one hold of the lock.
+    func testTheEraseRunsTheRowsThenTheFilesInsideOneHold() throws {
+        let log = StepLog()
+        try SwiftDataJournalStore.deleteRowsThenFiles(
+            under: RecordingLock(log),
+            deleteRows: { log.entries.append("rows") },
+            removeFiles: { log.entries.append("files") })
+        XCTAssertEqual(log.entries, ["lock", "rows", "files", "unlock"])
+    }
+
+    /// A failed row delete skips the file removal and still releases the lock.
+    func testAFailedRowDeleteSkipsTheFilesAndReleasesTheLock() throws {
+        let log = StepLog()
+        XCTAssertThrowsError(try SwiftDataJournalStore.deleteRowsThenFiles(
+            under: RecordingLock(log),
+            deleteRows: { throw CocoaError(.fileWriteUnknown) },
+            removeFiles: { log.entries.append("files") }))
+        XCTAssertEqual(log.entries, ["lock", "unlock"])
+    }
+
+    /// The checkpoint runs after this store releases its container. Another store instance on the same file, still
+    /// open, must not stop the erase from checkpointing and removing the files.
     func testAnEraseSucceedsWhileAnotherStoreOnTheSameFileIsOpen() throws {
         let directory = try makeDirectory()
         let url = directory.appendingPathComponent("journal.store")
@@ -352,4 +373,31 @@ private final class OpenCounter: @unchecked Sendable {
 /// Records each file the erase tries to remove, in order.
 private final class FileCalls: @unchecked Sendable {
     var removed: [String] = []
+}
+
+/// Lets a test make the store's reopen fail, then succeed, on later calls.
+private final class ReopenGate: @unchecked Sendable {
+    var fails = true
+}
+
+/// Records the order of the steps a test runs, in one place.
+private final class StepLog: @unchecked Sendable {
+    var entries: [String] = []
+}
+
+/// An NSLocking that logs each lock and unlock into a StepLog.
+private final class RecordingLock: NSObject, NSLocking, @unchecked Sendable {
+    private let log: StepLog
+
+    init(_ log: StepLog) {
+        self.log = log
+    }
+
+    func lock() {
+        log.entries.append("lock")
+    }
+
+    func unlock() {
+        log.entries.append("unlock")
+    }
 }
