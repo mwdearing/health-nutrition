@@ -164,7 +164,6 @@ public final class SwiftDataGoalStore: GoalStore, JournalErasing, @unchecked Sen
         try goal.validate()
         // The receipt namespace is the store's own: a goal under it would be hidden from reads and could overwrite a live
         // receipt. The receipt writers insert their rows directly, so they never reach this check.
-        guard !goal.nutrient.hasPrefix(Self.receiptPrefix) else { throw GoalStoreError.unknownNutrient }
         let nutrient = goal.nutrient
         writeLock.lock()
         defer { writeLock.unlock() }
