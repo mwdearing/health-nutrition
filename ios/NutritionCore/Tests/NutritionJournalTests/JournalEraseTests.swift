@@ -121,6 +121,11 @@ final class JournalEraseTests: XCTestCase {
         let beforeDate = try XCTUnwrap(FileManager.default.attributesOfItem(atPath: url.path)[.creationDate] as? Date)
         let beforeNumber = try XCTUnwrap(
             FileManager.default.attributesOfItem(atPath: url.path)[.systemFileNumber] as? UInt64)
+        // A plain read handle on the old file keeps its inode allocated for the whole erase, so the replacement cannot
+        // reuse the number and make the comparison below fail. It is not a SQLite connection: it takes no lock and does
+        // not change what the reopen below reads.
+        let pinned = try FileHandle(forReadingFrom: url)
+        defer { try? pinned.close() }
 
         try store.eraseAll()
 
