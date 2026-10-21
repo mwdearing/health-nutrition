@@ -415,4 +415,30 @@ final class JournalImportSavedMealsTests: JournalImportTestCase {
         XCTAssertEqual(
             savedMeals.meals.first?.items.first?.components.first?.hydrationPercentText, "95")
     }
+
+    /// A resume whose goal read throws, with a saved meal in the file. Reading the goals must fail before the saved
+    /// meals are written, so the restore writes no meal and reports the failure. The old reader treated the failed
+    /// read as pending and wrote the meals first, which is what this test catches.
+    func testAGoalReadThatFailsStopsAResumeBeforeItWritesSavedMeals() throws {
+        let directory = try self.directory()
+        let meals = [JournalSavedMeal(id: "meal-x", name: "Lunch box", meal: nil, items: [template("item-x", name: "Sample apple")])]
+        let encoded = try JournalExporter.encode(try JournalExporter.makeExport(
+            store: try store(directory), savedMeals: MemorySavedMeals(meals), appVersion: appVersion, exportedAt: exportedAt))
+        var root = try fields(encoded)
+        root["goals"] = [["nutrient": "energy", "target": "2000", "unit": "kcal"]]
+        let data = try JSONSerialization.data(withJSONObject: root)
+
+        let journal = try store(directory)
+        try journal.markRestoreInProgress(fileDigest: JournalImporter.fileDigest(data))
+        let goalStore = try SwiftDataGoalStore(url: directory.appendingPathComponent("goals.store"))
+        addTeardownBlock { goalStore.close() }
+        let goals = ScriptedGoalStore(base: goalStore) { _, _ in }
+        goals.failsRead = true
+        let savedMeals = MemorySavedMeals()
+
+        XCTAssertThrowsError(try JournalImporter.importExport(
+            data, into: journal, favorites: nil, savedMeals: savedMeals, goals: goals))
+        XCTAssertTrue(savedMeals.meals.isEmpty, "no saved meal is written before the goal read fails")
+        XCTAssertNil(savedMeals.receipt)
+    }
 }
