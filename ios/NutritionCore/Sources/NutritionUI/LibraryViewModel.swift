@@ -345,8 +345,8 @@ public final class LibraryViewModel: ObservableObject {
                 kinds[snapshotID] = (try? store.product(snapshotID: snapshotID))?.kind ?? .food
             }
             func kind(of template: RepeatTemplate) -> ProductKind {
-                guard let snapshotID = template.productSnapshotID else { return .food }
-                return kinds[snapshotID] ?? .food
+                ProductKindResolution.kind(
+                    snapshotID: template.productSnapshotID, snapshotKind: { kinds[$0] }, category: template.category)
             }
             let favoriteItems = stored.enumerated().map { index, favorite -> LibraryItem in
                 let template = favoriteTemplates[index]

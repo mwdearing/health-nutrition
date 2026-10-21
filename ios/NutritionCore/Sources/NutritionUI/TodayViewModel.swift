@@ -237,9 +237,10 @@ public final class TodayViewModel: ObservableObject {
                 // Read once per entry, and once per snapshot however many components name it: what the
                 // entry is comes from the same snapshot its values come from.
                 let snapshot = Self.snapshot(of: current, in: &snapshots, using: store)
-                // An entry typed by hand has no product to say what it is, so it is the food it was
-                // always recorded as; a snapshot's own kind is what an entry with a product states.
-                let kind = snapshot?.kind ?? .food
+                // An entry with no product snapshot takes its stored category, so a typed supplement is a supplement;
+                // an entry with a snapshot states its kind through that snapshot (#416, #364).
+                let kind = ProductKindResolution.kind(
+                    snapshotID: current?.productSnapshotID, snapshotKind: { _ in snapshot?.kind }, category: intake.category)
                 if intake.category == "water" {
                     waterEntries += 1
                     for component in components {
@@ -268,10 +269,13 @@ public final class TodayViewModel: ObservableObject {
                         // A stored share counts toward the goal bar too, so the bar reads it as a logged amount.
                         countedWater += 1
                     }
-                    if kind != .supplement {
-                        for component in components { foodComponents.append((component, snapshot, kind)) }
+                    // Totals count an entry as it always has (#364): a typed entry in the food total, a snapshot-backed
+                    // supplement on its own. The row's kind above is what the entry is, not how the totals count it.
+                    let countsAs = ProductKindResolution.totalsKind(snapshotKind: snapshot?.kind)
+                    if countsAs != .supplement {
+                        for component in components { foodComponents.append((component, snapshot, countsAs)) }
                     }
-                    foodEntries.append((components, snapshot, kind))
+                    foodEntries.append((components, snapshot, countsAs))
                 }
                 newRows.append(
                     TodayRow(

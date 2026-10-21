@@ -9,7 +9,7 @@ final class JournalDiaryMealsTests: XCTestCase {
 
     private func row(_ id: String, meal: String?) -> JournalRow {
         JournalRow(
-            id: id, title: "Oats", detail: "40 g", occurredAt: when, timeZoneIdentifier: "UTC", meal: meal)
+            id: id, title: "Oats", detail: "40 g", occurredAt: when, timeZoneIdentifier: "UTC", meal: meal, countsAs: .food)
     }
 
     /// A Diary day with no entries lists the four named meals, all empty, and no "Other".
