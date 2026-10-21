@@ -14,7 +14,7 @@ final class TodayCentringTests: XCTestCase {
     /// The on-screen frame (screen coordinates) and label of the first accessibility element with this identifier. SwiftUI
     /// exposes its accessibility tree as NSObject nodes, not as UIViews, so the walk goes through accessibilityElements.
     private func node(_ identifier: String, in object: NSObject) -> NSObject? {
-        if object.accessibilityIdentifier == identifier { return object }
+        if object.value(forKey: "accessibilityIdentifier") as? String == identifier { return object }
         var children: [NSObject] = []
         if let elements = object.accessibilityElements { children += elements.compactMap { $0 as? NSObject } }
         if !object.isAccessibilityElement {
