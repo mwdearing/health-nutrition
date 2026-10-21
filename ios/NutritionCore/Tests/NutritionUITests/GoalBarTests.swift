@@ -47,7 +47,7 @@ final class GoalBarTests: XCTestCase {
         let model = GoalBarModel.make(
             line: line("sodium", .known(Decimal(1150), .mg)), hasEntries: true, missingCount: 0)
         XCTAssertEqual(model.state, .noGoal)
-        XCTAssertEqual(model.valueText, "1150 mg")
+        XCTAssertEqual(model.valueText, "1,150 mg")
         XCTAssertNil(model.fraction)
         XCTAssertEqual(model.accessibilityText, "Sodium, 1150 milligrams")
     }

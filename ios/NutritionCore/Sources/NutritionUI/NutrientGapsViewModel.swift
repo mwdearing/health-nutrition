@@ -196,10 +196,7 @@ public struct NutrientGapRow: Equatable, Identifiable {
     /// An amount for display: one decimal place, two below 1, and "< 0.01" for an amount too small to
     /// show, so a real amount never reads as zero.
     static func figure(_ amount: Decimal, _ unit: MeasureUnit) -> String {
-        let digits = amount < 1 ? 2 : 1
-        let rounded = DisplayRounding.rounded(amount, fractionDigits: digits)
-        if rounded == 0, amount > 0 { return "< 0.01 \(unit.screenSymbol)" }
-        return "\(DecimalFormatting.text(rounded)) \(unit.screenSymbol)"
+        AmountDisplay.nutrient(amount, unit: unit).text
     }
 }
 
