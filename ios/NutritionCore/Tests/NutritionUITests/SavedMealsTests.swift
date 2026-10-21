@@ -263,4 +263,19 @@ final class SavedMealsTests: XCTestCase {
         // Undoing again finds the entries already gone, which is not a failure.
         XCTAssertNoThrow(try logger.undo(result, now: now))
     }
+
+    /// Store-level: a restore whose generation is stale is refused and writes nothing.
+    func testRestoreRefusesAStaleEraseGenerationAndWritesNothing() throws {
+        let defaults = UserDefaults(suiteName: "saved-meals-generation-\(UUID().uuidString)")!
+        let store = UserDefaultsSavedMealStore(defaults: defaults)
+        let book = SavedMealBook(store: store)
+        let kept = SavedMeal(id: "kept-meal", name: "Usual", meal: .breakfast, items: [])
+        try store.update { $0.insert(kept, at: 0) }
+        let stale = store.eraseGeneration
+        try store.eraseAll()
+        XCTAssertThrowsError(try book.restore(kept, at: 0, generation: stale)) { error in
+            XCTAssertEqual(error as? SavedMealError, .erasedSinceRemoval)
+        }
+        XCTAssertTrue(try store.meals().isEmpty)
+    }
 }

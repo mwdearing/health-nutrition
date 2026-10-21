@@ -206,13 +206,15 @@ public final class SavedMealsModel: ObservableObject {
 
     public func remove(_ saved: SavedMeal) {
         // The position comes from the same store write as the removal, so Undo puts the meal back where it was.
+        // The generation is read before the write: an erase during it leaves the Undo refused, never allowed.
+        let generation = book.eraseGeneration
         do {
             let index = try book.remove(id: saved.id)
             load()
             notice = nil
             noticeIsFailure = false
             removalUndo = SavedMealRemoval(meal: saved, index: index, message: "Removed \(saved.name).",
-                generation: book.eraseGeneration)
+                generation: generation)
         } catch let error as SavedMealError {
             finish(failure: error.message)
         } catch {
