@@ -206,7 +206,7 @@ public final class TodayViewModel: ObservableObject {
         let valued = goalBars.filter { !nutrientCardExcluded.contains($0.id) && hasValue($0.id) }
         let withGoal = valued.filter { hasGoal($0.id) }.sorted { rankKey($0.id) < rankKey($1.id) }
         let rest = valued.filter { !hasGoal($0.id) }.sorted { rankKey($0.id) < rankKey($1.id) }
-        return Array((withGoal + rest).prefix(nutrientCardLimit))
+        return withGoal + rest
     }
 
     /// The tracked list: the fallback's own order first, then the goals' other keys alphabetically.
