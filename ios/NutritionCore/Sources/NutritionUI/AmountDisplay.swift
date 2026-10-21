@@ -75,7 +75,7 @@ public struct DisplayAmount: Equatable {
         guard self.groupsWholeAmount else { return DecimalFormatting.text(self.amount) }
         // Up to two decimals, so a rounded 3.5 g keeps its fraction; a whole amount has none to show.
         return self.amount.formatted(
-            .number.locale(Locale(identifier: "en_US")).precision(.fractionLength(0...2)))
+            .number.locale(Locale(identifier: "en_US")).precision(.fractionLength(0)))
     }
 }
 
