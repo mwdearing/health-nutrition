@@ -414,7 +414,6 @@ public enum JournalImporter {
                     try journal.undoRestore(receipt)
                 } catch {
                     // The journal is still there, so the flag stays set and a re-import of this file resumes it.
-                    keepFlag = true
                     throw JournalImportError.partialRestore(
                         retainedIntakes: retainedIntakes, retainedTombstones: retainedTombstones)
                 }
