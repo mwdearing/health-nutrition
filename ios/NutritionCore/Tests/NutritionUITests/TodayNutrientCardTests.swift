@@ -35,17 +35,35 @@ final class TodayNutrientCardTests: XCTestCase {
 
     /// One food with fiber, sodium, potassium and iron stated, so all four have a value today.
     private func logFood(_ store: JournalStore) throws {
+        try logFood(store, nutrients: [
+            "fiber": .known(Decimal(10), .g), "sodium": .known(Decimal(300), .mg),
+            "potassium": .known(Decimal(400), .mg), "iron": .known(Decimal(4), .mg),
+        ])
+    }
+
+    private func logFood(_ store: JournalStore, nutrients: [String: NutrientValue]) throws {
         let snapshot = ProductDefinition(
-            snapshotID: "snapshot-card", productID: "product-card", name: "Card food",
-            labelBasis: "per 100 g", catalogOrigin: "test", catalogVersion: "1",
-            nutrients: [
-                "fiber": .known(Decimal(10), .g), "sodium": .known(Decimal(300), .mg),
-                "potassium": .known(Decimal(400), .mg), "iron": .known(Decimal(4), .mg),
-            ])
+            snapshotID: "snapshot-\(UUID().uuidString)", productID: "product-card", name: "Card food",
+            labelBasis: "per 100 g", catalogOrigin: "test", catalogVersion: "1", nutrients: nutrients)
         try store.create(
             Intake(id: UUID().uuidString.lowercased(), category: "food", occurredAt: cardWhen, timeZoneIdentifier: "UTC"),
             components: [IntakeComponent(componentID: "food", name: "Card food", amount: Decimal(100), unit: .g)],
             product: snapshot, now: cardWhen)
+    }
+
+    /// Logs a food with no product, so none of its nutrients has a value.
+    private func logUnknownFood(_ store: JournalStore) throws {
+        try store.create(
+            Intake(id: UUID().uuidString.lowercased(), category: "food", occurredAt: cardWhen, timeZoneIdentifier: "UTC"),
+            components: [IntakeComponent(componentID: "plain", name: "Plain food", amount: Decimal(100), unit: .g)],
+            product: nil, now: cardWhen)
+    }
+
+    private func cardModel(_ journal: JournalStore, _ goals: GoalStore) -> TodayViewModel {
+        let model = TodayViewModel(
+            store: journal, goals: goals, lookup: CardFacts(), preferences: InMemoryDisplayPreferences())
+        model.load(now: cardWhen)
+        return model
     }
 
     /// The card's rows: every bar except the macros, energy and water, which the header or its own card shows.
@@ -81,5 +99,37 @@ final class TodayNutrientCardTests: XCTestCase {
         model.load(now: cardWhen)
 
         XCTAssertEqual(cardIDs(model), [])
+    }
+
+    /// A known zero is not a value: fiber at 0 g with no goal is not on the card.
+    func testAKnownZeroIsHidden() throws {
+        let journal = try makeJournalStore()
+        let goals = try makeGoalStore()
+        try logFood(journal, nutrients: ["fiber": .known(Decimal(0), .g)])
+
+        XCTAssertEqual(cardIDs(cardModel(journal, goals)), [])
+    }
+
+    /// Two goal nutrients come out in ranking order: calcium before iron.
+    func testTwoGoalNutrientsComeOutInRankingOrder() throws {
+        let journal = try makeJournalStore()
+        let goals = try makeGoalStore()
+        try logFood(journal, nutrients: [
+            "iron": .known(Decimal(4), .mg), "calcium": .known(Decimal(100), .mg),
+        ])
+        try goals.setGoal(NutrientGoal(nutrient: "iron", target: Decimal(18), unit: .mg))
+        try goals.setGoal(NutrientGoal(nutrient: "calcium", target: Decimal(1000), unit: .mg))
+
+        XCTAssertEqual(cardIDs(cardModel(journal, goals)), ["calcium", "iron"])
+    }
+
+    /// A partial day's known sum counts as a value: fiber is known on one food, unknown on a plain one.
+    func testAPartialKnownSumCountsAsAValue() throws {
+        let journal = try makeJournalStore()
+        let goals = try makeGoalStore()
+        try logFood(journal, nutrients: ["fiber": .known(Decimal(10), .g)])
+        try logUnknownFood(journal)
+
+        XCTAssertEqual(cardIDs(cardModel(journal, goals)), ["fiber"])
     }
 }

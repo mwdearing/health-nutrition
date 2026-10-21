@@ -79,6 +79,37 @@ public final class TodayViewModel: ObservableObject {
     /// the calorie ring and the macro columns show from the first day rather than only once a goal is set.
     public static let defaultTrackedNutrients = ["energy", "protein", "carbohydrate", "fat", "fiber", "sodium", "potassium"]
     public static let undoWindow: TimeInterval = JournalUndo.deleteWindow
+    /// The most rows the nutrient card shows.
+    public static let nutrientCardLimit = 3
+    /// The one importance ranking for the nutrient card, most important first. Source key in each comment:
+    /// DGA = Dietary Guidelines for Americans nutrient of public health concern or limit; FDA = Nutrition Facts
+    /// label; Journal = a nutrient the goal list offers; Default = tracked by default; Snapshot = a captured compound.
+    public static let nutrientCardRanking: [String] = [
+        "fiber",           // DGA concern; FDA label; Journal; Default
+        "sodium",          // DGA limit; FDA label; Journal; Default
+        "potassium",       // DGA concern; FDA label; Journal; Default
+        "addedSugars",     // DGA limit; FDA label; Snapshot
+        "saturatedFat",    // DGA limit; FDA label; Snapshot
+        "calcium",         // DGA concern; FDA label; Journal
+        "iron",            // DGA concern; FDA label; Journal
+        "vitaminD",        // DGA concern; FDA label; Snapshot (excluded from goals)
+        "sugars",          // FDA label; Snapshot
+        "cholesterol",     // FDA label; Snapshot
+        "transFat",        // FDA label; Snapshot
+        "magnesium",       // Journal
+        "vitaminC",        // Journal
+        "folate",          // Journal
+        "vitaminB12",      // Journal
+        "zinc",            // Journal
+        "vitaminA",        // Snapshot (excluded from goals)
+        "vitaminE",        // Snapshot (excluded from goals)
+        "vitaminK",        // Journal
+        "phosphorus",      // Journal
+        "thiamin", "riboflavin", "niacin", "vitaminB6", "pantothenicAcid", "biotin",
+        "chloride", "chromium", "copper", "iodine", "manganese", "molybdenum", "selenium", // Journal
+    ]
+    /// Rows the card never shows: energy and the macros have their own place, and water has its own card.
+    static let nutrientCardExcluded: Set<String> = ["energy", "protein", "carbohydrate", "fat", "water"]
     /// Shown when a water amount is zero, negative or not a number.
     public static let waterAmountInvalidMessage = "Enter a water amount above zero."
 
@@ -92,6 +123,9 @@ public final class TodayViewModel: ObservableObject {
     @Published public private(set) var coverage: [CoverageLine] = []
     /// One line per tracked nutrient: what the day has reached, against a target where one is set.
     @Published public private(set) var progress: [NutrientProgressLine] = []
+    /// The Today nutrient card under the macros: value-only, goal nutrients first, then the rest by
+    /// `nutrientCardRanking`, at most `nutrientCardLimit` rows (#817).
+    @Published public private(set) var nutrientCard: [GoalBarModel] = []
     /// One bar per tracked nutrient except water, in tracked order. A nutrient with a goal draws a bar;
     /// one without shows its value alone. Built from `progress` and `coverage`, which stay published.
     @Published public private(set) var goalBars: [GoalBarModel] = []
@@ -156,6 +190,23 @@ public final class TodayViewModel: ObservableObject {
         self.timeZoneIdentifier = timeZoneIdentifier
         self.makeID = makeID
         self.preferences = preferences
+    }
+
+    /// The card rows: a nutrient with a known amount above zero today (a partial day's known sum counts), goal
+    /// nutrients first, then the rest; each group in `nutrientCardRanking` order, uncategorised ones alphabetically
+    /// after; at most `nutrientCardLimit`.
+    static func nutrientCardRows(goalBars: [GoalBarModel], progress: [NutrientProgressLine]) -> [GoalBarModel] {
+        func progressLine(_ id: String) -> NutrientProgressLine? { progress.first { $0.nutrient == id } }
+        func hasValue(_ id: String) -> Bool {
+            guard let line = progressLine(id), case .known(let value, _) = line.shownAmount else { return false }
+            return value > 0
+        }
+        func hasGoal(_ id: String) -> Bool { progressLine(id)?.hasGoal == true }
+        func rankKey(_ id: String) -> (Int, String) { (nutrientCardRanking.firstIndex(of: id) ?? Int.max, id) }
+        let valued = goalBars.filter { !nutrientCardExcluded.contains($0.id) && hasValue($0.id) }
+        let withGoal = valued.filter { hasGoal($0.id) }.sorted { rankKey($0.id) < rankKey($1.id) }
+        let rest = valued.filter { !hasGoal($0.id) }.sorted { rankKey($0.id) < rankKey($1.id) }
+        return Array((withGoal + rest).prefix(nutrientCardLimit))
     }
 
     /// The tracked list: the fallback's own order first, then the goals' other keys alphabetically.
@@ -389,6 +440,7 @@ public final class TodayViewModel: ObservableObject {
                 return GoalBarModel.make(
                     line: line, hasEntries: hasEntries, missingCount: line.missingCount, someKnown: someKnown)
             }
+            nutrientCard = Self.nutrientCardRows(goalBars: goalBars, progress: progress)
             waterBar = progress.first {
                 $0.nutrient == DailyTotalsBuilder.waterKey && $0.hasGoal
                     && !hiddenGoals.contains(DailyTotalsBuilder.waterKey)
