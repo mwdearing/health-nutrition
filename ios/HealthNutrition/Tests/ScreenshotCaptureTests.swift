@@ -48,6 +48,19 @@ final class ScreenshotAccountService: CommunityAccountServicing, @unchecked Send
 final class ScreenshotSavedMealStore: SavedMealStoring, @unchecked Sendable {
     private let lock = NSLock()
     private var stored: [SavedMeal] = []
+    private var epoch: String?
+    // Its own lock: restore reads the epoch from inside update, which already holds `lock`.
+    private let epochLock = NSLock()
+
+    func eraseEpoch() -> String? { epochLock.lock(); defer { epochLock.unlock() }; return epoch }
+
+    func ensureEraseEpoch() -> String {
+        epochLock.lock(); defer { epochLock.unlock() }
+        if let epoch { return epoch }
+        let fresh = UUID().uuidString
+        epoch = fresh
+        return fresh
+    }
 
     func meals() throws -> [SavedMeal] {
         lock.lock(); defer { lock.unlock() }
@@ -72,6 +85,14 @@ final class ScreenshotSupplementStackStore: SupplementStackStoring {
     func save(_ schedules: [String: SupplementSchedule]) throws { stored = schedules }
     func takenMarks() -> [String: SupplementTakenMark] { marks }
     func saveTakenMarks(_ marks: [String: SupplementTakenMark]) throws { self.marks = marks }
+}
+
+/// Health as a fresh install sees it: nothing asked yet, so the checklist offers to connect.
+@MainActor
+private final class NotConnectedHealth: AppleHealthConnecting {
+    func currentAccess() -> AppleHealthAccess { AppleHealthAccess(undetermined: 3, authorized: 0, denied: 0) }
+
+    func connect() async {}
 }
 
 /// Writes a PNG of each screen, in light and dark, for the design system.
@@ -421,7 +442,8 @@ final class ScreenshotCaptureTests: XCTestCase {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let store = try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
         let model = FirstDayChecklistModel(
-            store: store, goals: nil, preferences: InMemoryDisplayPreferences())
+            store: store, goals: nil, preferences: InMemoryDisplayPreferences(),
+            health: AppleHealthConnectionViewModel(connector: NotConnectedHealth()))
         model.load()
         try capture("FirstDayChecklistView") {
             ScrollView {
