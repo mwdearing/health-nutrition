@@ -142,7 +142,7 @@ final class AppServicesEraseTests: XCTestCase {
     /// custom reminders join only with the system scheduler, which the test scheduler does not provide.
     func testTheProductionEraseListWithoutTheSystemSchedulerIsPinned() throws {
         let (services, _) = try makeServices()
-        XCTAssertEqual(productionEraseNames(withCustomReminders: false), [
+        XCTAssertEqual(eraseNamesFromBuilderInputs(withCustomReminders: false), [
             "widget data", "saved meals", "supplements", "reminders",
             "journal", "favorites", "recipes", "goals",
         ])
@@ -157,7 +157,7 @@ final class AppServicesEraseTests: XCTestCase {
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         let services = try AppServices.make(
             directory: directory, reminderScheduler: CustomCapableReminderScheduler())
-        XCTAssertEqual(productionEraseNames(withCustomReminders: true), [
+        XCTAssertEqual(eraseNamesFromBuilderInputs(withCustomReminders: true), [
             "widget data", "saved meals", "supplements", "reminders", "custom reminders",
             "journal", "favorites", "recipes", "goals",
         ])
@@ -172,7 +172,7 @@ final class AppServicesEraseTests: XCTestCase {
 
     /// The erase order, built by the same function production calls, from stores in a temporary directory and fakes
     /// for the reminder centers. The custom eraser joins only when the scheduler takes custom reminders.
-    private func productionEraseNames(withCustomReminders: Bool) -> [String] {
+    private func eraseNamesFromBuilderInputs(withCustomReminders: Bool) -> [String] {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("HealthNutritionTests", isDirectory: true)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -194,6 +194,38 @@ final class AppServicesEraseTests: XCTestCase {
             recipes: try! SwiftDataRecipeStore(url: directory.appendingPathComponent("recipes.store")),
             goals: try! SwiftDataGoalStore(url: directory.appendingPathComponent("goals.store"))))
         return order.map(\.erasureName)
+    }
+
+    /// Each store lands in its own slot: the erase list gets the instance it was given, in the field it was given to.
+    /// Distinct instances per slot, so a label swap in eraseStores is caught by identity.
+    func testEraseStoresKeepsEachStoreInItsOwnSlot() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HealthNutritionTests", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let widgets = SlotNamedEraser("widget data")
+        let savedMeals = SlotNamedEraser("saved meals")
+        let supplements = SlotNamedEraser("supplements")
+        let daily = SlotNamedEraser("reminders")
+        let journal = try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
+        let favorites = try SwiftDataFavoritesStore(url: directory.appendingPathComponent("favorites.store"))
+        let recipes = try SwiftDataRecipeStore(url: directory.appendingPathComponent("recipes.store"))
+        let goals = try SwiftDataGoalStore(url: directory.appendingPathComponent("goals.store"))
+
+        let stores = AppServices.eraseStores(
+            widgets: widgets, savedMeals: savedMeals, supplements: supplements, reminders: [daily],
+            journal: journal, favorites: favorites, recipes: recipes, goals: goals)
+
+        XCTAssertTrue(stores.widgets === widgets)
+        XCTAssertTrue(stores.savedMeals === savedMeals)
+        XCTAssertTrue(stores.supplements === supplements)
+        XCTAssertEqual(stores.reminders.count, 1)
+        XCTAssertTrue(stores.reminders[0] === daily)
+        XCTAssertTrue(stores.journal === journal)
+        XCTAssertTrue(stores.favorites === favorites)
+        XCTAssertTrue(stores.recipes === recipes)
+        XCTAssertTrue(stores.goals === goals)
     }
 
     /// The app supplies its account model to the privacy erase hook. The hook drops the local session
@@ -396,4 +428,15 @@ private actor EraseProductService: CommunityProductServicing {
     func acknowledgeConsent(version: Int, expectedOwnerID: UUID) async throws -> ProductConsentState { throw ProductAPIError.unavailable }
     func searchProducts(query: String, kind: ProductKind?, cursor: String?) async throws -> CommunityProductPage { throw ProductAPIError.unavailable }
     func product(id: UUID) async throws -> CommunityProduct { throw ProductAPIError.unavailable }
+}
+
+/// A store that stands in for one slot, so the test can check identity per slot.
+private final class SlotNamedEraser: JournalErasing, @unchecked Sendable {
+    let erasureName: String
+
+    init(_ name: String) {
+        erasureName = name
+    }
+
+    func eraseAll() throws {}
 }

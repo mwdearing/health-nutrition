@@ -152,7 +152,7 @@ final class AppServices {
         // first so no publish announced before the erase can land after it. The reminder readback is not in this
         // list: it runs after the stores.
         let erasers = ConnectionsPrivacyViewModel.eraseOrder(
-            ConnectionsPrivacyViewModel.EraseStores(
+            Self.eraseStores(
                 widgets: widgetSnapshotEraser, savedMeals: savedMealStore, supplements: supplementSchedules,
                 reminders: reminderErasers, journal: journalStore, favorites: favoritesStore, recipes: recipeStore,
                 goals: goalStore))
@@ -298,6 +298,18 @@ final class AppServices {
     /// and its version. The debug "0" keeps the header well formed before the first build stamp.
     static var appVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
+    }
+
+    /// The erase's stores, one labeled field per slot. Each argument goes to its own slot here, so a test can check
+    /// that every store lands where it was given.
+    static func eraseStores(
+        widgets: JournalErasing, savedMeals: JournalErasing, supplements: JournalErasing,
+        reminders: [JournalErasing], journal: JournalErasing, favorites: JournalErasing, recipes: JournalErasing,
+        goals: JournalErasing
+    ) -> ConnectionsPrivacyViewModel.EraseStores {
+        ConnectionsPrivacyViewModel.EraseStores(
+            widgets: widgets, savedMeals: savedMeals, supplements: supplements, reminders: reminders,
+            journal: journal, favorites: favorites, recipes: recipes, goals: goals)
     }
 
     /// The custom-reminder side of a scheduler, when it takes custom reminders. The system scheduler does; a fake may not.
