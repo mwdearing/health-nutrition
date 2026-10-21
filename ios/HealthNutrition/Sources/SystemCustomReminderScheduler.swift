@@ -5,7 +5,7 @@ import UserNotifications
 /// Local notifications for the custom water and supplement reminders. Requests are named
 /// "custom-reminder-<id>"; the daily log reminder keeps its own identifier and is never touched here.
 extension SystemReminderScheduler: CustomReminderScheduling {
-    private static let customPrefix = "custom-reminder-"
+    private static let customPrefix = ReminderReadback.customPrefix
 
     private static func identifier(for id: UUID) -> String { customPrefix + id.uuidString }
 

@@ -79,7 +79,6 @@ private struct SettingsContent: View {
     @State private var importReadToken: JournalImportReadToken?
     @State private var importReadGate = JournalImportReadGate()
     @State private var importReadTask: Task<Data, Error>?
-    @State private var confirmingErase = false
     private let appleHealth: AppleHealthConnectionViewModel?
     private let now: () -> Date
     private let onShowWelcome: (() -> Void)?
@@ -187,11 +186,15 @@ private struct SettingsContent: View {
                 }
                 if connections.canEraseAll {
                     Button(ConnectionsPrivacyViewModel.eraseButtonTitle, role: .destructive) {
-                        self.confirmingErase = true
+                        self.connections.requestErase()
                     }
                 }
                 if let error = connections.errorMessage {
                     Text(error).font(.footnote).foregroundStyle(TokenColors.error)
+                }
+                if connections.eraseRetryAvailable {
+                    Button("Retry") { self.connections.requestErase() }
+                        .disabled(self.connections.isErasing)
                 }
             } header: {
                 Text("Your data")
@@ -245,11 +248,14 @@ private struct SettingsContent: View {
             if isErasing { self.cancelFileImport() }
         }
         .confirmationDialog(
-            ConnectionsPrivacyViewModel.eraseConfirmationTitle, isPresented: $confirmingErase,
+            ConnectionsPrivacyViewModel.eraseConfirmationTitle,
+            isPresented: Binding(
+                get: { self.connections.eraseConfirmationPending },
+                set: { if !$0 { self.connections.cancelEraseRequest() } }),
             titleVisibility: .visible
         ) {
             Button(ConnectionsPrivacyViewModel.eraseButtonTitle, role: .destructive) {
-                Task { await self.connections.eraseAllData() }
+                Task { _ = await self.connections.confirmErase() }
             }
             Button("Cancel", role: .cancel) {}
         } message: {

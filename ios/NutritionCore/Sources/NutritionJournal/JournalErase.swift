@@ -17,6 +17,9 @@ import Foundation
 /// Erasing never reaches anything outside the device. A store that has already written to another
 /// system removes what it wrote there itself; see `docs/erase-all-data.md`.
 public protocol JournalErasing: AnyObject, Sendable {
+    /// The name the erase screen lists when this store is still on the phone after an erase, such as
+    /// "journal" or "goals". Required, so an eraser cannot be added without a name to report.
+    var erasureName: String { get }
     /// Removes every record this store holds.
     ///
     /// Throws the store's own error for a store that is closed, because a closed store has nothing
