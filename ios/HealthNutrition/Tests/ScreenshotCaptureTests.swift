@@ -85,6 +85,14 @@ final class ScreenshotSupplementStackStore: SupplementStackStoring {
     func saveTakenMarks(_ marks: [String: SupplementTakenMark]) throws { self.marks = marks }
 }
 
+/// Health as a fresh install sees it: nothing asked yet, so the checklist offers to connect.
+@MainActor
+private final class NotConnectedHealth: AppleHealthConnecting {
+    func currentAccess() -> AppleHealthAccess { AppleHealthAccess(undetermined: 3, authorized: 0, denied: 0) }
+
+    func connect() async {}
+}
+
 /// Writes a PNG of each screen, in light and dark, for the design system.
 ///
 /// The screens are the real views on a throwaway store filled with invented entries. The test only
@@ -463,7 +471,8 @@ final class ScreenshotCaptureTests: XCTestCase {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let store = try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
         let model = FirstDayChecklistModel(
-            store: store, goals: nil, preferences: InMemoryDisplayPreferences())
+            store: store, goals: nil, preferences: InMemoryDisplayPreferences(),
+            health: AppleHealthConnectionViewModel(connector: NotConnectedHealth()))
         model.load()
         try capture("FirstDayChecklistView") {
             ScrollView {
