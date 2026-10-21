@@ -304,7 +304,7 @@ public final class RecipeEditorViewModel: ObservableObject {
             if isEdit {
                 // A version that cannot be read is left out of this list but still holds its number,
                 // so the store, not this list, has the last word on which number comes next.
-                latest = (try? store.versions(of: recipeID))?.last?.number ?? 0
+                latest = try store.versions(of: recipeID).last?.number ?? 0
             }
             var version = RecipeVersion(
                 recipeID: recipeID, number: latest + 1, title: trimmedTitle, ingredients: built,

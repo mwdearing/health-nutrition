@@ -237,6 +237,19 @@ final class RecipeEditorViewModelTests: XCTestCase {
         XCTAssertEqual(try store.version(recipeID: "recipe-new", number: 3)?.title, "Oat bake, richer")
     }
 
+    /// A version list that cannot be read must refuse the save, not compute version 1 over a stored history.
+    func testEditRefusesToSaveWhenTheVersionListCannotBeRead() throws {
+        let store = try makeStore()
+        let first = filledModel(store)
+        XCTAssertTrue(first.save(now: when))
+        let v1 = try XCTUnwrap(try store.version(recipeID: "recipe-new", number: 1))
+        let edit = RecipeEditorViewModel(store: FailingVersionListStore(inner: store), editing: v1)
+        edit.title = "Oat bake, richer"
+        XCTAssertFalse(edit.save(now: when))
+        XCTAssertEqual(edit.messages, ["Could not save the recipe."])
+        XCTAssertNil(try store.version(recipeID: "recipe-new", number: 2))
+    }
+
     /// The prompt above the nutrient fields names the unit the values are actually stated in.
     func testBasisSymbolNamesTheExplicitBasisUnit() throws {
         let store = try makeStore()
@@ -322,4 +335,16 @@ final class RecipeEditorViewModelTests: XCTestCase {
         XCTAssertEqual(quantity.value, Decimal(500))
         XCTAssertTrue(model.unitSymbols.contains(quantity.unit.symbol))
     }
+}
+
+/// Delegates everything to a real store except the version list, which always fails to read.
+private final class FailingVersionListStore: RecipeStore, @unchecked Sendable {
+    let inner: RecipeStore
+    init(inner: RecipeStore) { self.inner = inner }
+    func saveNewVersion(_ version: RecipeVersion) throws { try inner.saveNewVersion(version) }
+    func list() throws -> RecipeListResult { try inner.list() }
+    func version(recipeID: String, number: Int) throws -> RecipeVersion? { try inner.version(recipeID: recipeID, number: number) }
+    func versions(of recipeID: String) throws -> [RecipeVersion] { throw CocoaError(.fileReadCorruptFile) }
+    func deleteRecipe(id: String) throws { try inner.deleteRecipe(id: id) }
+    func close() { inner.close() }
 }
