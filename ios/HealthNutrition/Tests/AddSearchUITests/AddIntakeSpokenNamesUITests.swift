@@ -16,6 +16,21 @@ final class AddIntakeSpokenNamesUITests: XCTestCase {
         XCTAssertTrue(unit.exists, "the Unit picker lost its own name")
     }
 
+    /// The barcode field is named "Barcode (optional)" and the Look up button keeps its own name. The app always
+    /// has a barcode lookup, so the field is shown on the typed-in form without any launch setup.
+    func testBarcodeFieldIsNamedBarcodeAndLookUpKeepsItsName() throws {
+        let app = XCUIApplication()
+        app.launch()
+        try openTypedInEntryForm(app)
+
+        let barcode = app.textFields["Barcode (optional)"]
+        XCTAssertTrue(barcode.waitForExistence(timeout: 10), "the barcode field is not named Barcode (optional)")
+        XCTAssertEqual(barcode.label, "Barcode (optional)")
+
+        let lookUp = app.buttons["Look up barcode"]
+        XCTAssertTrue(lookUp.exists, "the Look up button lost its name")
+    }
+
     /// Opens Add and then "Type it in", the path to the form with the amount field.
     private func openTypedInEntryForm(_ app: XCUIApplication) throws {
         let getStarted = app.buttons["Get started"]
