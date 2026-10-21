@@ -150,10 +150,6 @@ final class AppServicesEraseTests: XCTestCase {
     /// A system scheduler that also supports custom reminders adds "custom reminders" to the erase, after the
     /// daily reminders and before the journal, so a custom request is cleared too.
     func testTheBuilderNamesIncludeCustomRemindersWhenTheSchedulerSupportsThem() throws {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("HealthNutritionTests", isDirectory: true)
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         XCTAssertEqual(eraseNamesFromBuilderInputs(withCustomReminders: true), [
             "widget data", "saved meals", "supplements", "reminders", "custom reminders",
             "journal", "favorites", "recipes", "goals",

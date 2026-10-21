@@ -18,14 +18,12 @@ private final class ImportStubStore: JournalStore, JournalTombstoneSource, Journ
 {
     struct Unsupported: Error {}
     var failClearRestoreForTesting = false
-    var failClearRestoreFromCallForTesting: Int?
     var clearRestoreCallsForTesting = 0
     func markRestoreInProgress(fileDigest: String) throws {}
     func restoreInProgressDigest() throws -> String? { nil }
     func clearRestoreInProgress() throws {
         clearRestoreCallsForTesting += 1
         if failClearRestoreForTesting { throw Unsupported() }
-        if let from = failClearRestoreFromCallForTesting, clearRestoreCallsForTesting >= from { throw Unsupported() }
     }
     let erasureName = "journal"
 
