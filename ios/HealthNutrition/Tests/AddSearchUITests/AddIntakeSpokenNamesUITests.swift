@@ -6,6 +6,7 @@ final class AddIntakeSpokenNamesUITests: XCTestCase {
     func testAmountFieldIsNamedAmountAndTheUnitPickerKeepsItsName() throws {
         let app = XCUIApplication()
         app.launch()
+        addTeardownBlock { app.terminate() }
         try openTypedInEntryForm(app)
 
         let amount = app.textFields["Amount"]
@@ -35,6 +36,7 @@ final class AddIntakeSpokenNamesUITests: XCTestCase {
     func testBarcodeFieldIsNamedBarcodeAndLookUpKeepsItsName() throws {
         let app = XCUIApplication()
         app.launch()
+        addTeardownBlock { app.terminate() }
         try openTypedInEntryForm(app)
 
         let barcode = app.textFields["Barcode (optional)"]
