@@ -229,9 +229,11 @@ final class JournalImportGoalsTests: XCTestCase {
             calls += 1
             if calls == 2 { throw JournalImportError.corrupt("stopped") }
         }
+        let restoreJournal = try journal()
         XCTAssertThrowsError(try JournalImporter.importExport(
-            data, into: try journal(), favorites: nil, goals: store))
+            data, into: restoreJournal, favorites: nil, goals: store))
         XCTAssertNotNil(try base.goalRestoreReceipt(digest), "a goal is left, so the receipt still names it")
+        XCTAssertEqual(try restoreJournal.restoreInProgressDigest(), digest, "a leftover receipt keeps the restore flag set so a resume can finish it")
     }
 
     /// A goal the restore set, then the person deleted after every goal was written, is not added back when the same
@@ -350,6 +352,28 @@ final class JournalImportGoalsTests: XCTestCase {
         XCTAssertThrowsError(
             try JournalImporter.importExport(data, into: try journal(), favorites: nil, goals: try goalStore())
         )
+    }
+
+    /// After a rollback that left a goal behind, importing the same file again resumes it: it finishes without an
+    /// error, adds only the goal that is still missing, and does not duplicate the goal that was left.
+    func testAResumeAfterAFailedRollbackFinishesWithoutDuplicates() throws {
+        let base = try goalStore()
+        let data = try goalsExport([protein, energy])
+        var calls = 0
+        let refusing = ScriptedGoalStore(base: base, refusesRemoval: true) { _, _ in
+            calls += 1
+            if calls == 2 { throw JournalImportError.corrupt("stopped") }
+        }
+        let restoreJournal = try journal()
+        XCTAssertThrowsError(try JournalImporter.importExport(data, into: restoreJournal, favorites: nil, goals: refusing))
+
+        let summary = try JournalImporter.importExport(data, into: restoreJournal, favorites: nil, goals: base)
+
+        XCTAssertEqual(summary.goals, 1, "only the goal still missing is added")
+        XCTAssertEqual(try base.goal(for: "protein")?.target, Decimal(60))
+        XCTAssertEqual(try base.goal(for: "energy")?.target, Decimal(2000))
+        XCTAssertEqual(try base.goals().count, 2, "no goal is duplicated")
+        XCTAssertNil(try restoreJournal.restoreInProgressDigest(), "the finished resume clears its flag")
     }
 
     func testAVersion7FileHasNoGoalsAndStillImports() throws {

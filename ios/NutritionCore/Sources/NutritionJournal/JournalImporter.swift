@@ -383,13 +383,16 @@ public enum JournalImporter {
             } catch let secondPhaseFailure {
                 // The journal is undone or reported as partial, so there is no unfinished restore of this file
                 // to finish, and a flag left here could only be misread later.
-                defer { try? progress?.clearRestoreInProgress() }
+                // A removal that failed leaves a goal receipt behind, so the flag stays set for a resume to finish it.
+                var keepFlag = false
+                defer { if !keepFlag { try? progress?.clearRestoreInProgress() } }
                 // The goals this run set go with the journal. A goal that cannot be removed is kept and reported
                 // as a partial restore below, so a retry is never told the device is clean when it is not.
                 // Only the goals this run wrote are removed. A goal this run wrote is removed if its value still matches
                 // what it wrote, even when the person re-set it to that same value after the write. A goal the run did
                 // not write is never removed, whatever its value.
                 let goalsLeft = !undoGoals(recordedGoals.filter { goalKeysSet.contains($0.nutrient) }, in: goalsTarget)
+                keepFlag = goalsLeft
                 // The receipt names any goal that could not be removed, so it stays while one is left.
                 if !goalsLeft { try? goalsTarget?.removeGoalRestoreReceipt(digest) }
                 // The list was empty before this restore, so putting it back is emptying it, but only while it
@@ -410,6 +413,8 @@ public enum JournalImporter {
                 do {
                     try journal.undoRestore(receipt)
                 } catch {
+                    // The journal is still there, so the flag stays set and a re-import of this file resumes it.
+                    keepFlag = true
                     throw JournalImportError.partialRestore(
                         retainedIntakes: retainedIntakes, retainedTombstones: retainedTombstones)
                 }
