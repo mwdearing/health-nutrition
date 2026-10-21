@@ -131,7 +131,7 @@ public struct AddIntakeView: View {
 
             Section {
                 LabeledField(
-                    "Amount", error: model.visibleAmountError, onFocusEnd: { model.fieldDidEnd(.amount) },
+                    "Amount", error: model.visibleAmountError, spokenTitle: true, onFocusEnd: { model.fieldDidEnd(.amount) },
                     onFocusBegin: { model.fieldDidBegin(.amount) }
                 ) { focus in
                     HStack {
