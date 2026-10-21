@@ -356,7 +356,7 @@ public final class GoalsViewModel: ObservableObject {
     static func snapshotDisplayNames(in journal: (any JournalStore)?) throws -> [String: String] {
         guard let journal else { return [:] }
         var names: [String: String] = [:]
-        for intake in try journal.activeIntakes() {
+        for intake in ((try? journal.activeIntakes()) ?? []) {
             let revisions = try journal.revisions(of: intake.id)
             guard let current = revisions.first(where: { $0.number == intake.currentRevision }),
                   let snapshotID = current.productSnapshotID,
