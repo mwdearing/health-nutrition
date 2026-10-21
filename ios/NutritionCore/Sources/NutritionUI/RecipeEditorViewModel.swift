@@ -132,7 +132,10 @@ public final class RecipeEditorViewModel: ObservableObject {
 
     private var fingerprint: String {
         let yieldParts = [yieldKind == .servings ? "servings" : "amount", yieldAmountText, yieldUnitSymbol]
-        let rows = ingredients.flatMap { [$0.name, $0.amountText, $0.unitSymbol, $0.densityText] }
+        let rows = ingredients.flatMap { draft in
+            [draft.name, draft.amountText, draft.unitSymbol, draft.densityText]
+                + draft.nutrientTexts.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }
+        }
         return ([title, notes] + yieldParts + rows).joined(separator: "\u{1F}")
     }
 

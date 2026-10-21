@@ -23,4 +23,11 @@ final class RecipeEditorDirtyTests: XCTestCase {
         model.ingredients[0].name = "Flour"
         XCTAssertTrue(model.hasTypedInput)
     }
+
+    func testTypingOnlyANutrientCountsAsAChange() throws {
+        let model = try makeModel()
+        XCTAssertFalse(model.hasTypedInput)
+        model.ingredients[0].nutrientTexts["protein"] = "12"
+        XCTAssertTrue(model.hasTypedInput)
+    }
 }
