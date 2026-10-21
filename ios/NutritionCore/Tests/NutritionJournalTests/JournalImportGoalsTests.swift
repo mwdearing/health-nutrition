@@ -294,6 +294,28 @@ final class JournalImportGoalsTests: XCTestCase {
         XCTAssertNil(try base.goal(for: "energy"), "a goal the person deleted must not come back")
     }
 
+    /// The receipt records the goals missing when the restore planned its writes. A goal the person sets during the
+    /// restore, to exactly the value the file carries, is not written by the restore, so a rollback must not remove it.
+    /// Fails while rollback removes every recorded goal whose value still matches, written by the restore or not.
+    func testAGoalTheUserSetDuringTheRestoreSurvivesRollback() throws {
+        let base = try goalStore()
+        let sodium = JournalExportGoal(nutrient: "sodium", target: "2300", unit: "mg")
+        let data = try goalsExport([protein, energy, sodium])
+        var calls = 0
+        let store = ScriptedGoalStore(base: base) { _, base in
+            calls += 1
+            if calls == 1 {
+                // The person sets energy to the file's value while the restore writes protein.
+                try base.setGoal(NutrientGoal(nutrient: "energy", target: Decimal(2000), unit: .kcal))
+            } else {
+                throw JournalImportError.corrupt("stopped")
+            }
+        }
+        XCTAssertThrowsError(try JournalImporter.importExport(data, into: try journal(), favorites: nil, goals: store))
+        XCTAssertEqual(try base.goal(for: "energy")?.target, Decimal(2000), "the person's own goal must survive")
+        XCTAssertNil(try base.goal(for: "protein"), "the goal the restore wrote is removed")
+    }
+
     /// Every goal the restore writes is one its receipt names. A check inside the write: this passes today, and it
     /// guards against a later change that writes a goal the receipt does not record.
     func testEveryGoalWrittenIsOneTheReceiptNames() throws {
