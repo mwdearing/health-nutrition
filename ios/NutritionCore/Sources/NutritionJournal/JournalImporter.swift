@@ -301,9 +301,7 @@ public enum JournalImporter {
                 case .some(let done): goalsPending = !done
                 case .none:
                     // A read that fails is a failed resume, not a goal that is missing.
-                    for goal in plan.goals where try goalsTarget.goal(for: goal.nutrient) == nil {
-                        goalsPending = true
-                    }
+                    goalsPending = plan.goals.contains { goal in (try? goalsTarget.goal(for: goal.nutrient)) == nil }
                 }
             }
             guard !(savedMealsWritten && favoritesWritten && !goalsPending) else { throw JournalImportError.notEmpty }
