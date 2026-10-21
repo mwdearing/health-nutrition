@@ -41,9 +41,11 @@ public struct JournalImportSummary: Sendable, Equatable {
     public var savedMeals: Int
     /// Restored entries whose product is kept out of Library > Products.
     public var keptOutOfLibrary: Int
+    /// Goals written, for a nutrient that had no goal on the device. A goal already there is not counted.
+    public var goals: Int
 
     public init(intakes: Int, revisions: Int, tombstones: Int, favorites: Int, products: Int, savedMeals: Int = 0,
-                keptOutOfLibrary: Int = 0) {
+                keptOutOfLibrary: Int = 0, goals: Int = 0) {
         self.intakes = intakes
         self.revisions = revisions
         self.tombstones = tombstones
@@ -51,6 +53,7 @@ public struct JournalImportSummary: Sendable, Equatable {
         self.products = products
         self.savedMeals = savedMeals
         self.keptOutOfLibrary = keptOutOfLibrary
+        self.goals = goals
     }
 }
 
@@ -189,7 +192,7 @@ public enum JournalImporter {
     /// journal is written.
     public static func importExport(
         _ data: Data, into store: JournalStore, favorites: FavoritesStore?,
-        savedMeals: JournalSavedMealsStore? = nil, limits: JournalImportLimits = .default
+        savedMeals: JournalSavedMealsStore? = nil, goals: GoalStore? = nil, limits: JournalImportLimits = .default
     ) throws -> JournalImportSummary {
         try limits.validate(data)
         let document = try readDocument(data)
@@ -221,6 +224,19 @@ public enum JournalImporter {
             }
             savedMealsTarget = savedMeals
         }
+        // The same holds for goals, from version 8.
+        let goalsTarget: GoalStore?
+        if plan.goals.isEmpty {
+            goalsTarget = nil
+        } else {
+            guard let goals else {
+                throw JournalImportError.corrupt(
+                    "the export carries \(plan.goals.count) goals and no goals store was given")
+            }
+            goalsTarget = goals
+        }
+        // The nutrients this run set, so an undo or a retry removes exactly those and no others.
+        var goalKeysSet: [String] = []
 
         // **One import at a time.** The flag below belongs to the run that wrote it, and a second import running
         // alongside could resume over a journal the first is about to undo, or clear a flag the first still
@@ -232,7 +248,7 @@ public enum JournalImporter {
 
         // The second phase is everything written after the journal: the saved meals, then the favorites. The
         // flag below covers it whenever it has anything to write.
-        let hasSecondPhase = favoritesTarget != nil || savedMealsTarget != nil
+        let hasSecondPhase = favoritesTarget != nil || savedMealsTarget != nil || goalsTarget != nil
         let progress = hasSecondPhase ? store as? JournalRestoreProgress : nil
         let digest = fileDigest(data)
         // A file with no entries and no deleted ones writes nothing to the journal, so a stop after its saved meals
@@ -276,13 +292,17 @@ public enum JournalImporter {
             if let favoritesTarget, !favoritesWritten {
                 try favoritesTarget.restore(plan.favorites, receipt: digest)
             }
+            // Goals are add-only, so writing the missing ones again is safe whatever was written before the stop.
+            if let goalsTarget {
+                try addMissingGoals(plan.goals, into: goalsTarget, added: &goalKeysSet)
+            }
             // A flag that outlived a finished resume would let a later import of this file write rows the
             // person deleted since, so a failure to clear it is reported rather than swallowed.
             try progress.clearRestoreInProgress()
             // The flag is gone, so the receipts have nothing left to answer; one left by a stop here is harmless.
             try? favoritesTarget?.removeRestoreReceipt(digest)
             try? savedMealsTarget?.removeSavedMealsRestoreReceipt(digest)
-            return summary(of: plan)
+            return summary(of: plan, goals: goalKeysSet.count)
         }
 
         // Saved meals are restored only into an empty list: merging a file's meals into the phone's would have
@@ -309,6 +329,10 @@ public enum JournalImporter {
         if hasSecondPhase {
             var savedMealsWritten = false
             do {
+                // Goals first, add-only: a goal already on the device is kept, and only what was set is undone.
+                if let goalsTarget {
+                    try addMissingGoals(plan.goals, into: goalsTarget, added: &goalKeysSet)
+                }
                 // Saved meals first: a replace of an empty list can be written again, so a resume after a stop
                 // between the two saves only has the favorites left to write.
                 if let savedMealsTarget {
@@ -320,6 +344,8 @@ public enum JournalImporter {
                 // The journal is undone or reported as partial, so there is no unfinished restore of this file
                 // to finish, and a flag left here could only be misread later.
                 defer { try? progress?.clearRestoreInProgress() }
+                // The goals this run set go with the journal, so a retry starts from an empty device again.
+                for nutrient in goalKeysSet { try? goalsTarget?.removeGoal(nutrient: nutrient) }
                 // The list was empty before this restore, so putting it back is emptying it, but only while it
                 // still holds exactly what this restore wrote: a meal saved meanwhile is not thrown away.
                 var savedMealsLeft = false
@@ -349,7 +375,7 @@ public enum JournalImporter {
             try? favoritesTarget?.removeRestoreReceipt(digest)
             try? savedMealsTarget?.removeSavedMealsRestoreReceipt(digest)
         }
-        return summary(of: plan)
+        return summary(of: plan, goals: goalKeysSet.count)
     }
 
     private static let importLock = NSLock()
@@ -369,7 +395,7 @@ public enum JournalImporter {
         return Set(deleted.map(\.id)) == Set(plan.tombstones.map(\.id)) && deleted.count == plan.tombstones.count
     }
 
-    private static func summary(of plan: JournalRestorePlan) -> JournalImportSummary {
+    private static func summary(of plan: JournalRestorePlan, goals: Int) -> JournalImportSummary {
         JournalImportSummary(
             intakes: plan.entries.count,
             revisions: plan.entries.reduce(0) { $0 + $1.revisions.count },
@@ -379,7 +405,7 @@ public enum JournalImporter {
             savedMeals: plan.savedMeals.count,
             keptOutOfLibrary: plan.entries.reduce(0) { count, entry in
                 count + (plan.keptOutOfLibrary.contains(entry.intake.id) ? 1 : 0)
-            })
+            }, goals: goals)
     }
 
     /// Whether the journal holds any intake, live or deleted.
@@ -741,7 +767,38 @@ public enum JournalImporter {
             products: productsByID.values.sorted { $0.snapshotID < $1.snapshotID }, favorites: favorites,
             savedMeals: try restoredSavedMeals(document.savedMeals, products: productsByID),
             keptOutOfLibrary: document.keptOutOfLibrary,
-            loggedUnits: try restoredLoggedUnits(document.loggedUnits))
+            loggedUnits: try restoredLoggedUnits(document.loggedUnits),
+            goals: try restoredGoals(document.goals))
+    }
+
+    /// The goals a version 8 file carries. A goal the file lists twice, or one with a name, target or unit this
+    /// build cannot read, refuses the whole file.
+    private static func restoredGoals(_ items: [JournalExportGoal]) throws -> [NutrientGoal] {
+        var seen = Set<String>()
+        return try items.map { item in
+            guard !item.nutrient.isEmpty, seen.insert(item.nutrient).inserted else {
+                throw JournalImportError.corrupt("the export lists a goal with no name or more than once")
+            }
+            guard DecimalText.isValidDecimalText(item.target), let target = DecimalText.decode(item.target),
+                  let unit = try? MeasureUnit(symbol: item.unit)
+            else {
+                throw JournalImportError.corrupt("the goal \(item.nutrient) has a target or unit this build cannot read")
+            }
+            let goal = NutrientGoal(nutrient: item.nutrient, target: target, unit: unit)
+            try goal.validate()
+            return goal
+        }
+    }
+
+    /// Writes each goal whose nutrient has no goal on the device yet, and returns the nutrients it set, so an
+    /// undo removes exactly those. A goal already on the device is never replaced.
+    /// `added` is filled as it goes, so a failure part-way leaves the nutrients already set in it for an undo.
+    static func addMissingGoals(_ goals: [NutrientGoal], into store: GoalStore, added: inout [String]) throws {
+        for goal in goals {
+            guard try store.goal(for: goal.nutrient) == nil else { continue }
+            try store.setGoal(goal)
+            added.append(goal.nutrient)
+        }
     }
 
     /// The units a version 6 file carries, refused as a whole when one is not a unit this build knows.
