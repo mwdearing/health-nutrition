@@ -363,4 +363,37 @@ final class JournalImportAtomicityTests: JournalImportTestCase {
         XCTAssertEqual(try journal.deletedIntakes().count, 1)
         XCTAssertEqual(try journal.revisions(of: oatsID).count, 1)
     }
+
+    /// A goal removal refused after a file with entries: the journal keeps its entries, and a re-import of the same file
+    /// finishes with the right counts and no duplicates. Fails when the restore flag is cleared on that rollback, since the
+    /// re-import is then refused as not empty, and the assertion on the re-import is the one that goes red.
+    func testAReimportAfterAGoalLeftBehindFinishesWithTheRightCounts() throws {
+        let directory = try self.directory()
+        let base = try SwiftDataGoalStore(url: directory.appendingPathComponent("goals.store"))
+        addTeardownBlock { base.close() }
+        let encoded = try exportData(favorites: false)
+        var root = try XCTUnwrap(try JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        root["goals"] = [
+            ["nutrient": "protein", "target": "60", "unit": "g"],
+            ["nutrient": "energy", "target": "2000", "unit": "kcal"],
+        ]
+        let data = try JSONSerialization.data(withJSONObject: root)
+        let journal = try store(directory)
+        var calls = 0
+        let refusing = ScriptedGoalStore(base: base, refusesRemoval: true) { _, _ in
+            calls += 1
+            if calls == 2 { throw JournalImportError.corrupt("stopped") }
+        }
+        XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: nil, goals: refusing))
+        XCTAssertFalse(try journal.activeIntakes().isEmpty, "a rollback that keeps a goal keeps the journal's entries")
+
+        var summary: JournalImportSummary?
+        XCTAssertNoThrow(summary = try JournalImporter.importExport(data, into: journal, favorites: nil, goals: base))
+
+        XCTAssertEqual(summary?.goals, 1, "only the goal still missing is added")
+        XCTAssertEqual(try base.goal(for: "energy")?.target, Decimal(2000))
+        XCTAssertEqual(try base.goals().count, 2, "no goal is duplicated")
+        XCTAssertEqual(summary?.intakes, try journal.activeIntakes().count, "no entry is duplicated")
+        XCTAssertNil(try journal.restoreInProgressDigest(), "the finished resume clears its flag")
+    }
 }
