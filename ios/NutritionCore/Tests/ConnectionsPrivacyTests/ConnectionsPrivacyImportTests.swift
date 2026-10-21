@@ -19,11 +19,17 @@ private final class ImportStubStore: JournalStore, JournalTombstoneSource, Journ
     struct Unsupported: Error {}
     var failClearRestoreForTesting = false
     var clearRestoreCallsForTesting = 0
-    func markRestoreInProgress(fileDigest: String) throws {}
-    func restoreInProgressDigest() throws -> String? { nil }
+    /// Off by default, so the other tests see no flag at all. On, the flag is recorded like a real journal keeps it.
+    var recordsRestoreFlag = false
+    private var restoreFlag: String?
+    func markRestoreInProgress(fileDigest: String) throws {
+        if recordsRestoreFlag { restoreFlag = fileDigest }
+    }
+    func restoreInProgressDigest() throws -> String? { recordsRestoreFlag ? restoreFlag : nil }
     func clearRestoreInProgress() throws {
         clearRestoreCallsForTesting += 1
         if failClearRestoreForTesting { throw Unsupported() }
+        if recordsRestoreFlag { restoreFlag = nil }
     }
     let erasureName = "journal"
 
@@ -866,5 +872,30 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         XCTAssertNotEqual(
             ConnectionsPrivacyViewModel.importFailureText(for: .savedMealsNotEmpty),
             ConnectionsPrivacyViewModel.importRolledBackMessage)
+    }
+
+    /// A rollback whose undo fails keeps the restore flag, so a re-import of the same file resumes instead of refusing as
+    /// not empty. Fails when the flag is cleared on a failed undo, since the re-import is then refused.
+    func testAFailedUndoKeepsTheFlagSoAReimportResumes() throws {
+        let journal = ImportStubStore()
+        journal.recordsRestoreFlag = true
+        journal.failUndoForTesting = true
+        let favorites = ImportStubFavorites()
+        favorites.failRestoreForTesting = true
+        let data = try export(includeFavorite: true)
+        let digest = JournalImporter.fileDigest(data)
+
+        XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: favorites)) {
+            guard case JournalImportError.partialRestore = $0 else {
+                return XCTFail("expected partialRestore, got \($0)")
+            }
+        }
+        XCTAssertEqual(try journal.restoreInProgressDigest(), digest, "a failed undo keeps the flag for a resume")
+
+        favorites.failRestoreForTesting = false
+        var summary: JournalImportSummary?
+        XCTAssertNoThrow(summary = try JournalImporter.importExport(data, into: journal, favorites: favorites))
+        XCTAssertEqual(summary?.favorites, 1, "the resume restores the favorite")
+        XCTAssertNil(try journal.restoreInProgressDigest(), "the finished resume clears its flag")
     }
 }
