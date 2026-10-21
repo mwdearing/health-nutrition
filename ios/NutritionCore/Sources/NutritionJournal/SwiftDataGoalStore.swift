@@ -129,7 +129,8 @@ public final class SwiftDataGoalStore: GoalStore, JournalErasing, @unchecked Sen
         let context = ModelContext(try openContainer())
         guard let row = try context.fetch(FetchDescriptor<NutrientGoalRecord>(
             predicate: #Predicate<NutrientGoalRecord> { $0.nutrient == id })).first else { return nil }
-        let entries = try Self.decodeReceipt(row.targetText).goals
+        guard let payload = try? Self.decodeReceipt(row.targetText) else { return nil }
+        let entries = payload.goals
         return try entries.map { entry in
             guard let target = DecimalText.decode(entry.target), let unit = try? MeasureUnit(symbol: entry.unit)
             else { throw JournalImportError.corrupt("the goal restore receipt holds a target this build cannot read") }
