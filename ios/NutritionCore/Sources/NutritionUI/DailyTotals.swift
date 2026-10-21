@@ -192,6 +192,10 @@ public enum DailyTotalsBuilder {
             // Water is dietary water only for a drink. A food can carry a volume component, and
             // that is not a glass of water the person drank, so a non-drink contributes no water.
             guard nutrient == waterKey else { return [] }
+            // waterContributions counts only a positive volume; a volume that is not positive adds no water and
+            // leaves the day's water unknown. Typed add and edit store only amounts above zero (AmountParser.parse),
+            // and Quick add writes a fixed one-serving component. Journal import accepts a zero component amount
+            // (JournalImporter: the guard is amount >= 0), so an imported zero-volume drink reaches this line.
             return waterContributions(entry.components)
         }
         // The other way round: a drink states nothing but its own volume, so it is no evidence
