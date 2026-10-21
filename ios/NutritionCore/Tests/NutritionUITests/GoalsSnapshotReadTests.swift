@@ -103,4 +103,19 @@ final class GoalsSnapshotReadTests: XCTestCase {
         XCTAssertEqual(model.errorMessage, GoalsViewModel.readFailedMessage)
         XCTAssertTrue(model.rows.isEmpty)
     }
+
+    /// Once the journal reads again, a later load shows the list and clears the refusal.
+    func testALaterSuccessfulLoadShowsTheListAgain() throws {
+        let journal = try makeJournal()
+        journal.failsActiveIntakes = true
+        let model = GoalsViewModel(
+            store: InMemoryGoalStore(goals: [NutrientGoal(nutrient: "energy", target: 2000, unit: .kcal)]),
+            journal: journal, preferences: InMemoryDisplayPreferences())
+        model.load()
+        XCTAssertEqual(model.errorMessage, GoalsViewModel.readFailedMessage)
+        journal.failsActiveIntakes = false
+        model.load()
+        XCTAssertNil(model.errorMessage)
+        XCTAssertFalse(model.rows.isEmpty)
+    }
 }
