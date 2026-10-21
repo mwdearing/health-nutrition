@@ -97,7 +97,7 @@ final class ScaledAmountDisplayTests: XCTestCase {
             let energy = GoalBarModel.make(
                 line: line(totals, "energy", goal: 2000, unit: .kcal), hasEntries: true, missingCount: 0,
                 unitSystem: system)
-            XCTAssertEqual(energy.valueText, "10 Calories of 2000 Calories")
+            XCTAssertEqual(energy.valueText, "10 Calories of 2,000 Calories")
         }
     }
 
@@ -117,7 +117,7 @@ final class ScaledAmountDisplayTests: XCTestCase {
         XCTAssertEqual(NourishTodayHeader.figure(for: nil), "—")
         XCTAssertEqual(
             NourishTodayHeader.ringFootnote(for: NutrientGoal(nutrient: "energy", target: 2000, unit: .kcal)),
-            "of 2000 Calories goal")
+            "of 2,000 Calories goal")
     }
 
     // MARK: Journal

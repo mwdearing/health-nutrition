@@ -119,7 +119,7 @@ final class NutrientGapsTests: XCTestCase {
         // 1,500 mcg from a supplement may be folic acid stated as DFE, or methylfolate: not a proven excess.
         let folate = try row("folate", NutrientDayTally(fromSupplements: 1500, known: 1), unit: .mcg)
         XCTAssertEqual(folate.status, .reachedReference)
-        XCTAssertEqual(folate.referenceText, "RDA 400 mcg, upper limit 1000 mcg of folic acid")
+        XCTAssertEqual(folate.referenceText, "RDA 400 mcg, upper limit 1,000 mcg of folic acid")
         XCTAssertEqual(
             folate.detailLines.last,
             "The upper limit counts folic acid only. The app can't tell it from other folate, so it isn't checked.")
@@ -612,7 +612,7 @@ final class NutrientGapsTests: XCTestCase {
             tally: NutrientDayTally(fromFood: 3600, known: 1),
             reference: ReferenceIntakes.intake(for: "phosphorus", group: pregnant))
         XCTAssertEqual(phosphorus.status, .aboveUpperLimit)
-        XCTAssertEqual(phosphorus.referenceText, "RDA 700 mg, upper limit 3500 mg")
+        XCTAssertEqual(phosphorus.referenceText, "RDA 700 mg, upper limit 3,500 mg")
         // 18 mg of iron reaches a woman's RDA but is below pregnancy's 27 mg.
         let iron = NutrientGapRow(
             nutrient: "iron", label: "Iron", unit: .mg, tally: NutrientDayTally(fromFood: 18, known: 1),

@@ -49,7 +49,7 @@ final class GoalBarTests: XCTestCase {
         XCTAssertEqual(model.state, .noGoal)
         XCTAssertEqual(model.valueText, "1,150 mg")
         XCTAssertNil(model.fraction)
-        XCTAssertEqual(model.accessibilityText, "Sodium, 1150 milligrams")
+        XCTAssertEqual(model.accessibilityText, "Sodium, 1,150 milligrams")
     }
 
     func testGoalBarCannotTotalNeverYieldsAFractionAndNamesTheMissingEntries() {
@@ -111,7 +111,7 @@ final class GoalBarTests: XCTestCase {
             line: line("sodium", .known(Decimal(1000), .mg), goal: goal("sodium", Decimal(2), .g)),
             hasEntries: true, missingCount: 0)
         XCTAssertEqual(model.state, .progress)
-        XCTAssertEqual(model.valueText, "1000 mg of 2 g")
+        XCTAssertEqual(model.valueText, "1,000 mg of 2 g")
         XCTAssertEqual(model.fraction, Decimal(string: "0.5"))
     }
 
