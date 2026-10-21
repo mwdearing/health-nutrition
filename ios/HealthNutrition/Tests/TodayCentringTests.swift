@@ -26,7 +26,8 @@ final class TodayCentringTests: XCTestCase {
     }
 
     private func hostedToday() throws -> (UIHostingController<AnyView>, UIView, AppServices) {
-        let services = try makeSeededAppServices()
+        let (services, directory) = try makeSeededAppServices()
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         try services.goalStore.setGoal(NutrientGoal(nutrient: "energy", target: 2357, unit: .kcal))
         try services.goalStore.setGoal(NutrientGoal(nutrient: "carbohydrate", target: 250, unit: .g))
         try services.goalStore.setGoal(NutrientGoal(nutrient: "fat", target: 70, unit: .g))

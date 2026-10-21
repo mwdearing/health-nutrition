@@ -105,7 +105,9 @@ final class ScreenshotCaptureTests: XCTestCase {
 
     /// An app on throwaway files with a day of invented entries and two goals (shared with the layout tests).
     private func makeSeededServices(productService: (any CommunityProductServicing)? = nil) throws -> AppServices {
-        try makeSeededAppServices(productService: productService)
+        let (services, directory) = try makeSeededAppServices(productService: productService)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        return services
     }
 
     /// True when every sampled pixel is the same color, which is what a screen that failed to draw

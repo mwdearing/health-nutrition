@@ -14,11 +14,12 @@ let seededIntakeIDs = [
 ]
 
 /// An app on throwaway files with a day of invented entries and two goals. Shared by the screenshot and the layout tests.
-func makeSeededAppServices(productService: (any CommunityProductServicing)? = nil) throws -> AppServices {
+/// Returns the app and the directory it writes to, so the caller can remove it when its test ends.
+@MainActor
+func makeSeededAppServices(productService: (any CommunityProductServicing)? = nil) throws -> (AppServices, URL) {
     let directory = FileManager.default.temporaryDirectory
         .appendingPathComponent("HealthNutritionScreenshots", isDirectory: true)
         .appendingPathComponent(UUID().uuidString, isDirectory: true)
-    addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
     let services = try AppServices.make(directory: directory, reminderScheduler: RecordingReminderScheduler(), productService: productService)
     let start = Calendar.current.startOfDay(for: Date())
     let zone = TimeZone.current.identifier
@@ -44,5 +45,5 @@ func makeSeededAppServices(productService: (any CommunityProductServicing)? = ni
     }
     try services.goalStore.setGoal(NutrientGoal(nutrient: "protein", target: 90, unit: .g))
     try services.goalStore.setGoal(NutrientGoal(nutrient: "water", target: 2000, unit: .mL))
-    return services
+    return (services, directory)
 }
