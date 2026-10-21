@@ -48,6 +48,17 @@ final class ScreenshotAccountService: CommunityAccountServicing, @unchecked Send
 final class ScreenshotSavedMealStore: SavedMealStoring, @unchecked Sendable {
     private let lock = NSLock()
     private var stored: [SavedMeal] = []
+    private var epoch: String?
+
+    func eraseEpoch() -> String? { lock.lock(); defer { lock.unlock() }; return epoch }
+
+    func ensureEraseEpoch() -> String {
+        lock.lock(); defer { lock.unlock() }
+        if let epoch { return epoch }
+        let fresh = UUID().uuidString
+        epoch = fresh
+        return fresh
+    }
 
     func meals() throws -> [SavedMeal] {
         lock.lock(); defer { lock.unlock() }

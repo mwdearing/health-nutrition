@@ -190,6 +190,25 @@ final class SavedMealsModelTests: XCTestCase {
         XCTAssertTrue(model.noticeIsFailure)
     }
 
+    /// A wipe of the defaults domain leaves no epoch, so an Undo from before the wipe is refused and writes nothing.
+    func testUndoAfterAWipeOfTheDefaultsIsRefused() throws {
+        let suite = "saved-meals-wipe-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+        let journal = try makeJournal()
+        let milk = try addEntry(journal, "Milk", at: now.addingTimeInterval(-60))
+        let store = UserDefaultsSavedMealStore(defaults: defaults)
+        let model = SavedMealsModel(store: store, journal: journal)
+        XCTAssertTrue(model.save(name: "Usual", meal: .breakfast, intakes: [milk]))
+        model.remove(model.meals[0])
+        XCTAssertNotNil(model.removalUndo)
+
+        defaults.removePersistentDomain(forName: suite)
+
+        XCTAssertFalse(model.undoRemove())
+        XCTAssertTrue(try store.meals().isEmpty)
+    }
+
     /// Once the Undo window has passed, the removal stays and Undo has nothing to put back.
     func testExpiredRemovalCannotBeUndone() throws {
         let journal = try makeJournal()

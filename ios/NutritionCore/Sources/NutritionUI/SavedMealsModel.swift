@@ -16,8 +16,8 @@ public struct SavedMealRemoval: Equatable {
     public let meal: SavedMeal
     public let index: Int
     public let message: String
-    /// The erase generation when the meal was removed. An erase since then means the meal is not written back.
-    public let generation: Int
+    /// The erase epoch when the meal was removed. An erase or a wipe since then means the meal is not written back.
+    public let epoch: String
 }
 
 /// The saved meals screens share: the list, saving a Journal meal, logging one and undoing it.
@@ -206,15 +206,15 @@ public final class SavedMealsModel: ObservableObject {
 
     public func remove(_ saved: SavedMeal) {
         // The position comes from the same store write as the removal, so Undo puts the meal back where it was.
-        // The generation is read before the write: an erase during it leaves the Undo refused, never allowed.
-        let generation = book.eraseGeneration
+        // The epoch is read before the write: an erase during it leaves the Undo refused, never allowed.
+        let epoch = book.removalEpoch()
         do {
             let index = try book.remove(id: saved.id)
             load()
             notice = nil
             noticeIsFailure = false
             removalUndo = SavedMealRemoval(meal: saved, index: index, message: "Removed \(saved.name).",
-                generation: generation)
+                epoch: epoch)
         } catch let error as SavedMealError {
             finish(failure: error.message)
         } catch {
@@ -227,7 +227,7 @@ public final class SavedMealsModel: ObservableObject {
     public func undoRemove() -> Bool {
         guard let removal = removalUndo else { return false }
         do {
-            let restored = try book.restore(removal.meal, at: removal.index, generation: removal.generation)
+            let restored = try book.restore(removal.meal, at: removal.index, epoch: removal.epoch)
             removalUndo = nil
             load()
             return restored
