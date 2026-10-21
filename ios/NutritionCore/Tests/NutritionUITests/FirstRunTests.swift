@@ -156,7 +156,6 @@ final class FirstRunTests: XCTestCase {
             model.items.map(\.title),
             ["Log your first food, drink, or supplement", "Set a daily goal", "Choose units", "Connect Apple Health"])
         XCTAssertEqual(model.items.map(\.isDone), [false, false, false, false])
-        XCTAssertEqual(model.items.map(\.isPlaceholder), [false, false, false, false])
         XCTAssertEqual(model.items[2].detail, "Metric")
         XCTAssertTrue(model.isVisible)
 
@@ -239,7 +238,6 @@ final class FirstRunTests: XCTestCase {
         let row = try XCTUnwrap(model.items.first { $0.kind == .connectHealth })
         XCTAssertEqual(row.title, "Connect Apple Health")
         XCTAssertTrue(row.isDone)
-        XCTAssertFalse(row.isPlaceholder)
     }
 
     /// Until Health is connected the step is not done, and tapping it asks Health and then ticks off.

@@ -176,30 +176,6 @@ public struct QuietCapsule: View {
     }
 }
 
-/// The small "Later" chip that marks a placeholder: a feature the product intends and this build does
-/// not have. A row carrying it is disabled; see `laterPlaceholder()`.
-public struct LaterBadge: View {
-    public init() {}
-
-    public var body: some View {
-        Text("Later")
-            .font(.caption)
-            .foregroundStyle(TokenColors.waitingInk)
-            .padding(.horizontal, DesignSpacing.s)
-            .padding(.vertical, DesignSpacing.xs)
-            .background(TokenColors.waitingTint, in: Capsule())
-    }
-}
-
-extension View {
-    /// Makes a row a placeholder: disabled, announced as not available, with no handler behind it.
-    public func laterPlaceholder() -> some View {
-        self
-            .disabled(true)
-            .accessibilityValue("Not available yet")
-    }
-}
-
 /// A product-kind chip on a row. A food carries none, being what a row normally is.
 public struct KindTag: View {
     private let kind: ProductKind
