@@ -203,7 +203,7 @@ public final class TodayViewModel: ObservableObject {
         }
         func hasGoal(_ id: String) -> Bool { progressLine(id)?.hasGoal == true }
         func rankKey(_ id: String) -> (Int, String) { (nutrientCardRanking.firstIndex(of: id) ?? Int.max, id) }
-        let valued = goalBars.filter { !nutrientCardExcluded.contains($0.id) && hasValue($0.id) }
+        let valued = goalBars.filter { !nutrientCardExcluded.contains($0.id) }
         let withGoal = valued.filter { hasGoal($0.id) }.sorted { rankKey($0.id) < rankKey($1.id) }
         let rest = valued.filter { !hasGoal($0.id) }.sorted { rankKey($0.id) < rankKey($1.id) }
         return Array((withGoal + rest).prefix(nutrientCardLimit))
