@@ -4,6 +4,12 @@ import XCTest
 /// form, drags from the left screen edge, and then checks that either the discard question is up or the
 /// form is still on screen with its typed text.
 final class AddTypedInputSwipeUITests: XCTestCase {
+    /// Ends the app after each test so a leftover app cannot carry its typed state into the next run.
+    override func tearDownWithError() throws {
+        XCUIApplication().terminate()
+        try super.tearDownWithError()
+    }
+
     func testEdgeSwipeBackKeepsTypedDetailsOrAsksFirst() throws {
         let app = XCUIApplication()
         app.launch()
