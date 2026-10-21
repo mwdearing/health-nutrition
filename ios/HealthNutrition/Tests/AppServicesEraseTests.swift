@@ -163,8 +163,10 @@ final class AppServicesEraseTests: XCTestCase {
         XCTAssertNil(AppServices.customReminderScheduling(of: RecordingReminderScheduler()))
     }
 
-    /// The erase order, built by the same function production calls, from stores in a temporary directory and fakes
-    /// for the reminder centers. The custom eraser joins only when the scheduler takes custom reminders.
+    /// The erase order from eraseOrder, with stores in a temporary directory and fakes for the reminder centers.
+    /// The helper builds its own EraseStores, so it checks the order, not the wiring in AppServices.make; make's
+    /// mapping is checked by testEraseStoresKeepsEachStoreInItsOwnSlot. The custom eraser joins only when the
+    /// scheduler takes custom reminders.
     private func eraseNamesFromBuilderInputs(withCustomReminders: Bool) -> [String] {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("HealthNutritionTests", isDirectory: true)
