@@ -12,9 +12,10 @@ final class AddIntakeSpokenNamesUITests: XCTestCase {
         XCTAssertTrue(amount.waitForExistence(timeout: 10), "the amount field is not named Amount")
         XCTAssertEqual(amount.label, "Amount")
 
-        // Query the picker itself, not any element that happens to read "Unit": a stray text would pass that.
-        let unitExists = app.popUpButtons["Unit"].exists || app.pickers["Unit"].exists || app.buttons["Unit"].exists
-        XCTAssertTrue(unitExists, "the Unit picker lost its own name")
+        // Any element named Unit that is not plain text. A stray static text with that name would not pass.
+        let unit = app.descendants(matching: .any).matching(NSPredicate(
+            format: "label == %@ AND elementType != %d", "Unit", XCUIElement.ElementType.staticText.rawValue)).firstMatch
+        XCTAssertTrue(unit.exists, "the Unit picker lost its own name")
     }
 
     /// The barcode field is named "Barcode (optional)" and the Look up button keeps its own name. The app always
