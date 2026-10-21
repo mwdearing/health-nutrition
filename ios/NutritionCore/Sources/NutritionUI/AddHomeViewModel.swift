@@ -80,7 +80,9 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
 
     /// A template's amounts as the reader's unit system shows them.
     public func amountSummary(of template: RepeatTemplate) -> String {
-        let kind = template.productSnapshotID.flatMap { try? store.product(snapshotID: $0) }?.kind
+        let kind = ProductKindResolution.kind(
+            snapshotID: template.productSnapshotID, snapshotKind: { (try? store.product(snapshotID: $0))?.kind },
+            category: template.category)
         return AmountText.summary(
             template.components, unitSystem: preferences.unitSystem,
             loggedUnits: kind == .supplement ? template.loggedUnits : [:], isSupplement: kind == .supplement)
@@ -105,7 +107,9 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
         if prefill.components.count > 1 {
             // The current Details form has one amount. Present the whole recorded combination as
             // one serving, spelling out all original amounts rather than silently dropping any.
-            let comboKind = prefill.productSnapshotID.flatMap { try? store.product(snapshotID: $0) }?.kind
+            let comboKind = ProductKindResolution.kind(
+                snapshotID: prefill.productSnapshotID, snapshotKind: { (try? store.product(snapshotID: $0))?.kind },
+                category: prefill.category)
             model.name = prefill.components.map {
                 let loggedUnit = comboKind == .supplement ? prefill.loggedUnits[$0.componentID] : nil
                 return "\($0.name) (\(AmountText.describe($0, unitSystem: preferences.unitSystem, loggedUnit: loggedUnit, isSupplement: comboKind == .supplement)))"
@@ -143,7 +147,9 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
         }
         model.name = prefill.displayName
         model.category = prefill.category
-        let kind = prefill.productSnapshotID.flatMap { try? store.product(snapshotID: $0) }?.kind
+        let kind = ProductKindResolution.kind(
+            snapshotID: prefill.productSnapshotID, snapshotKind: { (try? store.product(snapshotID: $0))?.kind },
+            category: prefill.category)
         // A supplement opens in the unit it was logged in, or, when none was recorded and its amount is stored in
         // milliliters, in the spoon those milliliters can only have been typed in. Other units open as they are.
         var openedIn: MeasureUnit?
