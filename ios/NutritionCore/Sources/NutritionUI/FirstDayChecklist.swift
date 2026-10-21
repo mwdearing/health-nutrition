@@ -68,7 +68,7 @@ public final class FirstDayChecklistModel: ObservableObject {
         ]
         if let health = health {
             health.refresh()
-            if health.state != .unavailable {
+            if true {
                 items.append(FirstDayChecklistItem(
                     kind: .connectHealth, title: "Connect Apple Health", detail: nil,
                     isDone: health.state == .connected && health.actionTitle == nil, isPlaceholder: false))
