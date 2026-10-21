@@ -333,6 +333,27 @@ final class JournalImportGoalsTests: XCTestCase {
         XCTAssertEqual(try base.goal(for: "energy")?.target, Decimal(1500), "an existing goal is never replaced")
     }
 
+    /// A stop after the receipt is recorded and before any goal is written. The person then sets energy, and importing
+    /// the same file again must keep it: resume adds only what is absent at that moment. Fails when the existing-goal
+    /// guard in addMissingGoals is removed, since the file's energy would then overwrite the person's.
+    func testAResumeKeepsAGoalThePersonSetAfterTheStop() throws {
+        let base = try goalStore()
+        let data = try goalsExport([protein, energy])
+        let digest = JournalImporter.fileDigest(data)
+        let journal = try journal()
+        try journal.markRestoreInProgress(fileDigest: digest)
+        try base.recordGoalRestoreReceipt(digest, goals: [
+            NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g),
+            NutrientGoal(nutrient: "energy", target: Decimal(2000), unit: .kcal),
+        ])
+        try base.setGoal(NutrientGoal(nutrient: "energy", target: Decimal(1800), unit: .kcal))
+
+        _ = try JournalImporter.importExport(data, into: journal, favorites: nil, goals: base)
+
+        XCTAssertEqual(try base.goal(for: "energy")?.target, Decimal(1800), "a goal the person set after the stop is kept")
+        XCTAssertEqual(try base.goal(for: "protein")?.target, Decimal(60))
+    }
+
     /// A fresh restore that succeeds leaves no receipt behind. A receipt left after a fresh restore would make the next
     /// import of the same file look like a resume.
     func testAFreshRestoreLeavesNoReceiptBehind() throws {
