@@ -66,10 +66,9 @@ final class TodayNutrientCardTests: XCTestCase {
         return model
     }
 
-    /// The card's rows: every bar except the macros, energy and water, which the header or its own card shows.
+    /// The card's rows, read from the one list the view renders (`nutrientCard`).
     private func cardIDs(_ model: TodayViewModel) -> [String] {
-        let outside: Set<String> = ["energy", "protein", "carbohydrate", "fat", "water"]
-        return model.goalBars.map(\.id).filter { !outside.contains($0) }
+        model.nutrientCard.map(\.id)
     }
 
     /// With a goal, a logged value and two more logged nutrients, the card shows the goal first, then the
