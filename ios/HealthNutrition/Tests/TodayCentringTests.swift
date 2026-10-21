@@ -11,18 +11,32 @@ import XCTest
 /// Food row, and each macro label and figure centred in its own column. Measured on a seeded day with a calorie goal.
 @MainActor
 final class TodayCentringTests: XCTestCase {
-    /// The on-screen view with this identifier, if any, found by walking the hosted view tree.
-    private func element(_ identifier: String, in view: UIView) -> UIView? {
-        if view.accessibilityIdentifier == identifier { return view }
-        for subview in view.subviews {
-            if let found = element(identifier, in: subview) { return found }
+    /// The on-screen frame (screen coordinates) and label of the first accessibility element with this identifier. SwiftUI
+    /// exposes its accessibility tree as NSObject nodes, not as UIViews, so the walk goes through accessibilityElements.
+    private func node(_ identifier: String, in object: NSObject) -> NSObject? {
+        if object.accessibilityIdentifier == identifier { return object }
+        var children: [NSObject] = []
+        if let elements = object.accessibilityElements { children += elements.compactMap { $0 as? NSObject } }
+        if !object.isAccessibilityElement {
+            for index in 0..<max(0, object.accessibilityElementCount()) {
+                if let child = object.accessibilityElement(at: index) as? NSObject { children.append(child) }
+            }
+        }
+        if let view = object as? UIView { children += view.subviews }
+        for child in children {
+            if let found = node(identifier, in: child) { return found }
         }
         return nil
     }
 
-    /// The horizontal centre of a view, in the hosting view's coordinates.
-    private func centreX(_ view: UIView, in host: UIView) -> CGFloat {
-        view.convert(view.bounds, to: host).midX
+    private func frame(of identifier: String, in host: UIView) throws -> CGRect {
+        let found = try XCTUnwrap(node(identifier, in: host), "\(identifier) is on screen")
+        return found.accessibilityFrame
+    }
+
+    /// The horizontal centre of the hosted view, in the same screen coordinates as the accessibility frames.
+    private func screenCentreX(_ host: UIView) -> CGFloat {
+        host.convert(host.bounds, to: nil).midX
     }
 
     private func hostedToday() throws -> (UIHostingController<AnyView>, UIView, AppServices) {
@@ -43,19 +57,19 @@ final class TodayCentringTests: XCTestCase {
 
     func testTheTitleDateAndCalorieBlockAreCentredOnTheScreen() throws {
         let (_, host, _) = try hostedToday()
-        let centre = host.bounds.midX
+        let centre = screenCentreX(host)
         for identifier in [
             "todayHeader", "todayDate", "calorieRemainingFigure", "calorieRemainingLabel", "calorieGoalLine",
             "calorieFoodBurnedRow",
         ] {
-            let view = try XCTUnwrap(element(identifier, in: host), "\(identifier) is on screen")
-            XCTAssertEqual(centreX(view, in: host), centre, accuracy: 1, identifier)
+            let frame = try frame(of: identifier, in: host)
+            XCTAssertEqual(frame.midX, centre, accuracy: 1, identifier)
         }
     }
 
     func testTheGoalLineReadsWithItsThousandsSeparator() throws {
         let (_, host, _) = try hostedToday()
-        let goal = try XCTUnwrap(element("calorieGoalLine", in: host))
+        let goal = try XCTUnwrap(node("calorieGoalLine", in: host))
         XCTAssertEqual(goal.accessibilityLabel, "of 2,357 Calories goal")
     }
 
@@ -63,12 +77,12 @@ final class TodayCentringTests: XCTestCase {
         let (_, host, _) = try hostedToday()
         var widths: [CGFloat] = []
         for nutrient in ["Protein", "Carbohydrate", "Fat"] {
-            let column = try XCTUnwrap(element("macroColumn-\(nutrient)", in: host), "\(nutrient) column is on screen")
-            let label = try XCTUnwrap(element("macroLabel-\(nutrient)", in: host))
-            let figure = try XCTUnwrap(element("macroFigure-\(nutrient)", in: host))
-            XCTAssertEqual(centreX(label, in: host), centreX(column, in: host), accuracy: 1, "\(nutrient) label")
-            XCTAssertEqual(centreX(figure, in: host), centreX(column, in: host), accuracy: 1, "\(nutrient) figure")
-            widths.append(column.convert(column.bounds, to: host).width)
+            let column = try frame(of: "macroColumn-\(nutrient)", in: host)
+            let label = try frame(of: "macroLabel-\(nutrient)", in: host)
+            let figure = try frame(of: "macroFigure-\(nutrient)", in: host)
+            XCTAssertEqual(label.midX, column.midX, accuracy: 1, "\(nutrient) label")
+            XCTAssertEqual(figure.midX, column.midX, accuracy: 1, "\(nutrient) figure")
+            widths.append(column.width)
         }
         let first = try XCTUnwrap(widths.first)
         for width in widths {
