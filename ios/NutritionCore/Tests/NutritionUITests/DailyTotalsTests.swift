@@ -50,6 +50,8 @@ private struct ComponentFacts: NutrientFactsLookup {
 @MainActor
 final class DailyTotalsTests: XCTestCase {
     /// The file the store under test writes to, so the legacy-amount seed can open the same store (#521 item 3).
+    /// The "/" default is never written to: a seed that runs before makeStore sets this would fail to
+    /// open it and throw, so no test relies on the default.
     private var storeURL = URL(fileURLWithPath: "/")
 
     private func makeStore() throws -> SwiftDataJournalStore {
