@@ -227,7 +227,7 @@ final class FirstRunTests: XCTestCase {
         XCTAssertEqual(model.items.last?.isDone, true)
     }
 
-    /// The Health step is done once Health is connected, and is not a placeholder any more.
+    /// The Health step is done once Health is connected and has been asked to read.
     func testConnectHealthStepIsDoneWhenHealthIsConnected() throws {
         let health = HealthConnectorFake(AppleHealthAccess(undetermined: 0, authorized: 3, denied: 0))
         let model = FirstDayChecklistModel(

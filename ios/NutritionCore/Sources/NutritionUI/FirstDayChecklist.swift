@@ -20,8 +20,8 @@ public struct FirstDayChecklistItem: Equatable, Identifiable {
 ///
 /// The three real steps tick off from what is stored: an entry in the journal, a daily goal, and the
 /// units having been looked at. The Health step is the last row, shown when this device has Health.
-/// The card is shown until the three real
-/// steps are done or until the person hides it, and the hiding is stored.
+/// The card is shown until the three real steps are done or until the person hides it, and the hiding
+/// is stored.
 @MainActor
 public final class FirstDayChecklistModel: ObservableObject {
     private let store: JournalStore
