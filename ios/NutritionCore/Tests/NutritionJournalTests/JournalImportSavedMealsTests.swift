@@ -468,4 +468,35 @@ final class JournalImportSavedMealsTests: JournalImportTestCase {
         XCTAssertEqual(try journal.activeIntakes().count, summary?.intakes, "no entry is duplicated")
         XCTAssertNil(try journal.restoreInProgressDigest(), "the finished resume clears its flag")
     }
+    /// A saved-meal undo that fails stops the rollback before the journal and the goals are touched, so the goal
+    /// this restore wrote and the journal it filled stay for the resume, and the flag keeps the resume possible.
+    /// Fails when goals are removed ahead of the saved-meal step, since the goal would then be gone for good.
+    func testAFailedSavedMealUndoLeavesGoalsAndJournalForTheResume() throws {
+        let target = try directory()
+        let journal = try store(target)
+        let savedMeals = MemorySavedMeals()
+        savedMeals.failClear = true
+        var root = try fields(try savedMealsExport())
+        root["goals"] = [["nutrient": "energy", "target": "2000", "unit": "kcal"]]
+        let data = try JSONSerialization.data(withJSONObject: root)
+        let goals = try SwiftDataGoalStore(url: target.appendingPathComponent("goals.store"))
+        addTeardownBlock { goals.close() }
+
+        XCTAssertThrowsError(try JournalImporter.importExport(
+            data, into: journal, favorites: FailingFavorites(), savedMeals: savedMeals, goals: goals)) {
+            XCTAssertEqual($0 as? JournalImportError, .partialRestore(retainedIntakes: 2, retainedTombstones: 1))
+        }
+        XCTAssertEqual(try goals.goal(for: "energy")?.target, 2000, "the goal stays for the resume")
+        XCTAssertFalse(try journal.activeIntakes().isEmpty, "the journal is not undone while a saved meal is left")
+        XCTAssertNotNil(try journal.restoreInProgressDigest(), "the flag is kept for the resume")
+
+        savedMeals.failClear = false
+        var summary: JournalImportSummary?
+        XCTAssertNoThrow(summary = try JournalImporter.importExport(
+            data, into: journal, favorites: try favorites(target), savedMeals: savedMeals, goals: goals))
+        XCTAssertEqual(summary?.savedMeals, 2)
+        XCTAssertEqual(try goals.goal(for: "energy")?.target, 2000, "the resume keeps the goal once")
+        XCTAssertEqual(try journal.activeIntakes().count, summary?.intakes, "no entry is duplicated")
+        XCTAssertNil(try journal.restoreInProgressDigest(), "the finished resume clears its flag")
+    }
 }

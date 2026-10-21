@@ -386,40 +386,35 @@ public enum JournalImporter {
                 // A removal that failed leaves a goal receipt behind, so the flag stays set for a resume to finish it.
                 var keepFlag = false
                 defer { if !keepFlag { try? progress?.clearRestoreInProgress() } }
-                // The goals this run set go with the journal. A goal that cannot be removed is kept and reported
-                // as a partial restore below, so a retry is never told the device is clean when it is not.
-                // Only the goals this run wrote are removed. A goal this run wrote is removed if its value still matches
-                // what it wrote, even when the person re-set it to that same value after the write. A goal the run did
-                // not write is never removed, whatever its value.
-                let goalsLeft = !undoGoals(recordedGoals.filter { goalKeysSet.contains($0.nutrient) }, in: goalsTarget)
-                keepFlag = goalsLeft
-                // The receipt names any goal that could not be removed, so it stays while one is left.
-                if !goalsLeft { try? goalsTarget?.removeGoalRestoreReceipt(digest) }
-                // The list was empty before this restore, so putting it back is emptying it, but only while it
-                // still holds exactly what this restore wrote: a meal saved meanwhile is not thrown away.
+                // Saved meals come back first. A meal the phone keeps stops the rest, and the flag stays set, so a
+                // re-import of this file finishes the job add-only.
                 var savedMealsLeft = false
                 if let savedMealsTarget, savedMealsWritten {
                     do { try savedMealsTarget.clearRestoredSavedMeals(plan.savedMeals) } catch { savedMealsLeft = true }
-                    // The saved meals the undo could not take back keep the journal, so the flag stays set for a resume too.
-                    if savedMealsLeft { keepFlag = true }
                 }
                 let retainedIntakes = receipt.intakes.filter { $0.lifecycle == .active }.count
                 let retainedTombstones = receipt.intakes.filter { $0.lifecycle == .deleted }.count
-                // Saved meals that could not be taken back still name the product snapshots this restore wrote,
-                // which the journal's undo would remove. So the journal stays as well, and the restore is reported
-                // as partial: both are there, and the person can check them before importing again.
-                guard !savedMealsLeft, !goalsLeft else {
-                    throw JournalImportError.partialRestore(
-                        retainedIntakes: retainedIntakes, retainedTombstones: retainedTombstones)
-                }
-                do {
-                    try journal.undoRestore(receipt)
-                } catch {
-                    // The journal is still there, so the flag stays set and a re-import of this file resumes it.
+                if savedMealsLeft {
                     keepFlag = true
                     throw JournalImportError.partialRestore(
                         retainedIntakes: retainedIntakes, retainedTombstones: retainedTombstones)
                 }
+                // The journal is undone next. A failed undo keeps the flag and touches no goal.
+                do {
+                    try journal.undoRestore(receipt)
+                } catch {
+                    keepFlag = true
+                    throw JournalImportError.partialRestore(
+                        retainedIntakes: retainedIntakes, retainedTombstones: retainedTombstones)
+                }
+                // Goals come last, and only the ones this run wrote. A goal that cannot be removed keeps its receipt and the flag.
+                let goalsLeft = !undoGoals(recordedGoals.filter { goalKeysSet.contains($0.nutrient) }, in: goalsTarget)
+                if goalsLeft {
+                    keepFlag = true
+                    throw JournalImportError.partialRestore(
+                        retainedIntakes: retainedIntakes, retainedTombstones: retainedTombstones)
+                }
+                try? goalsTarget?.removeGoalRestoreReceipt(digest)
                 // A saved meal the phone keeps is not a transient failure: a retry meets the same meal, so its own message stays.
                 if case JournalImportError.savedMealsNotEmpty = secondPhaseFailure { throw secondPhaseFailure }
                 // The undo ran and left nothing behind, so the person is told nothing was imported, not that the file was bad.
