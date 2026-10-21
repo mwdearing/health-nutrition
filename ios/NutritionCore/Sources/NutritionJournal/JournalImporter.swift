@@ -866,8 +866,7 @@ public enum JournalImporter {
     /// `added` is filled as it goes, so a failure part-way leaves the nutrients already set in it for an undo.
     static func addMissingGoals(_ goals: [NutrientGoal], into store: GoalStore, added: inout [String]) throws {
         for goal in goals {
-            guard try store.goal(for: goal.nutrient) == nil else { continue }
-            try store.setGoal(goal)
+             try store.setGoal(goal)
             added.append(goal.nutrient)
         }
     }
