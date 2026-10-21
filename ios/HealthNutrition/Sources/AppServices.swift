@@ -156,8 +156,9 @@ final class AppServices {
                 widgets: widgetSnapshotEraser, savedMeals: savedMealStore, supplements: supplementSchedules,
                 dailyReminders: reminderEraser, customReminders: customReminderEraser,
                 journal: journalStore, favorites: favoritesStore, recipes: recipeStore, goals: goalStore))
-        connections = ConnectionsPrivacyViewModel(
-            store: journalStore, favorites: favoritesStore, savedMeals: savedMealStore, appVersion: Self.appVersion,
+        connections = ConnectionsPrivacyViewModel(goals: goalStore,
+            store: journalStore, favorites: favoritesStore, savedMeals: savedMealStore,
+            appVersion: Self.appVersion,
             erasers: erasers,
             preferences: displayPreferences,
             beforeErase: {

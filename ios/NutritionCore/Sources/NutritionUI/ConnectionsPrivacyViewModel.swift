@@ -281,6 +281,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     private let favorites: FavoritesStore?
     /// Where an export reads saved meals and an import writes them; nil leaves them out of both.
     private let savedMeals: JournalSavedMealsStore?
+    /// Where an export reads goals and an import writes them. Required, so no caller can leave them out silently.
+    private let goals: GoalStore
     private let appVersion: String
     private let writer: ConnectionsPrivacyExportWriter
     private let remover: ConnectionsPrivacyExportRemover
@@ -344,6 +346,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     ///   is the default, so a host that does not persist anything still gets a working screen and a
     ///   test needs no defaults domain.
     public init(
+        goals: GoalStore,
         store: JournalStore, favorites: FavoritesStore? = nil, savedMeals: JournalSavedMealsStore? = nil,
         appVersion: String = ConnectionsPrivacyViewModel.defaultAppVersion,
         writer: @escaping ConnectionsPrivacyExportWriter = ConnectionsPrivacyViewModel.writeExport,
@@ -361,6 +364,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         self.store = store
         self.favorites = favorites
         self.savedMeals = savedMeals
+        self.goals = goals
         self.appVersion = appVersion
         self.writer = writer
         self.erasers = erasers
@@ -567,7 +571,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         exportRevision += 1
         do {
             let document = try JournalExporter.makeExport(
-                store: store, favorites: favorites, savedMeals: savedMeals, appVersion: appVersion, exportedAt: now)
+                store: store, favorites: favorites, savedMeals: savedMeals, goals: goals, appVersion: appVersion,
+                exportedAt: now)
             let data = try JournalExporter.encode(document)
             let name = JournalExporter.fileName(exportedAt: now)
             let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
@@ -893,7 +898,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             defer { gate.end() }
             do {
                 return .imported(
-                    try JournalImporter.importExport(data, into: store, favorites: favorites, savedMeals: savedMeals))
+                    try JournalImporter.importExport(
+                        data, into: store, favorites: favorites, savedMeals: savedMeals, goals: goals))
             } catch let error as JournalImportError {
                 return .failed(.refused(error))
             } catch {

@@ -175,7 +175,7 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
 
     func testASuccessfulImportPublishesTheSummaryAndRestoresTheJournal() async throws {
         let journal = ImportStubStore()
-        let model = ConnectionsPrivacyViewModel(store: journal, favorites: ImportStubFavorites())
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(), store: journal, favorites: ImportStubFavorites())
         await importAndSettle(model, data: try export())
 
         XCTAssertEqual(model.importState, .imported)
@@ -193,7 +193,7 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         let journal = ImportStubStore()
         // An entry that is not from the file, so the store refuses the restore and the importer says why.
         journal.intakes = [Intake(id: entryID, category: "food", occurredAt: now, timeZoneIdentifier: "UTC")]
-        let model = ConnectionsPrivacyViewModel(store: journal, favorites: ImportStubFavorites())
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(), store: journal, favorites: ImportStubFavorites())
         await importAndSettle(model, data: try export())
 
         XCTAssertEqual(model.importState, .failed)
@@ -209,7 +209,7 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         let favorites = ImportStubFavorites()
         favorites.failRestoreForTesting = true
         var removed: [URL] = []
-        let model = ConnectionsPrivacyViewModel(
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(),
             store: journal, favorites: favorites, writer: { _, _, _ in },
             remover: { removed.append($0) })
         XCTAssertTrue(model.export(now: now))
@@ -238,7 +238,7 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         favorites.failRestoreForTesting = true
         var removed: [URL] = []
         let removalObserved = DispatchSemaphore(value: 0)
-        let model = ConnectionsPrivacyViewModel(
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(),
             store: journal, favorites: favorites, writer: { _, _, _ in },
             remover: { url in
                 removed.append(url)
@@ -280,7 +280,7 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         journal.pauseAfterRestoreForTesting = true
         var removed: [URL] = []
         let removalObserved = DispatchSemaphore(value: 0)
-        let model = ConnectionsPrivacyViewModel(
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(),
             store: journal, favorites: ImportStubFavorites(), writer: { _, _, _ in },
             remover: { url in
                 removed.append(url)
@@ -315,7 +315,7 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         journal.failUndoForTesting = true
         let favorites = ImportStubFavorites()
         favorites.failRestoreForTesting = true
-        let model = ConnectionsPrivacyViewModel(store: journal, favorites: favorites)
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(), store: journal, favorites: favorites)
 
         await importAndSettle(model, data: try export(includeFavorite: true))
         XCTAssertEqual(model.incompleteRestoreWarning, ConnectionsPrivacyViewModel.partialRestoreWarningMessage)
@@ -342,7 +342,7 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         let favorites = ImportStubFavorites()
         favorites.failRestoreForTesting = true
         var removed: [URL] = []
-        let model = ConnectionsPrivacyViewModel(
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(),
             store: journal, favorites: favorites, writer: { _, _, _ in },
             remover: { removed.append($0) })
         XCTAssertTrue(model.export(now: now))
@@ -361,7 +361,7 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
     func testASuccessfulImportRemovesTheStaleExportThisScreenWasHolding() async throws {
         var written: [URL] = []
         var removed: [URL] = []
-        let model = ConnectionsPrivacyViewModel(
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(),
             store: ImportStubStore(), favorites: ImportStubFavorites(),
             writer: { _, url, _ in written.append(url) },
             erasers: [],
@@ -388,7 +388,7 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         let journal = ImportStubStore()
         journal.pauseAfterRestoreForTesting = true
         var written: [URL] = []
-        let model = ConnectionsPrivacyViewModel(
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(),
             store: journal, favorites: ImportStubFavorites(),
             writer: { _, url, _ in written.append(url) },
             remover: { _ in })
@@ -419,7 +419,7 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         let journal = ImportStubStore()
         journal.pauseBeforeRestoreForTesting = true
         var written: [URL] = []
-        let model = ConnectionsPrivacyViewModel(
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(),
             store: journal, favorites: ImportStubFavorites(),
             writer: { _, url, _ in written.append(url) }, remover: { _ in })
 
@@ -444,7 +444,7 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         let journal = ImportStubStore()
         journal.pauseAfterRestoreForTesting = true
         var written: [URL] = []
-        let model = ConnectionsPrivacyViewModel(
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(),
             store: journal, favorites: ImportStubFavorites(),
             writer: { _, url, _ in written.append(url) }, remover: { _ in })
 
@@ -471,7 +471,7 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
     }
 
     func testAFileThatCannotBeReadIsAFailureRatherThanACancellation() {
-        let model = ConnectionsPrivacyViewModel(store: ImportStubStore(), favorites: ImportStubFavorites())
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(), store: ImportStubStore(), favorites: ImportStubFavorites())
         model.importCouldNotReadFile()
 
         XCTAssertEqual(model.importState, .failed)
@@ -488,7 +488,7 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
     func testAnOversizedSelectedFileIsRefusedWithoutChangingEitherStore() throws {
         let journal = ImportStubStore()
         let favorites = ImportStubFavorites()
-        let model = ConnectionsPrivacyViewModel(store: journal, favorites: favorites)
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(), store: journal, favorites: favorites)
 
         model.importFileTooLarge()
 
@@ -533,7 +533,7 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         // everything" that a restore then undoes is the failure this guards: the erase waits for the restore
         // it found in flight, so the journal it empties is the one the import wrote.
         let (journal, favoritesStore) = try diskStores()
-        let model = ConnectionsPrivacyViewModel(
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(),
             store: journal, favorites: favoritesStore, erasers: [journal, favoritesStore], remover: { _ in })
         model.importJournal(data: try export())
 
@@ -556,7 +556,7 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         journal.pauseAfterRestoreForTesting = true
         let favorites = ImportStubFavorites()
         favorites.failRestoreForTesting = true
-        let model = ConnectionsPrivacyViewModel(
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(),
             store: journal, favorites: favorites, erasers: [journal, favorites])
 
         model.importJournal(data: try export(includeFavorite: true))
@@ -589,7 +589,7 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         let journal = ImportStubStore()
         journal.pauseBeforeRestoreForTesting = true
         let gate = ImportGate()
-        let model = ConnectionsPrivacyViewModel(
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(),
             store: journal, erasers: [journal], importWaitSeconds: 0.05, importGate: gate)
 
         model.importJournal(data: try export(includeFavorite: false))
@@ -623,7 +623,7 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         let journal = ImportStubStore()
         journal.pauseBeforeRestoreForTesting = true
         let gate = ImportGate()
-        let model = ConnectionsPrivacyViewModel(store: journal, erasers: [journal], importGate: gate)
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(), store: journal, erasers: [journal], importGate: gate)
 
         model.importJournal(data: try export(includeFavorite: false))
         let restorePaused = await waitForSignal(journal.restorePausedBeforeWriteForTesting)
@@ -651,7 +651,7 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         journal.pauseAfterRestoreForTesting = true
         let favorites = ImportStubFavorites()
         favorites.failRestoreForTesting = true
-        let model = ConnectionsPrivacyViewModel(
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(),
             store: journal, favorites: favorites, erasers: [journal, favorites],
             eraseLocalAccount: {
                 // Keep the erase suspended long enough for the import's main-actor completion to arrive.
@@ -685,7 +685,7 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         journal.pauseAfterRestoreForTesting = true
         let favorites = ImportStubFavorites()
         favorites.failRestoreForTesting = true
-        let model = ConnectionsPrivacyViewModel(
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(),
             store: journal, favorites: favorites,
             erasers: [journal, favorites, FailingAncillaryEraser()],
             eraseLocalAccount: {
@@ -717,7 +717,7 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         journal.failUndoForTesting = true
         let favorites = ImportStubFavorites()
         favorites.failRestoreForTesting = true
-        let model = ConnectionsPrivacyViewModel(
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(),
             store: journal, favorites: favorites, erasers: [journal, favorites])
 
         await importAndSettle(model, data: try export(includeFavorite: true))
@@ -735,7 +735,7 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         journal.failUndoForTesting = true
         let favorites = ImportStubFavorites()
         favorites.failRestoreForTesting = true
-        let model = ConnectionsPrivacyViewModel(
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(),
             store: journal, favorites: favorites, erasers: [journal, favorites])
 
         await importAndSettle(model, data: try export(includeFavorite: true))
@@ -751,7 +751,7 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
     func testAnImportStartedWhileAnEraseRunsIsRefused() async throws {
         let (journal, favoritesStore) = try diskStores()
         let eraser = EraserThatStartsAnImport()
-        let model = ConnectionsPrivacyViewModel(
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(),
             store: journal, favorites: favoritesStore, erasers: [eraser, journal, favoritesStore],
             remover: { _ in })
         eraser.model = model
@@ -803,5 +803,24 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
             try? await Task.sleep(nanoseconds: 1_000_000)
         }
         XCTAssertFalse(model.isImporting, "the import never published an outcome")
+    }
+
+    /// The picker path: a version 8 file that carries a goal is restored into the injected goal store. Fails when the
+    /// view model's import call drops the goals argument, since the file is then refused and no goal is written.
+    func testThePickerRestoresAGoalFromAVersionEightFile() async throws {
+        var root = try XCTUnwrap(try JSONSerialization.jsonObject(with: try export()) as? [String: Any])
+        root["goals"] = [["nutrient": "energy", "target": "2000", "unit": "kcal"]]
+        let data = try JSONSerialization.data(withJSONObject: root)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let goals = try SwiftDataGoalStore(url: directory.appendingPathComponent("goals.store"))
+        addTeardownBlock { goals.close() }
+        let model = ConnectionsPrivacyViewModel(goals: goals, store: ImportStubStore())
+
+        await importAndSettle(model, data: data)
+
+        XCTAssertEqual(model.importState, .imported)
+        XCTAssertEqual(try goals.goal(for: "energy")?.target, Decimal(2000))
     }
 }
