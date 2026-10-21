@@ -856,4 +856,15 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
             ConnectionsPrivacyViewModel.importSummaryText(summary, locale: Locale(identifier: "en_US")),
             "Imported 1,234 entries, 1,000 goals.")
     }
+
+    /// A saved meal the phone keeps shows its own message, the one that says why, not the generic one. The engine test
+    /// pins the exact error case, and this pins the text that case shows.
+    func testASavedMealsRefusalShowsItsOwnMessage() {
+        XCTAssertEqual(
+            ConnectionsPrivacyViewModel.importFailureText(for: .savedMealsNotEmpty),
+            "This phone already has saved meals. An import that includes saved meals only works when there are none.")
+        XCTAssertNotEqual(
+            ConnectionsPrivacyViewModel.importFailureText(for: .savedMealsNotEmpty),
+            ConnectionsPrivacyViewModel.importRolledBackMessage)
+    }
 }
