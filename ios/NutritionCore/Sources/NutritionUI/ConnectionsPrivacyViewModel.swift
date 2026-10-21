@@ -892,6 +892,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         // a task body that needs the main actor in order to start would never get to run: the erase would
         // wait on a signal nothing was ever going to send. A detached task needs no actor to begin, and its
         // `defer` opens the gate from a background thread as soon as the store writes are done.
+        let goals = self.goals
         let restore = Task.detached(priority: .userInitiated) { () -> ImportOutcome in
             // The gate is opened from the background, and not from the task below: the erase waits on it from
             // the main actor, so it has to be signalled by the work it is waiting for.
