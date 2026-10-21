@@ -314,6 +314,23 @@ final class JournalImportGoalsTests: XCTestCase {
         XCTAssertEqual(try base.goal(for: "protein")?.target, Decimal(60))
     }
 
+    /// setGoal refuses a key in the receipt namespace and writes nothing: the goals and the receipt are unchanged.
+    /// Fails when the prefix guard in setGoal is removed, since the receipt row would then be overwritten.
+    func testSetGoalRefusesAReceiptKeyAndWritesNothing() throws {
+        let goals = try goalStore()
+        try goals.recordGoalRestoreReceipt("digest-a", goals: [NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g)])
+        let before = try goals.goals()
+        XCTAssertThrowsError(
+            try goals.setGoal(NutrientGoal(nutrient: "restore-receipt:digest-a", target: Decimal(1), unit: .g))
+        ) { error in
+            XCTAssertEqual(error as? GoalStoreError, .unknownNutrient)
+        }
+        XCTAssertEqual(try goals.goals(), before, "a refused write changes no goal")
+        XCTAssertEqual(
+            try goals.goalRestoreReceipt("digest-a")?.map(\.nutrient), ["protein"], "the receipt is unchanged"
+        )
+    }
+
     /// A fresh restore that succeeds leaves no receipt behind. A receipt left after a fresh restore would make the next
     /// import of the same file look like a resume.
     func testAFreshRestoreLeavesNoReceiptBehind() throws {
