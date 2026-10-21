@@ -12,8 +12,9 @@ final class AddIntakeSpokenNamesUITests: XCTestCase {
         XCTAssertTrue(amount.waitForExistence(timeout: 10), "the amount field is not named Amount")
         XCTAssertEqual(amount.label, "Amount")
 
-        let unit = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Unit")).firstMatch
-        XCTAssertTrue(unit.exists, "the Unit picker lost its own name")
+        // Query the picker itself, not any element that happens to read "Unit": a stray text would pass that.
+        let unitExists = app.popUpButtons["Unit"].exists || app.pickers["Unit"].exists || app.buttons["Unit"].exists
+        XCTAssertTrue(unitExists, "the Unit picker lost its own name")
     }
 
     /// The barcode field is named "Barcode (optional)" and the Look up button keeps its own name. The app always
