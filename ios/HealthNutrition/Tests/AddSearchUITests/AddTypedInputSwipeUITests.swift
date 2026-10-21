@@ -24,8 +24,10 @@ final class AddTypedInputSwipeUITests: XCTestCase {
         XCTAssertTrue(typeIt.waitForExistence(timeout: 10), "the Type it in tile is not on Add")
         typeIt.tap()
 
+        // Wait for the details screen itself before looking for its field, so a slow push is not read as a missing field.
+        XCTAssertTrue(app.navigationBars["Log entry"].waitForExistence(timeout: 20), "the details screen did not open")
         let name = app.textFields.firstMatch
-        XCTAssertTrue(name.waitForExistence(timeout: 10), "the details form has no name field")
+        XCTAssertTrue(name.waitForExistence(timeout: 20), "the details form has no name field")
         name.tap()
         name.typeText("Oat")
 
