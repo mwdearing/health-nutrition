@@ -59,14 +59,14 @@ public final class ImportGate: @unchecked Sendable {
     private var inFlight = 0
 
     /// Marks a restore as started.
-    public func begin() {
+    func begin() {
         condition.lock()
         inFlight += 1
         condition.unlock()
     }
 
     /// Marks a restore as finished, and wakes anything waiting once the last one is gone.
-    public func end() {
+    func end() {
         condition.lock()
         if inFlight > 0 { inFlight -= 1 }
         if inFlight == 0 { condition.broadcast() }
@@ -76,7 +76,7 @@ public final class ImportGate: @unchecked Sendable {
     /// Blocks the caller until **every** restore in flight has finished. True when there was nothing running,
     /// or when they all finished in time; false when one was still running after `timeout`, which is the
     /// caller's cue to refuse rather than erase beside a restore that is still writing.
-    public func wait(upTo timeout: TimeInterval) -> Bool {
+    func wait(upTo timeout: TimeInterval) -> Bool {
         let deadline = Date(timeIntervalSinceNow: timeout)
         condition.lock()
         defer { condition.unlock() }

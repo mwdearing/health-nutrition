@@ -166,8 +166,9 @@ final class AppServicesEraseTests: XCTestCase {
     /// The erase order from eraseOrder, with stores in a temporary directory and fakes for the reminder centers.
     /// The helper builds its own EraseStores, so it checks the order, not the wiring in AppServices.make. The
     /// function make's wiring goes through, eraseStores, is checked by testEraseStoresKeepsEachStoreInItsOwnSlot; make's
-    /// call site itself is checked only by its labels and the distinct parameter types. The custom eraser joins only
-    /// when the scheduler takes custom reminders.
+    /// call site itself is checked only by its labels and the distinct parameter types. The withCustomReminders flag
+    /// stands in for the decision in make; testTheCustomReminderDecisionTakesTheCustomSideOnlyWhereTheSchedulerSupportsIt
+    /// checks that decision.
     private func eraseNamesFromBuilderInputs(withCustomReminders: Bool) -> [String] {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("HealthNutritionTests", isDirectory: true)
