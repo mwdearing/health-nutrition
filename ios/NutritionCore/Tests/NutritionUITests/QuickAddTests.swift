@@ -367,4 +367,13 @@ final class QuickAddTests: XCTestCase {
         XCTAssertEqual(model.saveError, "Could not save the entry.")
         XCTAssertEqual(try store.activeIntakes().count, 0)
     }
+
+    /// #536: a typed zero is not an amount, so the reason line shows and nothing can be logged.
+    func testATypedZeroShowsTheReasonLineAndCannotLog() throws {
+        let store = try makeStore()
+        let model = makeModel(store)
+        model.caloriesText = "0"
+        XCTAssertTrue(model.hasNoAmountTyped, "a typed zero shows the reason line")
+        XCTAssertFalse(model.canSave, "a typed zero cannot log")
+    }
 }

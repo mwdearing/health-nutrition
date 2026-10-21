@@ -153,6 +153,13 @@ public final class GoalsViewModel: ObservableObject {
     /// no longer describes the goals (the three gram goals are not its output for the stored energy
     /// goal) is not reported, so the screen never says goals follow when they would not.
     @Published public private(set) var followedMacroSplit: MacroSplit?
+    /// True when the stored goals could not be read, so `followedMacroSplit` is unknown rather than unset.
+    @Published public private(set) var followReadFailed = false
+    /// The line under the macro split: what the goals follow, or the setup copy. Nil when the goals read failed,
+    /// so the setup copy never reads as "no split set" on a failed read.
+    public var followCopy: String? {
+        followReadFailed ? nil : MacroSplitCopy.followText(followedMacroSplit)
+    }
 
     public let footerText = "A goal is a number you set. The app compares your day against it and gives no advice or rating."
 
@@ -311,9 +318,11 @@ public final class GoalsViewModel: ObservableObject {
             self.loadedUnitSystem = self.preferences.unitSystem
             errorMessage = nil
             // From the goals just read, so a load costs no further store reads for it.
+            followReadFailed = false
             followedMacroSplit = Self.followedSplit(macroSplitPreferences?.macroSplit, in: byNutrient)
         } catch {
             rows = []
+            followReadFailed = true
             followedMacroSplit = nil
             errorMessage = Self.readFailedMessage
         }
@@ -480,12 +489,43 @@ public final class GoalsViewModel: ObservableObject {
     public static let clearedMessage = "Goal removed"
 
     @Published public private(set) var clearedGoal: ClearedGoal?
+    /// When the Undo for the last Clear closes: ten seconds after it, the same window as the other undos (#526).
+    private var clearUndoDeadline: Date?
+    private static let clearUndoWindow: TimeInterval = 10
+    /// When the last Clear's Undo closes, for the view to hide its toast then.
+    public var clearUndoExpiry: Date? { clearedGoal == nil ? nil : clearUndoDeadline }
+
+    /// Hides the Undo for the last Clear once its window has closed. Before the deadline it does nothing (#526).
+    public func expireClearUndo(now: Date = Date()) {
+        guard let deadline = clearUndoDeadline, now >= deadline else { return }
+        clearedGoal = nil
+        clearUndoDeadline = nil
+    }
+
+    /// Waits for the last Clear's Undo to close, then hides it. Sleeps again after an early wake, so it expires
+    /// only at or after the deadline, and a cancelled wait leaves the Undo alone (#526). The sleeper and clock are
+    /// injected so the wait is tested without real time.
+    public func runClearUndoExpiry(
+        sleep: @escaping (TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0)) },
+        now: @escaping () -> Date = { Date() }
+    ) async {
+        while let expiry = clearUndoExpiry, now() < expiry {
+            do { try await sleep(max(0, expiry.timeIntervalSince(now()))) } catch { return }
+        }
+        expireClearUndo(now: now())
+    }
+
+    /// Whether the last Clear can still be undone at `now`.
+    public func canUndoClear(now: Date = Date()) -> Bool {
+        guard clearedGoal != nil, let deadline = clearUndoDeadline else { return false }
+        return now < deadline
+    }
 
     /// Removes the goal for `nutrient` on an explicit clear (the row's Clear button, or Return on an
     /// empty field). The removed goal is kept for Undo. A goal that cannot be read is not removed, since
     /// Undo could not put it back.
     @discardableResult
-    public func clearTarget(for nutrient: String) -> Bool {
+    public func clearTarget(for nutrient: String, now: Date = Date()) -> Bool {
         rowError[nutrient] = nil
         let previous: NutrientGoal?
         do { previous = try storedGoal(for: nutrient) } catch {
@@ -501,6 +541,7 @@ public final class GoalsViewModel: ObservableObject {
         draftText[nutrient] = ""
         loadedDraftText[nutrient] = ""
         clearedGoal = ClearedGoal(nutrient: nutrient, goal: previous)
+        clearUndoDeadline = now.addingTimeInterval(Self.clearUndoWindow)
         noteSaved()
         return true
     }
@@ -508,8 +549,8 @@ public final class GoalsViewModel: ObservableObject {
     /// Puts back the goal the last Clear removed, and returns whether it did. Only when nothing has been
     /// stored for that nutrient since: a goal saved after the Clear is the person's newer value and is kept.
     @discardableResult
-    public func undoClear() -> Bool {
-        guard let cleared = clearedGoal else { return false }
+    public func undoClear(now: Date = Date()) -> Bool {
+        guard canUndoClear(now: now), let cleared = clearedGoal else { return false }
         let current: NutrientGoal?
         do { current = try storedGoal(for: cleared.nutrient) } catch {
             errorMessage = Self.readFailedMessage
@@ -686,7 +727,13 @@ public final class GoalsViewModel: ObservableObject {
 
     /// Works `followedMacroSplit` out again from the stored split and the stored goals, in one read.
     func refreshFollowedMacroSplit() {
-        followedMacroSplit = storedGoalsByKey().flatMap { Self.followedSplit(macroSplitPreferences?.macroSplit, in: $0) }
+        guard let byKey = storedGoalsByKey() else {
+            followReadFailed = true
+            followedMacroSplit = nil
+            return
+        }
+        followReadFailed = false
+        followedMacroSplit = Self.followedSplit(macroSplitPreferences?.macroSplit, in: byKey)
     }
 
     /// Shown when the new energy goal saved but is too small for the followed split to share out, so the

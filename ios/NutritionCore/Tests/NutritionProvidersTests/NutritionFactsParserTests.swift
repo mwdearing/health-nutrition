@@ -1817,7 +1817,7 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(value(.sodium, panel), .unknown, "an unread field has no value")
     }
 
-    func testFullwidthAmountWithFullwidthUnitIsTheValueOrUnread() {
+    func testFullwidthAmountWithFullwidthUnitIsTheValue() {
         let panel = parse(["Nutrition Facts", "Serving size 1 cup", "Total Fat ２ｇ", "Protein 3g"])
         // A fullwidth amount is the printed value in another width, so the row reads as 2 g: never zero, never a guessed unit.
         XCTAssertEqual(value(.fat, panel), .known(2, .g))

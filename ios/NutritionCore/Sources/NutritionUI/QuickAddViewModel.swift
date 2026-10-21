@@ -90,8 +90,15 @@ public final class QuickAddViewModel: ObservableObject, Identifiable {
     }
 
     /// True while every amount field is blank, so the screen can say what is missing.
+    /// True while no field carries an amount: each is blank or a typed zero, which is not above zero (#536).
     public var hasNoAmountTyped: Bool {
-        Field.allCases.allSatisfy { text(for: $0).trimmingCharacters(in: .whitespaces).isEmpty }
+        Field.allCases.allSatisfy { field in
+            switch Self.parse(text(for: field), field: field) {
+            case .blank: return true
+            case .value(let value): return value == 0
+            case .invalid: return false
+            }
+        }
     }
 
     public func text(for field: Field) -> String {

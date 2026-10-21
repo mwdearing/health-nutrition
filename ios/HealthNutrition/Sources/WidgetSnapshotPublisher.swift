@@ -204,6 +204,8 @@ final class WidgetSnapshotEraser: JournalErasing, @unchecked Sendable {
         self.now = now
     }
 
+    var erasureName: String { "widget data" }
+
     func eraseAll() throws {
         // The generation moves first: from here on no write announced earlier can land, even if the empty write
         // below fails and the file has to be removed instead.

@@ -168,6 +168,47 @@ final class SavedMealsModelTests: XCTestCase {
         XCTAssertEqual(model.notice, "Couldn't put back Usual. Tap Undo to try again.")
     }
 
+    /// An erase after a removal is a newer action: Undo must not write the meal back into the erased data.
+    func testUndoAfterAnEraseDoesNotWriteTheMealBack() throws {
+        let journal = try makeJournal()
+        let milk = try addEntry(journal, "Milk", at: now.addingTimeInterval(-60))
+        let defaults = makeDefaults()
+        let store = UserDefaultsSavedMealStore(defaults: defaults)
+        let model = SavedMealsModel(store: store, journal: journal)
+        XCTAssertTrue(model.save(name: "Usual", meal: .breakfast, intakes: [milk]))
+        model.remove(model.meals[0])
+        XCTAssertNotNil(model.removalUndo)
+
+        // The Erase button runs each store through JournalErasing (AppServices.eraseStores lists this store), so the
+        // test erases through that same protocol rather than calling the store's method directly.
+        let eraser: JournalErasing = store
+        try eraser.eraseAll()
+
+        XCTAssertFalse(model.undoRemove())
+        XCTAssertEqual(try store.meals().count, 0)
+        XCTAssertNil(model.removalUndo)
+        XCTAssertTrue(model.noticeIsFailure)
+    }
+
+    /// A wipe of the defaults domain leaves no epoch, so an Undo from before the wipe is refused and writes nothing.
+    func testUndoAfterAWipeOfTheDefaultsIsRefused() throws {
+        let suite = "saved-meals-wipe-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+        let journal = try makeJournal()
+        let milk = try addEntry(journal, "Milk", at: now.addingTimeInterval(-60))
+        let store = UserDefaultsSavedMealStore(defaults: defaults)
+        let model = SavedMealsModel(store: store, journal: journal)
+        XCTAssertTrue(model.save(name: "Usual", meal: .breakfast, intakes: [milk]))
+        model.remove(model.meals[0])
+        XCTAssertNotNil(model.removalUndo)
+
+        defaults.removePersistentDomain(forName: suite)
+
+        XCTAssertFalse(model.undoRemove())
+        XCTAssertTrue(try store.meals().isEmpty)
+    }
+
     /// Once the Undo window has passed, the removal stays and Undo has nothing to put back.
     func testExpiredRemovalCannotBeUndone() throws {
         let journal = try makeJournal()
@@ -512,6 +553,27 @@ final class SavedMealsModelTests: XCTestCase {
     }
 
     // MARK: Save as meal from the Journal
+
+    /// A saved meal that is refused keeps the copy's Undo, because only a saved meal finalizes it (#535).
+    func testARefusedSavedMealKeepsTheCopysUndo() throws {
+        let journal = try makeJournal()
+        let yesterday = now.addingTimeInterval(-86_400)
+        try addEntry(journal, "Oats", at: yesterday)
+        try addEntry(journal, "Rice", at: yesterday.addingTimeInterval(120), meal: "dinner")
+        let model = JournalViewModel(store: journal, timeZoneIdentifier: "UTC")
+        let savedMeals = SavedMealsModel(store: UserDefaultsSavedMealStore(defaults: makeDefaults()), journal: journal)
+        model.savedMeals = savedMeals
+        model.load(now: now)
+        let day = try XCTUnwrap(model.sections.first)
+        XCTAssertTrue(model.saveMeal(day.id, groupID: "Breakfast", name: "Usual breakfast"))
+        _ = try XCTUnwrap(model.copyDayToToday(day.id, now: now))
+        XCTAssertTrue(model.canUndoCopy(now: now))
+
+        // The Dinner group has entries, so this is the duplicate-name refusal from the store, not an empty group.
+        XCTAssertFalse(model.saveMeal(day.id, groupID: "Dinner", name: "Usual breakfast"))
+        XCTAssertEqual(model.copyNotice, SavedMealError.duplicateName.message)
+        XCTAssertTrue(model.canUndoCopy(now: now), "a refused save does not finalize the copy's Undo")
+    }
 
     func testJournalSavesOneMealGroupOfADay() throws {
         let journal = try makeJournal()

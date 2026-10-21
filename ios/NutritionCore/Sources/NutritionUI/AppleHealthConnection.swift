@@ -142,6 +142,9 @@ public final class AppleHealthConnectionViewModel: ObservableObject {
         }
     }
 
+    /// True when Health is connected and the read request has been shown, so there is nothing left to ask.
+    public var isComplete: Bool { state == .connected && readAsked }
+
     /// The button under the row, or nil when there is nothing for a person to do.
     public var actionTitle: String? {
         switch state {

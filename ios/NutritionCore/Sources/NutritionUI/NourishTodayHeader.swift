@@ -73,18 +73,42 @@ public struct NourishTodayHeader: View {
         ].compactMap { $0 }.joined(separator: ", ")
     }
 
-    /// Calories remaining in large type, with food and burned beneath, as MyFitnessPal lays them out. It replaces
-    /// the goal ring whenever food is known, so a day without a goal shows food and burned only.
+    /// The figures the calorie summary shows. Food is a dash until something is logged, never 0. Remaining is hidden
+    /// without a goal and a dash with one but no known food. Burned is hidden unless the model has a Health figure.
+    struct SummaryFigures: Equatable {
+        let remaining: String?
+        let food: String
+        let burned: String?
+    }
+
+    static func summaryFigures(_ calories: CalorieRemaining) -> SummaryFigures {
+        let remaining: String?
+        if let value = calories.remaining {
+            remaining = BodyActivityViewModel.whole(value)
+        } else if calories.goal != nil {
+            remaining = "—"
+        } else {
+            remaining = nil
+        }
+        return SummaryFigures(
+            remaining: remaining,
+            food: calories.food.map { BodyActivityViewModel.whole($0) } ?? "—",
+            burned: calories.burned.map { BodyActivityViewModel.whole($0) })
+    }
+
+    /// Calories remaining in large type, with food and burned beneath, as MyFitnessPal lays them out. It is the
+    /// top block on Today every day. A day without a goal shows food and burned only.
     /// Remaining is hidden without a goal; burned is hidden when there is no Health reading or the setting is off.
     /// A partly known day reuses the existing partial note; Remaining is then an upper bound.
     private var calorieSummary: some View {
         let calories = model.calorieRemaining
+        let figures = Self.summaryFigures(calories)
         // The note comes from the calorie model, which builds it from the same missing count as its partial flag.
         let partial = calories.partialNote
         let spoken = Self.spokenSummary(calories, partial: partial, footnote: calories.showsRemaining ? ringFootnote : nil)
         return VStack(alignment: .leading, spacing: DesignSpacing.s) {
-            if let remaining = calories.remaining {
-                Text(BodyActivityViewModel.whole(remaining))
+            if let remaining = figures.remaining {
+                Text(remaining)
                     .font(.largeTitle.weight(.semibold))
                     .foregroundStyle(TokenColors.textPrimary)
                 Text("Calories remaining")
@@ -95,19 +119,17 @@ public struct NourishTodayHeader: View {
                 }
             }
             HStack(alignment: .top, spacing: DesignSpacing.l) {
-                if let food = calories.food {
-                    Label {
-                        Text("\(BodyActivityViewModel.whole(food)) Food")
-                    } icon: {
-                        Image(systemName: "fork.knife").accessibilityHidden(true)
-                    }
-                    .font(.subheadline)
-                    .foregroundStyle(TokenColors.textPrimary)
-                    .accessibilityElement(children: .combine)
+                Label {
+                    Text("\(figures.food) Food")
+                } icon: {
+                    Image(systemName: "fork.knife").accessibilityHidden(true)
                 }
-                if let burned = calories.burned {
+                .font(.subheadline)
+                .foregroundStyle(TokenColors.textPrimary)
+                .accessibilityElement(children: .combine)
+                if let burned = figures.burned {
                     Label {
-                        Text("\(BodyActivityViewModel.whole(burned)) Burned")
+                        Text("\(burned) Burned")
                     } icon: {
                         Image(systemName: "flame").accessibilityHidden(true)
                     }
@@ -126,14 +148,7 @@ public struct NourishTodayHeader: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: DesignSpacing.l) {
-            if model.calorieRemaining.food != nil {
-                calorieSummary
-            } else if let ring = bar(Self.ringKey) {
-                CalorieRing(
-                    fraction: fraction(ring), figure: figure(Self.ringKey), caption: "Food",
-                    footnote: [partialNote(Self.ringKey), ringFootnote].compactMap { $0 }.joined(separator: " "),
-                    spoken: ring.accessibilityText)
-            }
+            calorieSummary
             let macros = Self.macroKeys.compactMap { key in bar(key).map { (key, $0) } }
             if !macros.isEmpty {
                 HStack(alignment: .top, spacing: DesignSpacing.m) {

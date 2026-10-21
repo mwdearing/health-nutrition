@@ -53,9 +53,10 @@ public struct GoalsView: View {
             if let message = model.errorMessage {
                 InlineNotice(message, tone: .failed)
             }
-            if model.clearedGoal != nil {
+            if model.clearedGoal != nil, model.canUndoClear() {
                 UndoToast(GoalsViewModel.clearedMessage) { self.model.undoClear() }
                     .id(model.clearedGoal.map { "\($0.nutrient)-\($0.goal.target)-\($0.goal.unit.symbol)" } ?? "")
+                    .task(id: model.clearUndoExpiry) { await model.runClearUndoExpiry() }
             }
         }
         .scrollContentBackground(.hidden)

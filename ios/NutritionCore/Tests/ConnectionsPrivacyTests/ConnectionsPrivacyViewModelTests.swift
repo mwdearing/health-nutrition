@@ -291,4 +291,27 @@ func testTheExportActionStaysAvailableAfterAFailureSoItCanBeTriedAgain() {
         XCTAssertEqual(document.tombstones.map(\.intakeID), [deletedID])
         XCTAssertEqual(model.entryCount, 1)
     }
+
+    /// A store that cannot clear the restore flag refuses the erase before any store is touched, and offers Retry.
+    func testAStoreWithoutTheRestoreFlagErasesNothingAndOffersRetry() async {
+        let eraser = CountingEraser()
+        let model = ConnectionsPrivacyViewModel(store: StubStore(), erasers: [eraser])
+
+        let erased = await model.eraseAllData()
+
+        XCTAssertFalse(erased)
+        XCTAssertEqual(eraser.eraseCount, 0)
+        XCTAssertEqual(model.errorMessage, ConnectionsPrivacyViewModel.eraseNothingErasedMessage)
+        XCTAssertTrue(model.eraseRetryAvailable)
+    }
+}
+
+/// Counts erases, so a test can show that an eraser did or did not run.
+private final class CountingEraser: JournalErasing, @unchecked Sendable {
+    var eraseCount = 0
+    let erasureName = "counting"
+
+    func eraseAll() throws {
+        eraseCount += 1
+    }
 }

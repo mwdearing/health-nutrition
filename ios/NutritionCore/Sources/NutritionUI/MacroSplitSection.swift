@@ -45,9 +45,11 @@ struct MacroSplitSection: View {
                 if let failure = self.failure {
                     InlineNotice(failure, tone: .failed)
                 }
-                Text(MacroSplitCopy.followText(self.model.followedMacroSplit))
-                    .font(.footnote)
-                    .foregroundStyle(TokenColors.textSecondary)
+                if let followCopy = self.model.followCopy {
+                    Text(followCopy)
+                        .font(.footnote)
+                        .foregroundStyle(TokenColors.textSecondary)
+                }
             }
         }
         .onAppear { self.showStoredSplit() }
@@ -95,7 +97,7 @@ struct MacroSplitSection: View {
     }
 
     private func percentField(_ label: String, text: Binding<String>) -> some View {
-        LabeledField(label) { focus in
+        LabeledField(label, spokenTitle: true) { focus in
             TextField(text: text, prompt: Text("0")) {
                 Text(label)
             }

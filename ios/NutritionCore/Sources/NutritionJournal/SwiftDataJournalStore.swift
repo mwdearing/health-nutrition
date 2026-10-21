@@ -1475,36 +1475,6 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
         return (revision, staged)
     }
 
-    #if DEBUG
-    /// Legacy seeding for tests only: rewrites the stored amounts of an intake's current revision, by component id,
-    /// the way an older build could have stored them. It skips the write validation on purpose, so a test can read
-    /// back a row the current store would refuse to write. Compiled into debug builds only.
-    func seedLegacyAmountsForTesting(intakeID: String, amountsByComponent: [String: String]) throws {
-        writeLock.lock()
-        defer { writeLock.unlock() }
-        let context = ModelContext(try openContainer())
-        guard let record = try context.fetch(FetchDescriptor<IntakeRecord>(
-            predicate: #Predicate<IntakeRecord> { $0.intakeID == intakeID })).first
-        else { throw JournalError.unknownIntake(intakeID) }
-        let current = record.currentRevision
-        let revisions = try context.fetch(FetchDescriptor<RevisionRecord>(
-            predicate: #Predicate<RevisionRecord> { $0.intakeID == intakeID && $0.number == current }))
-        guard let revision = revisions.first else {
-            throw JournalError.unknownIntake(intakeID)
-        }
-        guard var components = try JSONSerialization.jsonObject(
-            with: Data(revision.componentsJSON.utf8)) as? [[String: Any]]
-        else { throw JournalError.corruptRecord("revision") }
-        for index in components.indices {
-            if let id = components[index]["componentID"] as? String, let text = amountsByComponent[id] {
-                components[index]["amountText"] = text
-            }
-        }
-        revision.componentsJSON = String(decoding: try JSONSerialization.data(withJSONObject: components), as: UTF8.self)
-        try context.save()
-    }
-    #endif
-
     /// Test support: the delete rows still queued for an intake, held or not.
     func pendingDeleteRowCountForTesting(intakeID: String) throws -> Int {
         let context = ModelContext(try openContainer())
@@ -1769,6 +1739,8 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
 
     // MARK: Erasing
 
+    public var erasureName: String { "journal" }
+
     /// Removes every row the journal file holds: intakes, their revision history, product snapshots,
     /// projections and queued outbox operations. A deleted entry leaves no tombstone behind either,
     /// because a tombstone only exists so a later export can retract the entry.
@@ -1781,10 +1753,8 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     ///
     /// The container is not closed: the store reads empty and accepts new entries afterwards.
     public func eraseAll() throws {
-        // A restore flag left behind would let the next import of that file put back favorites the person is
-        // erasing, so it goes first: an erase that fails partway (this store or another) can then leave journal
-        // rows, but never a way for a re-import to bring erased favorites back. A flag that cannot be removed
-        // fails the erase before anything is deleted, so the screen reports it.
+        // The store clears its own restore flag too: a direct caller of the store must not leave a flag that lets a
+        // re-import put erased favorites back. The erase screen clears it first, so this second clear is a no-op there.
         try clearRestoreInProgress()
         _ = try commit { context in
             for row in try context.fetch(FetchDescriptor<JournalSchemaV10.LoggedUnitRecord>()) { context.delete(row) }

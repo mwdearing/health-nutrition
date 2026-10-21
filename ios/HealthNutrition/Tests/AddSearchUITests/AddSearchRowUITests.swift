@@ -34,8 +34,9 @@ final class AddSearchRowUITests: XCTestCase {
         XCTAssertTrue(row.isHittable, "the search row is on screen but cannot be tapped")
         row.tap()
 
-        let field = app.textFields["Search foods and products"]
+        let field = app.textFields["sharedProductSearchField"]
         XCTAssertTrue(field.waitForExistence(timeout: 10), "product search did not open")
+        XCTAssertEqual(field.label, "Search foods", "the search field's label is not the agreed name")
         // The field takes focus after a short delay, so poll for it rather than checking once.
         let focused = NSPredicate(format: "hasKeyboardFocus == true")
         let expectation = XCTNSPredicateExpectation(predicate: focused, object: field)
