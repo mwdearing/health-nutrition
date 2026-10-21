@@ -262,8 +262,7 @@ public final class EntryDetailViewModel: ObservableObject {
             sourceDetailRows = Self.sourceDetails(for: snapshot)
             productName = snapshot?.name
             brand = snapshot?.brand
-            kind = ProductKindResolution.kind(
-                snapshotID: current.productSnapshotID, snapshotKind: { _ in snapshot?.kind }, category: intake.category)
+            kind = snapshot?.kind ?? .food
             waterSharePercent = current.components.compactMap(\.hydrationPercent).first
             loadedWaterSharePercent = waterSharePercent
             loggedUnits = LoggedUnitIndex.load(from: store)[intakeID] ?? [:]
