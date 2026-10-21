@@ -55,4 +55,20 @@ final class FirstDayChecklistReadFailureTests: XCTestCase {
         XCTAssertEqual(model.items.map(\.kind), [.logFirst, .setGoal, .chooseUnits])
         XCTAssertTrue(model.isVisible)
     }
+
+    /// A failed reload after a good load clears the rows already on screen, not just the first load's empty state.
+    func testChecklistClearsItsRowsWhenAReloadFailsAfterAGoodLoad() throws {
+        let journal = try makeJournal()
+        let model = FirstDayChecklistModel(
+            store: journal, goals: InMemoryGoalStore(), preferences: InMemoryDisplayPreferences())
+        model.load()
+        XCTAssertEqual(model.items.count, 3)
+        XCTAssertTrue(model.isVisible)
+
+        journal.failsActiveIntakes = true
+        model.load()
+
+        XCTAssertTrue(model.items.isEmpty)
+        XCTAssertFalse(model.isVisible)
+    }
 }
