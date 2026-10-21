@@ -332,6 +332,8 @@ final class SupplementStackTests: XCTestCase {
         model.load(now: now)
         XCTAssertEqual(store.unitReadCalls, 2)
         XCTAssertNotNil(model.errorMessage)
+        // Call 1 is the load-time read and it succeeded, so its row survives; only the candidates read threw (#601).
+        XCTAssertFalse(model.rows.isEmpty, "the load-time read succeeded, so its row is still shown")
         XCTAssertTrue(model.candidates.isEmpty)
     }
 
