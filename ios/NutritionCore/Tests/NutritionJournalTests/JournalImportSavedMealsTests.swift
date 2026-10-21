@@ -242,7 +242,7 @@ final class JournalImportSavedMealsTests: JournalImportTestCase {
         savedMeals.beforeRestore = { store in if store.meals.isEmpty { store.meals = [mine] } }
         XCTAssertThrowsError(try JournalImporter.importExport(
             try savedMealsExport(), into: journal, favorites: try favorites(target), savedMeals: savedMeals)) {
-            XCTAssertEqual($0 as? JournalImportError, .rolledBack)
+            XCTAssertEqual($0 as? JournalImportError, .savedMealsNotEmpty)
         }
         XCTAssertEqual(savedMeals.meals, [mine])
         XCTAssertEqual(try journal.activeIntakes(), [])

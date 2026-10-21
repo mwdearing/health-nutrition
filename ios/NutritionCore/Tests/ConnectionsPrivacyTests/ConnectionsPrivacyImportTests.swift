@@ -337,7 +337,7 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         XCTAssertNil(model.incompleteRestoreWarning)
     }
 
-    func testFavoritesFailureWithSuccessfulUndoKeepsTheOrdinaryFailureState() async throws {
+    func testFavoritesFailureWithSuccessfulUndoShowsTheRolledBackMessage() async throws {
         let journal = ImportStubStore()
         let favorites = ImportStubFavorites()
         favorites.failRestoreForTesting = true
@@ -354,6 +354,7 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         XCTAssertEqual(model.importMessage, ConnectionsPrivacyViewModel.importRolledBackMessage)
         XCTAssertEqual(model.journalRestoreGeneration, 0)
         XCTAssertTrue(try journal.activeIntakes().isEmpty)
+        XCTAssertTrue(try journal.deletedIntakes().isEmpty)
         XCTAssertEqual(model.exportFileURL, originalExport)
         XCTAssertTrue(removed.isEmpty)
     }
