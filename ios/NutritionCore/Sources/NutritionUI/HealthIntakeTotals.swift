@@ -106,6 +106,6 @@ public enum HealthIntakeTotals {
         return NutrientProgressLine(
             nutrient: line.nutrient, amount: .unknown, goal: line.goal, displayName: line.label,
             isPartial: true, knownSum: sum, missingCount: line.missingCount,
-            healthGap: journalComplete && !outsideComplete)
+            healthGap: false)
     }
 }
