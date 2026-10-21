@@ -266,7 +266,9 @@ final class SavedMealsTests: XCTestCase {
 
     /// Store-level: a restore whose generation is stale is refused and writes nothing.
     func testRestoreRefusesAStaleEraseGenerationAndWritesNothing() throws {
-        let defaults = UserDefaults(suiteName: "saved-meals-generation-\(UUID().uuidString)")!
+        let suite = "saved-meals-epoch-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
         let store = UserDefaultsSavedMealStore(defaults: defaults)
         let book = SavedMealBook(store: store)
         let kept = SavedMeal(id: "kept-meal", name: "Usual", meal: .breakfast, items: [])

@@ -49,11 +49,13 @@ final class ScreenshotSavedMealStore: SavedMealStoring, @unchecked Sendable {
     private let lock = NSLock()
     private var stored: [SavedMeal] = []
     private var epoch: String?
+    // Its own lock: restore reads the epoch from inside update, which already holds `lock`.
+    private let epochLock = NSLock()
 
-    func eraseEpoch() -> String? { lock.lock(); defer { lock.unlock() }; return epoch }
+    func eraseEpoch() -> String? { epochLock.lock(); defer { epochLock.unlock() }; return epoch }
 
     func ensureEraseEpoch() -> String {
-        lock.lock(); defer { lock.unlock() }
+        epochLock.lock(); defer { epochLock.unlock() }
         if let epoch { return epoch }
         let fresh = UUID().uuidString
         epoch = fresh
