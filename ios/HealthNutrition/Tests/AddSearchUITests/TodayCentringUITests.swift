@@ -26,8 +26,8 @@ final class TodayCentringUITests: XCTestCase {
         let app = launchToToday()
         assertNoCalorieSummaryOrMacroColumns(app, "before any goal is set")
         try setGoals(app)
-
-        // Teardown runs even when an assertion below fails, so the goals never reach the next test.
+        // Teardown blocks run last in first-in-last-out order, so this clear runs before the app terminates
+        // (registered in launchToToday), and runs even when an assertion below fails.
         addTeardownBlock { try self.clearGoals(app) }
 
         let window = app.windows.firstMatch
@@ -58,6 +58,8 @@ final class TodayCentringUITests: XCTestCase {
     private func launchToToday() -> XCUIApplication {
         let app = XCUIApplication()
         app.launch()
+        // Registered first, so it runs last: the app terminates after any goals are cleared.
+        addTeardownBlock { app.terminate() }
         let getStarted = app.buttons["Get started"]
         if getStarted.waitForExistence(timeout: 5) { getStarted.tap() }
         XCTAssertTrue(element("todayHeader", in: app).waitForExistence(timeout: 15), "the Today header did not appear")
