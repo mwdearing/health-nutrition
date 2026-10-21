@@ -243,6 +243,8 @@ public enum JournalImporter {
         }
         // The nutrients this run set, so an undo or a retry removes exactly those and no others.
         var goalKeysSet: [String] = []
+        // The goals this run recorded under its receipt, which is all a rollback may remove.
+        var recordedGoals: [NutrientGoal] = []
 
         // **One import at a time.** The flag below belongs to the run that wrote it, and a second import running
         // alongside could resume over a journal the first is about to undo, or clear a flag the first still
@@ -300,6 +302,8 @@ public enum JournalImporter {
             }
             // Goals are add-only, so writing the missing ones again is safe whatever was written before the stop.
             if let goalsTarget {
+                // The receipt names what the stopped run recorded, so it is the set a later rollback may remove.
+                recordedGoals = try goalsTarget.goalRestoreReceipt(digest) ?? []
                 try addMissingGoals(plan.goals, into: goalsTarget, added: &goalKeysSet)
             }
             // A flag that outlived a finished resume would let a later import of this file write rows the
@@ -308,6 +312,7 @@ public enum JournalImporter {
             // The flag is gone, so the receipts have nothing left to answer; one left by a stop here is harmless.
             try? favoritesTarget?.removeRestoreReceipt(digest)
             try? savedMealsTarget?.removeSavedMealsRestoreReceipt(digest)
+            try? goalsTarget?.removeGoalRestoreReceipt(digest)
             return summary(of: plan, goals: goalKeysSet.count)
         }
 
@@ -335,8 +340,12 @@ public enum JournalImporter {
         if hasSecondPhase {
             var savedMealsWritten = false
             do {
-                // Goals first, add-only: a goal already on the device is kept, and only what was set is undone.
+                // Goals first, add-only and write-ahead: the goals this restore will set are recorded under its receipt
+                // before the first is written, so a stop after the record can be finished or undone from the record.
                 if let goalsTarget {
+                    let missing = try plan.goals.filter { try goalsTarget.goal(for: $0.nutrient) == nil }
+                    try goalsTarget.recordGoalRestoreReceipt(digest, goals: missing)
+                    recordedGoals = missing
                     try addMissingGoals(plan.goals, into: goalsTarget, added: &goalKeysSet)
                 }
                 // Saved meals first: a replace of an empty list can be written again, so a resume after a stop
@@ -352,10 +361,8 @@ public enum JournalImporter {
                 defer { try? progress?.clearRestoreInProgress() }
                 // The goals this run set go with the journal. A goal that cannot be removed is kept and reported
                 // as a partial restore below, so a retry is never told the device is clean when it is not.
-                var goalsLeft = false
-                for nutrient in goalKeysSet {
-                    do { try goalsTarget?.removeGoal(nutrient: nutrient) } catch { goalsLeft = true }
-                }
+                let goalsLeft = !undoGoals(recordedGoals, in: goalsTarget)
+                try? goalsTarget?.removeGoalRestoreReceipt(digest)
                 // The list was empty before this restore, so putting it back is emptying it, but only while it
                 // still holds exactly what this restore wrote: a meal saved meanwhile is not thrown away.
                 var savedMealsLeft = false
@@ -384,6 +391,7 @@ public enum JournalImporter {
             try progress?.clearRestoreInProgress()
             try? favoritesTarget?.removeRestoreReceipt(digest)
             try? savedMealsTarget?.removeSavedMealsRestoreReceipt(digest)
+            try? goalsTarget?.removeGoalRestoreReceipt(digest)
         }
         return summary(of: plan, goals: goalKeysSet.count)
     }
@@ -809,6 +817,19 @@ public enum JournalImporter {
 
     /// Writes each goal whose nutrient has no goal on the device yet, and returns the nutrients it set, so an
     /// undo removes exactly those. A goal already on the device is never replaced.
+    /// Removes the goals a restore recorded, but only where the device still holds exactly the value it set. A
+    /// goal the person set or changed since is left alone, and a recorded nutrient with no goal is a no-op. Returns
+    /// false when a removal failed, so the caller reports the restore as partial rather than clean.
+    static func undoGoals(_ recorded: [NutrientGoal], in store: GoalStore?) -> Bool {
+        guard let store else { return true }
+        var clean = true
+        for planned in recorded {
+            guard let current = try? store.goal(for: planned.nutrient), current == planned else { continue }
+            do { try store.removeGoal(nutrient: planned.nutrient) } catch { clean = false }
+        }
+        return clean
+    }
+
     /// `added` is filled as it goes, so a failure part-way leaves the nutrients already set in it for an undo.
     static func addMissingGoals(_ goals: [NutrientGoal], into store: GoalStore, added: inout [String]) throws {
         for goal in goals {

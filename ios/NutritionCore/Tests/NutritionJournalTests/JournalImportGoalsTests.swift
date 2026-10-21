@@ -112,6 +112,86 @@ final class JournalImportGoalsTests: XCTestCase {
         }
     }
 
+    /// Forwards to a real store, and runs `onSet` before each write so a test can fail the write, or change the
+    /// device's goal in between, the way a stop or an edit would.
+    private final class ScriptedGoalStore: GoalStore, @unchecked Sendable {
+        let base: SwiftDataGoalStore
+        let onSet: (NutrientGoal, SwiftDataGoalStore) throws -> Void
+
+        init(base: SwiftDataGoalStore, onSet: @escaping (NutrientGoal, SwiftDataGoalStore) throws -> Void) {
+            self.base = base
+            self.onSet = onSet
+        }
+
+        func goals() throws -> [NutrientGoal] { try base.goals() }
+        func goal(for nutrient: String) throws -> NutrientGoal? { try base.goal(for: nutrient) }
+        func setGoal(_ goal: NutrientGoal) throws {
+            try onSet(goal, base)
+            try base.setGoal(goal)
+        }
+        func removeGoal(nutrient: String) throws { try base.removeGoal(nutrient: nutrient) }
+        func close() { base.close() }
+        func recordGoalRestoreReceipt(_ receipt: String, goals: [NutrientGoal]) throws {
+            try base.recordGoalRestoreReceipt(receipt, goals: goals)
+        }
+        func goalRestoreReceipt(_ receipt: String) throws -> [NutrientGoal]? {
+            try base.goalRestoreReceipt(receipt)
+        }
+        func removeGoalRestoreReceipt(_ receipt: String) throws { try base.removeGoalRestoreReceipt(receipt) }
+    }
+
+    private let energy = JournalExportGoal(nutrient: "energy", target: "2000", unit: "kcal")
+
+    func testARestoreReceiptIsNotAGoalAndIsNotExported() throws {
+        let goals = try goalStore()
+        try goals.recordGoalRestoreReceipt("digest-a", goals: [NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g)])
+        XCTAssertTrue(try goals.goals().isEmpty, "a receipt row must not read back as a goal")
+        let export = try JournalExporter.makeExport(
+            store: try journal(), goals: goals, appVersion: "test", exportedAt: Date(timeIntervalSince1970: 0))
+        XCTAssertTrue(export.goals.isEmpty, "a receipt row must not export as a goal")
+    }
+
+    func testAnUnreadableReceiptFailsClosed() throws {
+        let goals = try goalStore()
+        try goals.writeCorruptTargetForTesting(nutrient: "restore-receipt:bad", targetText: "not json")
+        XCTAssertThrowsError(try goals.goalRestoreReceipt("bad"))
+    }
+
+    func testAStopAfterTheReceiptRemovesItAndWritesNoGoal() throws {
+        let base = try goalStore()
+        let store = ScriptedGoalStore(base: base) { _, _ in throw JournalImportError.corrupt("stopped") }
+        let data = try goalsExport([protein, energy])
+        XCTAssertThrowsError(try JournalImporter.importExport(data, into: try journal(), favorites: nil, goals: store))
+        XCTAssertNil(try base.goalRestoreReceipt(JournalImporter.fileDigest(data)))
+        XCTAssertTrue(try base.goals().isEmpty)
+    }
+
+    func testAUserChangedGoalSurvivesUndo() throws {
+        let base = try goalStore()
+        var calls = 0
+        let store = ScriptedGoalStore(base: base) { _, base in
+            calls += 1
+            if calls == 2 {
+                // The person sets protein to 90 while the restore is writing energy, then the write fails.
+                try base.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(90), unit: .g))
+                throw JournalImportError.corrupt("stopped")
+            }
+        }
+        XCTAssertThrowsError(try JournalImporter.importExport(
+            try goalsExport([protein, energy]), into: try journal(), favorites: nil, goals: store))
+        XCTAssertEqual(try base.goal(for: "protein")?.target, Decimal(90))
+        XCTAssertNil(try base.goal(for: "energy"))
+    }
+
+    func testAKeyThatWasNeverWrittenIsANoOpOnUndo() throws {
+        let base = try goalStore()
+        try base.setGoal(NutrientGoal(nutrient: "sodium", target: Decimal(2300), unit: .mg))
+        let store = ScriptedGoalStore(base: base) { _, _ in throw JournalImportError.corrupt("stopped") }
+        XCTAssertThrowsError(try JournalImporter.importExport(
+            try goalsExport([protein, energy]), into: try journal(), favorites: nil, goals: store))
+        XCTAssertEqual(try base.goals().map(\.nutrient), ["sodium"], "undo must not touch a goal it did not set")
+    }
+
     func testAVersion7FileHasNoGoalsAndStillImports() throws {
         let goals = try goalStore()
         let summary = try JournalImporter.importExport(

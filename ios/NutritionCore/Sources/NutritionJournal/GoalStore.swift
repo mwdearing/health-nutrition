@@ -71,6 +71,23 @@ public protocol GoalStore: AnyObject, Sendable {
     func removeGoal(nutrient: String) throws
     /// Releases the store; a new instance can reopen the same file.
     func close()
+    /// Records the goals a restore is about to write, under its receipt, before any of them is written. The
+    /// record and the goals share one store, so a stop between them leaves the record that undo and resume read.
+    func recordGoalRestoreReceipt(_ receipt: String, goals: [NutrientGoal]) throws
+    /// The goals a restore recorded under this receipt, or nil when it recorded none.
+    func goalRestoreReceipt(_ receipt: String) throws -> [NutrientGoal]?
+    /// Forgets the receipt once nothing needs it. A receipt that is not there is not an error.
+    func removeGoalRestoreReceipt(_ receipt: String) throws
+}
+
+/// A store that keeps no receipts refuses a goal restore, so a goal is never written without the record that
+/// undo would need. Stores that do keep receipts override these.
+extension GoalStore {
+    public func recordGoalRestoreReceipt(_ receipt: String, goals: [NutrientGoal]) throws {
+        throw JournalImportError.corrupt("this goal store keeps no restore receipt")
+    }
+    public func goalRestoreReceipt(_ receipt: String) throws -> [NutrientGoal]? { nil }
+    public func removeGoalRestoreReceipt(_ receipt: String) throws {}
 }
 
 /// A goal store held in memory, for tests and for a caller that has nowhere to persist to.
