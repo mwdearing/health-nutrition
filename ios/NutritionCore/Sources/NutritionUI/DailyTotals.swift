@@ -192,6 +192,10 @@ public enum DailyTotalsBuilder {
             // Water is dietary water only for a drink. A food can carry a volume component, and
             // that is not a glass of water the person drank, so a non-drink contributes no water.
             guard nutrient == waterKey else { return [] }
+            // waterContributions counts only a positive volume; a volume that is not positive adds no water and
+            // leaves the day's water unknown. Typed add and edit store only amounts above zero (AmountParser.parse),
+            // and Quick add writes a fixed one-serving component. Journal import accepts a zero component amount
+            // (JournalImporter: the guard is amount >= 0), so an imported zero-volume drink reaches this line.
             return waterContributions(entry.components)
         }
         // The other way round: a drink states nothing but its own volume, so it is no evidence
@@ -203,11 +207,8 @@ public enum DailyTotalsBuilder {
         // a negative stated value, or a negative lookup value on any nutrient. A distrusted food row is unknown for
         // every nutrient, except that a food with no water share contributes nothing to water. A distrusted supplement
         // row is unknown for the nutrients it declares, and undeclared ones
-        // still contribute nothing, as on a healthy supplement. A zero is a known zero, except for water: waterContributions
-        // counts only a positive volume, and a volume that is not positive leaves the day's water unknown. The add
-        // and edit paths cannot save a zero amount (AmountParser.parse requires a value above zero), but journal
-        // import accepts a zero component amount (JournalImporter: the component guard is amount >= 0), so an
-        // imported zero-volume drink reaches this rule.
+        // still contribute nothing, as on a healthy supplement. A zero is a known zero, except for water, which counts
+        // only a positive amount (see waterContributions), so a 0 mL drink is unknown.
         if distrusted {
             // A food with no water share never contributed to water, so a distrusted food still contributes nothing
             // to water. An entry that carries a water share, or a distrusted drink, makes its water unknown.
