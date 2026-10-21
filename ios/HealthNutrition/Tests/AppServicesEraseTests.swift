@@ -197,31 +197,35 @@ final class AppServicesEraseTests: XCTestCase {
     }
 
     /// Each store lands in its own slot: the erase list gets the instance it was given, in the field it was given to.
-    /// Distinct instances per slot, so a label swap in eraseStores is caught by identity.
+    /// Each parameter of eraseStores has its own concrete type, so a swap of two labels at the call does not compile.
     func testEraseStoresKeepsEachStoreInItsOwnSlot() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("HealthNutritionTests", isDirectory: true)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let widgets = SlotNamedEraser("widget data")
-        let savedMeals = SlotNamedEraser("saved meals")
-        let supplements = SlotNamedEraser("supplements")
-        let daily = SlotNamedEraser("reminders")
+        let widgets = WidgetSnapshotEraser()
+        let savedMeals = UserDefaultsSavedMealStore()
+        let supplements = UserDefaultsSupplementStackStore()
+        let daily = ReminderEraser(scheduler: RecordingReminderScheduler(), erasures: ReminderErasures())
+        let custom = CustomReminderEraser(
+            store: UserDefaultsCustomReminderStore(), scheduler: CustomCapableReminderScheduler(),
+            erasures: ReminderErasures())
         let journal = try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
         let favorites = try SwiftDataFavoritesStore(url: directory.appendingPathComponent("favorites.store"))
         let recipes = try SwiftDataRecipeStore(url: directory.appendingPathComponent("recipes.store"))
         let goals = try SwiftDataGoalStore(url: directory.appendingPathComponent("goals.store"))
 
         let stores = AppServices.eraseStores(
-            widgets: widgets, savedMeals: savedMeals, supplements: supplements, reminders: [daily],
-            journal: journal, favorites: favorites, recipes: recipes, goals: goals)
+            widgets: widgets, savedMeals: savedMeals, supplements: supplements, dailyReminders: daily,
+            customReminders: custom, journal: journal, favorites: favorites, recipes: recipes, goals: goals)
 
         XCTAssertTrue(stores.widgets === widgets)
         XCTAssertTrue(stores.savedMeals === savedMeals)
         XCTAssertTrue(stores.supplements === supplements)
-        XCTAssertEqual(stores.reminders.count, 1)
+        XCTAssertEqual(stores.reminders.count, 2)
         XCTAssertTrue(stores.reminders[0] === daily)
+        XCTAssertTrue(stores.reminders[1] === custom)
         XCTAssertTrue(stores.journal === journal)
         XCTAssertTrue(stores.favorites === favorites)
         XCTAssertTrue(stores.recipes === recipes)
@@ -430,13 +434,3 @@ private actor EraseProductService: CommunityProductServicing {
     func product(id: UUID) async throws -> CommunityProduct { throw ProductAPIError.unavailable }
 }
 
-/// A store that stands in for one slot, so the test can check identity per slot.
-private final class SlotNamedEraser: JournalErasing, @unchecked Sendable {
-    let erasureName: String
-
-    init(_ name: String) {
-        erasureName = name
-    }
-
-    func eraseAll() throws {}
-}
