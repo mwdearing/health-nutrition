@@ -298,7 +298,7 @@ public enum JournalImporter {
             var goalsPending = false
             if let goalsTarget {
                 switch try goalsTarget.goalRestoreReceiptDone(digest) {
-                case .some(let done): goalsPending = !done
+                case .some: goalsPending = true
                 case .none:
                     // A read that fails is a failed resume, not a goal that is missing.
                     for goal in plan.goals where try goalsTarget.goal(for: goal.nutrient) == nil {
@@ -317,7 +317,7 @@ public enum JournalImporter {
             // A receipt marked done means every goal was written already, so nothing is added again, even if the person
             // has since deleted one. A receipt not yet marked done names what the stopped run recorded, and resume adds
             // exactly those. No receipt means it never reached the goals, so the missing ones are recorded now, first.
-            if let goalsTarget, try goalsTarget.goalRestoreReceiptDone(digest) != true {
+            if let goalsTarget {
                 let recorded: [NutrientGoal]
                 if let existing = try goalsTarget.goalRestoreReceipt(digest) {
                     recorded = existing
