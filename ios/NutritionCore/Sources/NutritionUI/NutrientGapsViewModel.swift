@@ -196,11 +196,14 @@ public struct NutrientGapRow: Equatable, Identifiable {
     /// An amount for display: one decimal place, two below 1, and "< 0.01" for an amount too small to
     /// show, so a real amount never reads as zero.
     static func figure(_ amount: Decimal, _ unit: MeasureUnit) -> String {
-        // Energy keeps its own digits here: a recipe's energy row reads this figure, and it is not grouped.
+        // Energy keeps one decimal here (two below 1), unlike nutrient(), which rounds energy to whole Calories.
+        // The whole part is grouped as every other figure is.
         guard unit == .kcal else { return AmountDisplay.nutrient(amount, unit: unit).text }
         let rounded = DisplayRounding.rounded(amount, fractionDigits: amount < 1 ? 2 : 1)
-        if rounded == 0, amount > 0 { return "< 0.01 \(unit.screenSymbol)" }
-        return "\(DecimalFormatting.text(rounded)) \(unit.screenSymbol)"
+        return DisplayAmount(
+            amount: rounded, unit: unit, isBelowSmallest: rounded == 0 && amount > 0,
+            groupsWholeAmount: true, smallestAmount: Decimal(string: "0.01", locale: AmountParser.locale)!
+        ).text
     }
 }
 

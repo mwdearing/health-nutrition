@@ -23,6 +23,7 @@ final class AmountDisplayGroupingTests: XCTestCase {
     func testEnergyFigureKeepsItsOwnDigits() {
         XCTAssertEqual(NutrientGapRow.figure(Decimal(string: "123.46")!, .kcal), "123.5 Calories")
         XCTAssertEqual(NutrientGapRow.figure(Decimal(string: "0.004")!, .kcal), "< 0.01 Calories")
+        XCTAssertEqual(NutrientGapRow.figure(Decimal(string: "1234.46")!, .kcal), "1,234.5 Calories")
     }
 
     func testAnAmountBelowTheSmallestFigureStillSaysSo() {
