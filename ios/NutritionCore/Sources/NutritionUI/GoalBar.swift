@@ -142,7 +142,7 @@ public struct GoalBarModel: Equatable, Identifiable {
             }
             return MissingValueWording.fallback(name: name)
         }
-        return MissingValueWording.note(count: missingCount, name: name)
+        return MissingValueWording.partialNote(name: name, healthGap: line.healthGap, count: missingCount)
     }
 
 }
@@ -254,5 +254,15 @@ enum MissingValueWording {
     /// The wording for a partial line with no missing entry (a below-threshold amount).
     static func fallback(name: String) -> String {
         "Some entries can't be added up for \(name)"
+    }
+
+    /// The note for a partial line whose journal side is complete and whose Health side is short.
+    static func healthGapNote(name: String) -> String {
+        "Some data from the Health app can't be counted for \(name)"
+    }
+
+    /// The note a partial line shows: the Health note when only Health is short, otherwise the count note or fallback.
+    static func partialNote(name: String, healthGap: Bool, count: Int) -> String {
+        healthGap ? healthGapNote(name: name) : note(count: count, name: name)
     }
 }
