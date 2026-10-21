@@ -9,6 +9,8 @@ private final class MemorySavedMeals: JournalSavedMealsStore, @unchecked Sendabl
     var meals: [JournalSavedMeal]
     var receipt: String?
     var failRestore = false
+    /// Makes the undo's clear fail, as a saved meal written by another window would at that moment.
+    var failClear = false
     /// Runs as a restore begins, as a meal saved in another window at that moment would.
     var beforeRestore: (MemorySavedMeals) -> Void = { _ in }
 
@@ -25,6 +27,7 @@ private final class MemorySavedMeals: JournalSavedMealsStore, @unchecked Sendabl
     func hasSavedMealsRestoreReceipt(_ receipt: String) throws -> Bool { self.receipt == receipt }
     func removeSavedMealsRestoreReceipt(_ receipt: String) throws { if self.receipt == receipt { self.receipt = nil } }
     func clearRestoredSavedMeals(_ meals: [JournalSavedMeal]) throws {
+        if failClear { throw Failure() }
         guard self.meals == meals else { throw JournalImportError.savedMealsNotEmpty }
         self.meals = []
         receipt = nil
@@ -440,5 +443,29 @@ final class JournalImportSavedMealsTests: JournalImportTestCase {
             data, into: journal, favorites: nil, savedMeals: savedMeals, goals: goals))
         XCTAssertTrue(savedMeals.meals.isEmpty, "no saved meal is written before the goal read fails")
         XCTAssertNil(savedMeals.receipt)
+    }
+
+    /// A saved-meal undo that fails keeps the restore flag, so a re-import of the same file resumes with the right counts.
+    /// Fails when the flag is cleared on that path, since the re-import is then refused as not empty.
+    func testAFailedSavedMealUndoKeepsTheFlagSoAReimportResumes() throws {
+        let target = try directory()
+        let journal = try store(target)
+        let savedMeals = MemorySavedMeals()
+        savedMeals.failClear = true
+        let data = try savedMealsExport()
+        XCTAssertThrowsError(try JournalImporter.importExport(
+            data, into: journal, favorites: FailingFavorites(), savedMeals: savedMeals)) {
+            XCTAssertEqual($0 as? JournalImportError, .partialRestore(retainedIntakes: 2, retainedTombstones: 1))
+        }
+        XCTAssertNotNil(try journal.restoreInProgressDigest(), "a failed saved-meal undo keeps the flag for a resume")
+
+        savedMeals.failClear = false
+        var summary: JournalImportSummary?
+        XCTAssertNoThrow(summary = try JournalImporter.importExport(
+            data, into: journal, favorites: try favorites(target), savedMeals: savedMeals))
+        XCTAssertEqual(summary?.savedMeals, 2)
+        XCTAssertEqual(savedMeals.meals.map(\.id), ["meal-2", "meal-1"], "no saved meal is duplicated")
+        XCTAssertEqual(try journal.activeIntakes().count, summary?.intakes, "no entry is duplicated")
+        XCTAssertNil(try journal.restoreInProgressDigest(), "the finished resume clears its flag")
     }
 }
