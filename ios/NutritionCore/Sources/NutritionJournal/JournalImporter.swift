@@ -579,8 +579,7 @@ public enum JournalImporter {
         if version >= 8 {
             for (index, item) in try objects(root["goals"], path: "$.goals").enumerated() {
                 let path = "$.goals[\(index)]"
-                try checkObject(
-                    try object(item, path: path), keys: JournalImportV8Keys.goal, path: path, version: version)
+                _ = try object(item, path: path)
             }
         }
         if version >= 6 {
