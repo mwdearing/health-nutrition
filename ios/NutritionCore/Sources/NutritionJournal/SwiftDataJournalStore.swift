@@ -1802,7 +1802,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     /// they were removed, the next call retries the reopen. The caller reports either case as a partial erase that names
     /// the journal (ConnectionsPrivacyViewModel records the failed eraser), so Retry finishes it (the #566 design).
     ///
-    /// The store file is then deleted and reopened empty, so the store reads empty and accepts new entries
+    /// On success the store file is then deleted and reopened empty, so the store reads empty and accepts new entries
     /// afterwards. The erased rows leave the store when the store file itself is deleted and recreated empty.
     public func eraseAll() throws {
         // The store clears its own restore flag too: a direct caller of the store must not leave a flag that lets a
