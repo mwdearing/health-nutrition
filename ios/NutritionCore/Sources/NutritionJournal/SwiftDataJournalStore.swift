@@ -1110,8 +1110,9 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     private let writeLock = NSLock()
     private var failFlag = false
     private var container: ModelContainer?
-    /// Set when an erase could not finish reopening the store: after a failed checkpoint and a failed reopen, or after the
-    /// files were removed and the reopen failed. The next call retries the reopen; it does not stay closed for good. `close()` clears it, so a closed store stays closed.
+    /// Set when the reopen after an erase fails. The reopen runs after a failed checkpoint or file removal as well as
+    /// after a successful removal, so the flag covers each of those cases. The next call retries the reopen; it does
+    /// not stay closed for good. `close()` clears it, so a closed store stays closed.
     private var reopenPending = false
     /// Where `markRestoreInProgress(fileDigest:)` keeps its flag, beside the store file.
     private let restoreMarkerURL: URL
