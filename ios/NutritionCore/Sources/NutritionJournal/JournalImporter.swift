@@ -414,7 +414,6 @@ public enum JournalImporter {
                         retainedIntakes: retainedIntakes, retainedTombstones: retainedTombstones)
                 }
                 // A saved meal the phone keeps is not a transient failure: a retry meets the same meal, so its own message stays.
-                if case JournalImportError.savedMealsNotEmpty = secondPhaseFailure { throw secondPhaseFailure }
                 // The undo ran and left nothing behind, so the person is told nothing was imported, not that the file was bad.
                 throw JournalImportError.rolledBack
             }
