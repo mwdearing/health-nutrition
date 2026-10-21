@@ -219,6 +219,7 @@ final class JournalEraseTests: XCTestCase {
             url: url, enabledDestinations: [.healthKit, .relay], fileOperations: operations)
         try store.create(sampleIntake(), components: [oats()], product: product(), now: when)
 
+        reopen.fails = true
         XCTAssertThrowsError(try store.eraseAll()) {
             XCTAssertEqual(($0 as? CocoaError)?.code, .fileWriteNoPermission)
         }
@@ -377,7 +378,7 @@ private final class FileCalls: @unchecked Sendable {
 
 /// Lets a test make the store's reopen fail, then succeed, on later calls.
 private final class ReopenGate: @unchecked Sendable {
-    var fails = true
+    var fails = false
 }
 
 /// Records the order of the steps a test runs, in one place.
