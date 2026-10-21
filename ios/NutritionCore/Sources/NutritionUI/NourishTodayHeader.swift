@@ -45,7 +45,10 @@ public struct NourishTodayHeader: View {
 
     static func ringFootnote(for goal: NutrientGoal?) -> String? {
         guard let goal else { return nil }
-        return "of \(AmountDisplay.nutrient(goal.target, unit: goal.unit).text) goal"
+        // The goal is a whole amount, grouped the way the remaining figure is ("2,357"), so the footnote and the figure agree.
+        let target = AmountDisplay.nutrient(goal.target, unit: goal.unit)
+        let grouped = AmountDisplay.DisplayAmount(amount: target.amount, unit: goal.unit, groupsWholeAmount: true)
+        return "of \(grouped.text) goal"
     }
 
     private func fraction(_ bar: GoalBarModel?) -> Double {

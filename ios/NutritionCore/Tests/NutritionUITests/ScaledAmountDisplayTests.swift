@@ -117,7 +117,7 @@ final class ScaledAmountDisplayTests: XCTestCase {
         XCTAssertEqual(NourishTodayHeader.figure(for: nil), "—")
         XCTAssertEqual(
             NourishTodayHeader.ringFootnote(for: NutrientGoal(nutrient: "energy", target: 2000, unit: .kcal)),
-            "of 2000 Calories goal")
+            "of 2,000 Calories goal")
     }
 
     // MARK: Journal
