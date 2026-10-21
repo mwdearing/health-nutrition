@@ -48,7 +48,9 @@ final class HealthIntakeTodayTests: XCTestCase {
     func testChangingOnlyTheHealthSideReloadsTheLines() throws {
         let model = TodayViewModel(store: try makeJournal(), timeZoneIdentifier: "UTC")
         model.load(now: now)
-        XCTAssertFalse(model.progress.contains { $0.nutrient == "energy" && $0.knownSum != nil })
+        // Before the Health side changes, the energy line is present and unknown, not partial.
+        XCTAssertEqual(model.progress.first { $0.nutrient == "energy" }?.amount, .unknown)
+        XCTAssertEqual(model.progress.first { $0.nutrient == "energy" }?.isPartial, false)
 
         model.outsideIntake = .read(values: ["energy": 620], readKeys: ["energy"])
         model.load(now: now)

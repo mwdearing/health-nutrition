@@ -101,11 +101,9 @@ public enum OutsideQueryOutcome: Sendable, Equatable {
     case samples([OutsideSampleOutcome])
     /// The query failed.
     case failed
-    /// The identifier does not map to a nutrient, so there is nothing to read.
-    case unmapped
 }
 
-/// One query for one nutrient: the canonical key it reads, and what came back. An unmapped query has no key to read.
+/// One query for one nutrient: the canonical key it reads, and what came back.
 public struct OutsideQuery: Sendable, Equatable {
     public let nutrientKey: String
     public let outcome: OutsideQueryOutcome
@@ -141,7 +139,7 @@ extension OutsideIntakeTotals {
         var failed = false
         for query in queries {
             switch query.outcome {
-            case .failed, .unmapped:
+            case .failed:
                 failed = true
                 unread.insert(query.nutrientKey)
             case .samples(let outcomes):

@@ -90,7 +90,7 @@ final class AppServices {
         reminderScheduler: ReminderScheduling,
         productService: (any CommunityProductServicing)? = nil,
         accountServiceOverride: CommunityAccountServicing? = nil,
-        widgetSnapshotEraser: JournalErasing
+        widgetSnapshotEraser: WidgetSnapshotEraser
     ) {
         self.displayPreferences = displayPreferences
         let community = Self.makeCommunity()
@@ -138,19 +138,25 @@ final class AppServices {
         let savedMeals = SavedMealsModel(store: savedMealStore, journal: journalStore)
         self.savedMeals = savedMeals
         let reminderEraser = ReminderEraser(scheduler: reminderScheduler, erasures: reminderErasures)
-        var reminderErasers: [JournalErasing] = [reminderEraser]
         // Only the system scheduler also schedules the custom reminders; a test's fake leaves them out.
-        if let custom = reminderScheduler as? (ReminderScheduling & CustomReminderScheduling) {
+        var customReminderEraser: CustomReminderEraser?
+        if let custom = Self.customReminderScheduling(of: reminderScheduler) {
             let store = UserDefaultsCustomReminderStore()
             reminderController.customReminders = CustomReminderController(
                 store: store, permissions: custom, scheduler: custom, erasures: reminderErasures)
-            reminderErasers.append(CustomReminderEraser(store: store, scheduler: custom, erasures: reminderErasures))
+            customReminderEraser = CustomReminderEraser(store: store, scheduler: custom, erasures: reminderErasures)
         }
+        // The order the stores are erased in, and so the order their failures are listed in. The widget eraser runs
+        // first so no publish announced before the erase can land after it. The reminder readback is not in this
+        // list: it runs after the stores.
+        let erasers = ConnectionsPrivacyViewModel.eraseOrder(
+            Self.eraseStores(
+                widgets: widgetSnapshotEraser, savedMeals: savedMealStore, supplements: supplementSchedules,
+                dailyReminders: reminderEraser, customReminders: customReminderEraser,
+                journal: journalStore, favorites: favoritesStore, recipes: recipeStore, goals: goalStore))
         connections = ConnectionsPrivacyViewModel(
             store: journalStore, favorites: favoritesStore, savedMeals: savedMealStore, appVersion: Self.appVersion,
-            erasers: [widgetSnapshotEraser]
-                + ([journalStore, favoritesStore, recipeStore, goalStore, savedMealStore] as [JournalErasing])
-                + reminderErasers + ([supplementSchedules] as [JournalErasing]),
+            erasers: erasers,
             preferences: displayPreferences,
             beforeErase: {
                 if let owner = productSharing?.accountContext?.ownerID {
@@ -171,7 +177,8 @@ final class AppServices {
             eraseLocalAccount: {
                 guard let account else { return }
                 try await account.discardLocalSession()
-            })
+            },
+            remindersStillPending: { await ReminderReadback.namesStillPending(in: SystemPendingReminderCenter()) })
         let openFoodFacts = OpenFoodFactsProductLookup(
             client: OpenFoodFactsClient(appVersion: Self.appVersion))
         barcodeLookup = Self.makeBarcodeLookup(primary: openFoodFacts, community: community, account: account)
@@ -296,6 +303,27 @@ final class AppServices {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
     }
 
+    /// The erase's stores, one labeled field per slot. Each argument goes to its own slot here, so a test can check
+    /// that every store lands where it was given.
+    static func eraseStores(
+        widgets: WidgetSnapshotEraser, savedMeals: UserDefaultsSavedMealStore,
+        supplements: UserDefaultsSupplementStackStore, dailyReminders: ReminderEraser,
+        customReminders: CustomReminderEraser?, journal: SwiftDataJournalStore, favorites: SwiftDataFavoritesStore,
+        recipes: SwiftDataRecipeStore, goals: SwiftDataGoalStore
+    ) -> ConnectionsPrivacyViewModel.EraseStores {
+        let reminders: [JournalErasing] = [dailyReminders] + (customReminders.map { [$0] } ?? [])
+        return ConnectionsPrivacyViewModel.EraseStores(
+            widgets: widgets, savedMeals: savedMeals, supplements: supplements, reminders: reminders,
+            journal: journal, favorites: favorites, recipes: recipes, goals: goals)
+    }
+
+    /// The custom-reminder side of a scheduler, when it takes custom reminders. The system scheduler does; a fake may not.
+    static func customReminderScheduling(
+        of scheduler: ReminderScheduling
+    ) -> (ReminderScheduling & CustomReminderScheduling)? {
+        scheduler as? (ReminderScheduling & CustomReminderScheduling)
+    }
+
     /// Opens all four store files in `directory`, creating the directory and the files if needed.
     ///
     /// The directory is a parameter so a test can build a whole app on throwaway files instead of the
@@ -312,7 +340,7 @@ final class AppServices {
         reminderScheduler: ReminderScheduling,
         productService: (any CommunityProductServicing)? = nil,
         accountServiceOverride: CommunityAccountServicing? = nil,
-        widgetSnapshotEraser: JournalErasing = WidgetSnapshotEraser()
+        widgetSnapshotEraser: WidgetSnapshotEraser = WidgetSnapshotEraser()
     ) throws -> AppServices {
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         // Which destinations the journal queues work for.

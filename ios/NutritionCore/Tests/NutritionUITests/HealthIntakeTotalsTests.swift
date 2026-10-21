@@ -120,8 +120,8 @@ final class HealthIntakeTotalsTests: XCTestCase {
         XCTAssertEqual(combined[1].amount, .known(50, proteinUnit))
     }
 
-    func testReadKeysUseTheSameCanonicalKeysAsTheOutsideTotals() {
-        // The reader's keys come from each identifier's mapping, and the totals are keyed the same way.
+    func testOutsideTotalsAreKeyedByTheCanonicalMappingKeys() {
+        // Each identifier's totals land under its mapping's canonical key, the key the Today lines look up.
         for identifier in OutsideIntakeTotals.readQuantityTypeIdentifiers {
             let mapping = HealthKitWritePlanner.mappings.first { $0.quantityTypeIdentifier == identifier }
             XCTAssertNotNil(mapping, identifier)
@@ -193,6 +193,25 @@ final class HealthIntakeTotalsTests: XCTestCase {
             [journalIU], outside: .read(values: [:], readKeys: ["vitaminD"]))
         XCTAssertEqual(combined.first?.amount, .known(100, .iu))
         XCTAssertEqual(combined.first?.isPartial, false)
+    }
+
+    func testAnAliasKeyInReadKeysDoesNotCountAsReadForTheCanonicalLine() {
+        // Health's read keys are canonical. A read recorded under an alias name does not complete the canonical nutrient.
+        let vitaminA = HealthKitWritePlanner.mapping(for: "vitaminA")!.unit
+        let aliasLine = NutrientProgressLine(nutrient: "vitamin-a", amount: .known(300, vitaminA), goal: nil)
+        let combined = HealthIntakeTotals.combine(
+            [aliasLine], outside: .read(values: ["vitaminA": 200], readKeys: ["vitamin-a"]))
+        XCTAssertEqual(combined.first?.isPartial, true)
+        XCTAssertEqual(combined.first?.knownSum, .known(500, vitaminA))
+    }
+
+    func testAPartialIUJournalWithHealthUnreadStaysAtLeastInIU() {
+        // A journal in IU that is partial, with Health unread: the IU sum is kept as it is, never mixed with mcg.
+        let partialIU = NutrientProgressLine(
+            nutrient: "vitaminD", amount: .unknown, goal: nil, isPartial: true, knownSum: .known(100, .iu), missingCount: 1)
+        let combined = HealthIntakeTotals.combine([partialIU], outside: .read(values: [:], readKeys: []))
+        XCTAssertEqual(combined.first?.isPartial, true)
+        XCTAssertEqual(combined.first?.knownSum, .known(100, .iu))
     }
 
     func testWaterLineIsNeverCombined() {

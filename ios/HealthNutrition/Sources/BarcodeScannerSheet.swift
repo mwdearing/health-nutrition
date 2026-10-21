@@ -33,11 +33,6 @@ enum BarcodeScanner {
     // action, which runs on the main actor like the rest of the view.
     @MainActor
     static var isSupported: Bool { DataScannerViewController.isSupported }
-
-    @MainActor
-    static var isAvailable: Bool {
-        DataScannerViewController.isSupported && DataScannerViewController.isAvailable
-    }
 }
 
 /// A pushed camera destination. The parent starts a lookup as soon as a code is accepted.

@@ -168,6 +168,8 @@ public final class SwiftDataRecipeStore: RecipeStore, JournalErasing, @unchecked
 
     // MARK: Erasing
 
+    public var erasureName: String { "recipes" }
+
     /// Removes every recipe version and every tombstone. Both are personal data: a version
     /// is the recipe as typed, and a tombstone names a recipe the person deleted, which is still their
     /// business and is never sent anywhere.
