@@ -142,6 +142,12 @@ enum JournalImportV5Keys {
 
 /// The keys each object in a version 6 export has, taken from `contracts/journal-export/v6.schema.json`.
 ///
+/// Version 8 is version 6 with `goals` at the root: one daily goal per nutrient, as a nutrient key, a target and a unit.
+enum JournalImportV8Keys {
+    static let root: Set<String> = JournalImportV6Keys.root.union(["goals"])
+    static let goal: Set<String> = ["nutrient", "target", "unit"]
+}
+
 /// Version 6 is version 5 with `logged_units` at the root: the unit each spoon, cup or fluid-ounce component was
 /// logged in. Every other object is as it was in version 5.
 enum JournalImportV6Keys {
@@ -479,7 +485,7 @@ public enum JournalImporter {
     static func validateShape(_ root: [String: Any], version: Int) throws {
         let provenanceKeys = version >= 2 ? JournalImportV2Keys.provenance : JournalImportV1Keys.provenance
         let revisionKeys = version >= 3 ? JournalImportV3Keys.revision : JournalImportV1Keys.revision
-        let rootKeys = version >= 6 ? JournalImportV6Keys.root : version >= 5 ? JournalImportV5Keys.root : version >= 4 ? JournalImportV4Keys.root : JournalImportV1Keys.root
+        let rootKeys = version >= 8 ? JournalImportV8Keys.root : version >= 6 ? JournalImportV6Keys.root : version >= 5 ? JournalImportV5Keys.root : version >= 4 ? JournalImportV4Keys.root : JournalImportV1Keys.root
         try checkObject(root, keys: rootKeys, path: "$", version: version)
         try checkMinimumLengthOne(root, keys: ["app_version"], path: "$", version: version)
         for (index, item) in try objects(root["intakes"], path: "$.intakes").enumerated() {
@@ -531,6 +537,13 @@ public enum JournalImporter {
             try checkMinimumLengthOne(
                 favorite, keys: ["id", "display_name", "category"], path: path, version: version)
             try checkComponents(favorite["components"], path: "\(path).components", version: version)
+        }
+        if version >= 8 {
+            for (index, item) in try objects(root["goals"], path: "$.goals").enumerated() {
+                let path = "$.goals[\(index)]"
+                try checkObject(
+                    try object(item, path: path), keys: JournalImportV8Keys.goal, path: path, version: version)
+            }
         }
         if version >= 6 {
             for (index, item) in try objects(root["logged_units"], path: "$.logged_units").enumerated() {
