@@ -47,7 +47,7 @@ public final class FirstDayChecklistModel: ObservableObject {
     /// Reads the steps again. If the journal or goal read throws, the card hides for that load only: no rows,
     /// no empty state, no 0 and no guessed done state. A failed read never writes the stored hide flag, so the
     /// next successful read shows the card again. The Health step is done when Health is connected and has
-    /// nothing left to ask, and is left off when this device has no Health to connect to. On a failed read the
+    /// nothing left to do, and is left off when this device has no Health to connect to. On a failed read the
     /// Health step is not evaluated.
     public func load() {
         do {

@@ -28,7 +28,7 @@ final class FirstDayChecklistReadFailureTests: XCTestCase {
         XCTAssertFalse(model.isVisible)
     }
 
-    /// The goal read throws: the card must not show the goal step as not done.
+    /// The goal read throws: the card is hidden and has no rows, so no step is shown as not done.
     func testChecklistHidesWhenTheGoalReadFails() throws {
         let goals = InMemoryGoalStore(failNextRead: true)
         let model = FirstDayChecklistModel(
