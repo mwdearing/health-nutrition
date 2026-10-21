@@ -70,6 +70,48 @@ final class JournalImportGoalsTests: XCTestCase {
         }
     }
 
+    /// The same document with one change made to its JSON, so a shape rule is tested on the bytes a file carries.
+    private func mutated(_ data: Data, _ change: (inout [String: Any]) -> Void) throws -> Data {
+        var root = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        change(&root)
+        return try JSONSerialization.data(withJSONObject: root)
+    }
+
+    func testAVersion8FileWithGoalsIsAccepted() throws {
+        let goals = try goalStore()
+        let summary = try JournalImporter.importExport(
+            try goalsExport([protein]), into: try journal(), favorites: nil, goals: goals)
+        XCTAssertEqual(summary.goals, 1)
+    }
+
+    func testAnUnknownKeyInsideAGoalIsRefusedAsMalformed() throws {
+        let data = try mutated(try goalsExport([protein])) { root in
+            var list = root["goals"] as? [[String: Any]] ?? []
+            list[0]["extra"] = "x"
+            root["goals"] = list
+        }
+        XCTAssertThrowsError(
+            try JournalImporter.importExport(data, into: try journal(), favorites: nil, goals: try goalStore())
+        ) { error in
+            guard case JournalImportError.malformed = error else {
+                return XCTFail("expected malformed, got \(error)")
+            }
+        }
+    }
+
+    func testAnUnknownRootKeyInVersion8IsRefusedAsMalformed() throws {
+        let data = try mutated(try goalsExport([protein])) { root in
+            root["extra"] = "x"
+        }
+        XCTAssertThrowsError(
+            try JournalImporter.importExport(data, into: try journal(), favorites: nil, goals: try goalStore())
+        ) { error in
+            guard case JournalImportError.malformed = error else {
+                return XCTFail("expected malformed, got \(error)")
+            }
+        }
+    }
+
     func testAVersion7FileHasNoGoalsAndStillImports() throws {
         let goals = try goalStore()
         let summary = try JournalImporter.importExport(
