@@ -421,7 +421,6 @@ public enum JournalImporter {
             try progress?.clearRestoreInProgress()
             try? favoritesTarget?.removeRestoreReceipt(digest)
             try? savedMealsTarget?.removeSavedMealsRestoreReceipt(digest)
-            try? goalsTarget?.removeGoalRestoreReceipt(digest)
         }
         return summary(of: plan, goals: goalKeysSet.count)
     }
