@@ -568,8 +568,8 @@ public struct JournalExport: Sendable, Hashable, Codable {
             ? try container.decode([String].self, forKey: .keptOutOfLibrary) : []
         loggedUnits = schemaVersion >= 6
             ? try container.decode([JournalExportLoggedUnit].self, forKey: .loggedUnits) : []
-        goals = schemaVersion >= 8
-            ? try container.decode([JournalExportGoal].self, forKey: .goals) : []
+        // Absent means no goals, so a backup written before version 8, or one that simply has none, still reads.
+        goals = try container.decodeIfPresent([JournalExportGoal].self, forKey: .goals) ?? []
     }
 
     /// `saved_meals` is written only for version 4 and later, so a document of an earlier version keeps the
