@@ -569,7 +569,7 @@ struct RootView: View {
                         ? { self.presentSignInOverSearch = true } : nil,
                     onOpenFoodFacts: { self.addNavigation.openLookedUp($0, kind: $1, home: home) },
                     library: self.services.library, onPick: { self.openTemplate($0, home: home) },
-                    focusSearchOnAppear: true,
+                    focusSearchOnAppear: false,
                     onSaved: { self.confirmInAddCover(SaveLabels.productSaved) })
                 .sheet(isPresented: $presentSignInOverSearch) {
                     if let account = self.services.account { SignInSheet(model: account) }
