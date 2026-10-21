@@ -153,6 +153,9 @@ public final class GoalsViewModel: ObservableObject {
     /// no longer describes the goals (the three gram goals are not its output for the stored energy
     /// goal) is not reported, so the screen never says goals follow when they would not.
     @Published public private(set) var followedMacroSplit: MacroSplit?
+    /// The line under the macro split: what the goals follow, or the setup copy. Nil when the goals read failed,
+    /// so the setup copy never reads as "no split set" on a failed read.
+    public var followCopy: String? { MacroSplitCopy.followText(followedMacroSplit) }
 
     public let footerText = "A goal is a number you set. The app compares your day against it and gives no advice or rating."
 
