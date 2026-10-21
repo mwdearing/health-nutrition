@@ -293,7 +293,14 @@ public enum JournalImporter {
             }
             // A flag that outlived every part of the second phase (a stop after the last save, before the flag
             // was cleared) is not an unfinished restore, however much of it was deleted since.
-            guard !(savedMealsWritten && favoritesWritten) else { throw JournalImportError.notEmpty }
+            // The goals part is unfinished while its receipt is there (the receipt goes last) or while a goal it names
+            // is still missing: a stop before the receipt leaves no receipt but nothing written either.
+            var goalsPending = false
+            if let goalsTarget {
+                goalsPending = try goalsTarget.goalRestoreReceipt(digest) != nil
+                    || plan.goals.contains { goal in (try? goalsTarget.goal(for: goal.nutrient)) == nil }
+            }
+            guard !(savedMealsWritten && favoritesWritten && !goalsPending) else { throw JournalImportError.notEmpty }
             if let savedMealsTarget, !savedMealsWritten {
                 try savedMealsTarget.restoreJournalSavedMeals(plan.savedMeals, receipt: digest)
             }
@@ -302,9 +309,17 @@ public enum JournalImporter {
             }
             // Goals are add-only, so writing the missing ones again is safe whatever was written before the stop.
             if let goalsTarget {
-                // The receipt names what the stopped run recorded, so it is the set a later rollback may remove.
-                recordedGoals = try goalsTarget.goalRestoreReceipt(digest) ?? []
-                try addMissingGoals(plan.goals, into: goalsTarget, added: &goalKeysSet)
+                // A receipt means the stopped run recorded these before writing any goal, so resume adds exactly
+                // them. No receipt means it never reached the goals, so the missing ones are recorded now, first.
+                let recorded: [NutrientGoal]
+                if let existing = try goalsTarget.goalRestoreReceipt(digest) {
+                    recorded = existing
+                } else {
+                    recorded = try plan.goals.filter { try goalsTarget.goal(for: $0.nutrient) == nil }
+                    try goalsTarget.recordGoalRestoreReceipt(digest, goals: recorded)
+                }
+                recordedGoals = recorded
+                try addMissingGoals(recorded, into: goalsTarget, added: &goalKeysSet)
             }
             // A flag that outlived a finished resume would let a later import of this file write rows the
             // person deleted since, so a failure to clear it is reported rather than swallowed.

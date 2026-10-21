@@ -153,6 +153,7 @@ final class JournalImportGoalsTests: XCTestCase {
 
     func testAnUnreadableReceiptFailsClosed() throws {
         let goals = try goalStore()
+        try goals.recordGoalRestoreReceipt("bad", goals: [])
         try goals.writeCorruptTargetForTesting(nutrient: "restore-receipt:bad", targetText: "not json")
         XCTAssertThrowsError(try goals.goalRestoreReceipt("bad"))
     }
@@ -190,6 +191,59 @@ final class JournalImportGoalsTests: XCTestCase {
         XCTAssertThrowsError(try JournalImporter.importExport(
             try goalsExport([protein, energy]), into: try journal(), favorites: nil, goals: store))
         XCTAssertEqual(try base.goals().map(\.nutrient), ["sodium"], "undo must not touch a goal it did not set")
+    }
+
+    /// A stop after the receipt and before any goal: the flag and the receipt are there, no goal is. Importing the same
+    /// file again adds exactly the recorded goals and removes the receipt. The flag is set the way the favorites
+    /// resume test sets it, by marking the file in progress over an empty journal.
+    func testAStopAfterTheReceiptIsFinishedByImportingTheSameFileAgain() throws {
+        let base = try goalStore()
+        let data = try goalsExport([protein, energy])
+        let digest = JournalImporter.fileDigest(data)
+        let journal = try journal()
+        try journal.markRestoreInProgress(fileDigest: digest)
+        try base.recordGoalRestoreReceipt(digest, goals: [
+            NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g),
+            NutrientGoal(nutrient: "energy", target: Decimal(2000), unit: .kcal),
+        ])
+
+        let summary = try JournalImporter.importExport(data, into: journal, favorites: nil, goals: base)
+
+        XCTAssertEqual(summary.goals, 2)
+        XCTAssertEqual(try base.goal(for: "protein")?.target, Decimal(60))
+        XCTAssertEqual(try base.goal(for: "energy")?.target, Decimal(2000))
+        XCTAssertNil(try base.goalRestoreReceipt(digest), "a finished resume removes its receipt")
+        XCTAssertNil(try journal.restoreInProgressDigest(), "a finished resume clears its flag")
+    }
+
+    /// A stop before the receipt: the flag is there and no goal is, and no receipt either. Importing again records the
+    /// missing goals first and writes them.
+    func testAStopBeforeTheReceiptIsFinishedByImportingTheSameFileAgain() throws {
+        let base = try goalStore()
+        let data = try goalsExport([protein])
+        let digest = JournalImporter.fileDigest(data)
+        let journal = try journal()
+        try journal.markRestoreInProgress(fileDigest: digest)
+
+        let summary = try JournalImporter.importExport(data, into: journal, favorites: nil, goals: base)
+
+        XCTAssertEqual(summary.goals, 1)
+        XCTAssertEqual(try base.goal(for: "protein")?.target, Decimal(60))
+        XCTAssertNil(try base.goalRestoreReceipt(digest))
+    }
+
+    /// Undo of what a resume set removes exactly the recorded goals, and leaves a goal the person set on their own.
+    func testUndoAfterAResumeRemovesOnlyTheRecordedGoals() throws {
+        let base = try goalStore()
+        try base.setGoal(NutrientGoal(nutrient: "sodium", target: Decimal(2300), unit: .mg))
+        let recorded = [
+            NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g),
+            NutrientGoal(nutrient: "energy", target: Decimal(2000), unit: .kcal),
+        ]
+        for goal in recorded { try base.setGoal(goal) }
+
+        XCTAssertTrue(JournalImporter.undoGoals(recorded, in: base))
+        XCTAssertEqual(try base.goals().map(\.nutrient), ["sodium"])
     }
 
     func testAVersion7FileHasNoGoalsAndStillImports() throws {
