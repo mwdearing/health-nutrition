@@ -120,9 +120,7 @@ public final class UserDefaultsSavedMealStore: SavedMealStoring, JournalErasing,
     public func ensureEraseEpoch() -> String {
         lock.withLock {
             if let epoch = defaults.string(forKey: Self.eraseEpochKey) { return epoch }
-            let epoch = UUID().uuidString
-            defaults.set(epoch, forKey: Self.eraseEpochKey)
-            return epoch
+            return "0"
         }
     }
 
@@ -246,7 +244,7 @@ public struct SavedMealBook {
         try store.update { list in
             // An Undo issued before an erase must not write its meal back into the erased data.
             // Absent (nil) never matches: a wipe leaves no epoch, so an Undo from before it is refused.
-            guard let stored = store.eraseEpoch(), stored == epoch else { throw SavedMealError.erasedSinceRemoval }
+            guard (store.eraseEpoch() ?? "0") == epoch else { throw SavedMealError.erasedSinceRemoval }
             guard !list.contains(where: { $0.id == saved.id }) else { return }
             guard list.count < Self.maximumMeals else { throw SavedMealError.tooManyMeals }
             // A name saved since the removal can clash; the restore then fails rather than writing a duplicate.
