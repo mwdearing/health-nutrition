@@ -37,8 +37,10 @@ public struct MacroColumn: View {
         VStack(alignment: .center, spacing: DesignSpacing.xs) {
             Text(label).font(.footnote).foregroundStyle(TokenColors.textSecondary)
                 .multilineTextAlignment(.center)
+                .accessibilityIdentifier("macroLabel-\(label)")
             Text(figure).font(.title3.weight(.semibold)).foregroundStyle(TokenColors.textPrimary)
                 .multilineTextAlignment(.center)
+                .accessibilityIdentifier("macroFigure-\(label)")
             ThinBar(fraction: fraction)
             if let note {
                 Text(note).font(.caption2).foregroundStyle(TokenColors.textSecondary)

@@ -58,11 +58,19 @@ public struct TodayView: View {
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: DesignSpacing.m) {
+                Text("Today")
+                    .font(.largeTitle.weight(.bold))
+                    .foregroundStyle(TokenColors.textPrimary)
+                    .frame(maxWidth: .infinity)
+                    .multilineTextAlignment(.center)
+                    .accessibilityAddTraits(.isHeader)
+                    .accessibilityIdentifier("todayHeader")
                 Text(model.dateSubtitle)
                     .font(.subheadline)
                     .foregroundStyle(TokenColors.textSecondary)
                     .frame(maxWidth: .infinity)
                     .multilineTextAlignment(.center)
+                    .accessibilityIdentifier("todayDate")
                 notices
                 if let checklist {
                     FirstDayChecklistCard(
@@ -93,7 +101,8 @@ public struct TodayView: View {
             .padding(.bottom, DesignSpacing.floatingClearance)
         }
         .background(TokenColors.background)
-        .navigationTitle("Today")
+        // The title is drawn in the content, centred, as a heading; the bar keeps the gear and no title of its own.
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { model.load(now: now()) }
     }

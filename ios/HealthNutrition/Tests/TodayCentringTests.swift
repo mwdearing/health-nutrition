@@ -27,6 +27,20 @@ final class TodayCentringTests: XCTestCase {
         return nil
     }
 
+    func testTheTitleAndDateAreCentredOnTheScreen() throws {
+        let model = TodayViewModel(store: try makeJournal(), timeZoneIdentifier: "UTC")
+        model.load(now: now)
+        let host = UIHostingController(rootView: TodayView(model: model, onAddIntake: {}).frame(width: 390))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 800))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        host.view.layoutIfNeeded()
+        for identifier in ["todayHeader", "todayDate"] {
+            let element = try XCTUnwrap(frame(of: identifier, in: host.view), "\(identifier) is on screen")
+            XCTAssertEqual(element.midX, host.view.bounds.midX, accuracy: 1, identifier)
+        }
+    }
+
     func testTheCalorieFoodFigureIsCentredOnTheScreen() throws {
         let model = TodayViewModel(store: try makeJournal(), timeZoneIdentifier: "UTC")
         model.load(now: now)

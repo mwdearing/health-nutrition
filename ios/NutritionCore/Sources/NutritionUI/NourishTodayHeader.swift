@@ -119,9 +119,11 @@ public struct NourishTodayHeader: View {
                     .font(.subheadline)
                     .foregroundStyle(TokenColors.textSecondary)
                     .multilineTextAlignment(.center)
+                    .accessibilityIdentifier("calorieRemainingLabel")
                 if let ringFootnote {
                     Text(ringFootnote).font(.footnote).foregroundStyle(TokenColors.textSecondary)
                         .multilineTextAlignment(.center)
+                        .accessibilityIdentifier("calorieGoalLine")
                 }
             }
             HStack(alignment: .top, spacing: DesignSpacing.l) {
@@ -164,6 +166,7 @@ public struct NourishTodayHeader: View {
                             label: macro.label, figure: figure(key), fraction: fraction(macro),
                             spoken: macro.accessibilityText, note: partialNote(key))
                         .frame(maxWidth: .infinity)
+                        .accessibilityIdentifier("macroColumn-\(macro.label)")
                     }
                 }
             }
