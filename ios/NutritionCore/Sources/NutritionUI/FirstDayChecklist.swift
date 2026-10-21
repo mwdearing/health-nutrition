@@ -44,26 +44,34 @@ public final class FirstDayChecklistModel: ObservableObject {
         self.health = health
     }
 
-    /// Reads the steps again. A journal or goal read that throws leaves its step not done rather
-    /// than failing the card. The Health step is done when Health is connected and has nothing left to
-    /// ask, and is left off when this device has no Health to connect to.
+    /// Reads the steps again. If the journal or goal read throws, the card hides with no rows until a read
+    /// succeeds: no empty state, no 0 and no guessed done state (#775). A failed read leaves the stored hide
+    /// flag alone, so the next successful read shows the card again. The Health step is done when Health is
+    /// connected and has nothing left to ask, and is left off when this device has no Health to connect to.
+    /// On a failed read the Health step is not evaluated.
     public func load() {
-        let hasEntry = (try? store.activeIntakes()).map { !$0.isEmpty } ?? false
-        var hasGoal = false
-        if let goals = goals, let stored = try? goals.goals() {
-            hasGoal = !stored.isEmpty
+        do {
+            let hasEntry = try !store.activeIntakes().isEmpty
+            var hasGoal = false
+            if let goals = goals {
+                hasGoal = try !goals.goals().isEmpty
+            }
+            items = [
+                FirstDayChecklistItem(
+                    kind: .logFirst, title: "Log your first food, drink, or supplement", detail: nil,
+                    isDone: hasEntry),
+                FirstDayChecklistItem(
+                    kind: .setGoal, title: "Set a daily goal", detail: nil,
+                    isDone: hasGoal),
+                FirstDayChecklistItem(
+                    kind: .chooseUnits, title: "Choose units", detail: Self.unitsName(preferences.unitSystem),
+                    isDone: preferences.hasReviewedUnits),
+            ]
+        } catch {
+            items = []
+            isVisible = false
+            return
         }
-        items = [
-            FirstDayChecklistItem(
-                kind: .logFirst, title: "Log your first food, drink, or supplement", detail: nil,
-                isDone: hasEntry),
-            FirstDayChecklistItem(
-                kind: .setGoal, title: "Set a daily goal", detail: nil,
-                isDone: hasGoal),
-            FirstDayChecklistItem(
-                kind: .chooseUnits, title: "Choose units", detail: Self.unitsName(preferences.unitSystem),
-                isDone: preferences.hasReviewedUnits),
-        ]
         if let health = health {
             health.refresh()
             if health.state != .unavailable {
