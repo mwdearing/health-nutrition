@@ -80,9 +80,7 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
 
     /// A template's amounts as the reader's unit system shows them.
     public func amountSummary(of template: RepeatTemplate) -> String {
-        let kind = ProductKindResolution.kind(
-            snapshotID: template.productSnapshotID, snapshotKind: { (try? store.product(snapshotID: $0))?.kind },
-            category: template.category)
+        let kind = template.productSnapshotID.flatMap { try? store.product(snapshotID: $0) }?.kind
         return AmountText.summary(
             template.components, unitSystem: preferences.unitSystem,
             loggedUnits: kind == .supplement ? template.loggedUnits : [:], isSupplement: kind == .supplement)
