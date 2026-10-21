@@ -392,7 +392,6 @@ public enum JournalImporter {
                 // what it wrote, even when the person re-set it to that same value after the write. A goal the run did
                 // not write is never removed, whatever its value.
                 let goalsLeft = !undoGoals(recordedGoals.filter { goalKeysSet.contains($0.nutrient) }, in: goalsTarget)
-                keepFlag = goalsLeft
                 // The receipt names any goal that could not be removed, so it stays while one is left.
                 if !goalsLeft { try? goalsTarget?.removeGoalRestoreReceipt(digest) }
                 // The list was empty before this restore, so putting it back is emptying it, but only while it
