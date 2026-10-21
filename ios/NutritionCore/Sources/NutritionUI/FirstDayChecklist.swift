@@ -68,8 +68,6 @@ public final class FirstDayChecklistModel: ObservableObject {
                     isDone: preferences.hasReviewedUnits),
             ]
         } catch {
-            items = []
-            isVisible = false
             return
         }
         if let health = health {
