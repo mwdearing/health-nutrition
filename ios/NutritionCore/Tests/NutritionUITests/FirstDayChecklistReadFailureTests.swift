@@ -39,4 +39,20 @@ final class FirstDayChecklistReadFailureTests: XCTestCase {
         XCTAssertTrue(model.items.isEmpty)
         XCTAssertFalse(model.isVisible)
     }
+
+    /// A failed read does not stick: once the journal reads again, the next load shows the card with its rows.
+    func testChecklistShowsAgainWhenTheJournalReadRecovers() throws {
+        let journal = try makeJournal()
+        journal.failsActiveIntakes = true
+        let model = FirstDayChecklistModel(
+            store: journal, goals: InMemoryGoalStore(), preferences: InMemoryDisplayPreferences())
+        model.load()
+        XCTAssertFalse(model.isVisible)
+
+        journal.failsActiveIntakes = false
+        model.load()
+
+        XCTAssertEqual(model.items.map(\.kind), [.logFirst, .setGoal, .chooseUnits])
+        XCTAssertTrue(model.isVisible)
+    }
 }
