@@ -690,13 +690,10 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// Retry, and the import effects deferred during the erase are resolved. Returns whether the flag is clear.
     private func clearRestoreFlagOrStop() -> Bool {
         // A store that cannot clear the flag fails closed: erasing it would leave the flag set for a re-import.
-        guard let progress = store as? JournalRestoreProgress else {
-            errorMessage = Self.eraseNothingErasedMessage
-            eraseRetryAvailable = true
-            resolveDeferredImportEffectsAfterErase(journalEraseSucceeded: false)
-            return false
-        }
         do {
+            guard let progress = store as? JournalRestoreProgress else {
+                throw CocoaError(.featureUnsupported)
+            }
             try progress.clearRestoreInProgress()
             return true
         } catch {
