@@ -10,6 +10,10 @@ private final class SnapshotReadFailingStore: JournalStore, @unchecked Sendable 
     let inner: SwiftDataJournalStore
     /// Makes the active-intakes read throw.
     var failsActiveIntakes = false
+    /// Makes only the listed calls to the active-intakes read throw, counted from 1 in load()'s order: the
+    /// units read (1), the compound-key read (2), then the display-name read (3).
+    var failActiveIntakesCalls: Set<Int> = []
+    private var activeIntakesCalls = 0
     /// Makes the product-snapshot read throw.
     var failsProducts = false
 
@@ -44,7 +48,8 @@ private final class SnapshotReadFailingStore: JournalStore, @unchecked Sendable 
     }
     func delete(intakeID: String, now: Date) throws { try inner.delete(intakeID: intakeID, now: now) }
     func activeIntakes() throws -> [Intake] {
-        if failsActiveIntakes { throw SnapshotUnreadable() }
+        activeIntakesCalls += 1
+        if failsActiveIntakes || failActiveIntakesCalls.contains(activeIntakesCalls) { throw SnapshotUnreadable() }
         return try inner.activeIntakes()
     }
     func revisions(of intakeID: String) throws -> [IntakeRevision] { try inner.revisions(of: intakeID) }
@@ -117,5 +122,41 @@ final class GoalsSnapshotReadTests: XCTestCase {
         model.load()
         XCTAssertNil(model.errorMessage)
         XCTAssertFalse(model.rows.isEmpty)
+    }
+
+    /// Only the units read fails: its helper's refusal must hold on its own.
+    func testFailedUnitsReadAloneRefusesTheList() throws {
+        let journal = try makeJournal()
+        journal.failActiveIntakesCalls = [1]
+        let model = GoalsViewModel(
+            store: InMemoryGoalStore(goals: [NutrientGoal(nutrient: "energy", target: 2000, unit: .kcal)]),
+            journal: journal, preferences: InMemoryDisplayPreferences())
+        model.load()
+        XCTAssertEqual(model.errorMessage, GoalsViewModel.readFailedMessage)
+        XCTAssertTrue(model.rows.isEmpty)
+    }
+
+    /// Only the compound-key read fails, after the units read has succeeded.
+    func testFailedCompoundKeyReadAloneRefusesTheList() throws {
+        let journal = try makeJournal()
+        journal.failActiveIntakesCalls = [2]
+        let model = GoalsViewModel(
+            store: InMemoryGoalStore(goals: [NutrientGoal(nutrient: "energy", target: 2000, unit: .kcal)]),
+            journal: journal, preferences: InMemoryDisplayPreferences())
+        model.load()
+        XCTAssertEqual(model.errorMessage, GoalsViewModel.readFailedMessage)
+        XCTAssertTrue(model.rows.isEmpty)
+    }
+
+    /// Only the display-name read fails, after the units and compound-key reads have succeeded.
+    func testFailedDisplayNameReadAloneRefusesTheList() throws {
+        let journal = try makeJournal()
+        journal.failActiveIntakesCalls = [3]
+        let model = GoalsViewModel(
+            store: InMemoryGoalStore(goals: [NutrientGoal(nutrient: "energy", target: 2000, unit: .kcal)]),
+            journal: journal, preferences: InMemoryDisplayPreferences())
+        model.load()
+        XCTAssertEqual(model.errorMessage, GoalsViewModel.readFailedMessage)
+        XCTAssertTrue(model.rows.isEmpty)
     }
 }
