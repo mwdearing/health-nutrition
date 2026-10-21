@@ -117,6 +117,7 @@ final class JournalImportSavedMealsTests: JournalImportTestCase {
     func testSavedMealsInAnEarlierVersionAreRefused() throws {
         var root = try fields(try savedMealsExport())
         root["schema_version"] = 3
+        root.removeValue(forKey: "goals")
         let data = try JSONSerialization.data(withJSONObject: root)
         XCTAssertThrowsError(try JournalImporter.importExport(
             data, into: try store(try directory()), favorites: nil, savedMeals: MemorySavedMeals())) {

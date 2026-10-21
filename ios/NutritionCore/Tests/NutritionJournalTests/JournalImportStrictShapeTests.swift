@@ -83,6 +83,7 @@ final class JournalImportStrictShapeTests: XCTestCase {
     private func fieldsForSchemaVersion(_ original: [String: Any], version: Int) throws -> [String: Any] {
         var root = original
         root["schema_version"] = version
+        if version < 8 { root.removeValue(forKey: "goals") }
         // Saved meals are a version 4 field, so an earlier document has no such key.
         if version < 4 { root.removeValue(forKey: "saved_meals") }
         if version < 3 {
@@ -365,6 +366,7 @@ final class JournalImportStrictShapeTests: XCTestCase {
                 products: [provenance()]))
         fields = try fieldsForSchemaVersion(fields, version: 2)
         fields["schema_version"] = 1
+        fields.removeValue(forKey: "goals")
         var products = try XCTUnwrap(fields["products"] as? [[String: Any]])
         products[0].removeValue(forKey: "kind")
         fields["products"] = products

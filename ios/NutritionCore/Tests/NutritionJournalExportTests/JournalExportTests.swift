@@ -1365,7 +1365,7 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
         XCTAssertEqual(drinkJSON["hydration_percent"] as? String, "90")
         XCTAssertTrue(foodJSON.keys.contains("hydration_percent"))
         XCTAssertTrue(foodJSON["hydration_percent"] is NSNull)
-        XCTAssertEqual(JournalExport.currentSchemaVersion, 7)
+        XCTAssertEqual(JournalExport.currentSchemaVersion, 8)
     }
 
     /// A favorite's share is written on its component in the version 7 export, and a favorite saved before

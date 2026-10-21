@@ -42,6 +42,7 @@ final class JournalImportDrinkShareTests: JournalImportTestCase {
     func testVersionSixRefusesAFileThatCarriesTheShare() throws {
         var root = try object(of: try exportedDrinkData())
         root["schema_version"] = 6
+        root.removeValue(forKey: "goals")
         let data = try JSONSerialization.data(withJSONObject: root)
         let target = try store(directory())
 
@@ -53,6 +54,7 @@ final class JournalImportDrinkShareTests: JournalImportTestCase {
     func testAVersionSixBackupWithoutTheShareStillImportsAndReadsAsTheDefault() throws {
         var root = try object(of: try exportedDrinkData())
         root["schema_version"] = 6
+        root.removeValue(forKey: "goals")
         func strip(_ value: Any) -> Any {
             if var dict = value as? [String: Any] {
                 dict.removeValue(forKey: "hydration_percent")
