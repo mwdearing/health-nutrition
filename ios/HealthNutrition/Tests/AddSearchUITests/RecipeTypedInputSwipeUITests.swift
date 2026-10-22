@@ -54,8 +54,16 @@ final class RecipeTypedInputSwipeUITests: XCTestCase {
         let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5))
         start.press(forDuration: 0.1, thenDragTo: end)
 
-        let askedFirst = app.buttons["Discard"].waitForExistence(timeout: 3)
-        let stillThere = app.textFields.firstMatch.value as? String == "Pancakes"
+        // Wait for the outcome, not a fixed time: either the discard question shows, or the screen has left the form.
+        let discard = app.buttons["Discard"]
+        let bar = app.navigationBars["Recipe"]
+        let outcomeDeadline = Date().addingTimeInterval(5)
+        while Date() < outcomeDeadline, !discard.exists, bar.exists {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        }
+        // Positive check: the question is up, or the form is still there with its typed text intact.
+        let askedFirst = discard.exists
+        let stillThere = bar.exists && app.textFields.firstMatch.value as? String == "Pancakes"
         XCTAssertTrue(askedFirst || stillThere,
                       "the edge swipe left the recipe editor and lost the typed title without asking")
     }
