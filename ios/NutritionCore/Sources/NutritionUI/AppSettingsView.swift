@@ -45,6 +45,7 @@ public struct AppSettingsView: View {
 private struct AppleHealthRows: View {
     @ObservedObject var model: AppleHealthConnectionViewModel
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         VStack(alignment: .leading, spacing: DesignSpacing.xs) {
@@ -76,7 +77,6 @@ private struct AppleHealthRows: View {
 private struct SettingsContent: View {
     @StateObject private var model: AppSettingsViewModel
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.openURL) private var openURL
     @FocusState private var waterFocused: Bool
     @State private var showingGoals: Bool
     @State private var isImporting = false
