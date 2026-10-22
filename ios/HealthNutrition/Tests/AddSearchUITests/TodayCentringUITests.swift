@@ -25,7 +25,7 @@ final class TodayCentringUITests: XCTestCase {
     func testEachMacroColumnIsCentredInItsOwnEqualColumn() throws {
         let app = launchToToday()
         assertNoCalorieSummaryOrMacroColumns(app, "before any goal is set")
-        try setGoals(app)
+        guard setGoals(app) else { return }
         // Teardown blocks run last in first-in-last-out order, so this clear runs before the app terminates
         // (registered in launchToToday), and runs even when an assertion below fails.
         addTeardownBlock { try self.clearGoals(app) }
@@ -78,25 +78,38 @@ final class TodayCentringUITests: XCTestCase {
     }
 
     /// Opens Daily goals and enters a calorie goal and Protein, Carbohydrate and Fat gram goals, as a person would.
-    private func setGoals(_ app: XCUIApplication) throws {
+    /// Returns false when a step could not be reached; the caller then stops, so one miss is reported once.
+    private func setGoals(_ app: XCUIApplication) -> Bool {
         let editGoals = app.buttons["Edit goals"]
         XCTAssertTrue(editGoals.waitForExistence(timeout: 10), "the Edit goals link is not on Today")
         editGoals.tap()
+        // The Goals screen's own intro line, so a failure below names the screen rather than a field.
+        let intro = app.staticTexts["Set your own daily targets, or leave them empty."]
+        guard intro.waitForExistence(timeout: 10) else {
+            XCTFail("the Goals screen did not open from Edit goals")
+            return false
+        }
         let targets = [
             ("Energy", "2357"), ("Protein", "90"), ("Carbohydrate", "250"), ("Fat", "70"),
         ]
         for (name, value) in targets {
             let field = app.textFields["Daily target for \(name)"]
-            XCTAssertTrue(field.waitForExistence(timeout: 10), "the \(name) target field is not on the Goals screen")
+            // One failure per missing field: XCTFail and stop, so a single miss is not reported twice.
+            guard field.waitForExistence(timeout: 10) else {
+                XCTFail("the \(name) target field is not on the Goals screen")
+                return false
+            }
             field.tap()
             field.typeText(value)
             field.typeText("\n")
         }
         // Return to Today with the Goals screen's own back button, then wait for the calorie summary.
         app.navigationBars.buttons.element(boundBy: 0).tap()
-        XCTAssertTrue(
-            element("calorieRemainingFigure", in: app).waitForExistence(timeout: 10),
-            "the calorie summary did not appear after the goals were saved")
+        guard element("calorieRemainingFigure", in: app).waitForExistence(timeout: 10) else {
+            XCTFail("the calorie summary did not appear after the goals were saved")
+            return false
+        }
+        return true
     }
 
     /// Clears every goal through Settings > Daily goals > Clear all goals, then confirms the empty state on Today.
