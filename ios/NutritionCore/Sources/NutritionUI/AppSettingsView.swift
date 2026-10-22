@@ -62,7 +62,11 @@ private struct AppleHealthRows: View {
         }
         if let action = model.actionTitle {
             Button(action) {
-                Task { await self.model.connect() }
+                if model.opensHealthSettings {
+                    openURL(URL(string: "x-apple-health://")!)
+                } else {
+                    Task { await self.model.connect() }
+                }
             }
             .disabled(!model.canAct)
         }
@@ -72,6 +76,7 @@ private struct AppleHealthRows: View {
 private struct SettingsContent: View {
     @StateObject private var model: AppSettingsViewModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
     @FocusState private var waterFocused: Bool
     @State private var showingGoals: Bool
     @State private var isImporting = false
