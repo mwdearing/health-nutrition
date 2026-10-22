@@ -397,4 +397,62 @@ final class JournalImportAtomicityTests: JournalImportTestCase {
         XCTAssertEqual(summary?.intakes, try journal.activeIntakes().count, "no entry is duplicated")
         XCTAssertNil(try journal.restoreInProgressDigest(), "the finished resume clears its flag")
     }
+
+    /// A goal read that fails during the rollback leaves that goal behind: the restore reports partial, and the receipt and
+    /// the flag stay for a resume. Fails when an unreadable goal is taken as one this run did not write, since the rollback
+    /// then says nothing remains and clears the flag.
+    func testAGoalReadThatFailsDuringTheRollbackKeepsTheReceiptAndFlag() throws {
+        let directory = try self.directory()
+        let base = try SwiftDataGoalStore(url: directory.appendingPathComponent("goals.store"))
+        addTeardownBlock { base.close() }
+        let data = try exportData(favorites: false)
+        var root = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        root["goals"] = [
+            ["nutrient": "protein", "target": "60", "unit": "g"],
+            ["nutrient": "energy", "target": "2000", "unit": "kcal"],
+        ]
+        let file = try JSONSerialization.data(withJSONObject: root)
+        let journal = try store(directory)
+        final class Holder { var store: ScriptedGoalStore? }
+        let holder = Holder()
+        var calls = 0
+        let scripted = ScriptedGoalStore(base: base) { _, _ in
+            calls += 1
+            if calls == 2 {
+                holder.store?.failsRead = true
+                throw JournalImportError.corrupt("stopped")
+            }
+        }
+        holder.store = scripted
+
+        XCTAssertThrowsError(try JournalImporter.importExport(file, into: journal, favorites: nil, goals: scripted)) {
+            guard case .partialRestore = $0 as? JournalImportError else { return XCTFail("expected a partial restore, got \($0)") }
+        }
+        XCTAssertNotNil(try base.goalRestoreReceipt(JournalImporter.fileDigest(file)), "the receipt stays for the resume")
+        XCTAssertNotNil(try journal.restoreInProgressDigest(), "the flag is kept while a goal may remain")
+    }
+
+    /// A receipt that cannot be removed after a rollback keeps the restore flag, so a resume can still finish or clear it.
+    /// Fails when the receipt removal is swallowed and the flag is cleared over the receipt.
+    func testAReceiptThatCannotBeRemovedAfterARollbackKeepsTheFlag() throws {
+        let directory = try self.directory()
+        let base = try SwiftDataGoalStore(url: directory.appendingPathComponent("goals.store"))
+        addTeardownBlock { base.close() }
+        let data = try exportData(favorites: false)
+        var root = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        root["goals"] = [["nutrient": "protein", "target": "60", "unit": "g"]]
+        let file = try JSONSerialization.data(withJSONObject: root)
+        let journal = try store(directory)
+        var calls = 0
+        let scripted = ScriptedGoalStore(base: base) { _, _ in
+            calls += 1
+            if calls == 1 { throw JournalImportError.corrupt("stopped") }
+        }
+        scripted.failsReceiptRemoval = true
+
+        XCTAssertThrowsError(try JournalImporter.importExport(file, into: journal, favorites: nil, goals: scripted)) {
+            guard case .partialRestore = $0 as? JournalImportError else { return XCTFail("expected a partial restore, got \($0)") }
+        }
+        XCTAssertNotNil(try journal.restoreInProgressDigest(), "the flag is kept while the receipt remains")
+    }
 }
