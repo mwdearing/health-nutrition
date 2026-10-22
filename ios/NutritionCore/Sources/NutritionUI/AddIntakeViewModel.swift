@@ -484,7 +484,7 @@ public final class AddIntakeViewModel: ObservableObject {
     }
 
     /// Whether the edge swipe-back of the pushed details form must be blocked: exactly when typed input would be lost.
-    public var blocksSwipeBack: Bool { hasTypedInput }
+    public var blocksSwipeBack: Bool { false } // proof: mutated
 
     /// Clears the attempted save and the per-field history, for when the form is reset.
     public func resetFieldErrors() {
