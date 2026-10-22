@@ -477,6 +477,7 @@ public final class TodayViewModel: ObservableObject {
             coverage = []
             progress = []
             goalBars = []
+            nutrientCard = []
             waterBar = nil
             missingValuesSummary = nil
             activityGoalNote = nil
