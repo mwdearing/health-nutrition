@@ -90,7 +90,7 @@ public final class QuickAddViewModel: ObservableObject, Identifiable {
             switch Self.parse(text(for: field), field: field) {
             case .blank: return true
             case .value(let value): return value == 0
-            case .invalid: return false
+            case .invalid: return true
             }
         }
     }
