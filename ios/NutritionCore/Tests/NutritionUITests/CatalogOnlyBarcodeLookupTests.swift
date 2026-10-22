@@ -68,6 +68,8 @@ final class CatalogOnlyBarcodeLookupTests: XCTestCase {
     func testNoCatalogIsNotFound() async {
         let lookup = CatalogOnlyBarcodeLookup.make(community: nil, isSignedIn: nil)
 
-        XCTAssertEqual(await lookup.lookUp(barcode: barcode), .notFound)
+        let result = await lookup.lookUp(barcode: barcode)
+
+        XCTAssertEqual(result, .notFound)
     }
 }
