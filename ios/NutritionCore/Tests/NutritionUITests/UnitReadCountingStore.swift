@@ -5,6 +5,7 @@ import NutritionJournal
 
 /// Forwards every call to a real journal, except that reading the logged units throws, as a failed read would.
 /// Fails exactly one logged-units read, chosen by call number, so a test can isolate the read it targets (#415).
+/// Used from one test at a time, not shared across tasks: the two test files that use it call load() synchronously.
 final class UnitReadCountingStore: JournalStore, JournalLoggedUnits, @unchecked Sendable {
     let inner: SwiftDataJournalStore
 
