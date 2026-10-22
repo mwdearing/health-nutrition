@@ -750,7 +750,7 @@ public enum DrinkType: String, CaseIterable, Sendable {
         case .juice: 88
         case .milk: 87
         case .sparklingWater: 100
-        case .energyDrink: 89
+        case .energyDrink: 90
         case .smoothie: 85
         }
     }
