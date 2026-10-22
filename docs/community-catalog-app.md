@@ -1,10 +1,10 @@
 # Community catalog in the app
 
-The app uses the community catalog in two places: every barcode lookup is answered there, and a label you capture and save is sent to it. This page states the rules the app follows. The client and its endpoints are in [the community client](community-client.md). What a person sees in Settings and what stays on the phone is in [accounts](accounts.md).
+The app uses the community catalog in two places: a barcode that Open Food Facts does not know is looked up there, and a label you capture and save is sent to it. This page states the rules the app follows. The client and its endpoints are in [the community client](community-client.md). What a person sees in Settings and what stays on the phone is in [accounts](accounts.md).
 
 ## Looking a barcode up
 
-- The catalog is the only source for a barcode, and it is asked only for a person who is signed in. A signed-out person makes no catalog call.
+- Open Food Facts is asked first, as before. The catalog is asked only when Open Food Facts finds nothing for the barcode, and only for a person who is signed in. A signed-out person makes no catalog call.
 - A community label is shown with the values it came with and a line that says how many accounts currently support the community aggregate. Community agreement never verifies a label, regardless of count. An owner-reviewed label reads exactly "Reviewed by the catalog owner" and has no supporter-count claim. That line describes the review source, not nutrition or medical accuracy; a catalog value never reads as if Open Food Facts gave it.
 - When the catalog has more than one basis for a barcode, the app shows per 100 g first, then per 100 mL, then per serving.
 - A catalog failure, such as no connection or a server error, reads as "No product found for that barcode." It is never shown as a failed lookup.

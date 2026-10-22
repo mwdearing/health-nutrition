@@ -1,6 +1,6 @@
 # Open Food Facts: data source determination
 
-Status: Accepted for user-submitted name search only; barcodes no longer use Open Food Facts (catalog-only, #863) (amended 2026-10-13; search moved to the Open Food Facts search service 2026-10-14). Terms review date: 2027-04-02.
+Status: Accepted for live barcode lookup and for user-submitted name search (amended 2026-10-13; search moved to the Open Food Facts search service 2026-10-14). Terms review date: 2027-04-02.
 
 ## What is used
 
