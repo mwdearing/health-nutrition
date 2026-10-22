@@ -110,27 +110,6 @@ def test_macos_workflows_cancel_superseded_pull_request_runs() -> None:
         assert concurrency["cancel-in-progress"] == "${{ github.event_name == 'pull_request' }}", workflow_name
 
 
-def test_privacy_shield_capture_uses_only_resolved_package_versions() -> None:
-    job = _jobs("privacy-shield.yml")["simulator-capture"]
-    steps = cast("list[dict[str, object]]", job["steps"])
-    capture = next(step for step in steps if step.get("name") == "Capture inactive app-switcher privacy behavior")
-    words = shlex.split(str(capture["run"]))
-    assert "-disableAutomaticPackageResolution" in words
-    workflow = cast("dict[object, object]", yaml.safe_load((WORKFLOWS / "privacy-shield.yml").read_text()))
-    normalized = {("on" if key is True else str(key)): value for key, value in workflow.items()}
-    triggers = cast("dict[str, dict[str, object]]", normalized["on"])
-    for trigger in ("pull_request", "push"):
-        paths = cast("list[str]", cast("dict[str, object]", triggers[trigger])["paths"])
-        assert "**/Package.resolved" in paths
-
-    ios_raw = cast("dict[object, object]", yaml.safe_load((WORKFLOWS / "ios.yml").read_text()))
-    ios_normalized = {("on" if key is True else str(key)): value for key, value in ios_raw.items()}
-    ios_triggers = cast("dict[str, dict[str, object]]", ios_normalized["on"])
-    for trigger in ("pull_request", "push"):
-        ios_paths = cast("list[str]", cast("dict[str, object]", ios_triggers[trigger])["paths"])
-        assert ".github/workflows/privacy-shield.yml" in ios_paths
-
-
 def test_contract_changes_run_the_swift_tests_that_read_them() -> None:
     # The Swift fixture, digest, provider and bundled-schema tests read `contracts/` through `#filePath`,
     # so a pull request or push that changes only a contract has to start the workflow that runs
@@ -147,7 +126,7 @@ def test_ios_workflow_pull_request_runs_hold_at_most_two_macos_runners() -> None
     # The account has five concurrent macOS runners shared by every repository, so each macOS job this workflow
     # starts for a pull request push is a slot another run waits for. Release stays apart because it must use the
     # signed upload's image; everything that runs on macos-latest shares one job. (Other workflows, such as
-    # privacy-shield.yml and catalog.yml, start their own macOS jobs on the paths they watch.)
+    # catalog.yml, start their own macOS jobs on the paths they watch.)
     macos = [
         name
         for name, job in _jobs("ios.yml").items()

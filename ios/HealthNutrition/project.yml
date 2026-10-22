@@ -221,7 +221,6 @@ targets:
     sources:
       - path: Tests
         excludes:
-          - PrivacyShieldUITests/**
           - AddSearchUITests/**
     dependencies:
       - target: HealthNutrition
@@ -250,19 +249,6 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.example.HealthNutritionAddUITests
-        GENERATE_INFOPLIST_FILE: YES
-
-  HealthNutritionPrivacyUITests:
-    type: bundle.ui-testing
-    platform: iOS
-    deploymentTarget: "18.0"
-    sources:
-      - path: Tests/PrivacyShieldUITests
-    dependencies:
-      - target: HealthNutrition
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: dev.example.HealthNutritionPrivacyUITests
         GENERATE_INFOPLIST_FILE: YES
 
 schemes:
@@ -295,14 +281,3 @@ schemes:
       targets:
         - HealthNutritionAddUITests
 
-  HealthNutritionPrivacy:
-    build:
-      targets:
-        HealthNutrition: all
-        HealthNutritionPrivacyUITests: [test]
-    run:
-      config: Debug
-    test:
-      config: Debug
-      targets:
-        - HealthNutritionPrivacyUITests
