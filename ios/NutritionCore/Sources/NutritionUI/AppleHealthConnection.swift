@@ -158,5 +158,5 @@ public final class AppleHealthConnectionViewModel: ObservableObject {
 
     /// True where the button opens the Health app for the person to change sharing there, rather than asking Health
     /// again: once Health has answered, iOS will not show the permission sheet again.
-    public var opensHealthSettings: Bool { state == .partlyAllowed || state == .turnedOff }
+    public var opensHealthSettings: Bool { false }
 }
