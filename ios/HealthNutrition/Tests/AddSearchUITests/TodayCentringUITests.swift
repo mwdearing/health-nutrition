@@ -52,6 +52,7 @@ final class TodayCentringUITests: XCTestCase {
 
         let window = app.windows.firstMatch
         XCTAssertTrue(window.waitForExistence(timeout: 10), "no window")
+        let windowMidX = window.frame.midX
         // The calorie block the screenshot circles: the figure, its label, the goal line and the Food/Burned row.
         for identifier in ["calorieRemainingFigure", "calorieRemainingLabel", "calorieGoalLine", "calorieFoodBurnedRow"] {
             let element = element(identifier, in: app)
