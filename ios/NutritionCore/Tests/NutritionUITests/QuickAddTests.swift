@@ -355,4 +355,18 @@ final class QuickAddTests: XCTestCase {
         XCTAssertTrue(model.hasNoAmountTyped, "a typed zero shows the reason line")
         XCTAssertFalse(model.canSave, "a typed zero cannot log")
     }
+
+    /// #689: text that is not a number is not a typed zero, so the reason line stays off and the save is refused.
+    func testInvalidTextIsNotATypedZeroAndSaveReturnsNil() throws {
+        let store = try makeStore()
+        for text in ["abc", "20001"] {
+            let model = makeModel(store)
+            model.caloriesText = text
+            XCTAssertFalse(model.hasNoAmountTyped, "\(text) is not a typed zero")
+        }
+        let zero = makeModel(store)
+        zero.caloriesText = "0"
+        XCTAssertNil(zero.save(), "save returns nil for a typed zero")
+        XCTAssertEqual(try store.activeIntakes().count, 0)
+    }
 }
