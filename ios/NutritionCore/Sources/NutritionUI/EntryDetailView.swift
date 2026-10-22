@@ -13,6 +13,7 @@ public struct EntryDetailView: View {
     /// reloads the entry once it returns, so the row shows what the pass decided rather than "Waiting to send".
     private let onRetried: () async -> Void
     @State private var confirmingDelete = false
+    @State private var confirmingClose = false
     /// True once Log again wrote the new entry: the sheet then confirms it and offers only Done.
     @State private var loggedAgain = false
 
@@ -38,6 +39,21 @@ public struct EntryDetailView: View {
             }
         }
         .navigationTitle("Entry")
+        // Closing with unsaved changes asks first, and an interactive swipe-down follows the same rule.
+        .interactiveDismissDisabled(model.closeAsksFirst)
+        .toolbar {
+            // A deleted entry shows its own Close in the empty state, so the toolbar one is left out there.
+            if !model.isDeleted {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") {
+                        if model.closeAsksFirst { confirmingClose = true } else { onFinished() }
+                    }
+                }
+            }
+        }
+        .confirmationDialog("Discard changes?", isPresented: $confirmingClose, titleVisibility: .visible) {
+            Button("Discard", role: .destructive) { onFinished() }
+        }
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 if model.isDirty {
