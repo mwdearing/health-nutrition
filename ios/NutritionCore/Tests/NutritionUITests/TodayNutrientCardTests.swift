@@ -17,6 +17,54 @@ private struct CardFacts: NutrientFactsLookup {
     }
 }
 
+
+/// Forwards to a real journal, except that the active-intakes read can be made to throw, as a failed read would.
+private final class CardReadFailingStore: JournalStore, @unchecked Sendable {
+    let inner: SwiftDataJournalStore
+    var failsActiveIntakes = false
+
+    init(inner: SwiftDataJournalStore) { self.inner = inner }
+
+    private struct CardUnreadable: Error {}
+
+    var failNextSaveForTesting: Bool {
+        get { inner.failNextSaveForTesting }
+        set { inner.failNextSaveForTesting = newValue }
+    }
+
+    func create(_ intake: Intake, components: [IntakeComponent], product: ProductDefinition?, now: Date) throws
+        -> IntakeRevision
+    {
+        try inner.create(intake, components: components, product: product, now: now)
+    }
+    func edit(
+        intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
+        now: Date, occurredAt: Date?, timeZoneIdentifier: String?
+    ) throws -> IntakeRevision {
+        try inner.edit(
+            intakeID: intakeID, components: components, product: product, changeReason: changeReason, now: now,
+            occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier)
+    }
+    func editRemovingUnits(
+        intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
+        now: Date, occurredAt: Date?, timeZoneIdentifier: String?, unitRemovals: [String]) throws -> IntakeRevision {
+        try inner.editRemovingUnits(
+            intakeID: intakeID, components: components, product: product, changeReason: changeReason, now: now,
+            occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier, unitRemovals: unitRemovals)
+    }
+    func delete(intakeID: String, now: Date) throws { try inner.delete(intakeID: intakeID, now: now) }
+    func activeIntakes() throws -> [Intake] {
+        if failsActiveIntakes { throw CardUnreadable() }
+        return try inner.activeIntakes()
+    }
+    func revisions(of intakeID: String) throws -> [IntakeRevision] { try inner.revisions(of: intakeID) }
+    func projections(of intakeID: String) throws -> [DestinationProjection] { try inner.projections(of: intakeID) }
+    func pendingOutbox() throws -> [OutboxOperation] { try inner.pendingOutbox() }
+    func product(snapshotID: String) throws -> ProductDefinition? { try inner.product(snapshotID: snapshotID) }
+    func activeIntakesFromBackground() async throws -> [Intake] { try await inner.activeIntakesFromBackground() }
+    func close() { inner.close() }
+}
+
 @MainActor
 final class TodayNutrientCardTests: XCTestCase {
     private func makeJournalStore() throws -> SwiftDataJournalStore {
@@ -130,5 +178,26 @@ final class TodayNutrientCardTests: XCTestCase {
         try logUnknownFood(journal)
 
         XCTAssertEqual(cardIDs(cardModel(journal, goals)), ["fiber"])
+    }
+
+    /// A failed read after a good one leaves no card rows: the old card does not stay under the error notice.
+    func testAFailedReadAfterAGoodOneClearsTheCard() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let journal = CardReadFailingStore(
+            inner: try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store")))
+        let goals = try makeGoalStore()
+        try logFood(journal)
+
+        let model = TodayViewModel(
+            store: journal, goals: goals, lookup: CardFacts(), preferences: InMemoryDisplayPreferences())
+        model.load(now: cardWhen)
+        XCTAssertFalse(cardIDs(model).isEmpty)
+
+        journal.failsActiveIntakes = true
+        model.load(now: cardWhen)
+        XCTAssertNotNil(model.errorMessage)
+        XCTAssertEqual(cardIDs(model), [])
     }
 }
