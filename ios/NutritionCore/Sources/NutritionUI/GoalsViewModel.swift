@@ -260,19 +260,19 @@ public final class GoalsViewModel: ObservableObject {
 
     /// Every offered nutrient, with a target's text where one is stored.
     public func load() {
-        snapshotUnits = Self.snapshotValueUnits(in: journal)
         do {
+            snapshotUnits = try Self.snapshotValueUnits(in: journal)
             let stored = try store.goals()
             let byNutrient = Self.byKey(stored)
             // Every key that has a stored goal is offered even when no current snapshot carries it, so
             // an existing compound goal can still be changed or removed after the entry that named it
             // is gone. The snapshot keys add the compounds a live capture states.
-            let snapshotKeys = Self.snapshotNutrientKeys(in: journal)
+            let snapshotKeys = try Self.snapshotNutrientKeys(in: journal)
             var offered = NutrientGoalChoices.keys(including: snapshotKeys)
             // A stored goal keeps its own key, even a captured alias of a fixed row, so it stays editable.
             for goal in stored where !offered.contains(goal.nutrient) { offered.append(goal.nutrient) }
             offeredKeys = offered
-            let displayNames = Self.snapshotDisplayNames(in: journal)
+            let displayNames = try Self.snapshotDisplayNames(in: journal)
             let hidden = hiddenTodayGoals(in: preferences)
             rows = offeredKeys.map { key in
                 let name = displayNames[key] ?? NutrientNames.displayName(for: key)
@@ -322,6 +322,7 @@ public final class GoalsViewModel: ObservableObject {
             followedMacroSplit = Self.followedSplit(macroSplitPreferences?.macroSplit, in: byNutrient)
         } catch {
             rows = []
+            snapshotUnits = [:]
             followReadFailed = true
             followedMacroSplit = nil
             errorMessage = Self.readFailedMessage
@@ -331,18 +332,17 @@ public final class GoalsViewModel: ObservableObject {
     /// The compound keys the journal's current snapshots carry that the fifteen journal nutrients do
     /// not name, sorted. A label capture stores a supplement's own compound under a slug of its name
     /// (`creatine-monohydrate`), and that key is what a goal and the day's total are read under, so it
-    /// has to be offerable here. A read that throws is treated as no extras: the fixed list is still
-    /// offered, and the totals are unaffected.
-    static func snapshotNutrientKeys(in journal: (any JournalStore)?) -> [String] {
+    /// has to be offerable here. A read that throws is not guessed at: the error goes to the caller, which
+    /// refuses the list, so a captured key is never quietly left out.
+    static func snapshotNutrientKeys(in journal: (any JournalStore)?) throws -> [String] {
         guard let journal else { return [] }
         let standard = Set(NutritionFactKey.allCases.map(\.rawValue))
         var keys: Set<String> = []
-        guard let intakes = try? journal.activeIntakes() else { return [] }
-        for intake in intakes {
-            guard let revisions = try? journal.revisions(of: intake.id),
-                  let current = revisions.first(where: { $0.number == intake.currentRevision }),
+        for intake in try journal.activeIntakes() {
+            let revisions = try journal.revisions(of: intake.id)
+            guard let current = revisions.first(where: { $0.number == intake.currentRevision }),
                   let snapshotID = current.productSnapshotID,
-                  let product = try? journal.product(snapshotID: snapshotID)
+                  let product = try journal.product(snapshotID: snapshotID)
             else { continue }
             guard product.catalogOrigin == ProductOrigin.label_capture else { continue }
             for key in product.nutrients.keys where !standard.contains(key) { keys.insert(key) }
@@ -353,16 +353,15 @@ public final class GoalsViewModel: ObservableObject {
     /// The printed names the journal's current snapshots carry, keyed by nutrient. A captured
     /// supplement panel stores a compound under a slug and keeps the label's own words beside it, so a
     /// goal for `dha` is shown as `DHA` rather than as the `Dha` the slug spells back out. A read that
-    /// throws is treated as no names: the keys are still offered under the names they spell out.
-    static func snapshotDisplayNames(in journal: (any JournalStore)?) -> [String: String] {
+    /// throws goes to the caller, which refuses the list rather than show the slug in place of the label's words.
+    static func snapshotDisplayNames(in journal: (any JournalStore)?) throws -> [String: String] {
         guard let journal else { return [:] }
         var names: [String: String] = [:]
-        guard let intakes = try? journal.activeIntakes() else { return [:] }
-        for intake in intakes {
-            guard let revisions = try? journal.revisions(of: intake.id),
-                  let current = revisions.first(where: { $0.number == intake.currentRevision }),
+        for intake in try journal.activeIntakes() {
+            let revisions = try journal.revisions(of: intake.id)
+            guard let current = revisions.first(where: { $0.number == intake.currentRevision }),
                   let snapshotID = current.productSnapshotID,
-                  let product = try? journal.product(snapshotID: snapshotID)
+                  let product = try journal.product(snapshotID: snapshotID)
             else { continue }
             guard product.catalogOrigin == ProductOrigin.label_capture else { continue }
             for (key, name) in product.nutrientDisplayNames {
@@ -375,17 +374,16 @@ public final class GoalsViewModel: ObservableObject {
     /// The unit each captured key was stored in, keyed by nutrient. A compound a captured supplement
     /// panel states has no canonical unit, so the dimension its goal may be set in is the dimension
     /// the capture recorded: `Vitamin A 900IU` is an international-unit value, and a target in grams
-    /// would compare against nothing. A read that throws is treated as no units: those keys fall back
-    /// to the mass the screen assumed before.
-    static func snapshotValueUnits(in journal: (any JournalStore)?) -> [String: MeasureUnit] {
+    /// would compare against nothing. A read that throws is not guessed at: the error goes to the caller,
+    /// which refuses the list, so a captured value is never shown in grams it was not stored in.
+    static func snapshotValueUnits(in journal: (any JournalStore)?) throws -> [String: MeasureUnit] {
         guard let journal else { return [:] }
         var units: [String: MeasureUnit] = [:]
-        guard let intakes = try? journal.activeIntakes() else { return [:] }
-        for intake in intakes {
-            guard let revisions = try? journal.revisions(of: intake.id),
-                  let current = revisions.first(where: { $0.number == intake.currentRevision }),
+        for intake in try journal.activeIntakes() {
+            let revisions = try journal.revisions(of: intake.id)
+            guard let current = revisions.first(where: { $0.number == intake.currentRevision }),
                   let snapshotID = current.productSnapshotID,
-                  let product = try? journal.product(snapshotID: snapshotID)
+                  let product = try journal.product(snapshotID: snapshotID)
             else { continue }
             guard product.catalogOrigin == ProductOrigin.label_capture else { continue }
             for (key, value) in product.nutrients where units[key] == nil {

@@ -96,6 +96,7 @@ public struct AddIntakeView: View {
                                 .font(.body)
                                 .digitsOnlyKeyboard()
                                 .focused(focus)
+                                .accessibilityLabel("Barcode (optional)")
                                 .accessibilityHint("Type the 8, 12 or 13 digits on the package, then look up")
                                 .onSubmit { Task { await self.model.lookUpBarcode() } }
                                 Button("Look up") {
@@ -143,6 +144,7 @@ public struct AddIntakeView: View {
                         .font(.body)
                         .decimalAmountKeyboard()
                         .focused(focus)
+                        .accessibilityLabel("Amount")
                         // The unit is a menu, so the picker shows its own chevron; the word above it names it.
                         VStack(alignment: .leading, spacing: DesignSpacing.xs) {
                             Text("Unit")

@@ -227,7 +227,8 @@ final class FirstRunTests: XCTestCase {
         XCTAssertEqual(model.items.last?.isDone, true)
     }
 
-    /// The Health step is done once Health is connected and has been asked to read.
+    /// The Health step is done once Health is connected and has been asked to read. The connected case that has
+    /// not been asked is covered by testConnectHealthStepNeedsTheReadAnswerToBeDone.
     func testConnectHealthStepIsDoneWhenHealthIsConnected() throws {
         let health = HealthConnectorFake(AppleHealthAccess(undetermined: 0, authorized: 3, denied: 0))
         let model = FirstDayChecklistModel(

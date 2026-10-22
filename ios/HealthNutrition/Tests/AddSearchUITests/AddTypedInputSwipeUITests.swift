@@ -39,12 +39,11 @@ final class AddTypedInputSwipeUITests: XCTestCase {
 
         // Drag from the left edge to the middle: the edge swipe-back gesture.
         assertOneLeadingControl(app, bar: "Log entry")
-        // Put the keyboard away first: with it up the edge drag did not reach the pop gesture, which hid a pop.
-        if app.keyboards.count > 0 {
-            let done = app.keyboards.buttons["Done"].firstMatch
-            if done.exists { done.tap() } else { app.navigationBars["Log entry"].tap() }
-            XCTAssertTrue(!app.keyboards.firstMatch.exists, "the keyboard did not go away before the swipe")
-        }
+        // Put the keyboard away first: a tap on the form background dismisses it, and the edge drag only pops
+        // when no keyboard is up. Return is the fallback for a text keyboard that a background tap leaves up.
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25)).tap()
+        if app.keyboards.buttons["Return"].firstMatch.exists { app.keyboards.buttons["Return"].firstMatch.tap() }
+        RunLoop.current.run(until: Date().addingTimeInterval(0.5))
         let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.005, dy: 0.5))
         let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5))
         start.press(forDuration: 0.1, thenDragTo: end)

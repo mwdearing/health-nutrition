@@ -14,7 +14,6 @@ final class UnitReadFailingStore: JournalStore, JournalLoggedUnits, @unchecked S
     /// Set to false to let the reads succeed, so a test can load good data before failing the read.
     var failsUnitReads = true
 
-
     var failNextSaveForTesting: Bool {
         get { inner.failNextSaveForTesting }
         set { inner.failNextSaveForTesting = newValue }
@@ -42,7 +41,11 @@ final class UnitReadFailingStore: JournalStore, JournalLoggedUnits, @unchecked S
             occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier, unitRemovals: unitRemovals)
     }
     func delete(intakeID: String, now: Date) throws { try inner.delete(intakeID: intakeID, now: now) }
+    /// Set to true to make the active-intakes read throw, as a failed journal read would.
+    var failsActiveIntakes = false
+
     func activeIntakes() throws -> [Intake] {
+        if failsActiveIntakes { throw UnitsUnreadable() }
         return try inner.activeIntakes()
     }
     func revisions(of intakeID: String) throws -> [IntakeRevision] {
@@ -62,7 +65,6 @@ extension UnitReadFailingStore {
         guard let units = inner as? JournalLoggedUnits else { throw UnitsUnreadable() }
         try units.recordLoggedUnit(loggedUnit)
     }
-
 
     func loggedUnits() throws -> [JournalLoggedUnit] {
         if failsUnitReads { throw UnitsUnreadable() }
