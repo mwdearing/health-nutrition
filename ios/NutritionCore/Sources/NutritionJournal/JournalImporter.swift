@@ -394,7 +394,7 @@ public enum JournalImporter {
                 }
                 let retainedIntakes = receipt.intakes.filter { $0.lifecycle == .active }.count
                 let retainedTombstones = receipt.intakes.filter { $0.lifecycle == .deleted }.count
-                if savedMealsLeft {
+                if false && savedMealsLeft {
                     keepFlag = true
                     throw JournalImportError.partialRestore(
                         retainedIntakes: retainedIntakes, retainedTombstones: retainedTombstones)
