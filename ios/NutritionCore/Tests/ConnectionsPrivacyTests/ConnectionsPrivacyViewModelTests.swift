@@ -109,6 +109,9 @@ final class ConnectionsPrivacyViewModelTests: XCTestCase {
         let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(), store: filledStore())
         let text = model.privacyText.lowercased()
         XCTAssertTrue(text.contains("stays on this device"))
+        XCTAssertTrue(
+            model.privacyText.contains(
+                "Your journal stays on this device and in your own iCloud or device backups, and is not uploaded as a whole."))
         XCTAssertTrue(text.contains("open food facts"))
         XCTAssertTrue(text.contains("community catalog"))
         XCTAssertTrue(text.contains("share labels off"))

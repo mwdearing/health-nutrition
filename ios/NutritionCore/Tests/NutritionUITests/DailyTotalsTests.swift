@@ -934,7 +934,7 @@ final class DailyTotalsTests: XCTestCase {
                 nutrient: "sodium", total: total,
                 goal: NutrientGoal(nutrient: "sodium", target: Decimal(2.3), unit: .g)
             ).text,
-            "Sodium 2500 mg of 2.3 g")
+            "Sodium 2,500 mg of 2.3 g")
     }
 
     /// A drink counts its water share of the volume toward the day, as Today shows it, and a drink

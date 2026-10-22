@@ -11,7 +11,7 @@ account deletion or label retraction.
 
 ## What is erased
 
-The four SwiftData stores live under Application Support. Erase deletes rows using the same store containers, which stay open afterwards; it does not close and recreate store files.
+The four SwiftData stores live under Application Support. The journal store deletes its rows, then removes its store file and the `-wal` and `-shm` files beside it, then reopens an empty store on success. The favorites, recipes and goals stores delete their rows using the same store containers, which stay open afterwards; their store files are not removed.
 
 | File | Store | Rows removed |
 | --- | --- | --- |
@@ -68,7 +68,7 @@ because a summary from an earlier day shows dashes.
 - **Apple Health.** After the person connects Apple Health in Settings and allows it, nutrients from real logged food and water entries are written to HealthKit; a debug build's HealthKit screen can also write separate test samples. Erasing local rows does not remove HealthKit samples already written. HealthKit has its own store.
 - **HealthRelay.** It is unavailable in this version, so there is no active relay destination for this erase to contact.
 
-Deleting rows from the existing store containers is a logical app-level erase. This documentation does not promise a forensic wipe, a particular file-protection class or that old database bytes cannot be recovered. Device-level protection and physical erase behavior have not been established by this change.
+On a successful erase, the journal's store files are removed after the rows are deleted, so the deleted bytes are not kept in those files; a partial erase leaves them until Retry. For the favorites, recipes and goals stores, erase deletes rows only and the store files remain. This documentation does not promise a forensic wipe, a particular file-protection class or that old database bytes cannot be recovered in those stores. Device-level protection and physical erase behavior have not been established by this change.
 
 ## Checking it
 
