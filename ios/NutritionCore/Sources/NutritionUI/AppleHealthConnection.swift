@@ -152,7 +152,11 @@ public final class AppleHealthConnectionViewModel: ObservableObject {
         case .connected: return readAsked ? nil : "Allow reading nutrition"
         case .notConnected: return "Connect Apple Health"
         case .needsReconnect: return "Finish connecting"
-        case .partlyAllowed, .turnedOff: return "Check again"
+        case .partlyAllowed, .turnedOff: return "Open Health settings"
         }
     }
+
+    /// True where the button opens the Health app for the person to change sharing there, rather than asking Health
+    /// again: once Health has answered, iOS will not show the permission sheet again.
+    public var opensHealthSettings: Bool { state == .partlyAllowed || state == .turnedOff }
 }
