@@ -43,7 +43,11 @@ final class AddTypedInputSwipeUITests: XCTestCase {
         // when no keyboard is up. Return is the fallback for a text keyboard that a background tap leaves up.
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25)).tap()
         if app.keyboards.buttons["Return"].firstMatch.exists { app.keyboards.buttons["Return"].firstMatch.tap() }
-        RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        // The swipe must not run against a keyboard: wait for it to be gone, and fail the test if it is not.
+        let keyboard = app.keyboards.firstMatch
+        if keyboard.exists {
+            XCTAssertTrue(keyboard.waitForNonExistence(timeout: 5), "the keyboard did not go away before the swipe")
+        }
         let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.005, dy: 0.5))
         let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5))
         start.press(forDuration: 0.1, thenDragTo: end)
