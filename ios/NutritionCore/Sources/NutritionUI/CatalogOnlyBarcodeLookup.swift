@@ -18,6 +18,13 @@ public enum CatalogOnlyBarcodeLookup {
         community: CommunityLabelLookup?, isSignedIn: (@MainActor @Sendable () -> Bool)?
     ) -> BarcodeProductLookup {
         guard let community, let isSignedIn else { return NoBarcodeLookup() }
-        return CommunityFallbackLookup(primary: NoBarcodeLookup(), community: community, isSignedIn: isSignedIn)
+        return CommunityFallbackLookup(primary: OFFStandIn(), community: community, isSignedIn: isSignedIn)
+    }
+}
+
+/// Mutation: answers every barcode as found, standing in for the Open Food Facts primary.
+struct OFFStandIn: BarcodeProductLookup {
+    func lookUp(barcode: String) async -> BarcodeLookupResult {
+        .found(LookedUpProduct(barcode: barcode, name: "OFF", brand: nil, basis: .per100g, nutrients: [:]))
     }
 }
