@@ -49,6 +49,11 @@ private struct ComponentFacts: NutrientFactsLookup {
 
 @MainActor
 final class DailyTotalsTests: XCTestCase {
+
+    /// #642: the seed's store path is unset until a store is made, so a seed cannot write to a default path.
+    func testTheSeedStorePathIsUnsetBeforeAStoreIsMade() {
+        XCTAssertNil(storeURL)
+    }
     /// The file the store under test writes to, so the legacy-amount seed can open the same store (#521 item 3).
     /// The "/" default is never written to: a seed that runs before makeStore sets this would fail to
     /// open it and throw, so no test relies on the default.
