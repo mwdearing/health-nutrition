@@ -322,6 +322,7 @@ public final class GoalsViewModel: ObservableObject {
             followedMacroSplit = Self.followedSplit(macroSplitPreferences?.macroSplit, in: byNutrient)
         } catch {
             rows = []
+            snapshotUnits = [:]
             followReadFailed = true
             followedMacroSplit = nil
             errorMessage = Self.readFailedMessage
