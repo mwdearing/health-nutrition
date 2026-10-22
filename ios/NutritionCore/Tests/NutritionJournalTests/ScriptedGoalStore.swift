@@ -11,6 +11,8 @@ final class ScriptedGoalStore: GoalStore, @unchecked Sendable {
     let refusesRemoval: Bool
     /// Makes every read fail, as a store that cannot be read at that moment would.
     var failsRead = false
+    /// Makes removing a restore receipt fail, as a store that cannot write at that moment would.
+    var failsReceiptRemoval = false
 
     init(
         base: SwiftDataGoalStore, refusesRemoval: Bool = false,
@@ -45,5 +47,8 @@ final class ScriptedGoalStore: GoalStore, @unchecked Sendable {
     func goalRestoreReceipt(_ receipt: String) throws -> [NutrientGoal]? {
         try base.goalRestoreReceipt(receipt)
     }
-    func removeGoalRestoreReceipt(_ receipt: String) throws { try base.removeGoalRestoreReceipt(receipt) }
+    func removeGoalRestoreReceipt(_ receipt: String) throws {
+        if failsReceiptRemoval { throw JournalImportError.corrupt("receipt removal refused") }
+        try base.removeGoalRestoreReceipt(receipt)
+    }
 }

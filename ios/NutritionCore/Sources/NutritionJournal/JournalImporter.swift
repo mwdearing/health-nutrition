@@ -414,7 +414,12 @@ public enum JournalImporter {
                     throw JournalImportError.partialRestore(
                         retainedIntakes: retainedIntakes, retainedTombstones: retainedTombstones)
                 }
-                try? goalsTarget?.removeGoalRestoreReceipt(digest)
+                // A receipt that cannot be removed keeps the flag, so a resume can still finish or clear it.
+                do { try goalsTarget?.removeGoalRestoreReceipt(digest) } catch {
+                    keepFlag = true
+                    throw JournalImportError.partialRestore(
+                        retainedIntakes: retainedIntakes, retainedTombstones: retainedTombstones)
+                }
                 // A saved meal the phone keeps is not a transient failure: a retry meets the same meal, so its own message stays.
                 if case JournalImportError.savedMealsNotEmpty = secondPhaseFailure { throw secondPhaseFailure }
                 // The undo ran and left nothing behind, so the person is told nothing was imported, not that the file was bad.
@@ -864,7 +869,10 @@ public enum JournalImporter {
         guard let store else { return true }
         var clean = true
         for planned in recorded {
-            guard let current = try? store.goal(for: planned.nutrient), current == planned else { continue }
+            // A goal that cannot be read may be one this run wrote, so it is left behind rather than taken as not ours.
+            let current: NutrientGoal?
+            do { current = try store.goal(for: planned.nutrient) } catch { clean = false; continue }
+            guard current == planned else { continue }
             do { try store.removeGoal(nutrient: planned.nutrient) } catch { clean = false }
         }
         return clean
