@@ -1,10 +1,6 @@
 import Foundation
 
 public actor OpenFoodFactsClient {
-    public static let requestedFields = [
-        "code", "product_name", "brands", "serving_size", "serving_quantity",
-        "nutrition_data_per", "nutriments", "last_modified_t", "product_quantity_unit",
-    ]
     /// Open Food Facts publishes 15 product reads per minute for apps; we stay below that at 10.
     public static let maxLookups = 10
     public static let windowSeconds: TimeInterval = 60
@@ -209,8 +205,6 @@ public actor OpenFoodFactsClient {
         let limited = Array(ordered.prefix(Self.searchPageSize))
         return limited.isEmpty ? .empty : .results(limited)
     }
-
-
 }
 
 /// The longest wait a Retry-After header can ask for. A larger or unreadable-as-a-number value is cut to this, so a
@@ -234,13 +228,3 @@ func parseRetryAfter(_ raw: String, now: Date) -> TimeInterval? {
     return min(max(0, date.timeIntervalSince(now)), maxRetryAfter)
 }
 
-/// Connection loss: the device has no network, or the network dropped. A timeout or an unreachable host can
-/// happen on a working connection (a slow or down service), so it keeps the transport outcome, never "no internet".
-func isNetworkLoss(_ error: URLError) -> Bool {
-    switch error.code {
-    case .notConnectedToInternet, .networkConnectionLost, .dataNotAllowed:
-        return true
-    default:
-        return false
-    }
-}

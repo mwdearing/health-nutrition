@@ -3,7 +3,7 @@ import NutritionProviders
 
 /// Answers a barcode with nothing found. Used as the primary of the catalog lookup, so the only place a barcode can
 /// resolve is the community catalog, and Open Food Facts is never asked about a barcode.
-public struct NoBarcodeLookup: BarcodeProductLookup {
+struct NoBarcodeLookup: BarcodeProductLookup {
     public init() {}
 
     public func lookUp(barcode: String) async -> BarcodeLookupResult {
