@@ -73,8 +73,9 @@ public struct DisplayAmount: Equatable {
 
     private var numberText: String {
         guard self.groupsWholeAmount else { return DecimalFormatting.text(self.amount) }
+        // Up to two decimals, so a rounded 3.5 g keeps its fraction; a whole amount has none to show.
         return self.amount.formatted(
-            .number.locale(Locale(identifier: "en_US")).precision(.fractionLength(0)))
+            .number.locale(Locale(identifier: "en_US")).precision(.fractionLength(0...2)))
     }
 }
 
@@ -183,7 +184,8 @@ public enum AmountDisplay {
         let smallest = unit == .kcal ? Decimal(1) : Decimal(string: "0.01", locale: AmountParser.locale)!
         let rounded = DisplayRounding.rounded(amount, fractionDigits: digits)
         return DisplayAmount(
-            amount: rounded, unit: unit, isBelowSmallest: rounded == 0 && amount > 0, smallestAmount: smallest)
+            amount: rounded, unit: unit, isBelowSmallest: rounded == 0 && amount > 0,
+            groupsWholeAmount: true, smallestAmount: smallest)
     }
 
     /// The most fraction digits a figure printed on a label carries: the catalog states none with more
