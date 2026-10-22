@@ -103,7 +103,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     public static let privacySummary =
         "Your journal stays on this device and in your own iCloud or device backups, and is not uploaded as a whole. Signing in sends your account email, "
         + "account ID and optional display name to the project's server. A barcode lookup you start sends the "
-        + "barcode to Open Food Facts and, if no product is found and you are signed in, to the community catalog. "
+        + "barcode to the community catalog, and only when you are signed in. "
         + "A name search in Search foods sends the words you typed to Open Food Facts. "
         + "Share labels off stops new label submissions but does not disable barcode lookup. A label submission is "
         + "linked to your signed-in account, but does not include your journal entries or photo. A product you create "
