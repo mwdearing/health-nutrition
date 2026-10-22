@@ -48,9 +48,9 @@ final class AddTypedInputSwipeUITests: XCTestCase {
         if keyboard.exists {
             XCTAssertTrue(keyboard.waitForNonExistence(timeout: 5), "the keyboard did not go away before the swipe")
         }
-        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.005, dy: 0.5))
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5))
         let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5))
-        start.press(forDuration: 0.1, thenDragTo: end)
+        start.press(forDuration: 0.1, thenDragTo: end, withVelocity: .fast, thenHoldForDuration: 0)
 
         // Wait for the outcome, not a fixed time: either the discard question shows, or the screen has left the form.
         let discard = app.buttons["Discard"]
