@@ -11,7 +11,7 @@ account deletion or label retraction.
 
 ## What is erased
 
-The four SwiftData stores live under Application Support. The journal store deletes its rows, then removes its store file and the `-wal` and `-shm` files beside it, then reopens an empty store. The favorites, recipes and goals stores delete their rows through the same containers, which stay open afterwards; their store files are not removed.
+The four SwiftData stores live under Application Support. The journal store deletes its rows, then removes its store file and the `-wal` and `-shm` files beside it, then reopens an empty store. The favorites, recipes and goals stores delete their rows using the same store containers, which stay open afterwards; their store files are not removed.
 
 | File | Store | Rows removed |
 | --- | --- | --- |
