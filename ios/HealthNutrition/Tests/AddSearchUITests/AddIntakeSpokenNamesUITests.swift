@@ -6,6 +6,7 @@ final class AddIntakeSpokenNamesUITests: XCTestCase {
     func testAmountFieldIsNamedAmountAndTheUnitPickerKeepsItsName() throws {
         let app = XCUIApplication()
         app.launch()
+        addTeardownBlock { app.terminate() }
         try openTypedInEntryForm(app)
 
         let amount = app.textFields["Amount"]
@@ -14,10 +15,7 @@ final class AddIntakeSpokenNamesUITests: XCTestCase {
 
         // The Unit picker is a menu button named by its unit: "Unit, oz". Query that shape exactly, and require one.
         let unitButtons = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Unit, "))
-        XCTAssertEqual(unitButtons.count, 1, "expected exactly one Unit picker button")
-        let unit = unitButtons.firstMatch
-        XCTAssertEqual(unit.label, "Unit, oz", "the Unit picker lost its own name, or its unit changed")
-        if !unit.exists {
+        if !unitButtons.firstMatch.exists {
             // Diagnostic: the element tree, so the CI log shows what the Unit picker exposes.
             let dump = app.debugDescription
             let attachment = XCTAttachment(string: dump)
@@ -25,13 +23,20 @@ final class AddIntakeSpokenNamesUITests: XCTestCase {
             add(attachment)
             XCTFail("the Unit picker lost its own name. Element tree: \(dump)")
         }
+        XCTAssertEqual(unitButtons.count, 1, "expected exactly one Unit picker button")
+        let unit = unitButtons.firstMatch
+        XCTAssertEqual(unit.label, "Unit, oz", "the Unit picker lost its own name, or its unit changed")
     }
 
-    /// The barcode field is named "Barcode (optional)" and the Look up button keeps its own name. The app always
-    /// has a barcode lookup, so the field is shown on the typed-in form without any launch setup.
+    /// The barcode field is named "Barcode (optional)" and the Look up button keeps its own name. The field
+    /// shows only when the form has a barcode lookup (AddIntakeView: canLookUpBarcode) and is not a custom
+    /// product (!isCustomProduct). The shipped wiring always gives a lookup (RootView passes
+    /// services.barcodeLookup, which is non-optional) and the typed-in path never sets a custom product, so the
+    /// field shows here. The test does not control either condition; a change to them will fail it.
     func testBarcodeFieldIsNamedBarcodeAndLookUpKeepsItsName() throws {
         let app = XCUIApplication()
         app.launch()
+        addTeardownBlock { app.terminate() }
         try openTypedInEntryForm(app)
 
         let barcode = app.textFields["Barcode (optional)"]
@@ -39,7 +44,7 @@ final class AddIntakeSpokenNamesUITests: XCTestCase {
         XCTAssertEqual(barcode.label, "Barcode (optional)")
 
         let lookUp = app.buttons["Look up barcode"]
-        XCTAssertTrue(lookUp.exists, "the Look up button lost its name")
+        XCTAssertTrue(lookUp.waitForExistence(timeout: 10), "the Look up button lost its name")
     }
 
     /// Opens Add and then "Type it in", the path to the form with the amount field.
