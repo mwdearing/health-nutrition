@@ -89,10 +89,11 @@ final class AddTypedInputSwipeUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Log entry"].waitForExistence(timeout: 10), "the details form did not open")
         let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5))
         let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5))
-        start.press(forDuration: 0.1, thenDragTo: end)
+        start.press(forDuration: 0.1, thenDragTo: end, withVelocity: .fast, thenHoldForDuration: 0)
 
-        XCTAssertTrue(app.buttons["Type it in"].waitForExistence(timeout: 5) || !app.navigationBars["Log entry"].exists,
-                      "a clean details form did not pop back on an edge swipe, so the gesture stayed off")
+        // The pop itself: back on Add, the Type it in tile is on screen again.
+        let typeItAgain = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Type it in")).firstMatch
+        XCTAssertTrue(typeItAgain.waitForExistence(timeout: 10), "a clean details form did not pop back to Add on an edge swipe")
     }
 }
 

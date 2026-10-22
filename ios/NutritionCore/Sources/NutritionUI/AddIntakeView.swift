@@ -239,7 +239,7 @@ public struct AddIntakeView: View {
         .navigationTitle("Log entry")
         // Typed input is not lost to a Back tap or a swipe: a form with input asks first.
         .navigationBarBackButtonHidden(model.hasTypedInput)
-        .blocksEdgeSwipeBack(while: model.hasTypedInput)
+        .blocksEdgeSwipeBack(while: model.blocksSwipeBack)
         .toolbar {
             if model.hasTypedInput {
                 ToolbarItem(placement: .cancellationAction) {

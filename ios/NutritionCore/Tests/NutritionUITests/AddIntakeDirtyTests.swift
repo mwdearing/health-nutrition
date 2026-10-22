@@ -34,4 +34,11 @@ final class AddIntakeDirtyTests: XCTestCase {
         model.name = "   "
         XCTAssertFalse(model.hasTypedInput)
     }
+
+    func testTheSwipeBackGateBlocksOnlyWhileThereIsTypedInput() throws {
+        let model = try makeModel()
+        XCTAssertFalse(model.blocksSwipeBack, "a clean form must allow the edge swipe back")
+        model.name = "Oat"
+        XCTAssertTrue(model.blocksSwipeBack, "a typed form must block the edge swipe back")
+    }
 }
