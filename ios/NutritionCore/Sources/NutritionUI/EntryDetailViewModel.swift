@@ -371,6 +371,9 @@ public final class EntryDetailViewModel: ObservableObject {
         return occurredAt != storedOccurredAt
     }
 
+    /// Whether Close must ask first: unsaved changes would be lost by closing the entry.
+    public var closeAsksFirst: Bool { isDirty }
+
     /// Whether two amount texts state the same amount. Both are trimmed; when both parse, the decimals
     /// decide, so "40.0" and " 40 " match a stored 40. Otherwise the trimmed text decides. The loaded text
     /// is stored text and takes a point only; the draft is typed, so the region's comma is read in it.
