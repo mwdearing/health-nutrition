@@ -5,6 +5,7 @@ final class QuickAddLabelUITests: XCTestCase {
     func testAmountsOnlyNameFieldReadsItsTitle() throws {
         let app = XCUIApplication()
         app.launch()
+        addTeardownBlock { app.terminate() }
 
         let getStarted = app.buttons["Get started"]
         if getStarted.waitForExistence(timeout: 5) { getStarted.tap() }

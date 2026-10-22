@@ -42,6 +42,7 @@ final class PrivacyShieldUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["--privacy-shield-test"]
         app.launch()
+        addTeardownBlock { app.terminate() }
         XCTAssertTrue(app.staticTexts["synthetic-entry-marker"].waitForExistence(timeout: 10))
         return app
     }
