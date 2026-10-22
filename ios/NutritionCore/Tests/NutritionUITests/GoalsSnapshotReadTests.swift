@@ -14,6 +14,11 @@ private final class SnapshotReadFailingStore: JournalStore, @unchecked Sendable 
     /// units read (1), the compound-key read (2), then the display-name read (3).
     var failActiveIntakesCalls: Set<Int> = []
     private var activeIntakesCalls = 0
+    /// The same counting for the revisions read and the product read, one call per helper for one entry.
+    var failRevisionCalls: Set<Int> = []
+    private var revisionCalls = 0
+    var failProductCalls: Set<Int> = []
+    private var productCalls = 0
     /// Makes the product-snapshot read throw.
     var failsProducts = false
 
@@ -52,11 +57,16 @@ private final class SnapshotReadFailingStore: JournalStore, @unchecked Sendable 
         if failsActiveIntakes || failActiveIntakesCalls.contains(activeIntakesCalls) { throw SnapshotUnreadable() }
         return try inner.activeIntakes()
     }
-    func revisions(of intakeID: String) throws -> [IntakeRevision] { try inner.revisions(of: intakeID) }
+    func revisions(of intakeID: String) throws -> [IntakeRevision] {
+        revisionCalls += 1
+        if failRevisionCalls.contains(revisionCalls) { throw SnapshotUnreadable() }
+        return try inner.revisions(of: intakeID)
+    }
     func projections(of intakeID: String) throws -> [DestinationProjection] { try inner.projections(of: intakeID) }
     func pendingOutbox() throws -> [OutboxOperation] { try inner.pendingOutbox() }
     func product(snapshotID: String) throws -> ProductDefinition? {
-        if failsProducts { throw SnapshotUnreadable() }
+        productCalls += 1
+        if failsProducts || failProductCalls.contains(productCalls) { throw SnapshotUnreadable() }
         return try inner.product(snapshotID: snapshotID)
     }
     func activeIntakesFromBackground() async throws -> [Intake] { try await inner.activeIntakesFromBackground() }
@@ -158,5 +168,78 @@ final class GoalsSnapshotReadTests: XCTestCase {
         model.load()
         XCTAssertEqual(model.errorMessage, GoalsViewModel.readFailedMessage)
         XCTAssertTrue(model.rows.isEmpty)
+    }
+
+    /// The units read is the one whose refusal is seen; the keys and names helpers each need their own revisions read to fail.
+    func testFailedRevisionReadInTheCompoundKeyHelperAloneRefusesTheList() throws {
+        let journal = try makeJournal()
+        journal.failRevisionCalls = [2]
+        let model = GoalsViewModel(
+            store: InMemoryGoalStore(goals: [NutrientGoal(nutrient: "energy", target: 2000, unit: .kcal)]),
+            journal: journal, preferences: InMemoryDisplayPreferences())
+        model.load()
+        XCTAssertEqual(model.errorMessage, GoalsViewModel.readFailedMessage)
+        XCTAssertTrue(model.rows.isEmpty)
+    }
+
+    func testFailedRevisionReadInTheDisplayNameHelperAloneRefusesTheList() throws {
+        let journal = try makeJournal()
+        journal.failRevisionCalls = [3]
+        let model = GoalsViewModel(
+            store: InMemoryGoalStore(goals: [NutrientGoal(nutrient: "energy", target: 2000, unit: .kcal)]),
+            journal: journal, preferences: InMemoryDisplayPreferences())
+        model.load()
+        XCTAssertEqual(model.errorMessage, GoalsViewModel.readFailedMessage)
+        XCTAssertTrue(model.rows.isEmpty)
+    }
+
+    func testFailedProductReadInTheCompoundKeyHelperAloneRefusesTheList() throws {
+        let journal = try makeJournal()
+        journal.failProductCalls = [2]
+        let model = GoalsViewModel(
+            store: InMemoryGoalStore(goals: [NutrientGoal(nutrient: "energy", target: 2000, unit: .kcal)]),
+            journal: journal, preferences: InMemoryDisplayPreferences())
+        model.load()
+        XCTAssertEqual(model.errorMessage, GoalsViewModel.readFailedMessage)
+        XCTAssertTrue(model.rows.isEmpty)
+    }
+
+    func testFailedProductReadInTheDisplayNameHelperAloneRefusesTheList() throws {
+        let journal = try makeJournal()
+        journal.failProductCalls = [3]
+        let model = GoalsViewModel(
+            store: InMemoryGoalStore(goals: [NutrientGoal(nutrient: "energy", target: 2000, unit: .kcal)]),
+            journal: journal, preferences: InMemoryDisplayPreferences())
+        model.load()
+        XCTAssertEqual(model.errorMessage, GoalsViewModel.readFailedMessage)
+        XCTAssertTrue(model.rows.isEmpty)
+    }
+
+    /// A failed load must not keep the units a good load stored: a captured compound stated in mg shows its
+    /// stored unit after a good load, and the default once a later load's read fails.
+    func testAFailedLoadDropsTheUnitsAnEarlierLoadStored() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let inner = try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
+        let product = ProductDefinition(
+            snapshotID: "label-dha", productID: "label_capture", name: "Synthetic Gummies",
+            labelBasis: "per serving (30 g)", catalogOrigin: "label_capture", catalogVersion: "unknown",
+            nutrients: ["dha": .known(Decimal(500), .mg)])
+        try inner.create(
+            Intake(id: UUID().uuidString.lowercased(), category: "food", occurredAt: now, timeZoneIdentifier: "UTC"),
+            components: [IntakeComponent(componentID: "gummies", name: "Gummies", amount: Decimal(30), unit: .g)],
+            product: product, now: now)
+        let journal = SnapshotReadFailingStore(inner: inner)
+        let model = GoalsViewModel(
+            store: InMemoryGoalStore(goals: [NutrientGoal(nutrient: "energy", target: 2000, unit: .kcal)]),
+            journal: journal, preferences: InMemoryDisplayPreferences())
+        model.load()
+        XCTAssertEqual(model.unit(for: "dha"), .mg)
+
+        journal.failsActiveIntakes = true
+        model.load()
+        XCTAssertEqual(model.errorMessage, GoalsViewModel.readFailedMessage)
+        XCTAssertEqual(model.unit(for: "dha"), NutrientGoalChoices.unit(forKey: "dha"))
     }
 }
