@@ -22,6 +22,26 @@ final class TodayCentringUITests: XCTestCase {
         }
     }
 
+    /// A calorie goal with no macro goals: the calorie block is centred on its own, without the macro columns.
+    func testTheCalorieBlockIsCentredWithAGoalAndNoMacroGoals() throws {
+        let app = launchToToday()
+        assertNoCalorieSummaryOrMacroColumns(app, "before any goal is set")
+        guard setGoals(app, targets: [("Energy", "2357")]) else { return }
+        addTeardownBlock { try self.clearGoals(app) }
+
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 10), "no window")
+        let windowMidX = window.frame.midX
+        for identifier in ["calorieRemainingFigure", "calorieRemainingLabel", "calorieGoalLine", "calorieFoodBurnedRow"] {
+            let element = element(identifier, in: app)
+            XCTAssertTrue(element.waitForExistence(timeout: 10), "\(identifier) is not on screen with a calorie goal")
+            let midX = element.frame.midX
+            XCTAssertEqual(
+                midX, windowMidX, accuracy: tolerance,
+                "\(identifier) midX \(midX) is not within \(tolerance) pt of the window midX \(windowMidX)")
+        }
+    }
+
     func testEachMacroColumnIsCentredInItsOwnEqualColumn() throws {
         let app = launchToToday()
         assertNoCalorieSummaryOrMacroColumns(app, "before any goal is set")
@@ -32,6 +52,15 @@ final class TodayCentringUITests: XCTestCase {
 
         let window = app.windows.firstMatch
         XCTAssertTrue(window.waitForExistence(timeout: 10), "no window")
+        // The calorie block the screenshot circles: the figure, its label, the goal line and the Food/Burned row.
+        for identifier in ["calorieRemainingFigure", "calorieRemainingLabel", "calorieGoalLine", "calorieFoodBurnedRow"] {
+            let element = element(identifier, in: app)
+            XCTAssertTrue(element.waitForExistence(timeout: 10), "\(identifier) is not on screen after the goals are saved")
+            let midX = element.frame.midX
+            XCTAssertEqual(
+                midX, windowMidX, accuracy: tolerance,
+                "\(identifier) midX \(midX) is not within \(tolerance) pt of the window midX \(windowMidX)")
+        }
         var widths: [CGFloat] = []
         for nutrient in ["Protein", "Carbohydrate", "Fat"] {
             let column = element("macroColumn-\(nutrient)", in: app)
@@ -79,24 +108,23 @@ final class TodayCentringUITests: XCTestCase {
 
     /// Opens Daily goals and enters a calorie goal and Protein, Carbohydrate and Fat gram goals, as a person would.
     /// Returns false when a step could not be reached; the caller then stops, so one miss is reported once.
-    private func setGoals(_ app: XCUIApplication) -> Bool {
+    private func setGoals(_ app: XCUIApplication, targets: [(name: String, value: String)] = [
+        ("Energy", "2357"), ("Protein", "90"), ("Carbohydrate", "250"), ("Fat", "70"),
+    ]) -> Bool {
         let editGoals = app.buttons["Edit goals"]
         XCTAssertTrue(editGoals.waitForExistence(timeout: 10), "the Edit goals link is not on Today")
         editGoals.tap()
-        // The Goals screen's own intro line, so a failure below names the screen rather than a field.
-        let intro = app.staticTexts["Set your own daily targets, or leave them empty."]
-        guard intro.waitForExistence(timeout: 10) else {
-            XCTFail("the Goals screen did not open from Edit goals")
+        // The Goals screen's navigation title is "Daily goals" (GoalsView.swift). The List can scroll the intro line
+        // off screen, so the title is what this waits on. A miss dumps the element tree into the failure message.
+        guard app.navigationBars["Daily goals"].waitForExistence(timeout: 10) else {
+            XCTFail("the Goals screen did not open from Edit goals. Screen: \(app.debugDescription)")
             return false
         }
-        let targets = [
-            ("Energy", "2357"), ("Protein", "90"), ("Carbohydrate", "250"), ("Fat", "70"),
-        ]
         for (name, value) in targets {
             let field = app.textFields["Daily target for \(name)"]
             // One failure per missing field: XCTFail and stop, so a single miss is not reported twice.
             guard field.waitForExistence(timeout: 10) else {
-                XCTFail("the \(name) target field is not on the Goals screen")
+                XCTFail("the \(name) target field is not on the Goals screen. Screen: \(app.debugDescription)")
                 return false
             }
             field.tap()
