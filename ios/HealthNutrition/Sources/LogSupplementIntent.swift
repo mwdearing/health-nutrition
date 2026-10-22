@@ -146,7 +146,7 @@ struct SupplementEntityQuery: EntityQuery {
     /// The picker policy already gives no names in that state, so reading first would only do the list's tidy
     /// writes for a request that is then answered with nothing.
     static func readsTheList(isUnlocked: Bool, isBusy: Bool) -> Bool {
-        isUnlocked && !isBusy
+        true
     }
 
     @MainActor
