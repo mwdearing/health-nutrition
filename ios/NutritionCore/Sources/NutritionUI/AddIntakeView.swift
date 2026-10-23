@@ -9,8 +9,10 @@ import UIKit
 
 public struct AddIntakeView: View {
     @ObservedObject var model: AddIntakeViewModel
+    @Environment(\.dismiss) private var dismiss
     /// The imported values open by default; the person can fold them away.
     @State private var allValuesOpen = true
+    @State private var confirmDiscard = false
     private let now: () -> Date
     private let onSaved: () -> Void
     /// Opens the pushed label scanner while keeping this form's edits.
@@ -94,6 +96,7 @@ public struct AddIntakeView: View {
                                 .font(.body)
                                 .digitsOnlyKeyboard()
                                 .focused(focus)
+                                .accessibilityLabel("Barcode (optional)")
                                 .accessibilityHint("Type the 8, 12 or 13 digits on the package, then look up")
                                 .onSubmit { Task { await self.model.lookUpBarcode() } }
                                 Button("Look up") {
@@ -141,6 +144,7 @@ public struct AddIntakeView: View {
                         .font(.body)
                         .decimalAmountKeyboard()
                         .focused(focus)
+                        .accessibilityLabel("Amount")
                         // The unit is a menu, so the picker shows its own chevron; the word above it names it.
                         VStack(alignment: .leading, spacing: DesignSpacing.xs) {
                             Text("Unit")
@@ -233,6 +237,23 @@ public struct AddIntakeView: View {
         .scrollContentBackground(.hidden)
         .background(TokenColors.background)
         .navigationTitle("Log entry")
+        // Typed input is not lost to a Back tap or a swipe: a form with input asks first.
+        .navigationBarBackButtonHidden(model.hasTypedInput)
+        .blocksEdgeSwipeBack(while: model.blocksSwipeBack)
+        .toolbar {
+            if model.hasTypedInput {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button {
+                        confirmDiscard = true
+                    } label: {
+                        Label("Back", systemImage: "chevron.backward")
+                    }
+                }
+            }
+        }
+        .confirmationDialog("Discard this entry?", isPresented: $confirmDiscard, titleVisibility: .visible) {
+            Button("Discard", role: .destructive) { dismiss() }
+        }
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: DesignSpacing.s) {
                 if let message = model.saveError {

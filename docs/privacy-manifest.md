@@ -27,9 +27,8 @@ linked to the user, not used for tracking, and used for app functionality:
 | `NSPrivacyCollectedDataTypeOtherUserContent` | Product-label facts submitted to the community catalog while sharing is on: product name, brand, barcode, serving text and nutrient amounts. |
 
 The local journal is not uploaded as a journal. A barcode lookup sends the
-barcode to Open Food Facts only after the person asks for a lookup; when that
-source has no product, a signed-in person also gets a community-catalog lookup,
-even when label sharing is off. See [the privacy statement](../PRIVACY.md) and
+barcode to the community catalog only after the person asks for a lookup and is signed in; when the
+catalog holds no product, the lookup reads as not found, even when label sharing is off. See [the privacy statement](../PRIVACY.md) and
 [account behavior](accounts.md). A signed-out lookup does not call the
 authenticated community catalog, but Open Food Facts and an email sign-in
 challenge are separate requests to external services.

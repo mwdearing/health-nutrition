@@ -14,13 +14,15 @@ public struct JournalRow: Equatable, Identifiable {
     /// What kind of product the entry was recorded with, read from the same snapshot its amounts come
     /// from. Food unless that snapshot says otherwise, which is what an entry typed by hand is.
     public let kind: ProductKind
+    /// The kind totals and the logged-day count use for this entry (ProductKindResolution.totalsKind).
+    public let countsAs: ProductKind
     public let isWater: Bool
 
     public var iconName: String { EntryRow.symbol(for: self.kind, isWater: self.isWater) }
 
     public init(
         id: String, title: String, detail: String, occurredAt: Date, timeZoneIdentifier: String,
-        meal: String?, kind: ProductKind = .food, isWater: Bool = false
+        meal: String?, kind: ProductKind = .food, countsAs: ProductKind, isWater: Bool = false
     ) {
         self.id = id
         self.title = title
@@ -29,6 +31,7 @@ public struct JournalRow: Equatable, Identifiable {
         self.timeZoneIdentifier = timeZoneIdentifier
         self.meal = meal
         self.kind = kind
+        self.countsAs = countsAs
         self.isWater = isWater
     }
 
@@ -230,15 +233,17 @@ public final class JournalViewModel: ObservableObject {
                     continue
                 }
                 let snapshot = Self.snapshot(of: current, in: &snapshots, using: store)
+                let rowKind = ProductKindResolution.kind(
+                    snapshotID: current.productSnapshotID, snapshotKind: { _ in snapshot?.kind }, category: intake.category)
                 let row = JournalRow(
                     id: intake.id, title: QuickAddViewModel.rowTitle(components: current.components, product: snapshot),
                     detail: current.components.isEmpty ? "unknown" : current.components.map { component in
                         guard intake.category == "water", !component.amount.isNaN else {
                             return AmountText.describe(
                                 component, unitSystem: self.preferences.unitSystem,
-                                loggedUnit: (snapshot?.kind ?? .food) == .supplement
+                                loggedUnit: rowKind == .supplement
                                     ? loggedUnits[intake.id]?[component.componentID] : nil,
-                                isSupplement: (snapshot?.kind ?? .food) == .supplement)
+                                isSupplement: rowKind == .supplement)
                         }
                         return AmountDisplay.water(
                             component.amount, unit: component.unit, system: self.preferences.unitSystem).text
@@ -246,7 +251,8 @@ public final class JournalViewModel: ObservableObject {
                     occurredAt: intake.occurredAt,
                     timeZoneIdentifier: intake.timeZoneIdentifier,
                     meal: MealLabel.displayName(for: intake.meal),
-                    kind: snapshot?.kind ?? .food,
+                    kind: rowKind,
+                    countsAs: ProductKindResolution.totalsKind(snapshotKind: snapshot?.kind),
                     isWater: intake.category == "water")
                 let key = Self.dayKey(intake.occurredAt, zone: zone)
                 if titles[key] == nil {
@@ -708,7 +714,7 @@ public final class JournalViewModel: ObservableObject {
     /// A day counts as logged when it holds a food or drink entry. Water and supplements do not count.
     /// The day header and the week summary both use this rule.
     static func hasFoodEntries(_ rows: [JournalRow]) -> Bool {
-        rows.contains { !$0.isWater && $0.kind != .supplement }
+        rows.contains { !$0.isWater && $0.countsAs != .supplement }
     }
 
     /// The week summary for the loaded sections, or nil when the journal has no day at all. The window is

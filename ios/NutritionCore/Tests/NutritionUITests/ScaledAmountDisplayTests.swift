@@ -97,7 +97,7 @@ final class ScaledAmountDisplayTests: XCTestCase {
             let energy = GoalBarModel.make(
                 line: line(totals, "energy", goal: 2000, unit: .kcal), hasEntries: true, missingCount: 0,
                 unitSystem: system)
-            XCTAssertEqual(energy.valueText, "10 Calories of 2000 Calories")
+            XCTAssertEqual(energy.valueText, "10 Calories of 2,000 Calories")
         }
     }
 

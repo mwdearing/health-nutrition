@@ -14,16 +14,14 @@ public struct FirstDayChecklistItem: Equatable, Identifiable {
     /// A short line under the title, where the row has a value to show.
     public let detail: String?
     public let isDone: Bool
-    /// A feature the product intends but this build does not have yet. Its row is disabled.
-    public let isPlaceholder: Bool
 }
 
 /// The first-day checklist: the steps a new person can work through, and whether each is done.
 ///
 /// The three real steps tick off from what is stored: an entry in the journal, a daily goal, and the
 /// units having been looked at. The Health step is the last row, shown when this device has Health.
-/// The card is shown until the three real
-/// steps are done or until the person hides it, and the hiding is stored.
+/// The card is shown until the three real steps are done or until the person hides it, and the hiding
+/// is stored.
 @MainActor
 public final class FirstDayChecklistModel: ObservableObject {
     private let store: JournalStore
@@ -46,32 +44,40 @@ public final class FirstDayChecklistModel: ObservableObject {
         self.health = health
     }
 
-    /// Reads the steps again. A journal or goal read that throws leaves its step not done rather
-    /// than failing the card. The Health step is done when Health is connected and has nothing left to
-    /// ask, and is left off when this device has no Health to connect to.
+    /// Reads the steps again. If the journal or goal read throws, the card hides for that load only: no rows,
+    /// no empty state, no 0 and no guessed done state. A failed read never writes the stored hide flag, so the
+    /// next successful read shows the card again. The Health step is done when Health is connected and has
+    /// nothing left to do, and is left off when this device has no Health to connect to. On a failed read the
+    /// Health step is not evaluated.
     public func load() {
-        let hasEntry = (try? store.activeIntakes()).map { !$0.isEmpty } ?? false
-        var hasGoal = false
-        if let goals = goals, let stored = try? goals.goals() {
-            hasGoal = !stored.isEmpty
+        do {
+            let hasEntry = try !store.activeIntakes().isEmpty
+            var hasGoal = false
+            if let goals = goals {
+                hasGoal = try !goals.goals().isEmpty
+            }
+            items = [
+                FirstDayChecklistItem(
+                    kind: .logFirst, title: "Log your first food, drink, or supplement", detail: nil,
+                    isDone: hasEntry),
+                FirstDayChecklistItem(
+                    kind: .setGoal, title: "Set a daily goal", detail: nil,
+                    isDone: hasGoal),
+                FirstDayChecklistItem(
+                    kind: .chooseUnits, title: "Choose units", detail: Self.unitsName(preferences.unitSystem),
+                    isDone: preferences.hasReviewedUnits),
+            ]
+        } catch {
+            items = []
+            isVisible = false
+            return
         }
-        items = [
-            FirstDayChecklistItem(
-                kind: .logFirst, title: "Log your first food, drink, or supplement", detail: nil,
-                isDone: hasEntry, isPlaceholder: false),
-            FirstDayChecklistItem(
-                kind: .setGoal, title: "Set a daily goal", detail: nil,
-                isDone: hasGoal, isPlaceholder: false),
-            FirstDayChecklistItem(
-                kind: .chooseUnits, title: "Choose units", detail: Self.unitsName(preferences.unitSystem),
-                isDone: preferences.hasReviewedUnits, isPlaceholder: false),
-        ]
         if let health = health {
             health.refresh()
             if health.state != .unavailable {
                 items.append(FirstDayChecklistItem(
                     kind: .connectHealth, title: "Connect Apple Health", detail: nil,
-                    isDone: health.state == .connected && health.actionTitle == nil, isPlaceholder: false))
+                    isDone: health.isComplete))
             }
         }
         // The Health row is appended after the three real steps, so these are the first three.
@@ -107,8 +113,7 @@ public final class FirstDayChecklistModel: ObservableObject {
     }
 }
 
-/// The checklist card on Today. Each real step is a button; the placeholder is disabled and says it
-/// is not available yet.
+/// The checklist card on Today. Each step is a button.
 public struct FirstDayChecklistView: View {
     @ObservedObject private var model: FirstDayChecklistModel
     private let onLog: () -> Void
@@ -148,18 +153,13 @@ public struct FirstDayChecklistView: View {
 
     @ViewBuilder
     private func itemRow(_ item: FirstDayChecklistItem) -> some View {
-        if item.isPlaceholder {
+        Button {
+            act(item.kind)
+        } label: {
             rowContent(item)
-                .laterPlaceholder()
-        } else {
-            Button {
-                act(item.kind)
-            } label: {
-                rowContent(item)
-            }
-            .buttonStyle(.plain)
-            .accessibilityValue(item.isDone ? "Done" : "Not done")
         }
+        .buttonStyle(.plain)
+        .accessibilityValue(item.isDone ? "Done" : "Not done")
     }
 
     private func rowContent(_ item: FirstDayChecklistItem) -> some View {
@@ -177,9 +177,6 @@ public struct FirstDayChecklistView: View {
                 }
             }
             Spacer(minLength: DesignSpacing.s)
-            if item.isPlaceholder {
-                LaterBadge()
-            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())

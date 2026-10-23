@@ -110,7 +110,8 @@ public final class UserDefaultsSavedMealStore: SavedMealStoring, JournalErasing,
         lock.withLock {
             defaults.removeObject(forKey: Self.key)
             defaults.removeObject(forKey: Self.restoreReceiptKey)
-            // A fresh random epoch under its own key, kept out of exports: only Undo reads it.
+            // A fresh random epoch under its own key. The journal export reads only the list (journalSavedMeals reads
+            // meals()), so this key is not exported; only Undo reads it.
             defaults.set(UUID().uuidString, forKey: Self.eraseEpochKey)
         }
     }

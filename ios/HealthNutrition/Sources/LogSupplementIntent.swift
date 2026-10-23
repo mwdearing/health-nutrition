@@ -142,9 +142,18 @@ struct SupplementEntityQuery: EntityQuery {
     @MainActor
     static var isDeviceUnlocked: () -> Bool = { UIApplication.shared.isProtectedDataAvailable }
 
+    /// Whether a list read may run at all: only while the device is unlocked and no erase or restore is running.
+    /// The picker policy already gives no names in that state, so reading first would only do the list's tidy
+    /// writes for a request that is then answered with nothing.
+    static func readsTheList(isUnlocked: Bool, isBusy: Bool) -> Bool {
+        isUnlocked && !isBusy
+    }
+
     @MainActor
     private func loadedItems() -> [ShortcutSupplement] {
-        guard let services = AppServicesRegistry.current, !AppServicesRegistry.isBusy else { return [] }
+        guard let services = AppServicesRegistry.current,
+            Self.readsTheList(isUnlocked: Self.isDeviceUnlocked(), isBusy: AppServicesRegistry.isBusy)
+        else { return [] }
         let stack = services.supplementStack
         stack.load(now: Date())
         return stack.items

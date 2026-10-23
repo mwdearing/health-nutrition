@@ -11,8 +11,7 @@
 - Nothing is sent anywhere because of it; it is local like the rest of the journal.
 
 Code: `HealthNutrition/Sources/LogWaterIntent.swift` (the intent and shortcut, with the testable
-`WaterShortcut`), `AppServicesRegistry.swift`. Not built yet: a Lock Screen control and widgets, which need a
-widget extension and an App Group.
+`WaterShortcut`), `AppServicesRegistry.swift`. Not built yet: a Lock Screen control. Today widgets are described in widgets.md.
 
 **Log supplement taken** records one Taken for a supplement on your supplement list ("Log <supplement> in <app
 name>", "I took <supplement> in <app name>", or the action in Shortcuts, which offers the items on your list).
@@ -39,8 +38,8 @@ Both shortcuts:
 - look the list up from the store each time they run, so the picker in Shortcuts is current; that read can also
   tidy the list's saved times the way opening the list does.
 
-**Log supplement taken and your supplement names.** The action needs the device unlocked to run (its
-authentication policy requires local device authentication), and it speaks "Logged <supplement>" only then.
+**Log supplement taken and your supplement names.** The action needs the device unlocked and local device
+authentication to run (Siri or Shortcuts may ask for the passcode or biometrics), and it speaks "Logged <supplement>" only then.
 No list of your supplement names is offered while the device is locked: the picker in Shortcuts and Siri's
 prompts get an empty list until you unlock (protected data is available only then). A shortcut you already saved
 holds the item's id rather than a list, so it still resolves while locked, shown with the stand-in title

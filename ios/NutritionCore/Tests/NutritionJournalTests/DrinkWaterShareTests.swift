@@ -16,6 +16,16 @@ final class DrinkWaterShareTests: XCTestCase {
         XCTAssertEqual(DrinkType.soda.hydrationPercent, IntakeComponent.defaultDrinkHydrationPercent)
     }
 
+    /// The approved names and shares, asserted as literals so a change to either fails here.
+    func testNewDrinkTypesHaveTheApprovedNamesAndShares() {
+        XCTAssertEqual(DrinkType.sparklingWater.displayName, "Sparkling water")
+        XCTAssertEqual(DrinkType.sparklingWater.hydrationPercent, 100)
+        XCTAssertEqual(DrinkType.energyDrink.displayName, "Energy drink")
+        XCTAssertEqual(DrinkType.energyDrink.hydrationPercent, 89)
+        XCTAssertEqual(DrinkType.smoothie.displayName, "Smoothie")
+        XCTAssertEqual(DrinkType.smoothie.hydrationPercent, 85)
+    }
+
     func testAComponentWithoutAShareStoresNone() throws {
         let food = IntakeComponent(componentID: "rice", name: "Rice", amount: 100, unit: try MeasureUnit(symbol: "g"))
         XCTAssertNil(food.hydrationPercent)

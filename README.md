@@ -15,6 +15,10 @@ A native iOS app for a local food, supplement and hydration journal. This reposi
 - Community catalog client: label submission, a barcode fallback for barcodes that Open Food Facts does not know, and product search
 - Bounded response reads for the Community, Open Food Facts and NIH DSLD transports
 - Apple Health: Connect in Settings writes the nutrients and water of logged entries to HealthKit, with a debug-only device spike
+- App Intents: Log water, a saved meal and a supplement from Siri, Spotlight and the Shortcuts app; each is queued for Apple Health like any other entry
+- Trends and Insights: per-day averages and a 7-day view, computed from the Diary alone and making no medical claim
+- My supplements, water and supplement reminders, and Today widgets on the Home Screen and Lock Screen
+- Apple Health reading of steps, active energy and weight, plus the nutrient types the app writes, requested only when the person asks
 - Intake-context canonical JSON, digest calculation and journal-revision encoding
 - Swift package and app-target tests, source lint, privacy checks and unsigned build workflows
 - A manual, reviewer-gated signed-upload workflow for beta builds

@@ -61,8 +61,7 @@ public struct NourishTodayHeader: View {
     }
 
     private var otherBars: [GoalBarModel] {
-        let shown = Set(Self.macroKeys + [Self.ringKey])
-        return model.goalBars.filter { !shown.contains($0.id) }
+        model.nutrientCard
     }
 
     /// The one spoken line for the summary: remaining, food and burned as labels, then the partial note and the goal footnote.

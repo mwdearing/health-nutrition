@@ -16,13 +16,6 @@ struct HealthNutritionApp: App {
     private static let widgetSnapshots = WidgetSnapshotPublisher()
 
     init() {
-        #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("--privacy-shield-test") {
-            _services = State(initialValue: nil)
-            _startupError = State(initialValue: nil)
-            return
-        }
-        #endif
         do {
             let made = try AppServices.make(reminderScheduler: SystemReminderScheduler())
             AppServicesRegistry.register(made)
@@ -43,21 +36,11 @@ struct HealthNutritionApp: App {
 
     var body: some Scene {
         WindowGroup {
-            #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("--privacy-shield-test") {
-                PrivacyShieldCaptureHost()
-            } else if let services {
-                RootView(services: services)
-            } else {
-                StartupFailureView(message: startupError)
-            }
-            #else
             if let services {
                 RootView(services: services)
             } else {
                 StartupFailureView(message: startupError)
             }
-            #endif
         }
     }
 }
