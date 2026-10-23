@@ -45,7 +45,10 @@ public struct NourishTodayHeader: View {
 
     static func ringFootnote(for goal: NutrientGoal?) -> String? {
         guard let goal else { return nil }
-        return "of \(AmountDisplay.nutrient(goal.target, unit: goal.unit).text) goal"
+        // The goal is a whole amount, grouped the way the remaining figure is ("2,357"), so the footnote and the figure agree.
+        let target = AmountDisplay.nutrient(goal.target, unit: goal.unit)
+        let grouped = DisplayAmount(amount: target.amount, unit: goal.unit, groupsWholeAmount: true)
+        return "of \(grouped.text) goal"
     }
 
     private func fraction(_ bar: GoalBarModel?) -> Double {
@@ -105,16 +108,21 @@ public struct NourishTodayHeader: View {
         // The note comes from the calorie model, which builds it from the same missing count as its partial flag.
         let partial = calories.partialNote
         let spoken = Self.spokenSummary(calories, partial: partial, footnote: calories.showsRemaining ? ringFootnote : nil)
-        return VStack(alignment: .leading, spacing: DesignSpacing.s) {
+        return VStack(alignment: .center, spacing: DesignSpacing.s) {
             if let remaining = figures.remaining {
                 Text(remaining)
                     .font(.largeTitle.weight(.semibold))
                     .foregroundStyle(TokenColors.textPrimary)
+                    .accessibilityIdentifier("calorieRemainingFigure")
                 Text("Calories remaining")
                     .font(.subheadline)
                     .foregroundStyle(TokenColors.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .accessibilityIdentifier("calorieRemainingLabel")
                 if let ringFootnote {
                     Text(ringFootnote).font(.footnote).foregroundStyle(TokenColors.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .accessibilityIdentifier("calorieGoalLine")
                 }
             }
             HStack(alignment: .top, spacing: DesignSpacing.l) {
@@ -137,10 +145,12 @@ public struct NourishTodayHeader: View {
                     .accessibilityElement(children: .combine)
                 }
             }
+            .accessibilityIdentifier("calorieFoodBurnedRow")
             if let note = partial {
                 Text(note).font(.footnote).foregroundStyle(TokenColors.textSecondary)
             }
         }
+        .frame(maxWidth: .infinity)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(spoken)
     }
@@ -155,6 +165,8 @@ public struct NourishTodayHeader: View {
                         MacroColumn(
                             label: macro.label, figure: figure(key), fraction: fraction(macro),
                             spoken: macro.accessibilityText, note: partialNote(key))
+                        .frame(maxWidth: .infinity)
+                        .accessibilityIdentifier("macroColumn-\(macro.label)")
                     }
                 }
             }
