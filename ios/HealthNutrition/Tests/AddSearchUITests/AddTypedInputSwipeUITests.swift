@@ -93,7 +93,9 @@ final class AddTypedInputSwipeUITests: XCTestCase {
 
         // The pop itself: back on Add, the Type it in tile is on screen again.
         let typeItAgain = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Type it in")).firstMatch
-        XCTAssertTrue(typeItAgain.waitForExistence(timeout: 10), "a clean details form did not pop back to Add on an edge swipe")
+        if !typeItAgain.waitForExistence(timeout: 10) {
+            XCTFail("a clean details form did not pop back to Add on an edge swipe. Element tree: \(app.debugDescription)")
+        }
     }
 }
 
