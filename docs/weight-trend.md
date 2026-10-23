@@ -65,6 +65,11 @@ is stored at most: writing a plan replaces the stored one, and removing a plan w
 error. An invalid plan is refused before anything is written. A stored row that cannot be read is reported
 as corrupt, never as "no plan".
 
+Goal setup saves the plan when a person taps Save goals, after the targets and only once they are saved. A
+losing or gaining aim stores the goal weight and pace the person chose; a maintain aim stores the aim alone;
+just tracking does not change a stored plan. The plan is checked against the current weight before any
+target is written, so a goal on the wrong side of it saves nothing.
+
 **Erase all data** removes the weight plan together with the targets, in the same save. The plan is
 not in the export: the export holds the journal only, the same as the targets.
 
