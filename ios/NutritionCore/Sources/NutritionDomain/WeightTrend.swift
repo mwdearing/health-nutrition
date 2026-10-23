@@ -15,7 +15,8 @@ public struct WeightSample: Sendable, Equatable {
 ///
 /// Every optional field is nil together when there is not enough data: fewer than two days with a
 /// weigh-in, or a first and last day closer than `WeightTrend.minimumSpanDays`. `projectedGoalDay` is
-/// also nil when there is no goal or the trend is not moving toward it.
+/// also nil when there is no goal, the trend is not moving toward it, or the day would fall after
+/// 9999-12-31.
 public struct WeightTrendResult: Sendable, Equatable {
     /// The first day of the window, inclusive.
     public let from: CalendarDay
@@ -120,7 +121,7 @@ public enum WeightTrend {
                 var days = abs(trendRaw - goal) / abs(slope)
                 days = rounded(days, scale: 6, mode: .plain)
                 days = rounded(days, scale: 0, mode: .up)
-                goalDay = through.adding(days: NSDecimalNumber(decimal: days).intValue)
+                goalDay = through.adding(wholeDays: days)
             }
         }
 

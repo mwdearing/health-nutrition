@@ -32,7 +32,8 @@ public struct PaceComparison: Sendable, Equatable {
 public enum PlanProjection {
     /// The day a steady pace reaches the goal, counted from `from`.
     ///
-    /// Nil when the pace is not above zero or when the current weight is already the goal.
+    /// Nil when the pace is not above zero, when the current weight is already the goal, or when the day
+    /// would fall after 9999-12-31.
     public static func goalDay(
         currentKilograms: Decimal, goalKilograms: Decimal, weeklyPaceKilograms: Decimal, from: CalendarDay
     ) -> CalendarDay? {
@@ -48,8 +49,7 @@ public enum PlanProjection {
         var wholeDays = Decimal()
         NSDecimalRound(&wholeDays, &sixPlaces, 0, .plain)
 
-        let dayCount = NSDecimalNumber(decimal: wholeDays).intValue
-        return from.adding(days: dayCount)
+        return from.adding(wholeDays: wholeDays)
     }
 
     /// The planned weekly change: minus the pace when losing, plus it when gaining, zero for the rest.

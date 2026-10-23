@@ -166,4 +166,19 @@ final class WeightTrendTests: XCTestCase {
         XCTAssertEqual(WeightTrend.minimumSpanDays, 7)
         XCTAssertEqual(WeightTrend.windowRange, 14...56)
     }
+
+    func testANearlyFlatTrendWithAFarGoalDayPastTheCalendarHasNoGoalDay() {
+        // 0.000001 kg over 14 days is a slope of about 7e-8 kg a day: 40 kg away is over a billion days.
+        let samples = Self.samples([("2026-04-01", "90.000000"), ("2026-04-15", "89.999999")])
+        let result = WeightTrend.compute(samples: samples, through: testDay("2026-04-15"), goalKilograms: decimal("50"))
+        XCTAssertEqual(result.weeklyChangeKilograms, 0)
+        XCTAssertNil(result.projectedGoalDay)
+    }
+
+    func testAnAlmostZeroSlopeDoesNotOverflowTheDayCount() {
+        let samples = Self.samples([("2026-04-01", "80.00000000000000000000000000001"), ("2026-04-08", "80")])
+        let result = WeightTrend.compute(samples: samples, through: testDay("2026-04-08"), goalKilograms: decimal("70"))
+        XCTAssertTrue(result.hasEnoughData)
+        XCTAssertNil(result.projectedGoalDay)
+    }
 }

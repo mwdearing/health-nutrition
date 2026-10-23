@@ -144,4 +144,23 @@ final class PlanProjectionTests: XCTestCase {
         XCTAssertNil(comparison.plannedGoalDay)
         XCTAssertEqual(comparison.trendGoalDay, day("2026-07-12"))
     }
+
+    func testATinyPaceWhoseGoalDayIsPastTheCalendarHasNoDay() {
+        let tiny = PlanProjection.goalDay(
+            currentKilograms: d("89"), goalKilograms: d("80"), weeklyPaceKilograms: d("0.0000000000001"),
+            from: day("2026-04-15"))
+        XCTAssertNil(tiny)
+    }
+
+    func testAGoalDayOnTheLastCalendarDayIsKept() {
+        // 1 kg at 7 kg a week is one day.
+        let last = PlanProjection.goalDay(
+            currentKilograms: d("81"), goalKilograms: d("80"), weeklyPaceKilograms: d("7"),
+            from: day("9999-12-30"))
+        XCTAssertEqual(last, day("9999-12-31"))
+        let past = PlanProjection.goalDay(
+            currentKilograms: d("81"), goalKilograms: d("80"), weeklyPaceKilograms: d("7"),
+            from: day("9999-12-31"))
+        XCTAssertNil(past)
+    }
 }

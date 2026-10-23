@@ -30,14 +30,15 @@ same samples give the same answer on every device.
   means the weight is going down.
 - **Projected goal date.** Only when a goal is given, the line is not flat, and it moves toward the
   goal. The days to the goal are the distance from the unrounded trend weight to the goal divided by
-  the unrounded daily slope, rounded to 6 decimal places and then up to a whole day.
+  the unrounded daily slope, rounded to 6 decimal places and then up to a whole day. A nearly flat
+  line can put that day thousands of years away; a day after 9999-12-31 is left empty.
 
 ## The planned goal date
 
 `PlanProjection.goalDay` works from the current weight, the goal and the weekly pace: the distance
 divided by the pace, times 7 days, rounded to 6 decimal places and then to the nearest whole day
-(halves away from zero). There is no date for a pace that is not above zero or when the current weight
-already equals the goal.
+(halves away from zero). There is no date for a pace that is not above zero, when the current weight
+already equals the goal, or when the day would fall after 9999-12-31.
 
 `PlanProjection.plannedWeeklyChangeKilograms` signs the pace by the aim: negative for losing, positive
 for gaining, zero for maintaining or just tracking.

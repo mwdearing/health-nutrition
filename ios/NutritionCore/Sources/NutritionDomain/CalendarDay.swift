@@ -56,6 +56,16 @@ public struct CalendarDay: Sendable, Hashable, Comparable {
         Self(dayNumber: dayNumber + days)
     }
 
+    /// The day a whole number of `days` later, or nil when it would fall outside 0001-01-01...9999-12-31.
+    ///
+    /// The count is checked as a decimal before it becomes an `Int`, so a projection of billions of days
+    /// gives nil instead of a year no calendar shows.
+    func adding(wholeDays days: Decimal) -> CalendarDay? {
+        guard days >= Decimal(Self.firstDayNumber - dayNumber), days <= Decimal(Self.lastDayNumber - dayNumber)
+        else { return nil }
+        return adding(days: NSDecimalNumber(decimal: days).intValue)
+    }
+
     /// The number of days from this day to `other`: `other` minus `self`, negative when `other` is earlier.
     public func days(until other: CalendarDay) -> Int {
         other.dayNumber - dayNumber
@@ -76,6 +86,9 @@ public struct CalendarDay: Sendable, Hashable, Comparable {
         default: return 31
         }
     }
+
+    private static let firstDayNumber = CalendarDay(year: 1, month: 1, day: 1)!.dayNumber
+    private static let lastDayNumber = CalendarDay(year: 9999, month: 12, day: 31)!.dayNumber
 
     /// Days since 1970-01-01, counted on the proleptic Gregorian calendar.
     private var dayNumber: Int {
