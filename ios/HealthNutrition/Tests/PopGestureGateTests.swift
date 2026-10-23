@@ -17,7 +17,12 @@ final class PopGestureGateTests: XCTestCase {
         window.makeKeyAndVisible()
         let host = UIHostingController(rootView: Color.clear.blocksEdgeSwipeBack(while: blocked))
         nav.pushViewController(host, animated: false)
-        RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+        // Lay the hosted tree out in the key window before reading it, so SwiftUI can create its representables.
+        host.view.frame = window.bounds
+        host.view.setNeedsLayout()
+        host.view.layoutIfNeeded()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        host.view.layoutIfNeeded()
         return nav.interactivePopGestureRecognizer?.isEnabled
     }
 
