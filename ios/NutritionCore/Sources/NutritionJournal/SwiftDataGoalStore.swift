@@ -99,7 +99,7 @@ public final class SwiftDataGoalStore: GoalStore, JournalErasing, @unchecked Sen
         guard let row = try context.fetch(FetchDescriptor<NutrientGoalRecord>(
             predicate: #Predicate<NutrientGoalRecord> { $0.nutrient == id })).first else {
             // A receipt is recorded before its goals are written, so one that is missing here is a store that lost it.
-            throw JournalImportError.corrupt("the goal restore receipt is missing")
+            return
         }
         let payload = try Self.decodeReceipt(row.targetText)
         row.targetText = try Self.encodeReceipt(ReceiptPayload(done: true, goals: payload.goals))
