@@ -22,6 +22,13 @@ final class TodayCentringUITests: XCTestCase {
         }
     }
 
+    /// The screen keeps its name for VoiceOver and the back button, even though the bar draws no visible title.
+    func testTheScreenNameIsStillTheNavigationTitle() throws {
+        let app = launchToToday()
+        let bar = app.navigationBars["Today"]
+        XCTAssertTrue(bar.waitForExistence(timeout: 10), "the navigation bar has no screen name 'Today' for VoiceOver")
+    }
+
     /// Launches the app, dismisses onboarding if it shows, and waits for the Today screen's header.
     private func launchToToday() -> XCUIApplication {
         let app = XCUIApplication()

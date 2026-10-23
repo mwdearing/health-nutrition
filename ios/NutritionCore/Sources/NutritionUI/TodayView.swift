@@ -101,10 +101,14 @@ public struct TodayView: View {
             .padding(.bottom, DesignSpacing.floatingClearance)
         }
         .background(TokenColors.background)
-        // The title is drawn in the content, centred, as a heading; the bar keeps the gear and no title of its own.
-        .navigationTitle("")
+        // The screen name stays the navigation title, so VoiceOver and the back button keep "Today". The bar draws no
+        // visible title: the heading is drawn in the content, centred, and an empty principal item hides the bar copy.
+        .navigationTitle("Today")
 #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) { EmptyView() }
+        }
 #endif
         .onAppear { model.load(now: now()) }
     }
