@@ -99,6 +99,7 @@ struct WidgetCalorieSummary: View {
                 Text(snapshot?.remainingCaption ?? "Calories remaining")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .privacySensitive()
             }
             WidgetFoodBurned(snapshot: snapshot, vertical: verticalDetails)
         }
