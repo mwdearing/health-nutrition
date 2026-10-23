@@ -72,6 +72,11 @@ public struct NourishTodayHeader: View {
         ].compactMap { $0 }.joined(separator: ", ")
     }
 
+    /// The prompt shown in place of Calories remaining while no energy goal is stored. Nil once a goal exists.
+    static func goalPrompt(_ calories: CalorieRemaining) -> String? {
+        calories.goal == nil ? "Set a calorie goal to see what's left" : nil
+    }
+
     /// The figures the calorie summary shows. Food is a dash until something is logged, never 0. Remaining is hidden
     /// without a goal and a dash with one but no known food. Burned is hidden unless the model has a Health figure.
     struct SummaryFigures: Equatable {
@@ -116,6 +121,11 @@ public struct NourishTodayHeader: View {
                 if let ringFootnote {
                     Text(ringFootnote).font(.footnote).foregroundStyle(TokenColors.textSecondary)
                 }
+            } else if let prompt = Self.goalPrompt(calories), let onEditGoals {
+                Button(prompt) { onEditGoals() }
+                    .font(.headline)
+                    .foregroundStyle(TokenColors.accent)
+                    .accessibilityHint("Opens your goals to set a calorie goal")
             }
             HStack(alignment: .top, spacing: DesignSpacing.l) {
                 Label {
