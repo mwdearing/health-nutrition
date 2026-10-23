@@ -512,7 +512,7 @@ final class JournalImportAtomicityTests: JournalImportTestCase {
         root["goals"] = [["nutrient": "protein", "target": "60", "unit": "g"]]
         let file = try JSONSerialization.data(withJSONObject: root)
         let journal = try store(directory)
-        let failing = ScriptedGoalStore(base: base)
+        let failing = ScriptedGoalStore(base: base) { _, _ in }
         failing.failsMark = true
 
         XCTAssertThrowsError(try JournalImporter.importExport(file, into: journal, favorites: nil, goals: failing))
