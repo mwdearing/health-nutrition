@@ -17,6 +17,9 @@ public enum JournalImportError: Error, Sendable, Equatable {
     case savedMealsNotEmpty
     /// The bytes are not a journal export at all: not JSON, or not the shape the schema describes.
     case malformed(String)
+    /// The restore finished and every row is written, but the restore-in-progress flag could not be removed.
+    /// The rows stay; the flag is the only thing left behind.
+    case cleanupIncomplete
     /// The file is a version 1 export that cannot be restored as it stands: a snapshot nothing defines,
     /// a revision history that does not line up, an amount that is not exact decimal text.
     case corrupt(String)
@@ -345,7 +348,9 @@ public enum JournalImporter {
             }
             // A flag that cannot be cleared is reported rather than swallowed. It cannot start a resume over this
             // second phase: every part of it now has its receipt.
-            try progress?.clearRestoreInProgress()
+            // The restore itself is complete, so a flag that cannot be cleared is reported as its own outcome, not as a
+            // failed import: the person's rows are there and a retry would only find them.
+            do { try progress?.clearRestoreInProgress() } catch { throw JournalImportError.cleanupIncomplete }
             try? favoritesTarget?.removeRestoreReceipt(digest)
             try? savedMealsTarget?.removeSavedMealsRestoreReceipt(digest)
         }

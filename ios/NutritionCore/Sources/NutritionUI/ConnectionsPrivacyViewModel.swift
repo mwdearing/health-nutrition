@@ -120,6 +120,9 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     public static let exportFailedMessage = "Could not export the journal."
     public static let importButtonTitle = "Import a journal export"
     public static let importFailedMessage = "Could not import that file."
+    /// A restore that finished but could not clean up its flag. The rows are there; the person is told to retry.
+    public static let cleanupIncompleteMessage =
+        "Restored, but the app could not finish cleaning up. To be sure, delete the journal entries from this import and import the export file again."
     /// What the importer refused and why, in the words a person can act on.
     public static let importUnsupportedVersionMessage =
         "That file was made by a newer version of the app, so this one cannot read it."
@@ -821,7 +824,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             switch self {
             case .imported:
                 return true
-            case .failed(.refused(.partialRestore)):
+            case .failed(.refused(.partialRestore)), .failed(.refused(.cleanupIncomplete)):
                 return true
             case .failed:
                 return false
@@ -1081,6 +1084,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             return importFailedMessage
         case .partialRestore:
             return partialRestoreWarningMessage
+        case .cleanupIncomplete:
+            return cleanupIncompleteMessage
         }
     }
 
