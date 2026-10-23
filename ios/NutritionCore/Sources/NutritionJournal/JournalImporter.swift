@@ -281,9 +281,7 @@ public enum JournalImporter {
             }
             // A flag that outlived a finished resume would let a later import of this file write rows the
             // person deleted since, so a failure to clear it is reported rather than swallowed.
-            // Every part of the restore has its receipt by now, so a flag that cannot be cleared is the same outcome as
-            // on the first pass: the rows are written and only the flag is left behind.
-            do { try progress.clearRestoreInProgress() } catch { throw JournalImportError.cleanupIncomplete }
+            try progress.clearRestoreInProgress()
             // The flag is gone, so the receipts have nothing left to answer; one left by a stop here is harmless.
             try? favoritesTarget?.removeRestoreReceipt(digest)
             try? savedMealsTarget?.removeSavedMealsRestoreReceipt(digest)
