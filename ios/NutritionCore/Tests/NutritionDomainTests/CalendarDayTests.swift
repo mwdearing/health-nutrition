@@ -95,4 +95,13 @@ final class CalendarDayTests: XCTestCase {
             previous = next
         }
     }
+
+    func testAddingWholeDaysStaysInsideTheCalendarRange() {
+        let first = CalendarDay(year: 1, month: 1, day: 1)!
+        XCTAssertNil(first.adding(wholeDays: -1))
+        XCTAssertEqual(first.adding(wholeDays: 0), first)
+        let last = CalendarDay(year: 9999, month: 12, day: 31)!
+        XCTAssertNil(last.adding(wholeDays: 1))
+        XCTAssertEqual(first.adding(wholeDays: Decimal(first.days(until: last))), last)
+    }
 }

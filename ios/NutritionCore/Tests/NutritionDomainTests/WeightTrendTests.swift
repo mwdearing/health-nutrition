@@ -168,7 +168,7 @@ final class WeightTrendTests: XCTestCase {
     }
 
     func testANearlyFlatTrendWithAFarGoalDayPastTheCalendarHasNoGoalDay() {
-        // 0.000001 kg over 14 days is a slope of about 7e-8 kg a day: 40 kg away is over a billion days.
+        // 0.000001 kg over 14 days is a slope of about 7e-8 kg a day: 40 kg away is over 500 million days.
         let samples = Self.samples([("2026-04-01", "90.000000"), ("2026-04-15", "89.999999")])
         let result = WeightTrend.compute(
             samples: samples, through: testDay("2026-04-15"), goalKilograms: decimal("50"))
