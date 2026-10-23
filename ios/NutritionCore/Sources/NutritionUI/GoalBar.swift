@@ -258,7 +258,7 @@ enum MissingValueWording {
 
     /// The note for a partial line whose journal side is complete and whose Health side is short.
     static func healthGapNote(name: String) -> String {
-        "Some data from the Health app can't be counted for \(name)"
+        "Some Health readings are missing for \(name)"
     }
 
     /// The note a partial line shows: the Health note when only Health is short, otherwise the count note or fallback.

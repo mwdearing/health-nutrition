@@ -9,7 +9,7 @@ final class HealthGapNoteTests: XCTestCase {
     func testTheHealthNoteNamesTheDataSourceForAHealthGap() {
         XCTAssertEqual(
             MissingValueWording.partialNote(name: "energy", healthGap: true, count: 0),
-            "Some data from the Health app can't be counted for energy")
+            "Some Health readings are missing for energy")
     }
 
     func testAJournalGapKeepsTheEntryNotes() {
