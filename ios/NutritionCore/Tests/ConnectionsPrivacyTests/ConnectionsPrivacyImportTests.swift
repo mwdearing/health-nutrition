@@ -617,6 +617,20 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         XCTAssertEqual(try journal.activeIntakes().map(\.id), [entryID])
     }
 
+    /// A restore that finishes but cannot remove its flag keeps every row and says the restore is done, not that
+    /// the file was bad.
+    func testACompleteRestoreWhoseFlagCannotBeClearedKeepsItsRowsAndSaysSo() async throws {
+        let journal = ImportStubStore()
+        journal.failClearRestoreForTesting = true
+        let model = ConnectionsPrivacyViewModel(store: journal, erasers: [journal])
+
+        model.importJournal(data: try export(includeFavorite: false))
+        await waitForImportToSettle(model)
+
+        XCTAssertEqual(model.importMessage, ConnectionsPrivacyViewModel.cleanupIncompleteMessage)
+        XCTAssertFalse(try journal.activeIntakes().isEmpty)
+    }
+
     /// The restore flag is cleared once the import has finished. A failed clear then cancels nothing, erases
     /// nothing, and offers Retry; the import completes and its rows stay.
     func testAFailedFlagClearAfterTheImportFinishesCancelsNothing() async throws {
