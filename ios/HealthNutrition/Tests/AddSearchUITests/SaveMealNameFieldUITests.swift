@@ -16,7 +16,9 @@ final class SaveMealNameFieldUITests: XCTestCase {
         diary.tap()
 
         let save = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@ AND label ENDSWITH %@", "Save ", " as a meal")).firstMatch
-        XCTAssertTrue(save.waitForExistence(timeout: 10), "no Save as meal button after logging an entry")
+        if !save.waitForExistence(timeout: 10) {
+            XCTFail("no Save as meal button after logging an entry. Element tree: \(app.debugDescription)")
+        }
         save.tap()
 
         let name = app.textFields["Meal name"]
