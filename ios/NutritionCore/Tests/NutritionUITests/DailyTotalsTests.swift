@@ -49,17 +49,23 @@ private struct ComponentFacts: NutrientFactsLookup {
 
 @MainActor
 final class DailyTotalsTests: XCTestCase {
+
+    /// #642: the seed's store path is unset until a store is made, so a seed cannot write to a default path.
+    func testTheSeedStorePathIsUnsetBeforeAStoreIsMade() {
+        XCTAssertNil(storeURL)
+    }
     /// The file the store under test writes to, so the legacy-amount seed can open the same store (#521 item 3).
     /// The "/" default is never written to: a seed that runs before makeStore sets this would fail to
     /// open it and throw, so no test relies on the default.
-    private var storeURL = URL(fileURLWithPath: "/")
+    private var storeURL: URL?
 
     private func makeStore() throws -> SwiftDataJournalStore {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
-        storeURL = directory.appendingPathComponent("journal.store")
-        return try SwiftDataJournalStore(url: storeURL)
+        let url = directory.appendingPathComponent("journal.store")
+        storeURL = url
+        return try SwiftDataJournalStore(url: url)
     }
 
     /// A product whose stated protein is per 100 g, the shape a barcode lookup records.
@@ -1085,7 +1091,7 @@ final class DailyTotalsTests: XCTestCase {
                 IntakeComponent(componentID: "drinka", name: "Drink", amount: 250, unit: .mL, hydrationPercent: 100),
                 IntakeComponent(componentID: "drinkb", name: "Drink", amount: 50, unit: .mL, hydrationPercent: 100),
             ], product: nil, now: when)
-        try LegacyAmountSeed.seed(storeAt: storeURL, intakeID: intake.id, amountsByComponent: ["drinkb": "-50"])
+        try LegacyAmountSeed.seed(storeAt: try XCTUnwrap(storeURL), intakeID: intake.id, amountsByComponent: ["drinkb": "-50"])
         let totals = try DailyTotalsBuilder.totals(
             for: try store.activeIntakes(), store: store, lookup: SnapshotOnlyFacts(),
             nutrients: [DailyTotalsBuilder.waterKey])
@@ -1111,7 +1117,7 @@ final class DailyTotalsTests: XCTestCase {
     func testASeededNegativeRowReadsBackThroughTheNormalReadPath() throws {
         let store = try makeStore()
         let id = try addFood(store, name: "Oats", id: "oats", at: when, amount: 40)
-        try LegacyAmountSeed.seed(storeAt: storeURL, intakeID: id, amountsByComponent: ["oats": "-40"])
+        try LegacyAmountSeed.seed(storeAt: try XCTUnwrap(storeURL), intakeID: id, amountsByComponent: ["oats": "-40"])
         let revision = try XCTUnwrap(try store.revisions(of: id).last)
         XCTAssertEqual(revision.components.first?.amount, -40)
     }
@@ -1149,7 +1155,7 @@ final class DailyTotalsTests: XCTestCase {
             intake, components: [IntakeComponent(
                 componentID: "soup", name: "Soup", amount: 250, unit: .mL, hydrationPercent: 100)],
             product: nil, now: when)
-        try LegacyAmountSeed.seed(storeAt: storeURL, intakeID: intake.id, amountsByComponent: ["soup": "-250"])
+        try LegacyAmountSeed.seed(storeAt: try XCTUnwrap(storeURL), intakeID: intake.id, amountsByComponent: ["soup": "-250"])
         let totals = try DailyTotalsBuilder.totals(
             for: try store.activeIntakes(), store: store, lookup: SnapshotOnlyFacts(),
             nutrients: [DailyTotalsBuilder.waterKey])
@@ -1168,7 +1174,7 @@ final class DailyTotalsTests: XCTestCase {
             labelBasis: "per 100 g", catalogOrigin: "test", catalogVersion: "1",
             nutrients: ["energyKcal": .known(Decimal(380), .kcal), "protein": .known(Decimal(13), .g)])
         let vitDID = try addFood(store, name: "Vitamin D", id: "vitd", at: when, amount: 1, unit: .serving, product: vitaminD)
-        try LegacyAmountSeed.seed(storeAt: storeURL, intakeID: vitDID, amountsByComponent: ["vitd": "-1"])
+        try LegacyAmountSeed.seed(storeAt: try XCTUnwrap(storeURL), intakeID: vitDID, amountsByComponent: ["vitd": "-1"])
         try addFood(store, name: "Oats", id: "oats", at: when, amount: 100, product: oats)
         let totals = try DailyTotalsBuilder.totals(
             for: try store.activeIntakes(), store: store, lookup: SnapshotOnlyFacts(),
@@ -1187,7 +1193,7 @@ final class DailyTotalsTests: XCTestCase {
         do {
             let store = try makeStore()
             let oatsID = try addFood(store, name: "Oats", id: "oats", at: when, amount: 40, unit: .g)
-            try LegacyAmountSeed.seed(storeAt: storeURL, intakeID: oatsID, amountsByComponent: ["oats": "-40"])
+            try LegacyAmountSeed.seed(storeAt: try XCTUnwrap(storeURL), intakeID: oatsID, amountsByComponent: ["oats": "-40"])
             try addFood(store, name: "Rice", id: "rice", at: when, amount: 150, unit: .g)
             let totals = try DailyTotalsBuilder.totals(
                 for: try store.activeIntakes(), store: store, lookup: facts, nutrients: ["energyKcal"])
@@ -1203,7 +1209,7 @@ final class DailyTotalsTests: XCTestCase {
                 nutrients: ["energyKcal": .known(Decimal(10), .kcal)])
             try addFood(store, name: "Oats", id: "oats", at: when, amount: 40, unit: .g, product: product)
             let oatsID = try addFood(store, name: "Oats", id: "oats", at: when, amount: 40, unit: .g, product: product)
-            try LegacyAmountSeed.seed(storeAt: storeURL, intakeID: oatsID, amountsByComponent: ["oats": "-40"])
+            try LegacyAmountSeed.seed(storeAt: try XCTUnwrap(storeURL), intakeID: oatsID, amountsByComponent: ["oats": "-40"])
             let totals = try DailyTotalsBuilder.totals(
                 for: try store.activeIntakes(), store: store, lookup: SnapshotOnlyFacts(), nutrients: ["energyKcal"])
             XCTAssertEqual(totals.total(for: "energyKcal")?.value, .unknown, "mass path")
@@ -1221,7 +1227,7 @@ final class DailyTotalsTests: XCTestCase {
                 nutrients: ["energyKcal": .known(Decimal(10), .kcal)])
             try addFood(store, name: "Gummy", id: "gummy", at: when, amount: 2, unit: .serving, product: product)
             let gummyID = try addFood(store, name: "Gummy", id: "gummy", at: when, amount: 2, unit: .serving, product: product)
-            try LegacyAmountSeed.seed(storeAt: storeURL, intakeID: gummyID, amountsByComponent: ["gummy": "-2"])
+            try LegacyAmountSeed.seed(storeAt: try XCTUnwrap(storeURL), intakeID: gummyID, amountsByComponent: ["gummy": "-2"])
             let totals = try DailyTotalsBuilder.totals(
                 for: try store.activeIntakes(), store: store, lookup: SnapshotOnlyFacts(), nutrients: ["energyKcal"])
             XCTAssertEqual(totals.total(for: "energyKcal")?.value, .unknown, "count path")
