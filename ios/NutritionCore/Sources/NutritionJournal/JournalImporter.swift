@@ -270,15 +270,9 @@ public enum JournalImporter {
                       try Set(favorites.list().map(\.id)).isDisjoint(with: plan.favorites.map(\.id))
                 else { throw JournalImportError.notEmpty }
             }
-            // Every part of the second phase already has its receipt, so nothing is written again. Only the flag is
-            // left, from a stop after the last save or a clear that failed before. The journal above still has to hold
-            // exactly this file's journal, so rows the person has changed since are refused, not restored over.
-            if savedMealsWritten && favoritesWritten {
-                do { try progress.clearRestoreInProgress() } catch { throw JournalImportError.cleanupIncomplete }
-                try? favoritesTarget?.removeRestoreReceipt(digest)
-                try? savedMealsTarget?.removeSavedMealsRestoreReceipt(digest)
-                return summary(of: plan)
-            }
+            // A flag that outlived every part of the second phase (a stop after the last save, before the flag
+            // was cleared) is not an unfinished restore, however much of it was deleted since.
+            guard !(savedMealsWritten && favoritesWritten) else { throw JournalImportError.notEmpty }
             if let savedMealsTarget, !savedMealsWritten {
                 try savedMealsTarget.restoreJournalSavedMeals(plan.savedMeals, receipt: digest)
             }
