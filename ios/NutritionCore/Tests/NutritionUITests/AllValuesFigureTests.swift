@@ -80,14 +80,13 @@ final class AllValuesFigureTests: XCTestCase {
     /// listed as stated.
     func testAProviderFigureWithFloatDigitsIsListedRounded() async throws {
         let json = """
-        {"code":"2000000000015","status":"success","result":{"id":"product_found"},
-         "product":{"code":"2000000000015","product_name":"Sample Crackers","nutrition_data_per":"100g",
-          "nutriments":{"proteins_100g":7.5,"salt_100g":0.1,"sodium_100g":0.0393700787401575,
-                        "fat_100g":"0.000125"}}}
+        {"code":"2000000000015","product_name":"Sample Crackers",
+         "nutriments":{"proteins_100g":7.5,"salt_100g":0.1,"sodium_100g":0.0393700787401575,
+                       "fat_100g":"0.000125"}}
         """
-        // The product body is mapped directly; the barcode path no longer exists to fetch it.
-        let decoded = try JSONDecoder().decode(OpenFoodFactsResponse.self, from: Data(json.utf8))
-        let product = OpenFoodFactsProduct(body: try XCTUnwrap(decoded.product), requestedBarcode: "2000000000015")
+        // A search hit maps straight to a product, the same way a barcode's product body used to.
+        let hit = try JSONDecoder().decode(OpenFoodFactsSearchResponse.Hit.self, from: Data(json.utf8))
+        let product = OpenFoodFactsProduct(hit: hit, barcode: "2000000000015", name: "Sample Crackers")
         XCTAssertEqual(product.nutrients[OpenFoodFactsProduct.sodium], .known(decimal("0.0393700787401575"), .g))
 
         XCTAssertEqual(AddIntakeView.text(for: product.nutrients[OpenFoodFactsProduct.sodium]), "0.04 g")

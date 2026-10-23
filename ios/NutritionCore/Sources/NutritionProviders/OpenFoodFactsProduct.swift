@@ -126,16 +126,6 @@ public struct OpenFoodFactsProduct: Sendable, Hashable {
     ]
 }
 
-public enum OpenFoodFactsOutcome: Sendable, Equatable {
-    case found(OpenFoodFactsProduct)
-    case notFound
-    case rateLimited(retryAfter: TimeInterval?)
-    case invalidBarcode
-    case transport(String)
-    /// The request could not reach the service: no connection, or a dropped or timed-out network.
-    case offline
-}
-
 // MARK: - Decoding
 
 /// A JSON scalar that may arrive as a number or as text. Numbers are read as Decimal, never as Double.
@@ -175,27 +165,6 @@ struct OpenFoodFactsScalar: Decodable {
         }
         return Decimal(string: raw, locale: Locale(identifier: "en_US_POSIX"))
     }
-}
-
-struct OpenFoodFactsResponse: Decodable {
-    struct Result: Decodable {
-        let id: String?
-    }
-
-    struct Body: Decodable {
-        let code: OpenFoodFactsScalar?
-        let product_name: OpenFoodFactsScalar?
-        let brands: OpenFoodFactsScalar?
-        let serving_size: OpenFoodFactsScalar?
-        let serving_quantity: OpenFoodFactsScalar?
-        let nutrition_data_per: OpenFoodFactsScalar?
-        let nutriments: [String: OpenFoodFactsScalar]?
-        let last_modified_t: OpenFoodFactsScalar?
-        let product_quantity_unit: OpenFoodFactsScalar?
-    }
-
-    let result: Result?
-    let product: Body?
 }
 
 /// Text that may arrive as one string or as a list of strings; a list is joined with ", ".
@@ -280,33 +249,6 @@ extension OpenFoodFactsProduct {
         (salt, "salt", false),
     ]
 
-    init(body: OpenFoodFactsResponse.Body, requestedBarcode: String) {
-        let basis = OpenFoodFactsBasis.decide(dataPer: body.nutrition_data_per?.text, quantityUnit: body.product_quantity_unit?.text)
-        let suffix = basis == .perServing ? "_serving" : "_100g"
-        let source = body.nutriments ?? [:]
-        var nutrients: [String: NutrientValue] = [:]
-        for entry in Self.mapping {
-            nutrients[entry.key] = Self.value(
-                amount: source[entry.source + suffix]?.decimal,
-                energy: entry.energy
-            )
-        }
-        let modified: Date? = body.last_modified_t?.decimal.map {
-            Date(timeIntervalSince1970: NSDecimalNumber(decimal: $0).doubleValue)
-        }
-        self.init(
-            barcode: body.code?.text ?? requestedBarcode,
-            name: body.product_name?.text,
-            brands: body.brands?.text,
-            servingSize: body.serving_size?.text,
-            servingQuantity: body.serving_quantity?.decimal,
-            basis: basis,
-            lastModified: modified,
-            nutrients: nutrients
-        )
-    }
-
-    /// A search result. The figures are per 100 and there is no serving. Whether that is 100 g or
     /// 100 mL comes from the unit when the index has it, else from the pack quantity, else it stays
     /// unresolved.
     init(hit: OpenFoodFactsSearchResponse.Hit, barcode: String, name: String) {

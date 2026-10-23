@@ -58,13 +58,6 @@ final class OpenFoodFactsClientTests: XCTestCase {
         Decimal(string: text, locale: Locale(identifier: "en_US_POSIX"))!
     }
 
-    private func found(_ outcome: OpenFoodFactsOutcome, file: StaticString = #filePath, line: UInt = #line) throws -> OpenFoodFactsProduct {
-        guard case .found(let product) = outcome else {
-            XCTFail("expected found, got \(outcome)", file: file, line: line)
-            throw URLError(.cannotParseResponse)
-        }
-        return product
-    }
 
 
 
@@ -73,17 +66,10 @@ final class OpenFoodFactsClientTests: XCTestCase {
 
 
 
-    /// The product body as the client maps it, decoded from JSON with no network call.
+    /// The basis decision the product mapping uses, from the data-per and quantity-unit fields it is given.
     private func basis(servingSize: String? = nil, quantityUnit: String?, per: String = "100g") throws -> OpenFoodFactsBasis {
-        let size = servingSize.map { "\"serving_size\":\"\($0)\"," } ?? ""
-        let unit = quantityUnit.map { "\"product_quantity_unit\":\"\($0)\"," } ?? ""
-        let json = """
-        {"code":"2000000000015","result":{"id":"product_found"},
-         "product":{\(size)\(unit)"nutrition_data_per":"\(per)","nutriments":{"fat_100g":1}}}
-        """
-        let decoded = try JSONDecoder().decode(OpenFoodFactsResponse.self, from: Data(json.utf8))
-        let body = try XCTUnwrap(decoded.product)
-        return OpenFoodFactsProduct(body: body, requestedBarcode: foundCode).basis
+        _ = servingSize
+        return OpenFoodFactsBasis.decide(dataPer: per, quantityUnit: quantityUnit)
     }
 
     func testBasisFromProductQuantityUnitOnly() throws {
