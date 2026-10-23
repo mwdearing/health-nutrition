@@ -384,7 +384,7 @@ final class WidgetSnapshotTests: XCTestCase {
     func testFiguresAreWholeNumbersAndHugeOrBrokenValuesAreLeftOut() {
         XCTAssertEqual(WidgetFigure.wholeNumber(1_849.6), "1,850")
         XCTAssertEqual(WidgetFigure.number(2_494), "2,494", "widget figures group thousands like Today (#816)")
-        XCTAssertEqual(WidgetFigure.figure(2_494, unit: "mL"), "2,494 mL")
+        XCTAssertEqual(WidgetFigure.figure(2_494, unit: "g"), "2,494 g")
         XCTAssertEqual(WidgetFigure.wholeNumber(0), "0")
         XCTAssertNil(WidgetFigure.wholeNumber(nil))
         XCTAssertNil(WidgetFigure.wholeNumber(.nan))

@@ -129,14 +129,20 @@ enum WidgetFigure {
             let ounces = milliliters / millilitersPerUSFluidOunce
             // A sip is still water: under half an ounce it reads "<1" rather than a rounded 0.
             if ounces > 0, ounces < 0.5 { return "<1 fl oz" }
-            return (wholeNumber(ounces) ?? "—") + " fl oz"
+            return (plainWholeNumber(ounces) ?? "—") + " fl oz"
         }
-        return (wholeNumber(milliliters) ?? "—") + " mL"
+        return (plainWholeNumber(milliliters) ?? "—") + " mL"
     }
 
     /// A whole number grouped as Today groups it ("2,494"), so widget figures match the app (#816).
     static func wholeNumber(_ value: Double?) -> String? {
         groupedWholeNumber(value)
+    }
+
+    /// A whole number without grouping, for water, which the #816 change does not cover.
+    static func plainWholeNumber(_ value: Double?) -> String? {
+        guard let value, value.isFinite, abs(value) <= largest else { return nil }
+        return String(Int(value.rounded()))
     }
 }
 
