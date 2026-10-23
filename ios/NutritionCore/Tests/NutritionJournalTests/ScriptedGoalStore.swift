@@ -36,6 +36,10 @@ final class ScriptedGoalStore: GoalStore, @unchecked Sendable {
         if refusesRemoval { throw JournalImportError.corrupt("removal refused") }
         try base.removeGoal(nutrient: nutrient)
     }
+    func writeRestoredGoal(_ goal: NutrientGoal, receipt: String) throws -> Bool {
+        try onSet(goal, base)
+        return try base.writeRestoredGoal(goal, receipt: receipt)
+    }
     func markGoalRestoreReceiptDone(_ receipt: String) throws {
         try base.markGoalRestoreReceiptDone(receipt)
     }

@@ -106,6 +106,35 @@ public final class SwiftDataGoalStore: GoalStore, JournalErasing, @unchecked Sen
         try context.save()
     }
 
+    /// Writes one restored goal and drops it from the receipt in the same save, so a stop cannot leave the goal written
+    /// while its receipt entry still says it is pending. A goal the person already holds is left as it is, and the entry
+    /// is dropped all the same. Returns whether this call wrote the goal.
+    public func writeRestoredGoal(_ goal: NutrientGoal, receipt: String) throws -> Bool {
+        try goal.validate()
+        guard !goal.nutrient.hasPrefix(Self.receiptPrefix) else { throw GoalStoreError.unknownNutrient }
+        writeLock.lock()
+        defer { writeLock.unlock() }
+        let id = Self.receiptPrefix + receipt
+        let nutrient = goal.nutrient
+        let context = ModelContext(try openContainer())
+        guard let receiptRow = try context.fetch(FetchDescriptor<NutrientGoalRecord>(
+            predicate: #Predicate<NutrientGoalRecord> { $0.nutrient == id })).first else {
+            throw JournalImportError.corrupt("the goal restore receipt is missing")
+        }
+        let payload = try Self.decodeReceipt(receiptRow.targetText)
+        let existing = try context.fetch(FetchDescriptor<NutrientGoalRecord>(
+            predicate: #Predicate<NutrientGoalRecord> { $0.nutrient == nutrient }))
+        let written = existing.isEmpty
+        if written {
+            context.insert(NutrientGoalRecord(
+                nutrient: nutrient, targetText: DecimalText.encode(goal.target), unitSymbol: goal.unit.symbol))
+        }
+        receiptRow.targetText = try Self.encodeReceipt(ReceiptPayload(
+            done: payload.done, goals: payload.goals.filter { $0.nutrient != nutrient }))
+        try context.save()
+        return written
+    }
+
     public func goalRestoreReceiptDone(_ receipt: String) throws -> Bool? {
         let id = Self.receiptPrefix + receipt
         let context = ModelContext(try openContainer())

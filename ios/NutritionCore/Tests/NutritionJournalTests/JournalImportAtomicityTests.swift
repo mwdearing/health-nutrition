@@ -473,4 +473,32 @@ final class JournalImportAtomicityTests: JournalImportTestCase {
         }
         XCTAssertNotNil(try journal.restoreInProgressDigest(), "the flag is kept while the receipt remains")
     }
+    /// A goal written before a stop and deleted by the person before the resume stays deleted: its receipt entry went
+    /// in the same save as the write, so the resume does not add it back. Fails when a resume re-adds every goal the
+    /// receipt still lists, since the receipt then names a goal that was already written.
+    func testAGoalDeletedAfterItsWriteIsNotAddedBackByAResume() throws {
+        let directory = try self.directory()
+        let base = try SwiftDataGoalStore(url: directory.appendingPathComponent("goals.store"))
+        addTeardownBlock { base.close() }
+        let data = try exportData(favorites: false)
+        var root = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        root["goals"] = [
+            ["nutrient": "protein", "target": "60", "unit": "g"],
+            ["nutrient": "energy", "target": "2000", "unit": "kcal"],
+        ]
+        let file = try JSONSerialization.data(withJSONObject: root)
+        let journal = try store(directory)
+        var calls = 0
+        let stopping = ScriptedGoalStore(base: base, refusesRemoval: true) { _, _ in
+            calls += 1
+            if calls == 2 { throw JournalImportError.corrupt("stopped") }
+        }
+        XCTAssertThrowsError(try JournalImporter.importExport(file, into: journal, favorites: nil, goals: stopping))
+        XCTAssertNotNil(try base.goal(for: "protein"), "protein was written before the stop")
+        try base.removeGoal(nutrient: "protein")
+
+        XCTAssertNoThrow(try JournalImporter.importExport(file, into: journal, favorites: nil, goals: base))
+        XCTAssertNil(try base.goal(for: "protein"), "a goal the person deleted stays deleted")
+        XCTAssertEqual(try base.goal(for: "energy")?.target, Decimal(2000), "the pending goal is written")
+    }
 }

@@ -328,7 +328,7 @@ public enum JournalImporter {
                     try goalsTarget.recordGoalRestoreReceipt(digest, goals: recorded)
                 }
                 recordedGoals = recorded
-                try addMissingGoals(recorded, into: goalsTarget, added: &goalKeysSet)
+                try addMissingGoals(recorded, into: goalsTarget, receipt: digest, added: &goalKeysSet)
                 try goalsTarget.markGoalRestoreReceiptDone(digest)
             }
             // A flag that outlived a finished resume would let a later import of this file write rows the
@@ -371,7 +371,7 @@ public enum JournalImporter {
                     let missing = try plan.goals.filter { try goalsTarget.goal(for: $0.nutrient) == nil }
                     try goalsTarget.recordGoalRestoreReceipt(digest, goals: missing)
                     recordedGoals = missing
-                    try addMissingGoals(missing, into: goalsTarget, added: &goalKeysSet)
+                    try addMissingGoals(missing, into: goalsTarget, receipt: digest, added: &goalKeysSet)
                 }
                 // Saved meals first: a replace of an empty list can be written again, so a resume after a stop
                 // between the two saves only has the favorites left to write.
@@ -878,11 +878,13 @@ public enum JournalImporter {
     }
 
     /// `added` is filled as it goes, so a failure part-way leaves the nutrients already set in it for an undo.
-    static func addMissingGoals(_ goals: [NutrientGoal], into store: GoalStore, added: inout [String]) throws {
+    /// Each goal is written with its receipt entry in one save, so a goal the person deletes after its write is never
+    /// added again by a resume, and a goal the person already holds is left as it is.
+    static func addMissingGoals(
+        _ goals: [NutrientGoal], into store: GoalStore, receipt: String, added: inout [String]
+    ) throws {
         for goal in goals {
-            guard try store.goal(for: goal.nutrient) == nil else { continue }
-            try store.setGoal(goal)
-            added.append(goal.nutrient)
+            if try store.writeRestoredGoal(goal, receipt: receipt) { added.append(goal.nutrient) }
         }
     }
 
