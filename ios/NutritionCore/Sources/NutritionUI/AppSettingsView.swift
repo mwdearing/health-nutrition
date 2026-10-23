@@ -45,6 +45,7 @@ public struct AppSettingsView: View {
 private struct AppleHealthRows: View {
     @ObservedObject var model: AppleHealthConnectionViewModel
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         VStack(alignment: .leading, spacing: DesignSpacing.xs) {
@@ -62,7 +63,11 @@ private struct AppleHealthRows: View {
         }
         if let action = model.actionTitle {
             Button(action) {
-                Task { await self.model.connect() }
+                if model.opensHealthSettings {
+                    openURL(URL(string: "x-apple-health://")!)
+                } else {
+                    Task { await self.model.connect() }
+                }
             }
             .disabled(!model.canAct)
         }

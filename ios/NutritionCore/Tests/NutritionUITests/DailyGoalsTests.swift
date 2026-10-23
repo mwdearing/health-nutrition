@@ -627,7 +627,7 @@ final class DailyGoalsTests: XCTestCase {
         let model = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts())
         model.load(now: when)
 
-        XCTAssertEqual(line(model, "water"), "Water 750 mL of 2000 mL")
+        XCTAssertEqual(line(model, "water"), "Water 750 mL of 2,000 mL")
     }
 
     /// A nutrient with no goal still shows its total, without a target to compare it against.
@@ -845,7 +845,7 @@ final class DailyGoalsTests: XCTestCase {
 
         XCTAssertFalse(model.coverage.contains { $0.nutrient == "water" })
         // The line the water target does belong to, and the day's water is still what was drunk.
-        XCTAssertEqual(line(model, "water"), "Water 750 mL of 2000 mL")
+        XCTAssertEqual(line(model, "water"), "Water 750 mL of 2,000 mL")
         // Every food line still counts the day's food.
         XCTAssertEqual(model.coverage.count, TodayViewModel.defaultTrackedNutrients.count)
         let protein = try XCTUnwrap(model.coverage.first { $0.nutrient == "protein" })
@@ -885,7 +885,7 @@ final class DailyGoalsTests: XCTestCase {
         let model = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts())
         model.load(now: when)
 
-        XCTAssertEqual(line(model, "energy"), "Energy 800 Calories of 2000 Calories")
+        XCTAssertEqual(line(model, "energy"), "Energy 800 Calories of 2,000 Calories")
     }
 
     /// The Goals screen offers and stores energy in kilocalories, so the target a person types there

@@ -85,12 +85,9 @@ final class AllValuesFigureTests: XCTestCase {
           "nutriments":{"proteins_100g":7.5,"salt_100g":0.1,"sodium_100g":0.0393700787401575,
                         "fat_100g":"0.000125"}}}
         """
-        let client = OpenFoodFactsClient(
-            environment: .production, transport: FixedResponse(body: Data(json.utf8)), appVersion: "1.0.0",
-            now: { Date(timeIntervalSince1970: 1_800_000_000) }, monotonic: { 5_000 })
-        guard case .found(let product) = await client.lookup(barcode: "2000000000015") else {
-            return XCTFail("the fixture is a found product")
-        }
+        // The product body is mapped directly; the barcode path no longer exists to fetch it.
+        let decoded = try JSONDecoder().decode(OpenFoodFactsResponse.self, from: Data(json.utf8))
+        let product = OpenFoodFactsProduct(body: try XCTUnwrap(decoded.product), requestedBarcode: "2000000000015")
         XCTAssertEqual(product.nutrients[OpenFoodFactsProduct.sodium], .known(decimal("0.0393700787401575"), .g))
 
         XCTAssertEqual(AddIntakeView.text(for: product.nutrients[OpenFoodFactsProduct.sodium]), "0.04 g")
@@ -120,11 +117,3 @@ final class AllValuesFigureTests: XCTestCase {
     }
 }
 
-/// Answers every request with one body, so a lookup reads a fixture instead of the network.
-private struct FixedResponse: OpenFoodFactsTransport {
-    let body: Data
-
-    func get(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
-        (body, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: [:])!)
-    }
-}

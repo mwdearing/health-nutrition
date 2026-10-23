@@ -47,6 +47,7 @@ struct RootView: View {
     @State private var addHome: AddHomeViewModel?
     @State private var productSearchModel: CommunityProductSearchViewModel?
     @State private var addIntakeModel: AddIntakeViewModel?
+    @State private var confirmDiscardAdd = false
     @State private var labelCapture: LabelCaptureViewModel?
     @StateObject private var addNavigation = AddNavigationModel()
     @State private var addFlowError: String?
@@ -59,7 +60,6 @@ struct RootView: View {
     /// its routes through one method a test can call.
     @StateObject private var recipeNavigation = RecipeNavigation()
     @State private var recipeList: RecipeListViewModel
-    @StateObject private var privacyShield = PrivacyShieldController()
     @Environment(\.scenePhase) private var scenePhase
     /// Today's view model, observed so this body is re-evaluated when its values change. Read only for
     /// the water total below, which is the one journal write that does not go through `reload()`.
@@ -191,12 +191,6 @@ struct RootView: View {
             }
             #endif
         }
-        .background {
-            PrivacyShieldWindowAttachment(controller: privacyShield, phase: scenePhase)
-                .frame(width: 1, height: 1)
-                .accessibilityHidden(true)
-                .allowsHitTesting(false)
-        }
         .saveConfirmation(saveNotice)
         // One entry sheet for the whole shell, so Today and the Journal open the same screen: both
         // name an entry into `selectedIntakeID` and one sheet presents over whichever tab is showing.
@@ -218,11 +212,6 @@ struct RootView: View {
                         // reloads its own model when it settles, so it shows what the pass decided.
                         onRetried: { await healthKitDeliveryStatus.runAndSettle() }
                     )
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Close") { selectedIntakeID = nil }
-                        }
-                    }
                 }
             }
         }
@@ -281,7 +270,6 @@ struct RootView: View {
         // Today's totals depend on the local day: recompute them when the app comes back to the
         // foreground, e.g. after midnight or a time-zone change while it stayed on one tab.
         .onChange(of: scenePhase) { _, phase in
-            privacyShield.update(phase: phase)
             if phase == .active {
                 reload()
                 Task { await self.services.reminders.syncOnLaunch() }
@@ -290,11 +278,6 @@ struct RootView: View {
                     await self.services.productSharing?.runDueOperations(now: Date())
                 }
             }
-        }
-        // UIKit posts this before the app-switcher snapshot. Filter by the attached scene so a
-        // different window resigning active cannot leave this still-active window covered.
-        .onReceive(NotificationCenter.default.publisher(for: UIScene.willDeactivateNotification)) { notification in
-            privacyShield.coverBeforeSnapshot(for: notification.object as AnyObject?)
         }
         // An erase in Settings empties the stores these tabs read, so their
         // held values go with it rather than showing entries that no longer exist.
@@ -350,8 +333,19 @@ struct RootView: View {
                 }
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") { self.finishAdding() }
+                        Button("Cancel") {
+                            // Live state: a form still on the stack with typed input asks; a form already popped
+                            // (its model is kept until the flow ends) does not.
+                            if !self.addNavigation.path.isEmpty && self.addIntakeModel?.hasTypedInput == true {
+                                self.confirmDiscardAdd = true
+                            } else {
+                                self.finishAdding()
+                            }
+                        }
                     }
+                }
+                .confirmationDialog("Discard this entry?", isPresented: $confirmDiscardAdd, titleVisibility: .visible) {
+                    Button("Discard", role: .destructive) { self.finishAdding() }
                 }
             }
             .saveConfirmation(addNotice)

@@ -55,6 +55,9 @@ public struct InsightsHost: View {
 
 /// The Trends tab: the two ways to look back, each a row that opens its screen in this tab's stack.
 public struct TrendsView: View {
+    /// The vitamins row's detail. It says what the row compares, without repeating the title (#537).
+    static let vitaminsDetail = "Compared with published reference values"
+
     private let today: TodayViewModel
     private let journal: JournalViewModel
     private let now: () -> Date
@@ -69,7 +72,7 @@ public struct TrendsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: DesignSpacing.m) {
                 row(
-                    title: "Vitamins and minerals", detail: "Vitamins and minerals against published reference values",
+                    title: "Vitamins and minerals", detail: Self.vitaminsDetail,
                     systemImage: "leaf"
                 ) {
                     NutrientGapsView(makeModel: { today.makeNutrientGaps() }, now: now)

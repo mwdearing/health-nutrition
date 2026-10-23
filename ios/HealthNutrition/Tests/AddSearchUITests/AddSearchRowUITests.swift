@@ -6,6 +6,7 @@ final class AddSearchRowUITests: XCTestCase {
     func testSearchRowIsOnAddAndTapFocusesTheSearchField() throws {
         let app = XCUIApplication()
         app.launch()
+        addTeardownBlock { app.terminate() }
 
         // A fresh install shows the welcome cover over Today until it is dismissed. Get started is what
         // a first-time user taps, so the test does the same before it looks for Add.
@@ -37,10 +38,16 @@ final class AddSearchRowUITests: XCTestCase {
         let field = app.textFields["sharedProductSearchField"]
         XCTAssertTrue(field.waitForExistence(timeout: 10), "product search did not open")
         XCTAssertEqual(field.label, "Search foods", "the search field's label is not the agreed name")
-        // The field takes focus after a short delay, so poll for it rather than checking once.
+        // The field takes focus after a short delay, and a busy simulator can take longer than a few seconds, so
+        // wait for it to be hittable first, then allow a longer window for focus. A field that never takes focus
+        // still fails here.
+        let hittable = NSPredicate(format: "isHittable == true")
+        let hittableWait = XCTNSPredicateExpectation(predicate: hittable, object: field)
+        XCTAssertEqual(XCTWaiter().wait(for: [hittableWait], timeout: 15), .completed,
+                       "the search field did not become hittable after the row was tapped")
         let focused = NSPredicate(format: "hasKeyboardFocus == true")
         let expectation = XCTNSPredicateExpectation(predicate: focused, object: field)
-        XCTAssertEqual(XCTWaiter().wait(for: [expectation], timeout: 5), .completed,
+        XCTAssertEqual(XCTWaiter().wait(for: [expectation], timeout: 15), .completed,
                        "the search field did not take focus after the row was tapped")
     }
 

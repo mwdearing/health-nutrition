@@ -35,14 +35,26 @@ final class AppleHealthConnectionTests: XCTestCase {
         XCTAssertEqual(access(3, 0, 12).state, .needsReconnect)
     }
 
+    func testOnlyAnAnsweredButIncompleteHealthOpensTheHealthApp() {
+        let opens: [(AppleHealthAccess, Bool)] = [
+            (access(0, 14, 1), true),
+            (access(0, 0, 15), true),
+            (access(15, 0, 0), false),
+            (access(0, 15, 0), false),
+        ]
+        for (access, expected) in opens {
+            XCTAssertEqual(AppleHealthConnectionViewModel(connector: FakeConnector(access)).opensHealthSettings, expected)
+        }
+    }
+
     func testEveryStateHasAStatusAndADetailAndOnlyActionableOnesHaveAButton() {
         let expected: [(AppleHealthAccess, String, String?)] = [
             (.unavailable, "Not available", nil),
             (access(15, 0, 0), "Not connected", "Connect Apple Health"),
             (access(3, 12, 0), "Needs your answer", "Finish connecting"),
             (access(0, 15, 0), "Connected", nil),
-            (access(0, 14, 1), "Partly allowed", "Check again"),
-            (access(0, 0, 15), "Turned off in Health", "Check again"),
+            (access(0, 14, 1), "Partly allowed", "Open Health settings"),
+            (access(0, 0, 15), "Turned off in Health", "Open Health settings"),
         ]
         for (access, status, action) in expected {
             let model = AppleHealthConnectionViewModel(connector: FakeConnector(access))

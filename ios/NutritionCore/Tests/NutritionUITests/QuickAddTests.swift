@@ -20,6 +20,27 @@ final class QuickAddTests: XCTestCase {
         QuickAddViewModel(store: store, meal: meal, now: { self.now }, timeZoneIdentifier: { "UTC" })
     }
 
+    func testFreshQuickAddHasNoTypedInput() throws {
+        XCTAssertFalse(makeModel(try makeStore()).hasTypedInput)
+    }
+
+    func testTypedAmountOrNameCountsAsTypedInput() throws {
+        let amount = makeModel(try makeStore())
+        amount.caloriesText = "250"
+        XCTAssertTrue(amount.hasTypedInput)
+
+        let name = makeModel(try makeStore())
+        name.name = "Toast"
+        XCTAssertTrue(name.hasTypedInput)
+    }
+
+    func testBlankNameAndAmountIsNotTypedInput() throws {
+        let model = makeModel(try makeStore())
+        model.name = "   "
+        model.caloriesText = " "
+        XCTAssertFalse(model.hasTypedInput)
+    }
+
     private func totals(_ store: SwiftDataJournalStore) throws -> DailyTotals {
         try DailyTotalsBuilder.totals(
             for: store.activeIntakes(), store: store, lookup: SnapshotNutrientFacts(), nutrients: tracked)
@@ -354,5 +375,19 @@ final class QuickAddTests: XCTestCase {
         model.caloriesText = "0"
         XCTAssertTrue(model.hasNoAmountTyped, "a typed zero shows the reason line")
         XCTAssertFalse(model.canSave, "a typed zero cannot log")
+    }
+
+    /// #689: text that is not a number is not a typed zero, so the reason line stays off and the save is refused.
+    func testInvalidTextIsNotATypedZeroAndSaveReturnsNil() throws {
+        let store = try makeStore()
+        for text in ["abc", "20001"] {
+            let model = makeModel(store)
+            model.caloriesText = text
+            XCTAssertFalse(model.hasNoAmountTyped, "\(text) is not a typed zero")
+        }
+        let zero = makeModel(store)
+        zero.caloriesText = "0"
+        XCTAssertNil(zero.save(), "save returns nil for a typed zero")
+        XCTAssertEqual(try store.activeIntakes().count, 0)
     }
 }
