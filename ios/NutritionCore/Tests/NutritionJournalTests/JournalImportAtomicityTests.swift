@@ -409,7 +409,7 @@ final class JournalImportAtomicityTests: JournalImportTestCase {
         var summary: JournalImportSummary?
         XCTAssertNoThrow(summary = try JournalImporter.importExport(data, into: journal, favorites: nil, goals: base))
 
-        XCTAssertEqual(summary?.goals, 1, "only the goal still missing is added")
+        XCTAssertEqual(summary?.goals, 2, "the restore's goals, from both runs, are counted")
         XCTAssertEqual(try base.goal(for: "energy")?.target, Decimal(2000))
         XCTAssertEqual(try base.goals().count, 2, "no goal is duplicated")
         XCTAssertEqual(summary?.intakes, try journal.activeIntakes().count, "no entry is duplicated")

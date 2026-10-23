@@ -85,6 +85,8 @@ public protocol GoalStore: AnyObject, Sendable {
     /// Writes one restored goal and drops it from the receipt in the same save. Returns false, writing nothing, when a goal
     /// already holds the key, so a restore never overwrites the person's own target.
     func writeRestoredGoal(_ goal: NutrientGoal, receipt: String) throws -> Bool
+    /// Every goal the restore under this receipt wrote, from any run, so an undo removes exactly those.
+    func goalRestoreWrittenGoals(_ receipt: String) throws -> [NutrientGoal]
 }
 
 /// A store that keeps no receipts refuses a goal restore, so a goal is never written without the record that
@@ -102,6 +104,7 @@ extension GoalStore {
     public func writeRestoredGoal(_ goal: NutrientGoal, receipt: String) throws -> Bool {
         throw JournalImportError.corrupt("this goal store keeps no restore receipt")
     }
+    public func goalRestoreWrittenGoals(_ receipt: String) throws -> [NutrientGoal] { [] }
 }
 
 /// A goal store held in memory, for tests and for a caller that has nowhere to persist to.

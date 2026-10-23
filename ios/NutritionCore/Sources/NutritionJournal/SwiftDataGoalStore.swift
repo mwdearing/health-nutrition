@@ -79,7 +79,7 @@ public final class SwiftDataGoalStore: GoalStore, JournalErasing, @unchecked Sen
         let entries = goals.map {
             ReceiptEntry(nutrient: $0.nutrient, target: DecimalText.encode($0.target), unit: $0.unit.symbol)
         }
-        let text = try Self.encodeReceipt(ReceiptPayload(done: false, goals: entries))
+        let text = try Self.encodeReceipt(ReceiptPayload(done: false, goals: entries, written: []))
         let context = ModelContext(try openContainer())
         for old in try context.fetch(FetchDescriptor<NutrientGoalRecord>(
             predicate: #Predicate<NutrientGoalRecord> { $0.nutrient == id })) {
@@ -102,7 +102,7 @@ public final class SwiftDataGoalStore: GoalStore, JournalErasing, @unchecked Sen
             throw JournalImportError.corrupt("the goal restore receipt is missing")
         }
         let payload = try Self.decodeReceipt(row.targetText)
-        row.targetText = try Self.encodeReceipt(ReceiptPayload(done: true, goals: payload.goals))
+        row.targetText = try Self.encodeReceipt(ReceiptPayload(done: true, goals: payload.goals, written: payload.written ?? []))
         try context.save()
     }
 
@@ -129,8 +129,11 @@ public final class SwiftDataGoalStore: GoalStore, JournalErasing, @unchecked Sen
             context.insert(NutrientGoalRecord(
                 nutrient: nutrient, targetText: DecimalText.encode(goal.target), unitSymbol: goal.unit.symbol))
         }
+        // The entry leaves the pending list, and a goal this call wrote joins the ledger, in the same save as the write.
+        let ledger = written ? (payload.written ?? []) + [ReceiptEntry(
+            nutrient: nutrient, target: DecimalText.encode(goal.target), unit: goal.unit.symbol)] : (payload.written ?? [])
         receiptRow.targetText = try Self.encodeReceipt(ReceiptPayload(
-            done: payload.done, goals: payload.goals.filter { $0.nutrient != nutrient }))
+            done: payload.done, goals: payload.goals.filter { $0.nutrient != nutrient }, written: ledger))
         try context.save()
         return written
     }
@@ -143,9 +146,25 @@ public final class SwiftDataGoalStore: GoalStore, JournalErasing, @unchecked Sen
         return try Self.decodeReceipt(row.targetText).done
     }
 
+    /// `goals` is what is still to be written; `written` is every goal this restore wrote, from any run, so an undo can
+    /// remove exactly those. A receipt from before the ledger has no `written`, which reads as none.
     private struct ReceiptPayload: Codable {
         let done: Bool
         let goals: [ReceiptEntry]
+        let written: [ReceiptEntry]?
+    }
+
+    /// The goals this restore wrote, from any run, as the receipt's ledger holds them. Empty when there is no receipt.
+    public func goalRestoreWrittenGoals(_ receipt: String) throws -> [NutrientGoal] {
+        let id = Self.receiptPrefix + receipt
+        let context = ModelContext(try openContainer())
+        guard let row = try context.fetch(FetchDescriptor<NutrientGoalRecord>(
+            predicate: #Predicate<NutrientGoalRecord> { $0.nutrient == id })).first else { return [] }
+        return try (Self.decodeReceipt(row.targetText).written ?? []).map { entry in
+            guard let target = DecimalText.decode(entry.target), let unit = try? MeasureUnit(symbol: entry.unit)
+            else { throw JournalImportError.corrupt("the goal restore receipt holds a target this build cannot read") }
+            return NutrientGoal(nutrient: entry.nutrient, target: target, unit: unit)
+        }
     }
 
     private static func encodeReceipt(_ payload: ReceiptPayload) throws -> String {

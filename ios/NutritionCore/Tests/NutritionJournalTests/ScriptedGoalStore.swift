@@ -42,6 +42,9 @@ final class ScriptedGoalStore: GoalStore, @unchecked Sendable {
     }
     /// Makes marking a receipt done fail, as a store that cannot write at that moment would.
     var failsMark = false
+    func goalRestoreWrittenGoals(_ receipt: String) throws -> [NutrientGoal] {
+        try base.goalRestoreWrittenGoals(receipt)
+    }
     func markGoalRestoreReceiptDone(_ receipt: String) throws {
         if failsMark { throw JournalImportError.corrupt("mark refused") }
         try base.markGoalRestoreReceiptDone(receipt)

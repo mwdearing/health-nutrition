@@ -245,10 +245,8 @@ public enum JournalImporter {
             }
             goalsTarget = goals
         }
-        // The nutrients this run set, so an undo or a retry removes exactly those and no others.
-        var goalKeysSet: [String] = []
-        // The goals this run recorded under its receipt, which is all a rollback may remove.
-        var recordedGoals: [NutrientGoal] = []
+        // The goals this restore wrote, from any run, as the receipt's ledger holds them. Set once the goals are done.
+        var goalsWritten = 0
 
         // **One import at a time.** The flag below belongs to the run that wrote it, and a second import running
         // alongside could resume over a journal the first is about to undo, or clear a flag the first still
@@ -329,9 +327,9 @@ public enum JournalImporter {
                     recorded = try plan.goals.filter { try goalsTarget.goal(for: $0.nutrient) == nil }
                     try goalsTarget.recordGoalRestoreReceipt(digest, goals: recorded)
                 }
-                recordedGoals = recorded
-                try addMissingGoals(recorded, into: goalsTarget, receipt: digest, added: &goalKeysSet)
+                try addMissingGoals(recorded, into: goalsTarget, receipt: digest)
                 try goalsTarget.markGoalRestoreReceiptDone(digest)
+                goalsWritten = try goalsTarget.goalRestoreWrittenGoals(digest).count
             }
             // A flag that outlived a finished resume would let a later import of this file write rows the
             // person deleted since, so a failure to clear it is reported rather than swallowed.
@@ -340,7 +338,7 @@ public enum JournalImporter {
             try? favoritesTarget?.removeRestoreReceipt(digest)
             try? savedMealsTarget?.removeSavedMealsRestoreReceipt(digest)
             try? goalsTarget?.removeGoalRestoreReceipt(digest)
-            return summary(of: plan, goals: goalKeysSet.count)
+            return summary(of: plan, goals: goalsWritten)
         }
 
         // Saved meals are restored only into an empty list: merging a file's meals into the phone's would have
@@ -379,8 +377,7 @@ public enum JournalImporter {
                         recorded = try plan.goals.filter { try goalsTarget.goal(for: $0.nutrient) == nil }
                         try goalsTarget.recordGoalRestoreReceipt(digest, goals: recorded)
                     }
-                    recordedGoals = recorded
-                    try addMissingGoals(recorded, into: goalsTarget, receipt: digest, added: &goalKeysSet)
+                    try addMissingGoals(recorded, into: goalsTarget, receipt: digest)
                 }
                 // Saved meals first: a replace of an empty list can be written again, so a resume after a stop
                 // between the two saves only has the favorites left to write.
@@ -419,7 +416,16 @@ public enum JournalImporter {
                         retainedIntakes: remaining?.intakes, retainedTombstones: remaining?.tombstones)
                 }
                 // Goals come last, and only the ones this run wrote. A goal that cannot be removed keeps its receipt and the flag.
-                let goalsLeft = !undoGoals(recordedGoals.filter { goalKeysSet.contains($0.nutrient) }, in: goalsTarget)
+                // Every goal this restore wrote, from any run, is in the receipt's ledger, so the undo removes exactly those.
+                // A ledger that cannot be read leaves the goals unknown, which keeps the flag.
+                var goalsLeft = false
+                if let goalsTarget {
+                    if let written = try? goalsTarget.goalRestoreWrittenGoals(digest) {
+                        goalsLeft = !undoGoals(written, in: goalsTarget)
+                    } else {
+                        goalsLeft = true
+                    }
+                }
                 // The journal undo above succeeded, so no entry of this file remains to be counted.
                 if goalsLeft {
                     keepFlag = true
@@ -439,6 +445,8 @@ public enum JournalImporter {
             // the flag then adds nothing, even after the person has deleted a goal. A failed mark keeps the flag, so the
             // restore is finished from its receipt rather than re-derived from the store.
             try goalsTarget?.markGoalRestoreReceiptDone(digest)
+            // Counted before the receipt is removed, since the ledger lives in it.
+            if let goalsTarget { goalsWritten = try goalsTarget.goalRestoreWrittenGoals(digest).count }
             // A flag that cannot be cleared is reported rather than swallowed. It cannot start a resume over this
             // second phase: every part of it now has its receipt.
             try progress?.clearRestoreInProgress()
@@ -446,7 +454,7 @@ public enum JournalImporter {
             try? savedMealsTarget?.removeSavedMealsRestoreReceipt(digest)
             try? goalsTarget?.removeGoalRestoreReceipt(digest)
         }
-        return summary(of: plan, goals: goalKeysSet.count)
+        return summary(of: plan, goals: goalsWritten)
     }
 
     private static let importLock = NSLock()
@@ -904,11 +912,9 @@ public enum JournalImporter {
 
     /// Each goal is written with its receipt entry in one save, so a goal the person deletes after its write is never
     /// added again by a resume, and a goal the person already holds is left as it is.
-    static func addMissingGoals(
-        _ goals: [NutrientGoal], into store: GoalStore, receipt: String, added: inout [String]
-    ) throws {
+    static func addMissingGoals(_ goals: [NutrientGoal], into store: GoalStore, receipt: String) throws {
         for goal in goals {
-            if try store.writeRestoredGoal(goal, receipt: receipt) { added.append(goal.nutrient) }
+            _ = try store.writeRestoredGoal(goal, receipt: receipt)
         }
     }
 

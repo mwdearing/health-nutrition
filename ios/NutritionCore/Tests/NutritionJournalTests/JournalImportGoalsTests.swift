@@ -369,7 +369,7 @@ final class JournalImportGoalsTests: XCTestCase {
 
         let summary = try JournalImporter.importExport(data, into: restoreJournal, favorites: nil, goals: base)
 
-        XCTAssertEqual(summary.goals, 1, "only the goal still missing is added")
+        XCTAssertEqual(summary.goals, 2, "the restore's goals, from both runs, are counted")
         XCTAssertEqual(try base.goal(for: "protein")?.target, Decimal(60))
         XCTAssertEqual(try base.goal(for: "energy")?.target, Decimal(2000))
         XCTAssertEqual(try base.goals().count, 2, "no goal is duplicated")
