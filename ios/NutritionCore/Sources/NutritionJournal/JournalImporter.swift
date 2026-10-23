@@ -350,7 +350,7 @@ public enum JournalImporter {
             // second phase: every part of it now has its receipt.
             // The restore itself is complete, so a flag that cannot be cleared is reported as its own outcome, not as a
             // failed import: the person's rows are there and a retry would only find them.
-            do { try progress?.clearRestoreInProgress() } catch { throw JournalImportError.cleanupIncomplete }
+            try progress?.clearRestoreInProgress()
             try? favoritesTarget?.removeRestoreReceipt(digest)
             try? savedMealsTarget?.removeSavedMealsRestoreReceipt(digest)
         }
