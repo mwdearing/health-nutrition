@@ -19,9 +19,17 @@ extension WidgetSnapshot {
         remainingIsPartial == true && (remainingKcal?.rounded() ?? 0) > 0
     }
 
-    /// The Remaining figure as drawn: the number, or "Up to N" on a partial day with something left.
+    /// Over goal: the positive count, captioned "Calories over goal" (#501).
+    var remainingIsOver: Bool { (remainingKcal ?? 0) < 0 }
+
+    /// The caption under the Remaining figure.
+    var remainingCaption: String { remainingIsOver ? "Calories over goal" : "Calories remaining" }
+
+    /// The Remaining figure as drawn: the positive count when over, "Up to N" on a partial day with something left,
+    /// otherwise the number.
     var remainingDisplay: String? {
-        remainingText.map { remainingIsUpperBound ? "Up to \($0)" : $0 }
+        if remainingIsOver { return WidgetFigure.groupedWholeNumber(-(remainingKcal ?? 0)) }
+        return remainingText.map { remainingIsUpperBound ? "Up to \($0)" : $0 }
     }
 
     /// The one figure a small gauge holds: Food ("N+" when partial). The ring is the share of the goal eaten, so its
@@ -30,13 +38,16 @@ extension WidgetSnapshot {
 
     /// Remaining for a single line of text: "up to N" on a partial day with something left, otherwise the number.
     var remainingInlineText: String? {
-        remainingText.map { remainingIsUpperBound ? "up to \($0)" : $0 }
+        if remainingIsOver { return WidgetFigure.groupedWholeNumber(-(remainingKcal ?? 0)).map { "\($0) over goal" } }
+        return remainingText.map { remainingIsUpperBound ? "up to \($0)" : $0 }
     }
 
     /// What VoiceOver reads for the calorie block, in Today's order.
     var calorieSpoken: String {
         let parts = [
-            remainingText.map { (remainingIsUpperBound ? "up to " : "") + "\($0) calories remaining" },
+            remainingIsOver
+                ? WidgetFigure.groupedWholeNumber(-(remainingKcal ?? 0)).map { "\($0) calories over goal" }
+                : remainingText.map { (remainingIsUpperBound ? "up to " : "") + "\($0) calories remaining" },
             foodNumber.map { "Food, \(isPartial("energy") ? "at least " : "")\($0) calories" },
             burnedText.map { "Burned, \($0) calories" },
         ].compactMap { $0 }
@@ -85,7 +96,7 @@ struct WidgetCalorieSummary: View {
                     .minimumScaleFactor(0.7)
                     .lineLimit(1)
                     .privacySensitive()
-                Text("Calories remaining")
+                Text(snapshot?.remainingCaption ?? "Calories remaining")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

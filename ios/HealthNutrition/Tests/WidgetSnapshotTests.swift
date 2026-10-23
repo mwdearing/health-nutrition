@@ -80,11 +80,13 @@ final class WidgetSnapshotTests: XCTestCase {
         XCTAssertEqual(
             snapshot.calorieSpoken,
             "\(grouped(1_200)) calories remaining, Food, 800 calories, Burned, 250 calories")
-        // Over goal is a plain negative number, with no word for it.
+        // Over goal is the positive count, captioned "Calories over goal" and spoken as over goal (#501).
         snapshot.remainingKcal = -150
         XCTAssertEqual(snapshot.remainingText, grouped(-150))
-        let negative = try XCTUnwrap(snapshot.remainingText)
-        XCTAssertTrue(negative.hasPrefix("-") || negative.hasPrefix("\u{2212}"), "a plain negative number")
+        XCTAssertEqual(snapshot.remainingDisplay, grouped(150))
+        XCTAssertEqual(snapshot.remainingCaption, "Calories over goal")
+        XCTAssertEqual(snapshot.remainingInlineText, "\(grouped(150)) over goal")
+        XCTAssertTrue(snapshot.calorieSpoken.hasPrefix("\(grouped(150)) calories over goal"), snapshot.calorieSpoken)
         // Without a goal there is no Remaining; without a burned value there is no Burned.
         snapshot.remainingKcal = nil
         snapshot.burnedKcal = nil
