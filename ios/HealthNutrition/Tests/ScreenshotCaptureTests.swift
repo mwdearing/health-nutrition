@@ -126,8 +126,12 @@ final class ScreenshotCaptureTests: XCTestCase {
 
     /// An app on throwaway files with a day of invented entries and two goals (shared with the layout tests).
     private func makeSeededServices(productService: (any CommunityProductServicing)? = nil) throws -> AppServices {
-        let (services, directory) = try makeSeededAppServices(productService: productService)
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HealthNutritionScreenshots", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        // Registered before the helper runs, so the directory is removed even when the helper throws.
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let services = try makeSeededAppServices(directory: directory, productService: productService)
         return services
     }
 
