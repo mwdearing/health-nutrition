@@ -150,7 +150,7 @@ public struct JournalView: View {
         NavigationStack {
             Form {
                 LabeledField("Meal name") { focus in
-                    TextField("Such as Usual breakfast", text: $saveMealName).focused(focus)
+                    TextField("Meal name", text: $saveMealName, prompt: Text("Such as Usual breakfast")).focused(focus)
                 }
                 Text("Keeps the \(target.entryCountText) of \(target.title) together, so you can log them again in one go from Add, in Search foods.")
                     .font(.footnote)
