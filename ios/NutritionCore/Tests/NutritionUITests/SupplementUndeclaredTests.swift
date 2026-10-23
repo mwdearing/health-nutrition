@@ -21,9 +21,10 @@ final class SupplementUndeclaredTests: XCTestCase {
         let intakes = try store.activeIntakes()
         let totals = try DailyTotalsBuilder.totals(
             for: intakes, store: store, lookup: UnknownNutrientFacts(), nutrients: ["vitaminC"])
-        guard case .known(let value, _) = totals.total(for: "vitaminC")?.value else {
-            return XCTFail("an undeclared nutrient of a typed supplement must contribute nothing, not unknown")
-        }
-        XCTAssertEqual(value, 0)
+        let total = try XCTUnwrap(totals.total(for: "vitaminC"))
+        // Totals do not change: no value is added, so the total is still unknown, as it is today.
+        guard case .unknown = total.value else { return XCTFail("the total must stay unknown, as it is today") }
+        // Coverage changes: the undeclared nutrient no longer makes the day's coverage unknown.
+        XCTAssertFalse(total.coverage.hasUnknown, "an undeclared nutrient of a typed supplement must not make coverage unknown")
     }
 }
