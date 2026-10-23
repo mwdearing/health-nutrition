@@ -52,6 +52,9 @@ public struct CalendarDay: Sendable, Hashable, Comparable {
     }
 
     /// The day `days` later, or earlier for a negative count.
+    ///
+    /// Not range-checked: a count that leaves 0001-01-01...9999-12-31 gives a day outside that range.
+    /// Projections go through `adding(wholeDays:)`, which returns nil instead.
     public func adding(days: Int) -> CalendarDay {
         Self(dayNumber: dayNumber + days)
     }
@@ -61,7 +64,8 @@ public struct CalendarDay: Sendable, Hashable, Comparable {
     /// The count is checked as a decimal before it becomes an `Int`, so a projection of billions of days
     /// gives nil instead of a year no calendar shows.
     func adding(wholeDays days: Decimal) -> CalendarDay? {
-        guard days >= Decimal(Self.firstDayNumber - dayNumber), days <= Decimal(Self.lastDayNumber - dayNumber)
+        guard days >= Decimal(Self.firstDayNumber - dayNumber),
+            days <= Decimal(Self.lastDayNumber - dayNumber)
         else { return nil }
         return adding(days: NSDecimalNumber(decimal: days).intValue)
     }
