@@ -157,7 +157,7 @@ public struct EntryDetailView: View {
                     }
                 }
             }
-            if model.kind == .drink, model.components.contains(where: { $0.unit.dimension == .volume }) {
+            if model.showsWaterShare {
                 Section {
                     Stepper(
                         value: Binding(
