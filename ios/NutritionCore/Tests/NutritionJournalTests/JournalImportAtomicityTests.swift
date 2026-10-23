@@ -254,9 +254,9 @@ final class JournalImportAtomicityTests: JournalImportTestCase {
         XCTAssertNil(try journal.restoreInProgressDigest())
     }
 
-    /// A complete restore whose flag clear failed leaves its rows and receipts. A retry of the same file finds
-    /// every receipt and the flag, clears the flag, and reports success without writing again.
-    func testARetryAfterAFailedFlagClearFinishesTheRestoreAndClearsTheFlag() throws {
+    /// A complete restore whose flag clear failed leaves its rows and receipts. A retry of the same file is refused,
+    /// as a finished restore is, and writes nothing.
+    func testARetryAfterAFailedFlagClearIsRefusedAndWritesNothing() throws {
         let data = try exportData()
         let target = try directory()
         let inner = try store(target)
@@ -271,8 +271,11 @@ final class JournalImportAtomicityTests: JournalImportTestCase {
         let rowsAfterFirst = try inner.activeIntakes().map(\.id)
         XCTAssertFalse(rowsAfterFirst.isEmpty)
 
-        XCTAssertNoThrow(try JournalImporter.importExport(data, into: journal, favorites: favoritesStore))
-        XCTAssertNil(try inner.restoreInProgressDigest())
+        // A retry finds every receipt and the flag, and is refused as before: nothing is written again, and the flag stays.
+        XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: favoritesStore)) {
+            XCTAssertEqual($0 as? JournalImportError, .notEmpty)
+        }
+        XCTAssertNotNil(try inner.restoreInProgressDigest())
         XCTAssertEqual(try inner.activeIntakes().map(\.id), rowsAfterFirst)
     }
 
