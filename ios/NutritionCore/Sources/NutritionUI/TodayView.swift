@@ -58,16 +58,18 @@ public struct TodayView: View {
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: DesignSpacing.m) {
-                Text("Today")
-                    .font(.largeTitle.weight(.bold))
-                    .foregroundStyle(TokenColors.textPrimary)
-                    .frame(maxWidth: .infinity)
-                    .multilineTextAlignment(.center)
-                    // The navigation title is the one spoken name for the screen. This text stays in the tree with no
-                    // label and no trait, so XCUITest can still measure its frame and VoiceOver reads nothing for it.
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("")
-                    .accessibilityIdentifier("todayHeader")
+                // The navigation title is the one spoken name for the screen. The wrapper keeps the header's frame for
+                // XCUITest and has no label, and its text is not exposed as a separate element, so VoiceOver reads nothing.
+                VStack {
+                    Text("Today")
+                        .font(.largeTitle.weight(.bold))
+                        .foregroundStyle(TokenColors.textPrimary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("")
+                .accessibilityIdentifier("todayHeader")
                 Text(model.dateSubtitle)
                     .font(.subheadline)
                     .foregroundStyle(TokenColors.textSecondary)
