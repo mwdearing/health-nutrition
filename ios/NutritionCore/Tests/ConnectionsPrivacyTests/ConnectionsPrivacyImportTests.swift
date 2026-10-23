@@ -622,9 +622,11 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
     func testACompleteRestoreWhoseFlagCannotBeClearedKeepsItsRowsAndSaysSo() async throws {
         let journal = ImportStubStore()
         journal.failClearRestoreForTesting = true
-        let model = ConnectionsPrivacyViewModel(store: journal, erasers: [journal])
+        // A favorites store makes the import a second phase, which is the path that clears the flag.
+        let favorites = ImportStubFavorites()
+        let model = ConnectionsPrivacyViewModel(store: journal, favorites: favorites, erasers: [journal, favorites])
 
-        model.importJournal(data: try export(includeFavorite: false))
+        model.importJournal(data: try export(includeFavorite: true))
         await waitForImportToSettle(model)
 
         XCTAssertEqual(model.importMessage, ConnectionsPrivacyViewModel.cleanupIncompleteMessage)
