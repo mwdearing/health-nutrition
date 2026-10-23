@@ -66,7 +66,7 @@ error. An invalid plan is refused before anything is written. A stored row that 
 as corrupt, never as "no plan".
 
 **Erase all data** removes the weight plan together with the targets, in the same save. The plan is
-not in the export: the export holds the journal only, the same as the targets.
+not in the export: the export carries the journal and, from version 8, the daily targets, but never the plan.
 
 ## Units and wording
 
