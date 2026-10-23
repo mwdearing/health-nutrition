@@ -32,8 +32,8 @@ final class WidgetSnapshotTests: XCTestCase {
 
     func testWaterIsDrawnInFluidOuncesUnderUSUnitsAndMillilitresOtherwise() {
         XCTAssertEqual(WidgetFigure.water(1_000, usUnits: true), "34 fl oz")
-        XCTAssertEqual(WidgetFigure.water(1_000, usUnits: false), "1000 mL")
-        XCTAssertEqual(WidgetFigure.water(1_000, usUnits: nil), "1000 mL", "a summary from before the field is metric")
+        XCTAssertEqual(WidgetFigure.water(1_000, usUnits: false), "1,000 mL")
+        XCTAssertEqual(WidgetFigure.water(1_000, usUnits: nil), "1,000 mL", "a summary from before the field is metric")
         XCTAssertEqual(WidgetFigure.water(0, usUnits: true), "0 fl oz")
         XCTAssertEqual(WidgetFigure.water(10, usUnits: true), "<1 fl oz", "a sip is not zero")
         XCTAssertEqual(WidgetFigure.water(15, usUnits: true), "1 fl oz")
@@ -382,7 +382,9 @@ final class WidgetSnapshotTests: XCTestCase {
     }
 
     func testFiguresAreWholeNumbersAndHugeOrBrokenValuesAreLeftOut() {
-        XCTAssertEqual(WidgetFigure.wholeNumber(1_849.6), "1850")
+        XCTAssertEqual(WidgetFigure.wholeNumber(1_849.6), "1,850")
+        XCTAssertEqual(WidgetFigure.number(2_494), "2,494", "widget figures group thousands like Today (#816)")
+        XCTAssertEqual(WidgetFigure.figure(2_494, unit: "g"), "2,494 g")
         XCTAssertEqual(WidgetFigure.wholeNumber(0), "0")
         XCTAssertNil(WidgetFigure.wholeNumber(nil))
         XCTAssertNil(WidgetFigure.wholeNumber(.nan))

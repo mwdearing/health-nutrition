@@ -134,10 +134,11 @@ enum WidgetFigure {
         return (wholeNumber(milliliters) ?? "—") + " mL"
     }
 
+    /// A whole number grouped as Today groups it ("2,494"), so widget figures match the app (#816).
     static func wholeNumber(_ value: Double?) -> String? {
-        guard let value, value.isFinite, abs(value) <= largest else { return nil }
-        return String(Int(value.rounded()))
+        groupedWholeNumber(value)
     }
+
 }
 
 /// Reads and writes the snapshot file in a directory. The directory is the App Group container in the app and
