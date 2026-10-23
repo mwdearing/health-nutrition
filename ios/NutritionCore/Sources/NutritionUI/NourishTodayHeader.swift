@@ -64,12 +64,20 @@ public struct NourishTodayHeader: View {
     /// The one spoken line for the summary: remaining, food and burned as labels, then the partial note and the goal footnote.
     static func spokenSummary(_ calories: CalorieRemaining, partial: String?, footnote: String?) -> String {
         [
-            calories.remaining.map { "\(BodyActivityViewModel.whole($0)) calories remaining" },
+            calories.remaining.map { Self.spokenRemaining($0, partial: calories.isPartial) },
             calories.food.map { "Food, \(BodyActivityViewModel.whole($0)) calories" },
             calories.burned.map { "Burned, \(BodyActivityViewModel.whole($0)) calories" },
             partial,
             footnote,
         ].compactMap { $0 }.joined(separator: ", ")
+    }
+
+    /// Remaining as spoken: "calories over goal" below zero (the positive count), "up to" a partial day with something
+    /// left, otherwise "calories remaining".
+    static func spokenRemaining(_ value: Decimal, partial: Bool) -> String {
+        if value < 0 { return "\(BodyActivityViewModel.whole(-value)) calories over goal" }
+        let upTo = partial && value > 0 ? "up to " : ""
+        return "\(upTo)\(BodyActivityViewModel.whole(value)) calories remaining"
     }
 
     /// The figures the calorie summary shows. Food is a dash until something is logged, never 0. Remaining is hidden
@@ -82,7 +90,11 @@ public struct NourishTodayHeader: View {
 
     static func summaryFigures(_ calories: CalorieRemaining) -> SummaryFigures {
         let remaining: String?
-        if let value = calories.remaining {
+        if let value = calories.remaining, value < 0 {
+            remaining = BodyActivityViewModel.whole(-value)
+        } else if let value = calories.remaining, calories.isPartial, value > 0 {
+            remaining = "Up to \(BodyActivityViewModel.whole(value))"
+        } else if let value = calories.remaining {
             remaining = BodyActivityViewModel.whole(value)
         } else if calories.goal != nil {
             remaining = "—"
@@ -110,7 +122,7 @@ public struct NourishTodayHeader: View {
                 Text(remaining)
                     .font(.largeTitle.weight(.semibold))
                     .foregroundStyle(TokenColors.textPrimary)
-                Text("Calories remaining")
+                Text(calories.remaining.map { $0 < 0 } == true ? "Calories over goal" : "Calories remaining")
                     .font(.subheadline)
                     .foregroundStyle(TokenColors.textSecondary)
                 if let ringFootnote {
