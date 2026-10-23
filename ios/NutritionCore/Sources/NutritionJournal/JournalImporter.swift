@@ -272,7 +272,6 @@ public enum JournalImporter {
             }
             // A flag that outlived every part of the second phase (a stop after the last save, before the flag
             // was cleared) is not an unfinished restore, however much of it was deleted since.
-            guard !(savedMealsWritten && favoritesWritten) else { throw JournalImportError.notEmpty }
             if let savedMealsTarget, !savedMealsWritten {
                 try savedMealsTarget.restoreJournalSavedMeals(plan.savedMeals, receipt: digest)
             }
