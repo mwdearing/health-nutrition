@@ -1172,7 +1172,7 @@ final class DailyGoalsTests: XCTestCase {
         let goals = try makeGoalStore()
         try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
         try logOats(journal, grams: 400)
-        let connections = ConnectionsPrivacyViewModel(
+        let connections = ConnectionsPrivacyViewModel(goals: goals,
             store: journal, erasers: [journal, goals])
         XCTAssertTrue(connections.canEraseAll)
 

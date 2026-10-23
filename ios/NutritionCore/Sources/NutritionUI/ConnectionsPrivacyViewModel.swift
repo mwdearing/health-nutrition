@@ -120,6 +120,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     public static let exportFailedMessage = "Could not export the journal."
     public static let importButtonTitle = "Import a journal export"
     public static let importFailedMessage = "Could not import that file."
+    /// The approved rollback wording: a write failed, and the undo put everything back.
+    public static let importRolledBackMessage = "Nothing was imported. Try again."
     /// What the importer refused and why, in the words a person can act on.
     public static let importUnsupportedVersionMessage =
         "That file was made by a newer version of the app, so this one cannot read it."
@@ -281,6 +283,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     private let favorites: FavoritesStore?
     /// Where an export reads saved meals and an import writes them; nil leaves them out of both.
     private let savedMeals: JournalSavedMealsStore?
+    /// Where an export reads goals and an import writes them. Required, so no caller can leave them out silently.
+    private let goals: GoalStore
     private let appVersion: String
     private let writer: ConnectionsPrivacyExportWriter
     private let remover: ConnectionsPrivacyExportRemover
@@ -344,6 +348,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     ///   is the default, so a host that does not persist anything still gets a working screen and a
     ///   test needs no defaults domain.
     public init(
+        goals: GoalStore,
         store: JournalStore, favorites: FavoritesStore? = nil, savedMeals: JournalSavedMealsStore? = nil,
         appVersion: String = ConnectionsPrivacyViewModel.defaultAppVersion,
         writer: @escaping ConnectionsPrivacyExportWriter = ConnectionsPrivacyViewModel.writeExport,
@@ -361,6 +366,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         self.store = store
         self.favorites = favorites
         self.savedMeals = savedMeals
+        self.goals = goals
         self.appVersion = appVersion
         self.writer = writer
         self.erasers = erasers
@@ -567,7 +573,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         exportRevision += 1
         do {
             let document = try JournalExporter.makeExport(
-                store: store, favorites: favorites, savedMeals: savedMeals, appVersion: appVersion, exportedAt: now)
+                store: store, favorites: favorites, savedMeals: savedMeals, goals: goals, appVersion: appVersion,
+                exportedAt: now)
             let data = try JournalExporter.encode(document)
             let name = JournalExporter.fileName(exportedAt: now)
             let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
@@ -887,13 +894,15 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         // a task body that needs the main actor in order to start would never get to run: the erase would
         // wait on a signal nothing was ever going to send. A detached task needs no actor to begin, and its
         // `defer` opens the gate from a background thread as soon as the store writes are done.
+        let goals = self.goals
         let restore = Task.detached(priority: .userInitiated) { () -> ImportOutcome in
             // The gate is opened from the background, and not from the task below: the erase waits on it from
             // the main actor, so it has to be signalled by the work it is waiting for.
             defer { gate.end() }
             do {
                 return .imported(
-                    try JournalImporter.importExport(data, into: store, favorites: favorites, savedMeals: savedMeals))
+                    try JournalImporter.importExport(
+                        data, into: store, favorites: favorites, savedMeals: savedMeals, goals: goals))
             } catch let error as JournalImportError {
                 return .failed(.refused(error))
             } catch {
@@ -959,7 +968,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         case .imported(let summary):
             importSummary = summary
             importState = .imported
-            importMessage = Self.importSummaryText(summary)
+            importMessage = Self.importSummaryText(summary, locale: .current)
         case .failed(let failure):
             importSummary = nil
             importState = .failed
@@ -1055,16 +1064,19 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     }
 
     /// One line saying what came back, so a restore that quietly did nothing still looks like an answer.
-    public static func importSummaryText(_ summary: JournalImportSummary) -> String {
-        let entries = summary.intakes == 1 ? "1 entry" : "\(summary.intakes) entries"
-        let deleted = summary.tombstones == 0 ? "" : " and \(summary.tombstones) deleted"
-        let favorites = summary.favorites == 0 ? "" : ", \(summary.favorites) favorites"
+    public static func importSummaryText(_ summary: JournalImportSummary, locale: Locale = .current) -> String {
+        // Every count carries grouping separators (1,234 entries), in the locale the screen is shown in.
+        func count(_ n: Int) -> String { n.formatted(.number.locale(locale)) }
+        let entries = summary.intakes == 1 ? "1 entry" : "\(count(summary.intakes)) entries"
+        let deleted = summary.tombstones == 0 ? "" : " and \(count(summary.tombstones)) deleted"
+        let favorites = summary.favorites == 0 ? "" : ", \(count(summary.favorites)) favorites"
         let savedMeals = summary.savedMeals == 0 ? ""
-            : summary.savedMeals == 1 ? ", 1 saved meal" : ", \(summary.savedMeals) saved meals"
+            : summary.savedMeals == 1 ? ", 1 saved meal" : ", \(count(summary.savedMeals)) saved meals"
+        let goals = summary.goals == 0 ? "" : summary.goals == 1 ? ", 1 goal" : ", \(count(summary.goals)) goals"
         let kept = summary.keptOutOfLibrary == 0 ? ""
             : summary.keptOutOfLibrary == 1 ? ", 1 entry kept out of Library > Products"
-            : ", \(summary.keptOutOfLibrary) entries kept out of Library > Products"
-        return "Imported \(entries)\(deleted)\(favorites)\(savedMeals)\(kept)."
+            : ", \(count(summary.keptOutOfLibrary)) entries kept out of Library > Products"
+        return "Imported \(entries)\(deleted)\(favorites)\(savedMeals)\(goals)\(kept)."
     }
 
     public static func importFailureText(for error: JournalImportError) -> String {
@@ -1081,6 +1093,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             return importFailedMessage
         case .partialRestore:
             return partialRestoreWarningMessage
+        case .rolledBack:
+            return importRolledBackMessage
         }
     }
 

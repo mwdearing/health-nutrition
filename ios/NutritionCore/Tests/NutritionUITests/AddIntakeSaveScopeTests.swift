@@ -163,7 +163,7 @@ final class LibraryChoiceExportTests: XCTestCase {
         try logBar(source, id: id)
         try source.keepOutOfLibrary(intakeID: id)
         let data = try JournalExporter.encode(
-            JournalExporter.makeExport(store: source, appVersion: "0.1.0", exportedAt: when))
+            JournalExporter.makeExport(store: source, goals: InMemoryGoalStore(), appVersion: "0.1.0", exportedAt: when))
         let restored = try makeStore()
         _ = try JournalImporter.importExport(data, into: restored, favorites: nil)
         XCTAssertEqual(try restored.intakeIDsNotSavedToLibrary(), [id])
@@ -257,7 +257,7 @@ final class LibraryChoiceExportTests: XCTestCase {
         let source = try makeStore()
         try logBar(source, id: id)
         try source.keepOutOfLibrary(intakeID: id)
-        var document = try JournalExporter.makeExport(store: source, appVersion: "0.1.0", exportedAt: when)
+        var document = try JournalExporter.makeExport(store: source, goals: InMemoryGoalStore(), appVersion: "0.1.0", exportedAt: when)
         document.schemaVersion = 4
         let data = try JournalExporter.encode(document)
         let restored = try makeStore()
@@ -314,13 +314,13 @@ final class LoggedUnitTests: XCTestCase {
         let source = try makeStore()
         let id = try logFiber(source, unit: .teaspoon, amount: "4")
         let data = try JournalExporter.encode(
-            JournalExporter.makeExport(store: source, appVersion: "0.1.0", exportedAt: now))
+            JournalExporter.makeExport(store: source, goals: InMemoryGoalStore(), appVersion: "0.1.0", exportedAt: now))
         let restored = try makeStore()
         _ = try JournalImporter.importExport(data, into: restored, favorites: nil)
         XCTAssertEqual(try restored.loggedUnits().map(\.intakeID), [id])
         XCTAssertEqual(try restored.loggedUnits().map(\.unit), [.teaspoon])
 
-        var older = try JournalExporter.makeExport(store: source, appVersion: "0.1.0", exportedAt: now)
+        var older = try JournalExporter.makeExport(store: source, goals: InMemoryGoalStore(), appVersion: "0.1.0", exportedAt: now)
         older.schemaVersion = 5
         let target = try makeStore()
         _ = try JournalImporter.importExport(try JournalExporter.encode(older), into: target, favorites: nil)
@@ -423,7 +423,7 @@ final class LoggedUnitTests: XCTestCase {
         let source = try makeStore()
         _ = try logFiber(source, unit: .teaspoon, amount: "4")
         let data = try JournalExporter.encode(
-            JournalExporter.makeExport(store: source, appVersion: "0.1.0", exportedAt: now))
+            JournalExporter.makeExport(store: source, goals: InMemoryGoalStore(), appVersion: "0.1.0", exportedAt: now))
         for symbol in ["L", "g"] {
             var root = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
             var units = try XCTUnwrap(root["logged_units"] as? [[String: Any]])
@@ -441,7 +441,7 @@ final class LoggedUnitTests: XCTestCase {
         let source = try makeStore()
         _ = try logFiber(source, unit: .teaspoon, amount: "4")
         let data = try JournalExporter.encode(
-            JournalExporter.makeExport(store: source, appVersion: "0.1.0", exportedAt: now))
+            JournalExporter.makeExport(store: source, goals: InMemoryGoalStore(), appVersion: "0.1.0", exportedAt: now))
         var root = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
         var units = try XCTUnwrap(root["logged_units"] as? [[String: Any]])
         var other = units[0]
@@ -453,7 +453,7 @@ final class LoggedUnitTests: XCTestCase {
             try JSONSerialization.data(withJSONObject: root), into: target, favorites: nil))
         XCTAssertTrue(try target.activeIntakes().isEmpty)
 
-        var document = try JournalExporter.makeExport(store: source, appVersion: "0.1.0", exportedAt: now)
+        var document = try JournalExporter.makeExport(store: source, goals: InMemoryGoalStore(), appVersion: "0.1.0", exportedAt: now)
         document.loggedUnits[0].unit = "L"
         XCTAssertThrowsError(try JournalExporter.encode(document))
     }
@@ -468,7 +468,7 @@ final class LoggedUnitTests: XCTestCase {
         library.addFavorite(try XCTUnwrap(library.sections.first { $0.title == "Recents" }?.items.first))
         let favoriteID = try XCTUnwrap(try sourceFavorites.list().first).id
         let data = try JournalExporter.encode(
-            JournalExporter.makeExport(store: source, favorites: sourceFavorites, appVersion: "0.1.0", exportedAt: now))
+            JournalExporter.makeExport(store: source, favorites: sourceFavorites, goals: InMemoryGoalStore(), appVersion: "0.1.0", exportedAt: now))
 
         let restored = try makeStore()
         let restoredFavorites = try makeFavorites()
@@ -483,7 +483,7 @@ final class LoggedUnitTests: XCTestCase {
         let source = try makeStore()
         _ = try logFiber(source, unit: .g, amount: "5")
         let data = try JournalExporter.encode(
-            JournalExporter.makeExport(store: source, appVersion: "0.1.0", exportedAt: now))
+            JournalExporter.makeExport(store: source, goals: InMemoryGoalStore(), appVersion: "0.1.0", exportedAt: now))
         let target = try makeStore()
         let own = JournalLoggedUnit(intakeID: "an-existing-favorite", componentID: "fiber-powder", unit: .teaspoon)
         try target.recordLoggedUnit(own)
