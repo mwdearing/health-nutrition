@@ -418,9 +418,9 @@ public final class EntryDetailViewModel: ObservableObject {
         return AmountDisplay.display(amount, unit: row.unit, system: preferences.unitSystem, roundsStoredUnit: true).text
     }
 
-    /// Whether the editor offers the water-share stepper: a drink with a volume amount (#462).
+    /// Whether the editor offers the water-share stepper: a drink, or an entry with no product record, with a volume amount (#462).
     public var showsWaterShare: Bool {
-        kind == .drink && components.contains(where: { $0.unit.dimension == .volume })
+        (kind == .drink || productName == nil) && components.contains(where: { $0.unit.dimension == .volume })
     }
 
     /// Writes one new revision with exactly one `edit` call. Invalid amounts write nothing.
