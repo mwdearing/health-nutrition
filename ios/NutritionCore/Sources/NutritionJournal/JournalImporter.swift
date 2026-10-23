@@ -436,8 +436,9 @@ public enum JournalImporter {
                 throw JournalImportError.rolledBack
             }
             // The goals are all written, so the receipt is marked done before the flag clears: a resume that still finds
-            // the flag then adds nothing, even after the person has deleted a goal. A failed mark only costs that case.
-            try? goalsTarget?.markGoalRestoreReceiptDone(digest)
+            // the flag then adds nothing, even after the person has deleted a goal. A failed mark keeps the flag, so the
+            // restore is finished from its receipt rather than re-derived from the store.
+            try goalsTarget?.markGoalRestoreReceiptDone(digest)
             // A flag that cannot be cleared is reported rather than swallowed. It cannot start a resume over this
             // second phase: every part of it now has its receipt.
             try progress?.clearRestoreInProgress()

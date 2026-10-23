@@ -501,4 +501,21 @@ final class JournalImportAtomicityTests: JournalImportTestCase {
         XCTAssertNil(try base.goal(for: "protein"), "a goal the person deleted stays deleted")
         XCTAssertEqual(try base.goal(for: "energy")?.target, Decimal(2000), "the pending goal is written")
     }
+    /// A failed mark of the goal receipt is reported and keeps the restore flag, so the restore is finished from its receipt.
+    /// Fails when the mark is swallowed and the flag clears, since a later import then re-derives the goals from the store.
+    func testAFailedGoalReceiptMarkKeepsTheFlag() throws {
+        let directory = try self.directory()
+        let base = try SwiftDataGoalStore(url: directory.appendingPathComponent("goals.store"))
+        addTeardownBlock { base.close() }
+        let data = try exportData(favorites: false)
+        var root = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        root["goals"] = [["nutrient": "protein", "target": "60", "unit": "g"]]
+        let file = try JSONSerialization.data(withJSONObject: root)
+        let journal = try store(directory)
+        let failing = ScriptedGoalStore(base: base)
+        failing.failsMark = true
+
+        XCTAssertThrowsError(try JournalImporter.importExport(file, into: journal, favorites: nil, goals: failing))
+        XCTAssertNotNil(try journal.restoreInProgressDigest(), "the flag stays while the receipt is not marked done")
+    }
 }

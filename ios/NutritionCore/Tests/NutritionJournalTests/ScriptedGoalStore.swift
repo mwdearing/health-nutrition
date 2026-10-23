@@ -40,7 +40,10 @@ final class ScriptedGoalStore: GoalStore, @unchecked Sendable {
         try onSet(goal, base)
         return try base.writeRestoredGoal(goal, receipt: receipt)
     }
+    /// Makes marking a receipt done fail, as a store that cannot write at that moment would.
+    var failsMark = false
     func markGoalRestoreReceiptDone(_ receipt: String) throws {
+        if failsMark { throw JournalImportError.corrupt("mark refused") }
         try base.markGoalRestoreReceiptDone(receipt)
     }
     func goalRestoreReceiptDone(_ receipt: String) throws -> Bool? { try base.goalRestoreReceiptDone(receipt) }
