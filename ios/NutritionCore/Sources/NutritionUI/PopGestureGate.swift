@@ -50,7 +50,7 @@ struct PopGestureGate: UIViewControllerRepresentable {
 extension View {
     /// Blocks the edge swipe-back while `blocked` is true.
     func blocksEdgeSwipeBack(while blocked: Bool) -> some View {
-        background(PopGestureGate(blocked: blocked).frame(width: 0, height: 0))
+        background(PopGestureGate(blocked: blocked).frame(width: 1, height: 1).allowsHitTesting(false))
     }
 }
 #else
