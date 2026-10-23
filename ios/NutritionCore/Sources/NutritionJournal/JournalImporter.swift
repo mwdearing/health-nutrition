@@ -22,9 +22,7 @@ public enum JournalImportError: Error, Sendable, Equatable {
     case corrupt(String)
     /// Favorites could not be restored and the journal refused its narrow undo. These counts describe
     /// rows from the restore that may remain; no entry content or underlying store error is exposed.
-    /// The counts are what this file's entries still hold in the journal; nil when the journal could not be read, so the
-    /// count is unknown rather than zero.
-    case partialRestore(retainedIntakes: Int?, retainedTombstones: Int?)
+    case partialRestore(retainedIntakes: Int, retainedTombstones: Int)
     /// A write failed after the journal was written, and the undo put everything back. Nothing from the file remains.
     case rolledBack
 }
@@ -330,7 +328,7 @@ public enum JournalImporter {
                     try goalsTarget.recordGoalRestoreReceipt(digest, goals: recorded)
                 }
                 recordedGoals = recorded
-                try addMissingGoals(recorded, into: goalsTarget, receipt: digest, added: &goalKeysSet)
+                try addMissingGoals(recorded, into: goalsTarget, added: &goalKeysSet)
                 try goalsTarget.markGoalRestoreReceiptDone(digest)
             }
             // A flag that outlived a finished resume would let a later import of this file write rows the
@@ -369,18 +367,11 @@ public enum JournalImporter {
             do {
                 // Goals first, add-only and write-ahead: the goals this restore will set are recorded under its receipt
                 // before the first is written, so a stop after the record can be finished or undone from the record.
-                // A receipt already on the store names what a stopped run recorded, so it is reused: recomputing the missing
-                // goals from the store would add back one the person has since deleted.
                 if let goalsTarget {
-                    let recorded: [NutrientGoal]
-                    if let existing = try goalsTarget.goalRestoreReceipt(digest) {
-                        recorded = existing
-                    } else {
-                        recorded = try plan.goals.filter { try goalsTarget.goal(for: $0.nutrient) == nil }
-                        try goalsTarget.recordGoalRestoreReceipt(digest, goals: recorded)
-                    }
-                    recordedGoals = recorded
-                    try addMissingGoals(recorded, into: goalsTarget, receipt: digest, added: &goalKeysSet)
+                    let missing = try plan.goals.filter { try goalsTarget.goal(for: $0.nutrient) == nil }
+                    try goalsTarget.recordGoalRestoreReceipt(digest, goals: missing)
+                    recordedGoals = missing
+                    try addMissingGoals(missing, into: goalsTarget, added: &goalKeysSet)
                 }
                 // Saved meals first: a replace of an empty list can be written again, so a resume after a stop
                 // between the two saves only has the favorites left to write.
@@ -412,11 +403,9 @@ public enum JournalImporter {
                 do {
                     try journal.undoRestore(receipt)
                 } catch {
-                    // A failed undo may have removed some entries, so the count is read from the journal, not the receipt.
                     keepFlag = true
-                    let remaining = retainedCounts(in: store)
                     throw JournalImportError.partialRestore(
-                        retainedIntakes: remaining?.intakes, retainedTombstones: remaining?.tombstones)
+                        retainedIntakes: retainedIntakes, retainedTombstones: retainedTombstones)
                 }
                 // Goals come last, and only the ones this run wrote. A goal that cannot be removed keeps its receipt and the flag.
                 let goalsLeft = !undoGoals(recordedGoals.filter { goalKeysSet.contains($0.nutrient) }, in: goalsTarget)
@@ -889,25 +878,11 @@ public enum JournalImporter {
     }
 
     /// `added` is filled as it goes, so a failure part-way leaves the nutrients already set in it for an undo.
-    /// What the journal still holds, read after a failed undo. Nil when it cannot be read: an unreadable journal is an
-    /// unknown count, never zero.
-    static func retainedCounts(in store: JournalStore) -> (intakes: Int, tombstones: Int)? {
-        do {
-            let intakes = try store.activeIntakes().count
-            let tombstones = try (store as? JournalTombstoneSource)?.deletedIntakes().count ?? 0
-            return (intakes, tombstones)
-        } catch {
-            return nil
-        }
-    }
-
-    /// Each goal is written with its receipt entry in one save, so a goal the person deletes after its write is never
-    /// added again by a resume, and a goal the person already holds is left as it is.
-    static func addMissingGoals(
-        _ goals: [NutrientGoal], into store: GoalStore, receipt: String, added: inout [String]
-    ) throws {
+    static func addMissingGoals(_ goals: [NutrientGoal], into store: GoalStore, added: inout [String]) throws {
         for goal in goals {
-            if try store.writeRestoredGoal(goal, receipt: receipt) { added.append(goal.nutrient) }
+            guard try store.goal(for: goal.nutrient) == nil else { continue }
+            try store.setGoal(goal)
+            added.append(goal.nutrient)
         }
     }
 
