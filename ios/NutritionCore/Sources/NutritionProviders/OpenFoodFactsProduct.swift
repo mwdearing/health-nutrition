@@ -249,7 +249,8 @@ extension OpenFoodFactsProduct {
         (salt, "salt", false),
     ]
 
-    /// 100 mL comes from the unit when the index has it, else from the pack quantity, else it stays
+    /// A search result. The figures are per 100 and there is no serving. Whether that is 100 g or 100 mL comes
+    /// from the unit when the index has it, else from the pack quantity, else it stays
     /// unresolved.
     init(hit: OpenFoodFactsSearchResponse.Hit, barcode: String, name: String) {
         let stated = OpenFoodFactsBasis.decide(dataPer: nil, quantityUnit: hit.product_quantity_unit?.text)
