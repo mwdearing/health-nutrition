@@ -420,7 +420,7 @@ public final class EntryDetailViewModel: ObservableObject {
 
     /// Whether the editor offers the water-share stepper: a drink, or an entry with no product record, with a volume amount (#462).
     public var showsWaterShare: Bool {
-        (kind == .drink || productName == nil) && components.contains(where: { $0.unit.dimension == .volume })
+        kind == .drink && components.contains(where: { $0.unit.dimension == .volume })
     }
 
     /// Writes one new revision with exactly one `edit` call. Invalid amounts write nothing.
