@@ -1403,13 +1403,4 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
             XCTAssertThrowsError(try makeExport(store: filledStore(), favorites: favorites), "share \(share) must be refused")
         }
     }
-
-    /// A version 8 export written without a goal store would state an empty goals list, which reads as a person with no goals.
-    /// Fails when a missing store is given an empty list instead of being refused.
-    func testAnExportWithoutAGoalStoreIsRefusedRatherThanWrittenWithNoGoals() throws {
-        XCTAssertThrowsError(try JournalExporter.makeExport(
-            store: StubJournalStore(), favorites: nil, goals: nil, appVersion: "0.1.0", exportedAt: now)) {
-            XCTAssertEqual($0 as? JournalExportError, .goalStoreRequired)
-        }
-    }
 }

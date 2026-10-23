@@ -591,8 +591,6 @@ public struct JournalExport: Sendable, Hashable, Codable {
 }
 
 public enum JournalExportError: Error, Sendable, Equatable {
-    /// A version 8 export needs a goal store, so its goals are read, never assumed to be empty.
-    case goalStoreRequired
     /// A revision points at a product snapshot the store no longer has.
     case missingProductSnapshot(String)
     /// The encoded bytes were not valid UTF-8 text.
@@ -800,10 +798,8 @@ public enum JournalExporter {
     /// mid-export cannot leave an entry in neither the intakes nor the tombstones.
     public static func makeExport(
         store: JournalStore, favorites: FavoritesStore? = nil, savedMeals: JournalSavedMealsStore? = nil,
-        goals: GoalStore? = nil, appVersion: String, exportedAt: Date
+        goals: GoalStore, appVersion: String, exportedAt: Date
     ) throws -> JournalExport {
-        // A version 8 file always states its goals, so a caller without a goal store is refused rather than given an empty list.
-        guard let goals else { throw JournalExportError.goalStoreRequired }
         let goalList = try goals.goals().map {
             JournalExportGoal(nutrient: $0.nutrient, target: DecimalText.encode($0.target), unit: $0.unit.symbol)
         }.sorted { $0.nutrient < $1.nutrient }
