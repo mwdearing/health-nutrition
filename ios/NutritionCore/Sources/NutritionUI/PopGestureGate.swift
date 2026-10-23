@@ -25,7 +25,20 @@ final class PopGateController: UIViewController {
     }
 
     func apply() {
-        navigationController?.interactivePopGestureRecognizer?.isEnabled = !blocked
+        // The controller is not always parented under the navigation stack, so reach the visible stack from the window.
+        let nav = navigationController ?? PopGateController.visibleNavigationController(from: view.window)
+        nav?.interactivePopGestureRecognizer?.isEnabled = !blocked
+    }
+
+    /// The navigation controller that is on screen: the window's root, through a tab bar's selection, down to a stack.
+    static func visibleNavigationController(from window: UIWindow?) -> UINavigationController? {
+        var current = window?.rootViewController
+        while let controller = current {
+            if let nav = controller as? UINavigationController { return nav.visibleViewController?.navigationController ?? nav }
+            if let tabs = controller as? UITabBarController { current = tabs.selectedViewController; continue }
+            current = controller.presentedViewController ?? controller.children.last
+        }
+        return nil
     }
 }
 
