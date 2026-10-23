@@ -63,9 +63,10 @@ public struct TodayView: View {
                     .foregroundStyle(TokenColors.textPrimary)
                     .frame(maxWidth: .infinity)
                     .multilineTextAlignment(.center)
-                    // The navigation title is the one spoken name for the screen, so this visual title is hidden
-                    // from VoiceOver rather than read a second time.
-                    .accessibilityHidden(true)
+                    // The navigation title is the one spoken name for the screen. This text stays in the tree with no
+                    // label and no trait, so XCUITest can still measure its frame and VoiceOver reads nothing for it.
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("")
                     .accessibilityIdentifier("todayHeader")
                 Text(model.dateSubtitle)
                     .font(.subheadline)

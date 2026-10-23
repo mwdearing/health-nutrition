@@ -12,7 +12,7 @@ final class TodayCentringUITests: XCTestCase {
         XCTAssertTrue(window.waitForExistence(timeout: 10), "no window")
         let windowMidX = window.frame.midX
 
-        for identifier in ["todayDate", "calorieFoodBurnedRow"] {
+        for identifier in ["todayHeader", "todayDate", "calorieFoodBurnedRow"] {
             let element = element(identifier, in: app)
             XCTAssertTrue(element.waitForExistence(timeout: 10), "\(identifier) is not on screen")
             let midX = element.frame.midX
