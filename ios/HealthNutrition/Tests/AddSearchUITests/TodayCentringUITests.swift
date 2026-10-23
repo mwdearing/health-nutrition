@@ -12,7 +12,7 @@ final class TodayCentringUITests: XCTestCase {
         XCTAssertTrue(window.waitForExistence(timeout: 10), "no window")
         let windowMidX = window.frame.midX
 
-        for identifier in ["todayHeader", "todayDate", "calorieFoodBurnedRow"] {
+        for identifier in ["todayDate", "calorieFoodBurnedRow"] {
             let element = element(identifier, in: app)
             XCTAssertTrue(element.waitForExistence(timeout: 10), "\(identifier) is not on screen")
             let midX = element.frame.midX
@@ -29,7 +29,14 @@ final class TodayCentringUITests: XCTestCase {
         XCTAssertTrue(bar.waitForExistence(timeout: 10), "the navigation bar has no screen name 'Today' for VoiceOver")
     }
 
-    /// Launches the app, dismisses onboarding if it shows, and waits for the Today screen's header.
+    /// The visual Today title is hidden from VoiceOver, so the navigation title is the one spoken "Today".
+    func testTheTodayTitleIsNotReadTwice() throws {
+        let app = launchToToday()
+        let spokenTodays = app.staticTexts.matching(NSPredicate(format: "label == %@", "Today"))
+        XCTAssertEqual(spokenTodays.count, 0, "the visual Today title is still read by VoiceOver")
+    }
+
+    /// Launches the app, dismisses onboarding if it shows, and waits for the Today screen's date line.
     private func launchToToday() -> XCUIApplication {
         let app = XCUIApplication()
         app.launch()
@@ -37,7 +44,7 @@ final class TodayCentringUITests: XCTestCase {
         addTeardownBlock { app.terminate() }
         let getStarted = app.buttons["Get started"]
         if getStarted.waitForExistence(timeout: 5) { getStarted.tap() }
-        XCTAssertTrue(element("todayHeader", in: app).waitForExistence(timeout: 15), "the Today header did not appear")
+        XCTAssertTrue(element("todayDate", in: app).waitForExistence(timeout: 15), "the Today screen did not appear")
         return app
     }
 

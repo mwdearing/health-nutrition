@@ -63,7 +63,9 @@ public struct TodayView: View {
                     .foregroundStyle(TokenColors.textPrimary)
                     .frame(maxWidth: .infinity)
                     .multilineTextAlignment(.center)
-                    .accessibilityAddTraits(.isHeader)
+                    // The navigation title is the one spoken name for the screen, so this visual title is hidden
+                    // from VoiceOver rather than read a second time.
+                    .accessibilityHidden(true)
                     .accessibilityIdentifier("todayHeader")
                 Text(model.dateSubtitle)
                     .font(.subheadline)
