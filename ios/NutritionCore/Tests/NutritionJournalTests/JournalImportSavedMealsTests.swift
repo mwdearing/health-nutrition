@@ -9,6 +9,8 @@ private final class MemorySavedMeals: JournalSavedMealsStore, @unchecked Sendabl
     var meals: [JournalSavedMeal]
     var receipt: String?
     var failRestore = false
+    /// Makes the undo's clear fail, as a saved meal written by another window would at that moment.
+    var failClear = false
     /// Runs as a restore begins, as a meal saved in another window at that moment would.
     var beforeRestore: (MemorySavedMeals) -> Void = { _ in }
 
@@ -25,6 +27,7 @@ private final class MemorySavedMeals: JournalSavedMealsStore, @unchecked Sendabl
     func hasSavedMealsRestoreReceipt(_ receipt: String) throws -> Bool { self.receipt == receipt }
     func removeSavedMealsRestoreReceipt(_ receipt: String) throws { if self.receipt == receipt { self.receipt = nil } }
     func clearRestoredSavedMeals(_ meals: [JournalSavedMeal]) throws {
+        if failClear { throw Failure() }
         guard self.meals == meals else { throw JournalImportError.savedMealsNotEmpty }
         self.meals = []
         receipt = nil
@@ -71,7 +74,7 @@ final class JournalImportSavedMealsTests: JournalImportTestCase {
         return try JournalExporter.encode(
             try JournalExporter.makeExport(
                 store: try filledStore(directory), favorites: try filledFavorites(directory),
-                savedMeals: MemorySavedMeals(sampleMeals()), appVersion: appVersion, exportedAt: exportedAt))
+                savedMeals: MemorySavedMeals(sampleMeals()), goals: InMemoryGoalStore(), appVersion: appVersion, exportedAt: exportedAt))
     }
 
     private func fields(_ data: Data) throws -> [String: Any] {
@@ -109,7 +112,7 @@ final class JournalImportSavedMealsTests: JournalImportTestCase {
             items: [template("item-1", name: "Sample oats", snapshotID: "snap-oats-1")])
 
         let document = try JournalExporter.makeExport(
-            store: journal, savedMeals: MemorySavedMeals([meal]), appVersion: appVersion, exportedAt: exportedAt)
+            store: journal, savedMeals: MemorySavedMeals([meal]), goals: InMemoryGoalStore(), appVersion: appVersion, exportedAt: exportedAt)
         XCTAssertEqual(document.products.map(\.snapshotID), ["snap-oats-1"])
         XCTAssertEqual(document.savedMeals.first?.items.first?.productSnapshotID, "snap-oats-1")
     }
@@ -117,6 +120,7 @@ final class JournalImportSavedMealsTests: JournalImportTestCase {
     func testSavedMealsInAnEarlierVersionAreRefused() throws {
         var root = try fields(try savedMealsExport())
         root["schema_version"] = 3
+        root.removeValue(forKey: "goals")
         let data = try JSONSerialization.data(withJSONObject: root)
         XCTAssertThrowsError(try JournalImporter.importExport(
             data, into: try store(try directory()), favorites: nil, savedMeals: MemorySavedMeals())) {
@@ -219,7 +223,7 @@ final class JournalImportSavedMealsTests: JournalImportTestCase {
         let directory = try self.directory()
         let data = try JournalExporter.encode(
             try JournalExporter.makeExport(
-                store: try filledStore(directory), savedMeals: MemorySavedMeals(), appVersion: appVersion,
+                store: try filledStore(directory), savedMeals: MemorySavedMeals(), goals: InMemoryGoalStore(), appVersion: appVersion,
                 exportedAt: exportedAt))
         let target = try self.directory()
         let journal = try store(target)
@@ -274,7 +278,7 @@ final class JournalImportSavedMealsTests: JournalImportTestCase {
         let data = try JournalExporter.encode(
             try JournalExporter.makeExport(
                 store: try store(source), favorites: favoritesSource, savedMeals: MemorySavedMeals([lunch]),
-                appVersion: appVersion, exportedAt: exportedAt))
+                goals: InMemoryGoalStore(), appVersion: appVersion, exportedAt: exportedAt))
         let digest = JournalImporter.fileDigest(data)
         let target = try directory()
         let journal = try store(target)
@@ -357,7 +361,7 @@ final class JournalImportSavedMealsTests: JournalImportTestCase {
         let directory = try self.directory()
         let data = try JournalExporter.encode(
             try JournalExporter.makeExport(
-                store: try filledStore(directory), savedMeals: MemorySavedMeals(sampleMeals()), appVersion: appVersion,
+                store: try filledStore(directory), savedMeals: MemorySavedMeals(sampleMeals()), goals: InMemoryGoalStore(), appVersion: appVersion,
                 exportedAt: exportedAt))
         let target = try self.directory()
         let journal = try store(target)
@@ -403,7 +407,7 @@ final class JournalImportSavedMealsTests: JournalImportTestCase {
         let data = try JournalExporter.encode(
             try JournalExporter.makeExport(
                 store: try filledStore(try directory()), favorites: nil,
-                savedMeals: MemorySavedMeals([shared]), appVersion: appVersion, exportedAt: exportedAt))
+                savedMeals: MemorySavedMeals([shared]), goals: InMemoryGoalStore(), appVersion: appVersion, exportedAt: exportedAt))
         let restoreDirectory = try directory()
         let target = try store(restoreDirectory)
         let savedMeals = MemorySavedMeals()
@@ -413,5 +417,86 @@ final class JournalImportSavedMealsTests: JournalImportTestCase {
 
         XCTAssertEqual(
             savedMeals.meals.first?.items.first?.components.first?.hydrationPercentText, "95")
+    }
+
+    /// A resume whose goal read throws, with a saved meal in the file. Reading the goals must fail before the saved
+    /// meals are written, so the restore writes no meal and reports the failure. The old reader treated the failed
+    /// read as pending and wrote the meals first, which is what this test catches.
+    func testAGoalReadThatFailsStopsAResumeBeforeItWritesSavedMeals() throws {
+        let directory = try self.directory()
+        let meals = [JournalSavedMeal(id: "meal-x", name: "Lunch box", meal: nil, items: [template("item-x", name: "Sample apple")])]
+        let encoded = try JournalExporter.encode(try JournalExporter.makeExport(
+            store: try store(directory), savedMeals: MemorySavedMeals(meals), goals: InMemoryGoalStore(), appVersion: appVersion, exportedAt: exportedAt))
+        var root = try fields(encoded)
+        root["goals"] = [["nutrient": "energy", "target": "2000", "unit": "kcal"]]
+        let data = try JSONSerialization.data(withJSONObject: root)
+
+        let journal = try store(directory)
+        try journal.markRestoreInProgress(fileDigest: JournalImporter.fileDigest(data))
+        let goalStore = try SwiftDataGoalStore(url: directory.appendingPathComponent("goals.store"))
+        addTeardownBlock { goalStore.close() }
+        let goals = ScriptedGoalStore(base: goalStore) { _, _ in }
+        goals.failsRead = true
+        let savedMeals = MemorySavedMeals()
+
+        XCTAssertThrowsError(try JournalImporter.importExport(
+            data, into: journal, favorites: nil, savedMeals: savedMeals, goals: goals))
+        XCTAssertTrue(savedMeals.meals.isEmpty, "no saved meal is written before the goal read fails")
+        XCTAssertNil(savedMeals.receipt)
+    }
+
+    /// A saved-meal undo that fails keeps the restore flag, so a re-import of the same file resumes with the right counts.
+    /// Fails when the flag is cleared on that path, since the re-import is then refused as not empty.
+    func testAFailedSavedMealUndoKeepsTheFlagSoAReimportResumes() throws {
+        let target = try directory()
+        let journal = try store(target)
+        let savedMeals = MemorySavedMeals()
+        savedMeals.failClear = true
+        let data = try savedMealsExport()
+        XCTAssertThrowsError(try JournalImporter.importExport(
+            data, into: journal, favorites: FailingFavorites(), savedMeals: savedMeals)) {
+            XCTAssertEqual($0 as? JournalImportError, .partialRestore(retainedIntakes: 2, retainedTombstones: 1))
+        }
+        XCTAssertNotNil(try journal.restoreInProgressDigest(), "a failed saved-meal undo keeps the flag for a resume")
+
+        savedMeals.failClear = false
+        var summary: JournalImportSummary?
+        XCTAssertNoThrow(summary = try JournalImporter.importExport(
+            data, into: journal, favorites: try favorites(target), savedMeals: savedMeals))
+        XCTAssertEqual(summary?.savedMeals, 2)
+        XCTAssertEqual(savedMeals.meals.map(\.id), ["meal-2", "meal-1"], "no saved meal is duplicated")
+        XCTAssertEqual(try journal.activeIntakes().count, summary?.intakes, "no entry is duplicated")
+        XCTAssertNil(try journal.restoreInProgressDigest(), "the finished resume clears its flag")
+    }
+    /// A saved-meal undo that fails stops the rollback before the journal and the goals are touched, so the goal
+    /// this restore wrote and the journal it filled stay for the resume, and the flag keeps the resume possible.
+    /// Fails when goals are removed ahead of the saved-meal step, since the goal would then be gone for good.
+    func testAFailedSavedMealUndoLeavesGoalsAndJournalForTheResume() throws {
+        let target = try directory()
+        let journal = try store(target)
+        let savedMeals = MemorySavedMeals()
+        savedMeals.failClear = true
+        var root = try fields(try savedMealsExport())
+        root["goals"] = [["nutrient": "energy", "target": "2000", "unit": "kcal"]]
+        let data = try JSONSerialization.data(withJSONObject: root)
+        let goals = try SwiftDataGoalStore(url: target.appendingPathComponent("goals.store"))
+        addTeardownBlock { goals.close() }
+
+        XCTAssertThrowsError(try JournalImporter.importExport(
+            data, into: journal, favorites: FailingFavorites(), savedMeals: savedMeals, goals: goals)) {
+            XCTAssertEqual($0 as? JournalImportError, .partialRestore(retainedIntakes: 2, retainedTombstones: 1))
+        }
+        XCTAssertEqual(try goals.goal(for: "energy")?.target, 2000, "the goal stays for the resume")
+        XCTAssertFalse(try journal.activeIntakes().isEmpty, "the journal is not undone while a saved meal is left")
+        XCTAssertNotNil(try journal.restoreInProgressDigest(), "the flag is kept for the resume")
+
+        savedMeals.failClear = false
+        var summary: JournalImportSummary?
+        XCTAssertNoThrow(summary = try JournalImporter.importExport(
+            data, into: journal, favorites: try favorites(target), savedMeals: savedMeals, goals: goals))
+        XCTAssertEqual(summary?.savedMeals, 2)
+        XCTAssertEqual(try goals.goal(for: "energy")?.target, 2000, "the resume keeps the goal once")
+        XCTAssertEqual(try journal.activeIntakes().count, summary?.intakes, "no entry is duplicated")
+        XCTAssertNil(try journal.restoreInProgressDigest(), "the finished resume clears its flag")
     }
 }
