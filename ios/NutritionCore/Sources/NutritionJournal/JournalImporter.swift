@@ -22,7 +22,9 @@ public enum JournalImportError: Error, Sendable, Equatable {
     case corrupt(String)
     /// Favorites could not be restored and the journal refused its narrow undo. These counts describe
     /// rows from the restore that may remain; no entry content or underlying store error is exposed.
-    case partialRestore(retainedIntakes: Int, retainedTombstones: Int)
+    /// The counts are what this file's entries still hold in the journal; nil when the journal could not be read, so the
+    /// count is unknown rather than zero.
+    case partialRestore(retainedIntakes: Int?, retainedTombstones: Int?)
     /// A write failed after the journal was written, and the undo put everything back. Nothing from the file remains.
     case rolledBack
 }
@@ -403,9 +405,11 @@ public enum JournalImporter {
                 do {
                     try journal.undoRestore(receipt)
                 } catch {
+                    // A failed undo may have removed some entries, so the count is read from the journal, not the receipt.
                     keepFlag = true
+                    let remaining = retainedCounts(in: store)
                     throw JournalImportError.partialRestore(
-                        retainedIntakes: retainedIntakes, retainedTombstones: retainedTombstones)
+                        retainedIntakes: remaining?.intakes, retainedTombstones: remaining?.tombstones)
                 }
                 // Goals come last, and only the ones this run wrote. A goal that cannot be removed keeps its receipt and the flag.
                 let goalsLeft = !undoGoals(recordedGoals.filter { goalKeysSet.contains($0.nutrient) }, in: goalsTarget)
@@ -878,6 +882,18 @@ public enum JournalImporter {
     }
 
     /// `added` is filled as it goes, so a failure part-way leaves the nutrients already set in it for an undo.
+    /// What the journal still holds, read after a failed undo. Nil when it cannot be read: an unreadable journal is an
+    /// unknown count, never zero.
+    static func retainedCounts(in store: JournalStore) -> (intakes: Int, tombstones: Int)? {
+        do {
+            let intakes = try store.activeIntakes().count
+            let tombstones = try (store as? JournalTombstoneSource)?.deletedIntakes().count ?? 0
+            return (intakes, tombstones)
+        } catch {
+            return nil
+        }
+    }
+
     /// Each goal is written with its receipt entry in one save, so a goal the person deletes after its write is never
     /// added again by a resume, and a goal the person already holds is left as it is.
     static func addMissingGoals(

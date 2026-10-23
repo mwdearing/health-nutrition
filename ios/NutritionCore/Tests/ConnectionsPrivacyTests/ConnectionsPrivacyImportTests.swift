@@ -35,6 +35,9 @@ private final class ImportStubStore: JournalStore, JournalTombstoneSource, Journ
 
     var failNextSaveForTesting = false
     var failUndoForTesting = false
+    /// Makes the journal unreadable once an undo has failed, as a store that cannot be read at that moment would be.
+    var failReadsAfterUndoForTesting = false
+    private var failReadsForTesting = false
     var failEraseForTesting = false
     var pauseBeforeRestoreForTesting = false
     var pauseAfterRestoreForTesting = false
@@ -63,14 +66,20 @@ private final class ImportStubStore: JournalStore, JournalTombstoneSource, Journ
         now: Date, occurredAt: Date? = nil, timeZoneIdentifier: String? = nil, unitRemovals: [String])throws -> IntakeRevision { throw Unsupported() }
 
     func delete(intakeID: String, now: Date) throws { throw Unsupported() }
-    func activeIntakes() throws -> [Intake] { intakes }
+    func activeIntakes() throws -> [Intake] {
+        if failReadsForTesting { throw JournalImportError.corrupt("injected read refusal") }
+        return intakes
+    }
     func revisions(of intakeID: String) throws -> [IntakeRevision] { revisionsByIntake[intakeID] ?? [] }
     func projections(of intakeID: String) throws -> [DestinationProjection] { [] }
     func pendingOutbox() throws -> [OutboxOperation] { [] }
     func product(snapshotID: String) throws -> ProductDefinition? { products[snapshotID] }
     func activeIntakesFromBackground() async throws -> [Intake] { try activeIntakes() }
     func close() {}
-    func deletedIntakes() throws -> [Intake] { deleted }
+    func deletedIntakes() throws -> [Intake] {
+        if failReadsForTesting { throw JournalImportError.corrupt("injected read refusal") }
+        return deleted
+    }
     func eraseAll() throws {
         if failEraseForTesting { throw Unsupported() }
         intakes = []
@@ -114,7 +123,10 @@ private final class ImportStubStore: JournalStore, JournalTombstoneSource, Journ
     }
 
     func undoRestore(_ receipt: JournalRestoreReceipt) throws {
-        if failUndoForTesting { throw JournalImportError.corrupt("injected undo refusal") }
+        if failUndoForTesting {
+            failReadsForTesting = failReadsAfterUndoForTesting
+            throw JournalImportError.corrupt("injected undo refusal")
+        }
         intakes.removeAll()
         deleted.removeAll()
         revisionsByIntake = [:]
@@ -207,6 +219,25 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         XCTAssertEqual(model.importMessage, ConnectionsPrivacyViewModel.importNotEmptyMessage)
         XCTAssertEqual(model.journalRestoreGeneration, 0)
         XCTAssertTrue(journal.restoredPlans.isEmpty, "a refused import writes nothing")
+    }
+
+    /// A failed undo whose journal then cannot be read reports the count as unknown, not as the receipt's count or as zero.
+    /// Fails when the count is taken from the receipt, which reads as a number the journal may no longer hold.
+    func testAPartialRestoreWhoseJournalCannotBeReadReportsTheCountAsUnknown() throws {
+        let journal = ImportStubStore()
+        journal.failUndoForTesting = true
+        journal.failReadsAfterUndoForTesting = true
+        let favorites = ImportStubFavorites()
+        favorites.failRestoreForTesting = true
+
+        XCTAssertThrowsError(try JournalImporter.importExport(
+            try export(includeFavorite: true), into: journal, favorites: favorites)) {
+            guard case .partialRestore(let intakes, let tombstones) = $0 as? JournalImportError else {
+                return XCTFail("expected a partial restore, got \($0)")
+            }
+            XCTAssertNil(intakes, "an unreadable journal leaves the count unknown")
+            XCTAssertNil(tombstones)
+        }
     }
 
     func testPartialRestoreWarnsEntriesMayRemainAndClearsTheStaleExport() async throws {
