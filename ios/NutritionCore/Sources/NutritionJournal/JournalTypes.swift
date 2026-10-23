@@ -725,7 +725,7 @@ public protocol JournalOutboxDelivery: JournalStore {
 /// The kind of drink an entry is, used only to prefill its water share when it is logged. The share is
 /// stored on the component, so no drink type is stored. Presets are typical values, editable per entry.
 public enum DrinkType: String, CaseIterable, Sendable {
-    case water, tea, coffee, soda, sportsDrink, juice, milk
+    case water, tea, coffee, soda, sportsDrink, juice, milk, sparklingWater, energyDrink, smoothie
 
     public var displayName: String {
         switch self {
@@ -736,6 +736,9 @@ public enum DrinkType: String, CaseIterable, Sendable {
         case .sportsDrink: "Sports drink"
         case .juice: "Juice"
         case .milk: "Milk"
+        case .sparklingWater: "Sparkling water"
+        case .energyDrink: "Energy drink"
+        case .smoothie: "Smoothie"
         }
     }
 
@@ -749,6 +752,9 @@ public enum DrinkType: String, CaseIterable, Sendable {
         case .sportsDrink: 92
         case .juice: 88
         case .milk: 87
+        case .sparklingWater: 100
+        case .energyDrink: 89
+        case .smoothie: 85
         }
     }
 }
