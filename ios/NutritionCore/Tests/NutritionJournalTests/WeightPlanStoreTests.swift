@@ -102,13 +102,13 @@ final class WeightPlanStoreTests: XCTestCase {
         store.close()
 
         XCTAssertThrowsError(try store.weightPlan()) { error in
-            XCTAssertEqual(error as? GoalStoreError, .closed)
+            XCTAssertEqual(error as? GoalStoreError, GoalStoreError.closed)
         }
         XCTAssertThrowsError(try store.setWeightPlan(loseWeightPlan())) { error in
-            XCTAssertEqual(error as? GoalStoreError, .closed)
+            XCTAssertEqual(error as? GoalStoreError, GoalStoreError.closed)
         }
         XCTAssertThrowsError(try store.removeWeightPlan()) { error in
-            XCTAssertEqual(error as? GoalStoreError, .closed)
+            XCTAssertEqual(error as? GoalStoreError, GoalStoreError.closed)
         }
     }
 
@@ -119,7 +119,7 @@ final class WeightPlanStoreTests: XCTestCase {
         try store.writeCorruptPlanForTesting(aimText: "Lose")
 
         XCTAssertThrowsError(try store.weightPlan()) { error in
-            XCTAssertEqual(error as? GoalStoreError, .corruptRecord("weight plan"))
+            XCTAssertEqual(error as? GoalStoreError, GoalStoreError.corruptRecord("weight plan"))
         }
     }
 
@@ -130,7 +130,7 @@ final class WeightPlanStoreTests: XCTestCase {
         try store.writeCorruptPlanForTesting(goalText: "6O")
 
         XCTAssertThrowsError(try store.weightPlan()) { error in
-            XCTAssertEqual(error as? GoalStoreError, .corruptRecord("weight plan"))
+            XCTAssertEqual(error as? GoalStoreError, GoalStoreError.corruptRecord("weight plan"))
         }
     }
 

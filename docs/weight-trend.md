@@ -65,8 +65,8 @@ is stored at most: writing a plan replaces the stored one, and removing a plan w
 error. An invalid plan is refused before anything is written. A stored row that cannot be read is reported
 as corrupt, never as "no plan".
 
-**Erase all data** removes the weight plan together with the targets, in the same save. The plan is not in
-the export: the export holds the journal only, the same as the targets.
+**Erase all data** removes the weight plan together with the targets, in the same save. The plan is
+not in the export: the export holds the journal only, the same as the targets.
 
 ## Units and wording
 
