@@ -249,11 +249,7 @@ public enum DailyTotalsBuilder {
         }
         // A typed supplement contributes the nutrients it declares, as a snapshot-backed one does: an
         // undeclared nutrient supplies no contribution (#805).
-        guard entry.category == ProductKindResolution.supplementCategory else { return values }
-        return values.filter { value in
-            if case .unknown = value { return false }
-            return true
-        }
+        return values
     }
 
     /// The factor a snapshot's stated values are scaled by for what was logged, or nil when the
