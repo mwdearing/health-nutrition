@@ -4,7 +4,12 @@ A native iOS app for a local food, supplement and hydration journal. This reposi
 
 ## Implemented
 
-- Today, quick-add water, Add intake, Journal, entry detail and Library screens
+- Today, Add intake, Diary (journal), entry detail, Library, Trends and Settings screens, with quick-add water, amounts-only quick add for calories and macros, and a calorie ring with macro columns on Today
+- Goals: energy and macro goals (macros set as percentages of the energy goal), optional active-energy addition, water goal with container presets
+- Supplement list with times of day and one-tap Taken, water and supplement reminders, and a Log water shortcut
+- Vitamin and mineral tracking against published adult reference values, including pregnancy and breastfeeding values for ages 19 to 50
+- Trends: nutrients and a seven-day Insights view with 30-day averages; steps, active energy and weight read from Apple Health on Today
+- Saved meals, and copying yesterday, a past day or one meal into today
 - Local SwiftData persistence with immutable revisions, product snapshots and destination outbox operations
 - Favorites, recents, repeat entries and versioned personal recipes
 - Versioned journal export and import, plus Erase all data in Settings, which clears the local stores and the community session on the phone
