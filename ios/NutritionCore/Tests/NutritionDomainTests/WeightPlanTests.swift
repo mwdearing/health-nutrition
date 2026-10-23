@@ -122,6 +122,17 @@ final class WeightPlanTests: XCTestCase {
         })
     }
 
+    func testACurrentWeightThatIsNotANumberFailsTheDirectionCheck() {
+        // A decimal that is not a number orders below every finite one, so a plain comparison would let a
+        // gain through. Neither direction can hold against a current weight that is not a number.
+        XCTAssertEqual(
+            thrownError { try plan(.gain, goal: "85", pace: "0.5").validate(currentKilograms: .nan) },
+            .goalNotAboveCurrent)
+        XCTAssertEqual(
+            thrownError { try plan(.lose, goal: "75", pace: "0.5").validate(currentKilograms: .nan) },
+            .goalNotBelowCurrent)
+    }
+
     func testTheRangeChecksRunBeforeTheDirectionCheck() {
         // 300.1 is out of range and also above a current weight of 90 for a loss plan.
         XCTAssertEqual(

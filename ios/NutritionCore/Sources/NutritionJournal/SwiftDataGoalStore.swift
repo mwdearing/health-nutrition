@@ -242,4 +242,15 @@ public final class SwiftDataGoalStore: GoalStore, WeightPlanStore, JournalErasin
         if let paceText { row.paceText = paceText }
         try context.save()
     }
+
+    /// Adds a second plan row beside the stored one. `setWeightPlan` replaces the row it finds, so the
+    /// store's own API never leaves two; a test of the read path plants them through this hook.
+    func insertExtraPlanForTesting(_ plan: WeightPlan) throws {
+        let context = ModelContext(try openContainer())
+        context.insert(WeightPlanRecord(
+            aimText: plan.aim.storageText,
+            goalText: plan.goalKilograms.map { DecimalText.encode($0) },
+            paceText: plan.weeklyPaceKilograms.map { DecimalText.encode($0) }))
+        try context.save()
+    }
 }

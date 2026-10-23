@@ -69,16 +69,17 @@ public struct WeightPlan: Sendable, Equatable {
     }
 
     /// `validate()`, then the goal must lie in the direction the aim points from `currentKilograms`:
-    /// below it for a loss, above it for a gain. A maintain plan needs nothing more.
+    /// below it for a loss, above it for a gain. A current weight that is not a number holds neither
+    /// direction. A maintain plan needs nothing more.
     public func validate(currentKilograms: Decimal) throws {
         try validate()
         switch aim {
         case .lose:
-            if let goalKilograms, goalKilograms >= currentKilograms {
+            if let goalKilograms, currentKilograms.isNaN || goalKilograms >= currentKilograms {
                 throw WeightPlanError.goalNotBelowCurrent
             }
         case .gain:
-            if let goalKilograms, goalKilograms <= currentKilograms {
+            if let goalKilograms, currentKilograms.isNaN || goalKilograms <= currentKilograms {
                 throw WeightPlanError.goalNotAboveCurrent
             }
         case .maintain, .justTrack:

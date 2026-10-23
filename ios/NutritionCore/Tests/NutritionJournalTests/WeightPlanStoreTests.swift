@@ -134,6 +134,40 @@ final class WeightPlanStoreTests: XCTestCase {
         }
     }
 
+    /// A weekly pace that is not a whole decimal fails the read, as a corrupt goal weight does.
+    func testACorruptPaceFailsTheRead() throws {
+        let store = try makeStore()
+        try store.setWeightPlan(loseWeightPlan())
+        try store.writeCorruptPlanForTesting(paceText: "0,5")
+
+        XCTAssertThrowsError(try store.weightPlan()) { error in
+            XCTAssertEqual(error as? GoalStoreError, GoalStoreError.corruptRecord("weight plan"))
+        }
+    }
+
+    /// A maintain row that carries a goal weight fails `validate()` on the way out, so it fails the read.
+    func testAMaintainRowWithAGoalWeightFailsTheRead() throws {
+        let store = try makeStore()
+        try store.setWeightPlan(WeightPlan(aim: .maintain, goalKilograms: nil, weeklyPaceKilograms: nil))
+        try store.writeCorruptPlanForTesting(goalText: "70")
+
+        XCTAssertThrowsError(try store.weightPlan()) { error in
+            XCTAssertEqual(error as? GoalStoreError, GoalStoreError.corruptRecord("weight plan"))
+        }
+    }
+
+    /// Two stored rows no longer say which plan the person set, so the read fails rather than picking one.
+    func testTwoStoredPlansFailTheRead() throws {
+        let store = try makeStore()
+        try store.setWeightPlan(loseWeightPlan())
+        try store.insertExtraPlanForTesting(WeightPlan(
+            aim: .gain, goalKilograms: Decimal(string: "70")!, weeklyPaceKilograms: Decimal(string: "0.25")!))
+
+        XCTAssertThrowsError(try store.weightPlan()) { error in
+            XCTAssertEqual(error as? GoalStoreError, GoalStoreError.corruptRecord("weight plan"))
+        }
+    }
+
     /// A store written before the plan existed opens under the current schema, keeps its goals, and takes a
     /// plan. The file is first written with the goal model alone, as the earlier build wrote it, then
     /// reopened by the store.
