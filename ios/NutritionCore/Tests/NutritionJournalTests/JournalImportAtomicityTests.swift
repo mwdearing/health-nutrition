@@ -518,4 +518,34 @@ final class JournalImportAtomicityTests: JournalImportTestCase {
         XCTAssertThrowsError(try JournalImporter.importExport(file, into: journal, favorites: nil, goals: failing))
         XCTAssertNotNil(try journal.restoreInProgressDigest(), "the flag stays while the receipt is not marked done")
     }
+    /// A goal the person changed after the restore wrote it stays on the phone, so the rollback is partial, not a clean
+    /// "nothing was imported", and the flag stays for the resume. Fails when a changed goal is skipped and the rollback
+    /// still reports the file as fully removed.
+    func testAGoalChangedDuringTheRestoreMakesTheRollbackPartial() throws {
+        let directory = try self.directory()
+        let base = try SwiftDataGoalStore(url: directory.appendingPathComponent("goals.store"))
+        addTeardownBlock { base.close() }
+        let data = try exportData(favorites: false)
+        var root = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        root["goals"] = [
+            ["nutrient": "protein", "target": "60", "unit": "g"],
+            ["nutrient": "energy", "target": "2000", "unit": "kcal"],
+        ]
+        let file = try JSONSerialization.data(withJSONObject: root)
+        let journal = try store(directory)
+        var calls = 0
+        let scripted = ScriptedGoalStore(base: base) { _, base in
+            calls += 1
+            if calls == 2 {
+                try base.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(99), unit: .g))
+                throw JournalImportError.corrupt("stopped")
+            }
+        }
+
+        XCTAssertThrowsError(try JournalImporter.importExport(file, into: journal, favorites: nil, goals: scripted)) {
+            guard case .partialRestore = $0 as? JournalImportError else { return XCTFail("expected a partial restore, got \($0)") }
+        }
+        XCTAssertEqual(try base.goal(for: "protein")?.target, Decimal(99), "the person's change stays")
+        XCTAssertNotNil(try journal.restoreInProgressDigest(), "the flag stays while a goal from the file remains")
+    }
 }

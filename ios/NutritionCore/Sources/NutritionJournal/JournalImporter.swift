@@ -891,7 +891,10 @@ public enum JournalImporter {
             // A goal that cannot be read may be one this run wrote, so it is left behind rather than taken as not ours.
             let current: NutrientGoal?
             do { current = try store.goal(for: planned.nutrient) } catch { clean = false; continue }
-            guard current == planned else { continue }
+            // A goal the person has since changed is theirs now, so it stays. It is still a goal from the file that is left
+            // behind, so the undo is not clean. A goal already gone needs nothing.
+            guard let current else { continue }
+            guard current == planned else { clean = false; continue }
             do { try store.removeGoal(nutrient: planned.nutrient) } catch { clean = false }
         }
         return clean
