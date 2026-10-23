@@ -369,13 +369,18 @@ public enum JournalImporter {
             do {
                 // Goals first, add-only and write-ahead: the goals this restore will set are recorded under its receipt
                 // before the first is written, so a stop after the record can be finished or undone from the record.
-                // A resume already finished its goals above from the receipt it found, so a receipt present here is
-                // left as it is; re-recording it from the store would add back a goal the person has since deleted.
-                if let goalsTarget, try goalsTarget.goalRestoreReceipt(digest) == nil {
-                    let missing = try plan.goals.filter { try goalsTarget.goal(for: $0.nutrient) == nil }
-                    try goalsTarget.recordGoalRestoreReceipt(digest, goals: missing)
-                    recordedGoals = missing
-                    try addMissingGoals(missing, into: goalsTarget, receipt: digest, added: &goalKeysSet)
+                // A receipt already on the store names what a stopped run recorded, so it is reused: recomputing the missing
+                // goals from the store would add back one the person has since deleted.
+                if let goalsTarget {
+                    let recorded: [NutrientGoal]
+                    if let existing = try goalsTarget.goalRestoreReceipt(digest) {
+                        recorded = existing
+                    } else {
+                        recorded = try plan.goals.filter { try goalsTarget.goal(for: $0.nutrient) == nil }
+                        try goalsTarget.recordGoalRestoreReceipt(digest, goals: recorded)
+                    }
+                    recordedGoals = recorded
+                    try addMissingGoals(recorded, into: goalsTarget, receipt: digest, added: &goalKeysSet)
                 }
                 // Saved meals first: a replace of an empty list can be written again, so a resume after a stop
                 // between the two saves only has the favorites left to write.
