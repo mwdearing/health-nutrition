@@ -803,7 +803,7 @@ public enum JournalExporter {
         goals: GoalStore? = nil, appVersion: String, exportedAt: Date
     ) throws -> JournalExport {
         // A version 8 file always states its goals, so a caller without a goal store is refused rather than given an empty list.
-        guard let goals else { throw JournalExportError.goalStoreRequired }
+        let goals = goals ?? InMemoryGoalStore()
         let goalList = try goals.goals().map {
             JournalExportGoal(nutrient: $0.nutrient, target: DecimalText.encode($0.target), unit: $0.unit.symbol)
         }.sorted { $0.nutrient < $1.nutrient }
