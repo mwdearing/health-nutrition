@@ -52,6 +52,9 @@ final class SaveMealNameFieldUITests: XCTestCase {
         let log = app.buttons["Log"]
         XCTAssertTrue(log.waitForExistence(timeout: 5), "the Log button is not on the Amounts only form")
         log.tap()
+        // Logging leaves the Add sheet open on the Today screen; close it so the tabs are reachable.
+        let cancel = app.buttons["Cancel"]
+        if cancel.waitForExistence(timeout: 5) { cancel.tap() }
     }
 
     /// Removes the first entry in the Diary with a swipe and Delete, the way the person would.
