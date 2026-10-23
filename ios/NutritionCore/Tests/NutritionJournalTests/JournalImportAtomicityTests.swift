@@ -254,6 +254,24 @@ final class JournalImportAtomicityTests: JournalImportTestCase {
         XCTAssertNil(try journal.restoreInProgressDigest())
     }
 
+    /// A flag that cannot be removed fails the erase before any journal row is deleted, so the screen can
+    /// report it and nothing a re-import could bring back is half-erased.
+    func testAnEraseStopsBeforeDeletingWhenTheRestoreFlagCannotBeRemoved() throws {
+        let data = try exportData()
+        let target = try directory()
+        let journal = try store(target)
+        _ = try JournalImporter.importExport(data, into: journal, favorites: try favorites(target))
+        XCTAssertFalse(try journal.activeIntakes().isEmpty)
+
+        // A non-empty directory where the flag file belongs cannot be removed as a file.
+        let marker = target.appendingPathComponent("journal.store.restore-in-progress")
+        try FileManager.default.createDirectory(at: marker, withIntermediateDirectories: true)
+        try Data("blocker".utf8).write(to: marker.appendingPathComponent("blocker"))
+
+        XCTAssertThrowsError(try journal.eraseAll())
+        XCTAssertFalse(try journal.activeIntakes().isEmpty)
+    }
+
     func testFavoritesFailureAndConcurrentEditRefusalReportsRetainedJournal() throws {
         let data = try exportData()
         let target = try directory()
