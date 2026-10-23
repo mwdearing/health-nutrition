@@ -536,7 +536,7 @@ public struct JournalExport: Sendable, Hashable, Codable {
         intakes: [JournalExportIntake], tombstones: [JournalExportTombstone], favorites: [JournalExportFavorite],
         products: [JournalExportProvenance] = [], savedMeals: [JournalExportSavedMeal] = [],
         keptOutOfLibrary: [String] = [], loggedUnits: [JournalExportLoggedUnit] = [],
-        goals: [JournalExportGoal] = []
+        goals: [JournalExportGoal]
     ) {
         self.goals = goals
         self.schemaVersion = schemaVersion

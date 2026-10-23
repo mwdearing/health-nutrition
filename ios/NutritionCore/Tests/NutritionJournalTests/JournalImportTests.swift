@@ -773,7 +773,7 @@ final class JournalImportTests: JournalImportTestCase {
                             ])
                     ])
             ],
-            tombstones: [], favorites: [], products: [])
+            tombstones: [], favorites: [], products: [], goals: [])
         let target = try directory()
         let journal = try store(target)
         do {

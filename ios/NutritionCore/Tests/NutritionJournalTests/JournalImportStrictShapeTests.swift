@@ -22,7 +22,7 @@ final class JournalImportStrictShapeTests: XCTestCase {
     ) -> JournalExport {
         JournalExport(
             exportedAt: exportedAt, appVersion: "0.1.0", intakes: intakes, tombstones: tombstones,
-            favorites: favorites, products: products)
+            favorites: favorites, products: products, goals: [])
     }
 
     private func component(_ id: String = "oats", amount: String? = "40") -> JournalExportComponent {
