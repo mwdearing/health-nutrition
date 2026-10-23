@@ -21,6 +21,8 @@ struct PopGestureGate: UIViewControllerRepresentable {
 
     private func apply(to controller: UIViewController) {
         controller.navigationController?.interactivePopGestureRecognizer?.isEnabled = !blocked
+        let nav = controller.navigationController
+        print("PopGateProbe apply blocked=\(blocked) nav=\(nav != nil) enabledAfter=\(String(describing: nav?.interactivePopGestureRecognizer?.isEnabled))")
     }
 
     static func dismantleUIViewController(_ controller: UIViewController, coordinator: ()) {
