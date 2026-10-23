@@ -51,8 +51,9 @@ public enum ConnectionsPrivacyImportState: Equatable {
 /// waits on the main actor. `begin` is called before a restore starts and `end` when it has finished, whether
 /// it succeeded or failed; `wait` reports whether every restore in flight had finished within the time it was
 /// given, so a caller never blocks forever on work that cannot arrive.
-private final class ImportGate: @unchecked Sendable {
+public final class ImportGate: @unchecked Sendable {
     private let condition = NSCondition()
+    public init() {}
     /// How many restores are in flight. A count rather than a flag: two imports can overlap, and the first
     /// of them to finish must not report the gate idle while the second is still writing.
     private var inFlight = 0
@@ -100,10 +101,10 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     // acceptance mask string literals with a pattern that pairs quotes naively, and a run of three
     // quotes shifts every pairing after it far enough to swallow real code.
     public static let privacySummary =
-        "Your journal stays on this device and is not uploaded as a whole. Signing in sends your account email, "
+        "Your journal stays on this device and in your own iCloud or device backups, and is not uploaded as a whole. Signing in sends your account email, "
         + "account ID and optional display name to the project's server. A barcode lookup you start sends the "
-        + "barcode to Open Food Facts and, if no product is found and you are signed in, to the community catalog. "
-        + "A name search in Find products sends the words you typed to Open Food Facts. "
+        + "barcode to the community catalog, and only when you are signed in. "
+        + "A name search in Search foods sends the words you typed to Open Food Facts. "
         + "Share labels off stops new label submissions but does not disable barcode lookup. A label submission is "
         + "linked to your signed-in account, but does not include your journal entries or photo. A product you create "
         + "and share is linked the same way. Searching shared products sends your search words to the project's server "
@@ -133,15 +134,12 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         "Data was being erased, so nothing was imported. Try again once that is finished."
     public static let partialRestoreWarningMessage =
         "The restore was incomplete; journal entries or saved meals may already be present. Check your journal and saved meals before importing this file again."
-    /// An erase that found a restore still running and would not wait any longer.
-    public static let eraseWaitTimedOutMessage =
-        "An import was still running, so nothing was erased. Try again in a moment."
 
     public static let eraseButtonTitle = "Erase all data"
     /// The confirmation the button is guarded by. It names what goes and says the erase cannot be undone.
     public static let eraseConfirmationMessage =
-        "Every entry, favorite, saved meal, recipe, supplement and daily goal this app stores on this device is deleted, and the daily reminder "
-        + "is switched off, along with any export file it wrote. This cannot be undone. A copy you already shared or saved elsewhere — in Files, "
+        "Every entry, favorite, saved meal, recipe, supplement and daily goal this app stores on this device is deleted, and the daily, water and supplement reminders "
+        + "are switched off, along with any export file it wrote. This cannot be undone. A copy you already shared or saved elsewhere — in Files, "
         + "in mail, in cloud storage or in another app — is not erased: the app cannot reach it, so delete "
         + "it there yourself. Nutrition and water data this app wrote to Apple Health stays there: delete it in the Health app. "
         + "Erasing also signs you out on this phone; your community account and any "
@@ -150,12 +148,20 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// Sits under the erase button, so the cost of the action is read before it is tapped rather than
     /// only in the dialog that follows.
     public static let eraseFooterMessage =
-        "Erases the journal, favorites, saved meals, recipes, your supplement list and daily goals this app stores on this device and switches off the daily "
-        + "reminder, plus any export file it wrote. A copy you already shared or saved elsewhere — in Files, in mail, in cloud storage "
+        "Erases the journal, favorites, saved meals, recipes, your supplement list and daily goals this app stores on this device and switches off the daily, water and supplement "
+        + "reminders, plus any export file it wrote. A copy you already shared or saved elsewhere — in Files, in mail, in cloud storage "
         + "or in another app — is not erased: delete it there yourself. Data this app wrote to Apple Health stays there too: delete it in the Health app. Erasing signs you out on this phone; "
         + "your community account and any shared labels remain on the server."
-    public static let eraseFailedMessage =
-        "Some stored data could not be erased. Quit and reopen the app, then try again."
+    /// Shown when the erase stopped before any store was touched, so nothing has been erased yet.
+    public static let eraseNothingErasedMessage = "Nothing was erased. Tap Retry to try again."
+    /// Names what is still on the phone after an erase, in the order the erase ran. `names` is never empty.
+    public static func eraseLeftBehindMessage(_ names: [String]) -> String {
+        "Erase didn't finish. Still on this phone: \(naturalList(names)). Tap Retry to erase them."
+    }
+    private static func naturalList(_ names: [String]) -> String {
+        guard names.count > 1, let last = names.last else { return names.joined() }
+        return names.dropLast().joined(separator: ", ") + " and " + last
+    }
     /// The names the exporter writes, as `fileName(exportedAt:)` builds them. The erase sweeps the
     /// temporary directory for these, so an export left behind by a session that ended without the
     /// screen tidying up is still removed.
@@ -201,6 +207,11 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     @Published public private(set) var exportFileName: String?
     @Published public private(set) var entryCount = 0
     @Published public private(set) var errorMessage: String?
+    /// True when `errorMessage` describes an erase that did not finish, so the screen offers Retry.
+    @Published public private(set) var eraseRetryAvailable = false
+    /// True from the moment the person asks to erase (Erase or Retry) until they confirm or cancel. Nothing is erased
+    /// while this is only requested.
+    @Published public private(set) var eraseConfirmationPending = false
     @Published public private(set) var importState: ConnectionsPrivacyImportState = .idle
     @Published public private(set) var isImporting = false
     /// Main-actor count of restores whose outcomes have not yet reached `apply`. The store-write gate is
@@ -239,7 +250,17 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         }
     }
     /// The quick-water amount as typed, in the unit the screen is showing.
-    @Published public var quickWaterText: String
+    @Published public var quickWaterText: String {
+        didSet {
+            // Any change not made by showing the stored amount is the person's own, so the stored figure is no
+            // longer what the field stands for (issue 389).
+            if !isShowingStoredQuickWater { quickWaterEditedSinceStored = true }
+        }
+    }
+    /// True while the field is shown from the stored milliliters and nothing has been typed since. A unit switch
+    /// or a Save then must not rewrite the stored value from the rounded figure.
+    private var quickWaterEditedSinceStored = false
+    private var isShowingStoredQuickWater = false
     /// Why the typed quick-water amount was refused, or nil when it is acceptable.
     @Published public private(set) var quickWaterError: String?
     /// True while the screen is taking its published values FROM the preference store rather than from
@@ -271,6 +292,11 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     private let afterSuccessfulErase: @MainActor () -> Void
     /// Forgets an optional community session on this device; the default keeps account-free builds standalone.
     private let eraseLocalAccount: () async throws -> Void
+    /// Reads back the system's pending reminder requests after the reminder erasers ran, and names each kind of
+    /// reminder that still has one ("reminders", "custom reminders"). The reminder erasers cannot report a failure.
+    private let remindersStillPending: () async -> [String]
+    /// How long an erase waits for a running import; a test shortens it so the timeout path runs quickly.
+    private let importWaitSeconds: TimeInterval
 
     /// Changes whenever this screen creates, clears, or forgets an export. An import may remove only the
     /// copy that was already current when that import began; a later export may contain restored rows.
@@ -288,11 +314,10 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     private var deferredImportEffectsDuringErase: [DeferredImportEffects] = []
 
     /// The restore in flight, so an erase can ask it to stop and wait for it. Nil when nothing is running.
-    private var importTask: Task<Void, Never>?
     /// Whether a restore is running right now, and how to wait for it. A lock rather than an actor,
     /// because the two sides of that wait are on different actors: the restore finishes on a background
     /// thread and the erase waits here, on the main actor, so they have to meet somewhere both can reach.
-    private let importGate = ImportGate()
+    private let importGate: ImportGate
     /// Counts imports and erases. An import publishes only while its own number is still the current one,
     /// which is how the outcome of an import an erase overtook is dropped rather than shown.
     private var importGeneration = 0
@@ -327,8 +352,12 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         preferences: DisplayPreferencesWriting = InMemoryDisplayPreferences(),
         beforeErase: @escaping @MainActor () -> Void = {},
         afterSuccessfulErase: @escaping @MainActor () -> Void = {},
-        eraseLocalAccount: @escaping () async throws -> Void = {}
+        eraseLocalAccount: @escaping () async throws -> Void = {},
+        remindersStillPending: @escaping () async -> [String] = { [] },
+        importWaitSeconds: TimeInterval = ConnectionsPrivacyViewModel.eraseWaitsForImportSeconds,
+        importGate: ImportGate = ImportGate()
     ) {
+        self.importGate = importGate
         self.store = store
         self.favorites = favorites
         self.savedMeals = savedMeals
@@ -338,6 +367,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         self.beforeErase = beforeErase
         self.afterSuccessfulErase = afterSuccessfulErase
         self.eraseLocalAccount = eraseLocalAccount
+        self.remindersStillPending = remindersStillPending
+        self.importWaitSeconds = importWaitSeconds
         self.remover = remover
         self.preferences = preferences
         self.unitSystem = preferences.unitSystem
@@ -356,14 +387,27 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// or the digests.
     @discardableResult
     public func saveQuickWaterAmount() -> Bool {
+        // Untouched since it was shown from the stored amount: nothing to write, and the stored value stays exact.
+        if !quickWaterEditedSinceStored {
+            quickWaterError = nil
+            return true
+        }
         guard let amount = AmountParser.parseTyped(quickWaterText) else {
             quickWaterError = Self.quickWaterInvalidMessage
             return false
         }
         preferences.setQuickWaterMilliliters(milliliters(for: amount, in: quickWaterUnit))
         quickWaterError = nil
-        quickWaterText = DecimalFormatting.text(quickWaterDraftAmount)
+        showStoredQuickWater()
         return true
+    }
+
+    /// Shows the stored amount in the unit the screen is showing, and remembers that it does.
+    private func showStoredQuickWater() {
+        isShowingStoredQuickWater = true
+        quickWaterText = DecimalFormatting.text(quickWaterDraftAmount)
+        isShowingStoredQuickWater = false
+        quickWaterEditedSinceStored = false
     }
 
     /// The unit the quick-water field is read in: fluid ounces under the US system, milliliters under
@@ -474,6 +518,11 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// Nothing happens to an amount that is not a number: a half-typed entry has no value to convert,
     /// and the field's own error already says what is wrong with it.
     private func convertQuickWaterText(from oldSystem: UnitSystem) {
+        // Still the stored amount, untouched: show it again in the new unit, from the exact stored value.
+        if !quickWaterEditedSinceStored {
+            showStoredQuickWater()
+            return
+        }
         guard let typed = AmountParser.parseTyped(quickWaterText) else { return }
         let milliliters = milliliters(
             for: typed, in: AmountDisplay.volumeUnit(for: oldSystem))
@@ -570,33 +619,39 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         // than queueing matters here, because the person asked for everything gone, not for the erase to
         // happen first and then be undone.
         guard !isErasing else { return false }
-        beforeErase()
         isErasing = true
+        eraseRetryAvailable = false
         deferredImportEffectsDuringErase.removeAll()
-        // The import state from *before* the erase goes now, as the screen enters its erasing state: "Imported
-        // 3 entries" describes a journal that is about to stop existing. It is cleared here rather than at
-        // the end, because an import asked for during the erase is refused with a message of its own, and
-        // clearing afterwards would throw that away - and it is the only thing on the screen explaining why
-        // the file they chose did nothing.
+        defer { isErasing = false }
+        // Wait for a running import to finish. The wait never cancels the import: if it runs past the wait, the erase
+        // touches nothing, the import keeps running, and the person is told nothing was erased so they can try again.
+        guard importGate.wait(upTo: importWaitSeconds) else {
+            errorMessage = Self.eraseNothingErasedMessage
+            eraseRetryAvailable = true
+            resolveDeferredImportEffectsAfterErase(journalEraseSucceeded: false)
+            return false
+        }
+        // With the import gone, no import can run again until this erase finishes. A restore flag left behind would
+        // let the next import of that file put back favorites the person is erasing, so it goes before any store is
+        // touched. A flag that cannot be removed stops the erase with nothing erased, and the screen offers Retry.
+        guard clearRestoreFlagOrStop() else { return false }
+        // The import state from *before* the erase goes now, once the erase is known to be going ahead, so a failed
+        // flag clear leaves the import on screen as it was.
         clearImport()
         // Anything an in-flight import publishes afterwards is about a journal that is about to be deleted.
         importGeneration += 1
-        importTask?.cancel()
-        guard importGate.wait(upTo: Self.eraseWaitsForImportSeconds) else {
-            isErasing = false
-            errorMessage = Self.eraseWaitTimedOutMessage
-            return false
-        }
-        defer { isErasing = false }
+        beforeErase()
 
-        var failed = false
+        // Every store and export file that is still on the phone afterwards is named, so the person knows exactly
+        // what to retry. The stores are named in the order the erase ran; the reminder readback comes after them,
+        // and the export files last. One failure never stops the rest.
+        var leftBehind: [String] = []
         var journalEraseSucceeded = false
-        // The community session is forgotten locally only. This never calls the server, and a failure is
-        // reported like a store's while the rest of the erase still runs.
+        // The community session is forgotten locally only. This never calls the server.
         do {
             try await eraseLocalAccount()
         } catch {
-            failed = true
+            leftBehind.append("community sign-in")
         }
         let journalEraser = store as? JournalErasing
         for eraser in erasers {
@@ -606,12 +661,14 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
                     journalEraseSucceeded = true
                 }
             } catch {
-                failed = true
+                leftBehind.append(eraser.erasureName)
             }
         }
         // Every export file this app wrote goes, not only the one this model remembers: the app can be
         // killed after an export, and the next session's model starts with no URL to delete.
-        if !removeEveryExportFile() { failed = true }
+        leftBehind += await remindersStillPending()
+        if !removeEveryExportFile() { leftBehind.append("export files") }
+        let failed = !leftBehind.isEmpty
         // The handle this screen was holding is one of those files, or is already gone. Clearing it
         // cannot fail: the sweep above has removed whatever was still there.
         forgetExportFile()
@@ -621,11 +678,80 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         forgetDisplayPreferences()
         entryCount = 0
         exportState = .idle
-        errorMessage = failed ? Self.eraseFailedMessage : nil
+        errorMessage = failed ? Self.eraseLeftBehindMessage(leftBehind) : nil
+        eraseRetryAvailable = failed
         resolveDeferredImportEffectsAfterErase(journalEraseSucceeded: journalEraseSucceeded)
         eraseGeneration += 1
         if !failed { afterSuccessfulErase() }
         return !failed
+    }
+
+    /// Clears the restore-in-progress flag. On failure the erase has erased nothing: the screen says so and offers
+    /// Retry, and the import effects deferred during the erase are resolved. Returns whether the flag is clear.
+    private func clearRestoreFlagOrStop() -> Bool {
+        // A store that cannot clear the flag fails closed: erasing it would leave the flag set for a re-import.
+        do {
+            guard let progress = store as? JournalRestoreProgress else {
+                throw CocoaError(.featureUnsupported)
+            }
+            try progress.clearRestoreInProgress()
+            return true
+        } catch {
+            errorMessage = Self.eraseNothingErasedMessage
+            eraseRetryAvailable = true
+            resolveDeferredImportEffectsAfterErase(journalEraseSucceeded: false)
+            return false
+        }
+    }
+
+    /// Asks the person to confirm an erase. Erase and Retry both come through here, so neither erases on its own.
+    public func requestErase() {
+        eraseConfirmationPending = true
+    }
+
+    /// Withdraws a requested erase without erasing anything.
+    public func cancelEraseRequest() {
+        eraseConfirmationPending = false
+    }
+
+    /// Runs the erase the person has just confirmed.
+    public func confirmErase() async -> Bool {
+        eraseConfirmationPending = false
+        return await eraseAllData()
+    }
+
+    /// The stores an erase runs, one field per slot, so each slot is named where it is built.
+    public struct EraseStores {
+        public let widgets: JournalErasing
+        public let savedMeals: JournalErasing
+        public let supplements: JournalErasing
+        public let reminders: [JournalErasing]
+        public let journal: JournalErasing
+        public let favorites: JournalErasing
+        public let recipes: JournalErasing
+        public let goals: JournalErasing
+
+        public init(
+            widgets: JournalErasing, savedMeals: JournalErasing, supplements: JournalErasing,
+            reminders: [JournalErasing], journal: JournalErasing, favorites: JournalErasing, recipes: JournalErasing,
+            goals: JournalErasing
+        ) {
+            self.widgets = widgets
+            self.savedMeals = savedMeals
+            self.supplements = supplements
+            self.reminders = reminders
+            self.journal = journal
+            self.favorites = favorites
+            self.recipes = recipes
+            self.goals = goals
+        }
+    }
+
+    /// The stores in the order an erase runs them, and so the order a failure is listed in: widget data first, so no
+    /// publish announced before the erase lands after it, and journal after the lists it does not depend on.
+    public static func eraseOrder(_ stores: EraseStores) -> [JournalErasing] {
+        [stores.widgets, stores.savedMeals, stores.supplements] + stores.reminders
+            + [stores.journal, stores.favorites, stores.recipes, stores.goals]
     }
 
     /// Puts the display preferences back to their defaults and republishes that state, so the screen
@@ -640,7 +766,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         (preferences as? WaterGoalDefaultPreferences)?.markWaterGoalSeeded()
         isPublishingStoredPreference = true
         unitSystem = preferences.unitSystem
-        quickWaterText = DecimalFormatting.text(quickWaterDraftAmount)
+        showStoredQuickWater()
         quickWaterError = nil
         isPublishingStoredPreference = false
     }
@@ -774,7 +900,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
                 return .failed(.other)
             }
         }
-        importTask = Task { [weak self] in
+        Task { [weak self] in
             let outcome = await restore.value
             // Named rather than inherited: the task's own isolation decides where this would run, and the
             // state it updates is main-actor state, so the hop is stated instead of assumed.

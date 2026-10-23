@@ -196,13 +196,16 @@ public struct LibraryItem: Equatable, Identifiable {
 
     public func accessibilityLabel(forPick: Bool) -> String {
         guard forPick else { return accessibilityLabel }
-        let label = "\(title), opens details"
+        let label = "Opens \(title)"
         return kind == .supplement ? label + ", " + kind.displayName : label
     }
 
     /// The label for a tap that logs at once: the name, the amounts and, for a supplement, its kind.
+    /// The amounts a row or its Log control reads as the accessibility value, so VoiceOver still states them (#503).
+    public var accessibilityValue: String { detail }
+
     public var logAccessibilityLabel: String {
-        let label = detail.isEmpty ? "Log \(title) now" : "Log \(title) now, \(detail)"
+        let label = "Log \(title)"
         return kind == .supplement ? label + ", " + kind.displayName : label
     }
 
@@ -259,13 +262,13 @@ public final class LibraryViewModel: ObservableObject {
     /// Favorites first, then Products, then Recents.
     @Published public private(set) var sections: [LibrarySection] = []
     /// Every logged product, including those the Products segment lists as a standalone product row
-    /// instead. Find products searches these, so a typed name still finds the logged amount and meal.
+    /// instead. Search foods searches these, so a typed name still finds the logged amount and meal.
     @Published public private(set) var loggedProducts: [LibraryItem] = []
     /// Everything the person logs often, most often first (see `FrequentItemsProvider`), uncapped so a
-    /// typed name finds any of them. Find products lists the first few as "Often logged"; the Library
+    /// typed name finds any of them. Search foods lists the first few as "Often logged"; the Library
     /// screen itself does not show them.
     @Published public private(set) var frequentItems: [LibraryItem] = []
-    /// The saved meals Find products offers to log. Set once by the app; nil leaves them out.
+    /// The saved meals Search foods offers to log. Set once by the app; nil leaves them out.
     public var savedMeals: SavedMealsModel?
     @Published public private(set) var errorMessage: String?
     @Published public private(set) var standaloneProducts: [CustomProductRevision] = []
@@ -324,7 +327,7 @@ public final class LibraryViewModel: ObservableObject {
             let recents = try RecentItemsProvider(store: store).recents()
             let foods = try RecentItemsProvider(store: store).foods()
             let frequents = try FrequentItemsProvider(store: store).frequents(limit: .max)
-            let loggedUnitIndex = LoggedUnitIndex.load(from: store)
+            let loggedUnitIndex = try LoggedUnitIndex.loadOrThrow(from: store)
             let favoriteTemplates: [RepeatTemplate] = stored.map { favorite in
                 // A malformed favorite shows as unknown and cannot be repeated.
                 RepeatTemplate(favorite: favorite, loggedUnitIndex: loggedUnitIndex) ?? RepeatTemplate(
@@ -342,8 +345,8 @@ public final class LibraryViewModel: ObservableObject {
                 kinds[snapshotID] = (try? store.product(snapshotID: snapshotID))?.kind ?? .food
             }
             func kind(of template: RepeatTemplate) -> ProductKind {
-                guard let snapshotID = template.productSnapshotID else { return .food }
-                return kinds[snapshotID] ?? .food
+                ProductKindResolution.kind(
+                    snapshotID: template.productSnapshotID, snapshotKind: { kinds[$0] }, category: template.category)
             }
             let favoriteItems = stored.enumerated().map { index, favorite -> LibraryItem in
                 let template = favoriteTemplates[index]
@@ -442,6 +445,18 @@ public final class LibraryViewModel: ObservableObject {
         guard let id = item.template.productSnapshotID, let product = try store.product(snapshotID: id) else { throw IntakeRepeatError.productUnavailable }
         return try CustomProductMapping.legacyDraft(from: product)
     }
+    /// True when a search has no match: the list is empty only because of the typed text, so the empty state names
+    /// the search rather than the segment (a typo must not read as "no favorites").
+    /// The Products segment also lists standalone products, so a search matched by a product is not empty (#546).
+    public var isSearchEmpty: Bool {
+        let standalone = segment == .products ? filteredProducts.count : 0
+        return Self.isSearchEmpty(visibleCount: visibleItems.count + standalone, searchText: searchText)
+    }
+
+    static func isSearchEmpty(visibleCount: Int, searchText: String) -> Bool {
+        visibleCount == 0 && !searchText.isEmpty
+    }
+
     public var visibleItems: [LibraryItem] {
         segmentItems.filter { searchText.isEmpty || $0.title.localizedCaseInsensitiveContains(searchText) }
     }

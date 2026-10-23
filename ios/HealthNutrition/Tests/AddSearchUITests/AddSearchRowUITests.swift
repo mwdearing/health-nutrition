@@ -6,6 +6,7 @@ final class AddSearchRowUITests: XCTestCase {
     func testSearchRowIsOnAddAndTapFocusesTheSearchField() throws {
         let app = XCUIApplication()
         app.launch()
+        addTeardownBlock { app.terminate() }
 
         // A fresh install shows the welcome cover over Today until it is dismissed. Get started is what
         // a first-time user taps, so the test does the same before it looks for Add.
@@ -27,18 +28,26 @@ final class AddSearchRowUITests: XCTestCase {
         XCTAssertNotNil(tappable, "no hittable Add button on the Today screen (matching: \(hittableAdd))")
         tappable?.tap()
 
-        let row = app.buttons.matching(NSPredicate(format: "label == %@", "Search foods, brands, drinks")).firstMatch
+        // Matched by identifier: the Library picker and Library carry the same "Search foods" label.
+        let row = app.buttons["addSearchRow"]
         XCTAssertTrue(row.waitForExistence(timeout: 10),
                       "the search row is not on the Add screen. \(describeAddState(app))")
         XCTAssertTrue(row.isHittable, "the search row is on screen but cannot be tapped")
         row.tap()
 
-        let field = app.textFields["Search foods and products"]
+        let field = app.textFields["sharedProductSearchField"]
         XCTAssertTrue(field.waitForExistence(timeout: 10), "product search did not open")
-        // The field takes focus after a short delay, so poll for it rather than checking once.
+        XCTAssertEqual(field.label, "Search foods", "the search field's label is not the agreed name")
+        // The field takes focus after a short delay, and a busy simulator can take longer than a few seconds, so
+        // wait for it to be hittable first, then allow a longer window for focus. A field that never takes focus
+        // still fails here.
+        let hittable = NSPredicate(format: "isHittable == true")
+        let hittableWait = XCTNSPredicateExpectation(predicate: hittable, object: field)
+        XCTAssertEqual(XCTWaiter().wait(for: [hittableWait], timeout: 15), .completed,
+                       "the search field did not become hittable after the row was tapped")
         let focused = NSPredicate(format: "hasKeyboardFocus == true")
         let expectation = XCTNSPredicateExpectation(predicate: focused, object: field)
-        XCTAssertEqual(XCTWaiter().wait(for: [expectation], timeout: 5), .completed,
+        XCTAssertEqual(XCTWaiter().wait(for: [expectation], timeout: 15), .completed,
                        "the search field did not take focus after the row was tapped")
     }
 

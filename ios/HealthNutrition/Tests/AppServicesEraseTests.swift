@@ -2,7 +2,7 @@ import Foundation
 import NutritionDomain
 import NutritionJournal
 import NutritionProviders
-import NutritionUI
+@testable import NutritionUI
 import XCTest
 
 @testable import HealthNutrition
@@ -138,6 +138,97 @@ final class AppServicesEraseTests: XCTestCase {
         XCTAssertTrue(try services.goalStore.goals().isEmpty)
     }
 
+    /// Every production store is in the erase, in the pinned order: widget data first, journal after the lists. The
+    /// custom reminders join only with the system scheduler, which the test scheduler does not provide.
+    func testEraseOrderNamesWithoutTheSystemSchedulerAreInOrder() throws {
+        XCTAssertEqual(eraseNamesFromBuilderInputs(withCustomReminders: false), [
+            "widget data", "saved meals", "supplements", "reminders",
+            "journal", "favorites", "recipes", "goals",
+        ])
+    }
+
+    /// A system scheduler that also supports custom reminders adds "custom reminders" to the erase, after the
+    /// daily reminders and before the journal, so a custom request is cleared too.
+    func testEraseOrderNamesIncludeCustomRemindersWithTheSystemScheduler() throws {
+        XCTAssertEqual(eraseNamesFromBuilderInputs(withCustomReminders: true), [
+            "widget data", "saved meals", "supplements", "reminders", "custom reminders",
+            "journal", "favorites", "recipes", "goals",
+        ])
+    }
+
+    /// The custom-reminder decision, both sides: a scheduler that takes custom reminders gets the custom side, a fake
+    /// that does not gets nothing, so the custom eraser joins the erase only where the system scheduler is wired.
+    func testTheCustomReminderDecisionTakesTheCustomSideOnlyWhereTheSchedulerSupportsIt() {
+        XCTAssertNotNil(AppServices.customReminderScheduling(of: CustomCapableReminderScheduler()))
+        XCTAssertNil(AppServices.customReminderScheduling(of: RecordingReminderScheduler()))
+    }
+
+    /// The erase order from eraseOrder, with stores in a temporary directory and fakes for the reminder centers.
+    /// The helper builds its own EraseStores, so it checks the order, not the wiring in AppServices.make. The
+    /// function make's wiring goes through, eraseStores, is checked by testEraseStoresKeepsEachStoreInItsOwnSlot; make's
+    /// call site itself is checked only by its labels and the distinct parameter types. The withCustomReminders flag
+    /// stands in for the decision in make; testTheCustomReminderDecisionTakesTheCustomSideOnlyWhereTheSchedulerSupportsIt
+    /// checks that decision.
+    private func eraseNamesFromBuilderInputs(withCustomReminders: Bool) -> [String] {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HealthNutritionTests", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        var reminders: [JournalErasing] = [
+            ReminderEraser(scheduler: RecordingReminderScheduler(), erasures: ReminderErasures()),
+        ]
+        if withCustomReminders {
+            reminders.append(CustomReminderEraser(
+                store: UserDefaultsCustomReminderStore(), scheduler: CustomCapableReminderScheduler(),
+                erasures: ReminderErasures()))
+        }
+        let order = ConnectionsPrivacyViewModel.eraseOrder(ConnectionsPrivacyViewModel.EraseStores(
+            widgets: WidgetSnapshotEraser(), savedMeals: UserDefaultsSavedMealStore(),
+            supplements: UserDefaultsSupplementStackStore(), reminders: reminders,
+            journal: try! SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store")),
+            favorites: try! SwiftDataFavoritesStore(url: directory.appendingPathComponent("favorites.store")),
+            recipes: try! SwiftDataRecipeStore(url: directory.appendingPathComponent("recipes.store")),
+            goals: try! SwiftDataGoalStore(url: directory.appendingPathComponent("goals.store"))))
+        return order.map(\.erasureName)
+    }
+
+    /// Each store lands in its own slot: the erase list gets the instance it was given, in the field it was given to.
+    /// Each parameter of eraseStores has its own concrete type, so a swap of two labels at the call does not compile.
+    func testEraseStoresKeepsEachStoreInItsOwnSlot() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HealthNutritionTests", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let widgets = WidgetSnapshotEraser()
+        let savedMeals = UserDefaultsSavedMealStore()
+        let supplements = UserDefaultsSupplementStackStore()
+        let daily = ReminderEraser(scheduler: RecordingReminderScheduler(), erasures: ReminderErasures())
+        let custom = CustomReminderEraser(
+            store: UserDefaultsCustomReminderStore(), scheduler: CustomCapableReminderScheduler(),
+            erasures: ReminderErasures())
+        let journal = try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
+        let favorites = try SwiftDataFavoritesStore(url: directory.appendingPathComponent("favorites.store"))
+        let recipes = try SwiftDataRecipeStore(url: directory.appendingPathComponent("recipes.store"))
+        let goals = try SwiftDataGoalStore(url: directory.appendingPathComponent("goals.store"))
+
+        let stores = AppServices.eraseStores(
+            widgets: widgets, savedMeals: savedMeals, supplements: supplements, dailyReminders: daily,
+            customReminders: custom, journal: journal, favorites: favorites, recipes: recipes, goals: goals)
+
+        XCTAssertTrue(stores.widgets === widgets)
+        XCTAssertTrue(stores.savedMeals === savedMeals)
+        XCTAssertTrue(stores.supplements === supplements)
+        XCTAssertEqual(stores.reminders.count, 2)
+        XCTAssertTrue(stores.reminders[0] === daily)
+        XCTAssertTrue(stores.reminders[1] === custom)
+        XCTAssertTrue(stores.journal === journal)
+        XCTAssertTrue(stores.favorites === favorites)
+        XCTAssertTrue(stores.recipes === recipes)
+        XCTAssertTrue(stores.goals === goals)
+    }
+
     /// The app supplies its account model to the privacy erase hook. The hook drops the local session
     /// while leaving server sign-out and account deletion untouched.
     func testEraseUsesTheAppWiredLocalAccountHookOnly() async throws {
@@ -253,6 +344,17 @@ final class AppServicesEraseTests: XCTestCase {
     }
 }
 
+/// A daily scheduler that also takes custom reminders, as the system scheduler does.
+final class CustomCapableReminderScheduler: ReminderScheduling, CustomReminderScheduling, @unchecked Sendable {
+    func permission() async -> ReminderPermission { .notDetermined }
+    func requestPermission() async -> Bool { false }
+    func scheduleDaily(at time: ReminderTime) async throws {}
+    func cancelDaily() {}
+    func pendingDailyCount() async -> Int { 0 }
+    func replaceAll(with reminders: [CustomReminder]) async throws {}
+    func cancel(ids: [UUID]) {}
+}
+
 /// A reminder scheduler that records calls and answers from settable state, for the app's own wiring.
 final class RecordingReminderScheduler: ReminderScheduling, @unchecked Sendable {
     private let lock = NSLock()
@@ -328,3 +430,4 @@ private actor EraseProductService: CommunityProductServicing {
     func searchProducts(query: String, kind: ProductKind?, cursor: String?) async throws -> CommunityProductPage { throw ProductAPIError.unavailable }
     func product(id: UUID) async throws -> CommunityProduct { throw ProductAPIError.unavailable }
 }
+

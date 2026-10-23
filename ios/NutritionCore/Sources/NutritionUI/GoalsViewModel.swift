@@ -153,6 +153,13 @@ public final class GoalsViewModel: ObservableObject {
     /// no longer describes the goals (the three gram goals are not its output for the stored energy
     /// goal) is not reported, so the screen never says goals follow when they would not.
     @Published public private(set) var followedMacroSplit: MacroSplit?
+    /// True when the stored goals could not be read, so `followedMacroSplit` is unknown rather than unset.
+    @Published public private(set) var followReadFailed = false
+    /// The line under the macro split: what the goals follow, or the setup copy. Nil when the goals read failed,
+    /// so the setup copy never reads as "no split set" on a failed read.
+    public var followCopy: String? {
+        followReadFailed ? nil : MacroSplitCopy.followText(followedMacroSplit)
+    }
 
     public let footerText = "A goal is a number you set. The app compares your day against it and gives no advice or rating."
 
@@ -253,19 +260,19 @@ public final class GoalsViewModel: ObservableObject {
 
     /// Every offered nutrient, with a target's text where one is stored.
     public func load() {
-        snapshotUnits = Self.snapshotValueUnits(in: journal)
         do {
+            snapshotUnits = try Self.snapshotValueUnits(in: journal)
             let stored = try store.goals()
             let byNutrient = Self.byKey(stored)
             // Every key that has a stored goal is offered even when no current snapshot carries it, so
             // an existing compound goal can still be changed or removed after the entry that named it
             // is gone. The snapshot keys add the compounds a live capture states.
-            let snapshotKeys = Self.snapshotNutrientKeys(in: journal)
+            let snapshotKeys = try Self.snapshotNutrientKeys(in: journal)
             var offered = NutrientGoalChoices.keys(including: snapshotKeys)
             // A stored goal keeps its own key, even a captured alias of a fixed row, so it stays editable.
             for goal in stored where !offered.contains(goal.nutrient) { offered.append(goal.nutrient) }
             offeredKeys = offered
-            let displayNames = Self.snapshotDisplayNames(in: journal)
+            let displayNames = try Self.snapshotDisplayNames(in: journal)
             let hidden = hiddenTodayGoals(in: preferences)
             rows = offeredKeys.map { key in
                 let name = displayNames[key] ?? NutrientNames.displayName(for: key)
@@ -311,9 +318,12 @@ public final class GoalsViewModel: ObservableObject {
             self.loadedUnitSystem = self.preferences.unitSystem
             errorMessage = nil
             // From the goals just read, so a load costs no further store reads for it.
+            followReadFailed = false
             followedMacroSplit = Self.followedSplit(macroSplitPreferences?.macroSplit, in: byNutrient)
         } catch {
             rows = []
+            snapshotUnits = [:]
+            followReadFailed = true
             followedMacroSplit = nil
             errorMessage = Self.readFailedMessage
         }
@@ -322,18 +332,17 @@ public final class GoalsViewModel: ObservableObject {
     /// The compound keys the journal's current snapshots carry that the fifteen journal nutrients do
     /// not name, sorted. A label capture stores a supplement's own compound under a slug of its name
     /// (`creatine-monohydrate`), and that key is what a goal and the day's total are read under, so it
-    /// has to be offerable here. A read that throws is treated as no extras: the fixed list is still
-    /// offered, and the totals are unaffected.
-    static func snapshotNutrientKeys(in journal: (any JournalStore)?) -> [String] {
+    /// has to be offerable here. A read that throws is not guessed at: the error goes to the caller, which
+    /// refuses the list, so a captured key is never quietly left out.
+    static func snapshotNutrientKeys(in journal: (any JournalStore)?) throws -> [String] {
         guard let journal else { return [] }
         let standard = Set(NutritionFactKey.allCases.map(\.rawValue))
         var keys: Set<String> = []
-        guard let intakes = try? journal.activeIntakes() else { return [] }
-        for intake in intakes {
-            guard let revisions = try? journal.revisions(of: intake.id),
-                  let current = revisions.first(where: { $0.number == intake.currentRevision }),
+        for intake in try journal.activeIntakes() {
+            let revisions = try journal.revisions(of: intake.id)
+            guard let current = revisions.first(where: { $0.number == intake.currentRevision }),
                   let snapshotID = current.productSnapshotID,
-                  let product = try? journal.product(snapshotID: snapshotID)
+                  let product = try journal.product(snapshotID: snapshotID)
             else { continue }
             guard product.catalogOrigin == ProductOrigin.label_capture else { continue }
             for key in product.nutrients.keys where !standard.contains(key) { keys.insert(key) }
@@ -344,16 +353,15 @@ public final class GoalsViewModel: ObservableObject {
     /// The printed names the journal's current snapshots carry, keyed by nutrient. A captured
     /// supplement panel stores a compound under a slug and keeps the label's own words beside it, so a
     /// goal for `dha` is shown as `DHA` rather than as the `Dha` the slug spells back out. A read that
-    /// throws is treated as no names: the keys are still offered under the names they spell out.
-    static func snapshotDisplayNames(in journal: (any JournalStore)?) -> [String: String] {
+    /// throws goes to the caller, which refuses the list rather than show the slug in place of the label's words.
+    static func snapshotDisplayNames(in journal: (any JournalStore)?) throws -> [String: String] {
         guard let journal else { return [:] }
         var names: [String: String] = [:]
-        guard let intakes = try? journal.activeIntakes() else { return [:] }
-        for intake in intakes {
-            guard let revisions = try? journal.revisions(of: intake.id),
-                  let current = revisions.first(where: { $0.number == intake.currentRevision }),
+        for intake in try journal.activeIntakes() {
+            let revisions = try journal.revisions(of: intake.id)
+            guard let current = revisions.first(where: { $0.number == intake.currentRevision }),
                   let snapshotID = current.productSnapshotID,
-                  let product = try? journal.product(snapshotID: snapshotID)
+                  let product = try journal.product(snapshotID: snapshotID)
             else { continue }
             guard product.catalogOrigin == ProductOrigin.label_capture else { continue }
             for (key, name) in product.nutrientDisplayNames {
@@ -366,17 +374,16 @@ public final class GoalsViewModel: ObservableObject {
     /// The unit each captured key was stored in, keyed by nutrient. A compound a captured supplement
     /// panel states has no canonical unit, so the dimension its goal may be set in is the dimension
     /// the capture recorded: `Vitamin A 900IU` is an international-unit value, and a target in grams
-    /// would compare against nothing. A read that throws is treated as no units: those keys fall back
-    /// to the mass the screen assumed before.
-    static func snapshotValueUnits(in journal: (any JournalStore)?) -> [String: MeasureUnit] {
+    /// would compare against nothing. A read that throws is not guessed at: the error goes to the caller,
+    /// which refuses the list, so a captured value is never shown in grams it was not stored in.
+    static func snapshotValueUnits(in journal: (any JournalStore)?) throws -> [String: MeasureUnit] {
         guard let journal else { return [:] }
         var units: [String: MeasureUnit] = [:]
-        guard let intakes = try? journal.activeIntakes() else { return [:] }
-        for intake in intakes {
-            guard let revisions = try? journal.revisions(of: intake.id),
-                  let current = revisions.first(where: { $0.number == intake.currentRevision }),
+        for intake in try journal.activeIntakes() {
+            let revisions = try journal.revisions(of: intake.id)
+            guard let current = revisions.first(where: { $0.number == intake.currentRevision }),
                   let snapshotID = current.productSnapshotID,
-                  let product = try? journal.product(snapshotID: snapshotID)
+                  let product = try journal.product(snapshotID: snapshotID)
             else { continue }
             guard product.catalogOrigin == ProductOrigin.label_capture else { continue }
             for (key, value) in product.nutrients where units[key] == nil {
@@ -400,7 +407,7 @@ public final class GoalsViewModel: ObservableObject {
     public func setTarget(_ targetText: String, for nutrient: String, unit: MeasureUnit? = nil) -> Bool {
         let chosen = unit ?? self.unit(for: nutrient)
         guard let target = AmountParser.parseTyped(targetText) else {
-            errorMessage = "Enter a target above zero."
+            errorMessage = "Enter a number above zero."
             return false
         }
         do {
@@ -469,6 +476,105 @@ public final class GoalsViewModel: ObservableObject {
         }
     }
 
+    /// The goal a Clear removed, kept so Undo can put it back. Nil once it is restored or another
+    /// change is made.
+    public struct ClearedGoal: Equatable {
+        public let nutrient: String
+        public let goal: NutrientGoal
+    }
+
+    /// Shown with Undo after a goal is removed.
+    public static let clearedMessage = "Goal removed"
+
+    @Published public private(set) var clearedGoal: ClearedGoal?
+    /// When the Undo for the last Clear closes: ten seconds after it, the same window as the other undos (#526).
+    private var clearUndoDeadline: Date?
+    private static let clearUndoWindow: TimeInterval = 10
+    /// When the last Clear's Undo closes, for the view to hide its toast then.
+    public var clearUndoExpiry: Date? { clearedGoal == nil ? nil : clearUndoDeadline }
+
+    /// Hides the Undo for the last Clear once its window has closed. Before the deadline it does nothing (#526).
+    public func expireClearUndo(now: Date = Date()) {
+        guard let deadline = clearUndoDeadline, now >= deadline else { return }
+        clearedGoal = nil
+        clearUndoDeadline = nil
+    }
+
+    /// Waits for the last Clear's Undo to close, then hides it. Sleeps again after an early wake, so it expires
+    /// only at or after the deadline, and a cancelled wait leaves the Undo alone (#526). The sleeper and clock are
+    /// injected so the wait is tested without real time.
+    public func runClearUndoExpiry(
+        sleep: @escaping (TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0)) },
+        now: @escaping () -> Date = { Date() }
+    ) async {
+        while let expiry = clearUndoExpiry, now() < expiry {
+            do { try await sleep(max(0, expiry.timeIntervalSince(now()))) } catch { return }
+        }
+        expireClearUndo(now: now())
+    }
+
+    /// Whether the last Clear can still be undone at `now`.
+    public func canUndoClear(now: Date = Date()) -> Bool {
+        guard clearedGoal != nil, let deadline = clearUndoDeadline else { return false }
+        return now < deadline
+    }
+
+    /// Removes the goal for `nutrient` on an explicit clear (the row's Clear button, or Return on an
+    /// empty field). The removed goal is kept for Undo. A goal that cannot be read is not removed, since
+    /// Undo could not put it back.
+    @discardableResult
+    public func clearTarget(for nutrient: String, now: Date = Date()) -> Bool {
+        rowError[nutrient] = nil
+        let previous: NutrientGoal?
+        do { previous = try storedGoal(for: nutrient) } catch {
+            errorMessage = Self.readFailedMessage
+            return false
+        }
+        // Nothing stored means nothing to undo, so a pending Undo for another goal is left alone.
+        guard let previous else {
+            draftText[nutrient] = ""
+            return true
+        }
+        guard removeTarget(for: nutrient) else { return false }
+        draftText[nutrient] = ""
+        loadedDraftText[nutrient] = ""
+        clearedGoal = ClearedGoal(nutrient: nutrient, goal: previous)
+        clearUndoDeadline = now.addingTimeInterval(Self.clearUndoWindow)
+        noteSaved()
+        return true
+    }
+
+    /// Puts back the goal the last Clear removed, and returns whether it did. Only when nothing has been
+    /// stored for that nutrient since: a goal saved after the Clear is the person's newer value and is kept.
+    @discardableResult
+    public func undoClear(now: Date = Date()) -> Bool {
+        guard canUndoClear(now: now), let cleared = clearedGoal else { return false }
+        let current: NutrientGoal?
+        do { current = try storedGoal(for: cleared.nutrient) } catch {
+            errorMessage = Self.readFailedMessage
+            return false
+        }
+        guard current == nil else {
+            clearedGoal = nil
+            return false
+        }
+        guard restoreGoal(cleared.goal, for: cleared.nutrient) else { return false }
+        clearedGoal = nil
+        draftText[cleared.nutrient] = nil
+        load()
+        noteSaved()
+        return true
+    }
+
+    /// Return in a goal field: an empty field removes the goal, anything else is committed.
+    @discardableResult
+    public func submitTarget(for nutrient: String) -> Bool {
+        if (draftText[nutrient] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return clearTarget(for: nutrient)
+        }
+        return commitTarget(for: nutrient)
+    }
+
     /// Commits one inline field without discarding drafts in other fields.
     @discardableResult
     public func commitTarget(for nutrient: String) -> Bool {
@@ -500,9 +606,17 @@ public final class GoalsViewModel: ObservableObject {
             }
         }
         if text.isEmpty {
-            guard removeTarget(for: nutrient) else { return false }
-            draftText[nutrient] = ""
-            noteSaved()
+            // Leaving an empty field keeps the stored goal (#506). Removal is `clearTarget`. The field
+            // goes back to what is stored, so the screen does not show a goal that is not there.
+            // Only this field is restored; the other drafts are the person's own text.
+            // A failed read is said, not shown as an empty field over a stored goal.
+            let stored: NutrientGoal?
+            do { stored = try storedGoal(for: nutrient) } catch {
+                errorMessage = Self.readFailedMessage
+                return false
+            }
+            draftText[nutrient] = stored.map { DecimalFormatting.text(displayGoal($0).amount) } ?? ""
+            loadedDraftText[nutrient] = draftText[nutrient]
             return true
         }
         guard let target = AmountParser.parseTyped(text), !target.isNaN, target > 0 else {
@@ -525,6 +639,8 @@ public final class GoalsViewModel: ObservableObject {
                 .map { NutrientGoal(nutrient: nutrient, target: $0.value, unit: $0.unit) }
         }
         guard setTarget(text, for: nutrient, unit: writtenUnit) else { return false }
+        // Undo covers only the latest action: any saved goal after a Clear ends the Undo offer.
+        clearedGoal = nil
         draftText[nutrient] = DecimalFormatting.text(target)
         if nutrient == DailyTotalsBuilder.waterKey {
             selectedUnits[nutrient] = writtenUnit
@@ -609,7 +725,13 @@ public final class GoalsViewModel: ObservableObject {
 
     /// Works `followedMacroSplit` out again from the stored split and the stored goals, in one read.
     func refreshFollowedMacroSplit() {
-        followedMacroSplit = storedGoalsByKey().flatMap { Self.followedSplit(macroSplitPreferences?.macroSplit, in: $0) }
+        guard let byKey = storedGoalsByKey() else {
+            followReadFailed = true
+            followedMacroSplit = nil
+            return
+        }
+        followReadFailed = false
+        followedMacroSplit = Self.followedSplit(macroSplitPreferences?.macroSplit, in: byKey)
     }
 
     /// Shown when the new energy goal saved but is too small for the followed split to share out, so the

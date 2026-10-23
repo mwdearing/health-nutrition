@@ -184,7 +184,9 @@ public struct NutrientGapRow: Equatable, Identifiable {
         let name = reference.kind.abbreviation
         switch status {
         case .belowReference: return "Below the \(name)"
-        case .belowReferenceSoFar: return "Below the \(name) so far"
+        case .belowReferenceSoFar:
+            // The day's screen says "so far today"; a daily average over the week says only "so far".
+            return averagedOverDays == nil ? "Below the \(name) so far today" : "Below the \(name) so far"
         case .reachedReference: return "Reached the \(name)"
         case .aboveUpperLimit: return "Above the upper limit"
         case .nothingLogged, .unknown, .noReference: return nil
@@ -194,10 +196,14 @@ public struct NutrientGapRow: Equatable, Identifiable {
     /// An amount for display: one decimal place, two below 1, and "< 0.01" for an amount too small to
     /// show, so a real amount never reads as zero.
     static func figure(_ amount: Decimal, _ unit: MeasureUnit) -> String {
-        let digits = amount < 1 ? 2 : 1
-        let rounded = DisplayRounding.rounded(amount, fractionDigits: digits)
-        if rounded == 0, amount > 0 { return "< 0.01 \(unit.symbol)" }
-        return "\(DecimalFormatting.text(rounded)) \(unit.symbol)"
+        // Energy keeps one decimal here (two below 1), unlike nutrient(), which rounds energy to whole Calories.
+        // The whole part is grouped as every other figure is.
+        guard unit == .kcal else { return AmountDisplay.nutrient(amount, unit: unit).text }
+        let rounded = DisplayRounding.rounded(amount, fractionDigits: amount < 1 ? 2 : 1)
+        return DisplayAmount(
+            amount: rounded, unit: unit, isBelowSmallest: rounded == 0 && amount > 0,
+            groupsWholeAmount: true, smallestAmount: Decimal(string: "0.01", locale: AmountParser.locale)!
+        ).text
     }
 }
 
@@ -484,23 +490,27 @@ public final class NutrientGapsViewModel: ObservableObject {
             guard let current = revisions.first(where: { $0.number == intake.currentRevision }) else { continue }
             if intake.category != DailyTotalsBuilder.waterCategory { logged.insert(day.date) }
             let snapshot = current.productSnapshotID.flatMap { try? store.product(snapshotID: $0) }
+            // A hand-typed entry has no snapshot, so its category says whether it is a supplement (#364).
             let isSupplement = snapshot?.kind == .supplement
-            let byComponent = snapshot == nil && intake.category != DailyTotalsBuilder.waterCategory
-            var totals: DailyTotals?
-            if !byComponent {
-                totals = try DailyTotalsBuilder.totals(for: [intake], store: store, lookup: lookup, nutrients: nutrients)
-            }
+                || (current.productSnapshotID == nil && intake.category == SupplementStackViewModel.supplementCategory)
+            // Every entry goes through the one totals path, so the negative-amount rule and the partial sums
+            // are the same here as on Today. The known part of a partial entry is kept; the entry counts once
+            // as missing for each nutrient it leaves unknown.
+            let totals = try DailyTotalsBuilder.totals(for: [intake], store: store, lookup: lookup, nutrients: nutrients)
             for nutrient in nutrients {
-                let values: [NutrientValue]
-                if let totals {
-                    guard let total = totals.total(for: nutrient), total.coverage.totalCount > 0 else { continue }
-                    values = [total.value]
+                guard let total = totals.total(for: nutrient), total.coverage.totalCount > 0 else { continue }
+                // A fully known entry is its total. Otherwise the known part comes from the same totals value Today
+                // uses, and a bound or an unknown adds only the missing note. A bound never zeroes a known part.
+                var values: [NutrientValue] = []
+                if total.coverage.hasUnknown || total.coverage.hasBelowReportingThreshold {
+                    if total.coverage.knownCount > 0, let known = totals.knownSum(for: nutrient) {
+                        values.append(known)
+                    }
+                    values.append(.unknown)
                 } else {
-                    values = current.components.map {
-                        DailyTotalsBuilder.value(for: $0, snapshot: nil, nutrient: nutrient, lookup: lookup)
-                    }.filter { $0 != .notApplicable }
-                    guard !values.isEmpty else { continue }
+                    values = [total.value]
                 }
+                guard !values.isEmpty else { continue }
                 let unit = Self.unit(for: nutrient)
                 var amount = Decimal(0)
                 var anyKnown = false

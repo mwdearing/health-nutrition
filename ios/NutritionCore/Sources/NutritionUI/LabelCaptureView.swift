@@ -210,7 +210,7 @@ public struct LabelCaptureView: View {
                 .accessibilityLabel(model.servingPrompt ?? "")
             // No decimal keypad here: the answer is an amount with its unit, so the keyboard has to
             // offer the letters that spell the unit.
-            LabeledField("One serving") { focus in
+            LabeledField("One serving", spokenTitle: true) { focus in
                 TextField(text: $servingDraft, prompt: Text("For example, 30 g")) {
                     Text("One serving")
                 }
@@ -518,7 +518,7 @@ public struct LabelCaptureView: View {
     private func additionalCorrectionEditor(_ row: LabelCaptureAdditionalRow) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                LabeledField("Amount") { focus in
+                LabeledField("Amount", spokenTitle: true) { focus in
                     TextField(text: $draft, prompt: Text("For example, 0.5")) {
                         Text("Amount")
                     }
@@ -531,7 +531,7 @@ public struct LabelCaptureView: View {
                 }
                 Picker("Unit", selection: $additionalUnit) {
                     ForEach(LabelCaptureViewModel.additionalUnits, id: \.symbol) { candidate in
-                        Text(candidate.symbol).tag(candidate)
+                        Text(candidate.screenSymbol).tag(candidate)
                     }
                 }
                 .pickerStyle(.menu)
@@ -620,7 +620,7 @@ public struct LabelCaptureView: View {
     private func correctionEditor(_ row: LabelCaptureRow) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                LabeledField("Amount") { focus in
+                LabeledField("Amount", spokenTitle: true) { focus in
                     TextField(text: $draft, prompt: Text("For example, 0.5 or 500 mg")) {
                         Text("Amount")
                     }
@@ -672,7 +672,7 @@ public struct LabelCaptureView: View {
 
     /// The unit a correction will keep: the one the panel printed, or the one this row usually carries.
     private func unitSymbol(for row: LabelCaptureRow) -> String {
-        LabelCaptureViewModel.unit(of: row.value, for: row.key).symbol
+        LabelCaptureViewModel.unit(of: row.value, for: row.key).screenSymbol
     }
 
     /// Opens the amount field for one row. The model closes any compound editor beside it, and the

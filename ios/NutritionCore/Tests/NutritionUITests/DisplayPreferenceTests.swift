@@ -169,7 +169,7 @@ final class AmountDisplayPreferenceTests: XCTestCase {
         XCTAssertEqual(text(Decimal(10), .mg, .metric), "10 mg")
         XCTAssertEqual(text(Decimal(10), .mcg, .metric), "10 mcg")
         XCTAssertEqual(text(Decimal(0.5), .g, .metric), "0.5 g")
-        XCTAssertEqual(text(Decimal(40), .kcal, .metric), "40 kcal")
+        XCTAssertEqual(text(Decimal(40), .kcal, .metric), "40 Calories")
         XCTAssertEqual(text(Decimal(2), .serving, .metric), "2 serving")
         XCTAssertEqual(text(Decimal(400), .iu, .metric), "400 IU")
         for unit in UnitRegistry.all {
@@ -186,7 +186,7 @@ final class AmountDisplayPreferenceTests: XCTestCase {
         XCTAssertEqual(text(Decimal(2), .L, .usCustomary), "67.6 fl oz")
         XCTAssertEqual(text(Decimal(10), .mg, .usCustomary), "10 mg")
         XCTAssertEqual(text(Decimal(10), .mcg, .usCustomary), "10 mcg")
-        XCTAssertEqual(text(Decimal(40), .kcal, .usCustomary), "40 kcal")
+        XCTAssertEqual(text(Decimal(40), .kcal, .usCustomary), "40 Calories")
         XCTAssertEqual(text(Decimal(2), .tablet, .usCustomary), "2 tablet")
         XCTAssertEqual(text(Decimal(400), .iu, .usCustomary), "400 IU")
     }

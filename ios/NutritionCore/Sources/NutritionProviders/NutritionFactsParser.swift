@@ -953,6 +953,56 @@ public enum NutritionFactsParser {
         return true
     }
 
+    /// Whether an unrecognized name is OCR noise on any panel kind rather than a row a supplement states.
+    /// A misread qualifier ("Inchides") is noise, and so is a one-word fragment that is the end of a known
+    /// nutrient name, with OCR swaps read as one letter ("lum" ends "calcium", "minD" ends "vitamin d"). A
+    /// short word that starts a nutrient ("Pro", "Mag") and a real ingredient ("Taurine", "CoQ10") are not.
+    /// Short words that are real: panel and supplement words, forms and units. None is OCR noise, whether
+    /// it follows a nutrient ("Vitamin E oil 400 IU") or stands alone ("EPA 500mg", "DHA 300mg").
+    private static let shortRowWords: Set<String> = [
+        "oil", "tab", "as", "per", "and", "the", "with", "from", "of", "in", "for", "gel", "cap", "fat", "sat",
+        "iu", "mg", "mcg", "epa", "dha", "ala", "ph",
+    ]
+
+    private static func isOCRFragment(_ name: String) -> Bool {
+        let qualifiers = ["includes", "contains"]
+        // A qualifier misread stands alone as the whole name, so "Include Blend" is still an ingredient.
+        let words = name.split(separator: " ")
+        guard words.count == 1, let word = words.first else { return false }
+        // One edit from the qualifier, or a misread the one-edit rule misses ("Inchides", two edits away).
+        let lowered = word.lowercased()
+        if qualifiers.contains(where: { editDistance(lowered, $0) <= 1 }) || lowered == "inchides" { return true }
+        // A fragment is the end of a known nutrient name, with the common OCR swaps read as one letter: OCR
+        // cuts a word from its front, so "lum" ends "calcium" and "minD" ends "vitamin d". A short word that
+        // starts a nutrient ("Pro", "Mag") is a product or abbreviation of its own, and stays a row.
+        // A fragment is a word split mid-way, so it starts lowercase; a real ingredient starts with a capital
+        // ("Mind", "Hydrate", "MIND" stay rows).
+        guard word.first?.isLowercase == true else { return false }
+        let piece = ocrSkeleton(String(word))
+        guard piece.count >= 3, !shortRowWords.contains(word.lowercased()) else { return false }
+        // OCR splits a word mid-way, so the lowercase tail is the one that matches: the head keeps the capital.
+        return nutrientSkeletons.contains { $0.hasSuffix(piece) }
+    }
+
+    /// The lowercased letters of a word, with the common OCR swaps read as one letter: 1 and i as l, 0 as o,
+    /// and rn as m. Digits other than 0 and 1 are dropped, so "k2" reads as "k".
+    private static func ocrSkeleton(_ text: String) -> String {
+        let letters = text.lowercased().compactMap { character -> Character? in
+            switch character {
+            case "1", "i": return "l"
+            case "0": return "o"
+            case _ where character.isLetter: return character
+            default: return nil
+            }
+        }
+        return String(letters).replacingOccurrences(of: "rn", with: "m")
+    }
+
+    /// Every alias of every recognized nutrient row, as an OCR skeleton with its spaces removed.
+    private static let nutrientSkeletons: [String] = rows.flatMap(\.aliases).map {
+        ocrSkeleton($0.filter { $0 != " " })
+    }
+
     /// The Levenshtein distance between two words, used to recognize a misread panel word.
     private static func editDistance(_ a: String, _ b: String) -> Int {
         let x = Array(a), y = Array(b)
@@ -1130,7 +1180,11 @@ public enum NutritionFactsParser {
         var rest = trimmed(line)
         var usedNextLine = false
         while !rest.isEmpty {
-            guard let row = firstAdditionalRow(in: rest, next: usedNextLine ? nil : nextLine) else { break }
+            guard let row = firstAdditionalRow(in: rest, next: usedNextLine ? nil : nextLine) else {
+                // The spaced B1/B12 shape is ambiguous and cannot be placed, so the row counts as unread.
+                if hasSpacedAmbiguousNumbers(rest) { unnamedRows += 1 }
+                break
+            }
             if let nutrient = row.nutrient {
                 recordCompound(row, as: nutrient, amounts: &amounts, reviews: &reviews, displayNames: &displayNames)
             } else if let existingIndex = collected.firstIndex(where: { $0.key == row.key }) {
@@ -1144,7 +1198,9 @@ public enum NutritionFactsParser {
                         name: existing.name, key: existing.key, value: existing.value,
                         review: ParsedValueReview(reasons: reasons))
                 }
-            } else if !keepsUnrecognizedRows && !isKnownFoodNutrient(row.name) && !isPlausibleFoodRowName(row.name) {
+            } else if (keepsUnrecognizedRows && isOCRFragment(row.name))
+                || (!keepsUnrecognizedRows && !isKnownFoodNutrient(row.name) && !isPlausibleFoodRowName(row.name))
+            {
                 // A row that carries an amount but no name this panel's kind recognizes is unread, not
                 // dropped silently: it is counted so the review screen still shows it as unfinished.
                 unnamedRows += 1
@@ -1222,6 +1278,23 @@ public enum NutritionFactsParser {
             let longest = min(start + 4, tokens.count)
             for end in stride(from: longest, through: start + 1, by: -1) {
                 guard let named = compoundName(tokens[start..<end]) else { continue }
+                // "Vitamin B 1 2 mcg": a number joined after a letter, then a separate number, is ambiguous (B1 at
+                // 2 mcg, or B12 with its amount lost), so the line gives nothing rather than a guessed extra.
+                func isBareNumber(_ text: String) -> Bool { !text.isEmpty && text.allSatisfy { $0.isASCII && $0.isNumber } }
+                if end >= 2, end < tokens.count, isBareNumber(tokens[end - 1].text),
+                   tokens[end - 2].text.count == 1, tokens[end - 2].text.first?.isLetter == true,
+                   isBareNumber(tokens[end].text) {
+                    continue
+                }
+                // "Vitamin B 1 2mcg" with the unit attached is the same ambiguity, and gives nothing at all. Only a
+                // single digit joined to its unit is ambiguous: "Vitamin B 12 10mcg" names B12 with its own amount.
+                if end >= 2, end < tokens.count, isBareNumber(tokens[end - 1].text),
+                   tokens[end - 1].text.count == 1,
+                   tokens[end - 2].text.count == 1, tokens[end - 2].text.first?.isLetter == true,
+                   let attached = Optional(tokens[end].text.prefix { $0.isASCII && $0.isNumber }),
+                   attached.count == 1, attached.count < tokens[end].text.count {
+                    continue
+                }
                 guard let amount = additionalAmount(at: end, in: tokens, line: text, next: nextLine)
                 else { continue }
                 return AdditionalRow(
@@ -1232,6 +1305,21 @@ public enum NutritionFactsParser {
             }
         }
         return nil
+    }
+
+    /// True for the spaced B1/B12 shape ("Vitamin B 1 2 mcg"): a single letter, two bare numbers, then a word.
+    private static func hasSpacedAmbiguousNumbers(_ text: String) -> Bool {
+        let tokens = tokens(in: text)
+        guard tokens.count >= 4 else { return false }
+        func isBare(_ text: String) -> Bool { !text.isEmpty && text.allSatisfy { $0.isASCII && $0.isNumber } }
+        for index in 0..<(tokens.count - 3) {
+            // Only the B complex has the B1/B12 ambiguity; a vitamin D form digit ("Vitamin D 3 25 mcg") is not this shape.
+            guard tokens[index].text == "B", isBare(tokens[index + 1].text), isBare(tokens[index + 2].text),
+                  tokens[index + 3].text.first?.isLetter == true
+            else { continue }
+            return true
+        }
+        return false
     }
 
     /// The text of `line` split on whitespace, with the range each token occupies in it.
@@ -1261,14 +1349,38 @@ public enum NutritionFactsParser {
         _ words: ArraySlice<(text: String, range: Range<String.Index>)>
     ) -> (name: String, nutrient: PanelRow?)? {
         guard !words.isEmpty, words.count <= 4 else { return nil }
+        // A lone vitamin D form ("D3" after "Vitamin") belongs to the named vitamin D row, never to an extra.
+        if words.count == 1, ["d", "d2", "d3"].contains(words.first?.text.lowercased() ?? "") { return nil }
+        // A hyphen inside a known nutrient name is a line-break artifact, so matching ignores it. This runs before the
+        // word checks, so "Total-Fat" (whose part "total" is a panel word) still reaches its field. Spaces are ignored
+        // too, so "Saturated-Fat" matches the alias "saturated fat"; the field reads its canonical name ("Sodium").
+        let joined = words.map(\.text).joined(separator: " ")
+        if joined.contains("-") {
+            let bare = joined.filter { $0 != "-" && $0 != " " }.lowercased()
+            if let row = rows.first(where: { row in row.aliases.contains { $0.filter { $0 != " " } == bare } }) {
+                let alias = row.aliases.first { $0.filter { $0 != " " } == bare } ?? bare
+                let canonical = alias.split(separator: " ").map { String($0).capitalized }.joined(separator: " ")
+                return (canonical, row)
+            }
+        }
+        var previous: String?
         for token in words {
             let lower = token.text.lowercased()
-            guard token.text.first?.isLetter == true, !leadingWords.contains(lower), !panelWords.contains(lower),
-                  token.text.allSatisfy({ $0.isLetter || $0.isNumber })
+            // A hyphen is part of a name ("Vitamin B-12"), and a bare number is part of one only directly after a
+            // single letter ("Vitamin B 12"), so "Calories 30" and similar text is never read as a name.
+            let numberAfterLetter = token.text.allSatisfy({ $0.isASCII && $0.isNumber }) && previous?.count == 1
+                && previous?.first?.isLetter == true
+            let startsWord = token.text.first?.isLetter == true || numberAfterLetter
+            // A hyphen joins words of a name, so each part is checked as a word: "Net-Wt" is a label, not a name.
+            let hasPanelPart = token.text.split(separator: "-").contains { panelWords.contains($0.lowercased()) }
+            guard startsWord, !leadingWords.contains(lower), !panelWords.contains(lower), !hasPanelPart,
+                  token.text.allSatisfy({ $0.isLetter || ($0.isASCII && $0.isNumber) || $0 == "-" })
             else { return nil }
             guard countedUnit(for: token.text) == nil else { return nil }
+            previous = token.text
         }
         let name = words.map(\.text).joined(separator: " ")
+        // A hyphen inside a known nutrient name is a line-break artifact, so matching ignores it: "So-dium" is sodium.
         guard let match = firstRow(in: name) else { return (name, nil) }
         // The whole name is one named row, so it is that nutrient and not a compound of its own.
         if match.nameStart == name.startIndex, match.end == name.endIndex { return nil }
@@ -1278,8 +1390,27 @@ public enum NutritionFactsParser {
         // compound of its own, and promoting it to iron would drop the label's own row. Only a name
         // whose remaining word states a known chemical form (`Iron Bisglycinate`) is the nutrient it
         // is built on.
-        let rest = String(name[match.end...])
-        let forms = rest.split(whereSeparator: \.isWhitespace).map { $0.lowercased() }
+        let rest = String(name[match.end...]).replacingOccurrences(of: "-", with: " ")
+        let restWords = rest.split(whereSeparator: \.isWhitespace)
+        // A vitamin D form digit is part of vitamin D ("Vitamin D3", "Vitamin D 3"): the amount behind it is the
+        // vitamin D amount, read straight off the label. A digit with its own unit ("Vitamin D 3mcg") is an amount.
+        if match.row.key == .vitaminD, restWords.count == 1, let form = restWords.first, form.count == 1,
+           form.allSatisfy({ $0.isASCII && $0.isNumber }) {
+            return ("Vitamin D", match.row)
+        }
+        // A single short lowercase word after a nutrient's name is OCR noise on that row ("Added Sugars ela
+        // 25 g"), so the amount is that nutrient's own, as on a clean panel. "Iron Support" is not one.
+        // A common word, form or unit is never noise ("Vitamin E oil 400 IU" is not Vitamin E).
+        // Only Added Sugars qualifies: it is the row a label prints with its amount in front ("Includes 5g
+        // Added Sugars"), so a stray word after it is the misread. Any other nutrient followed by a word
+        // ("Vitamin D pro 10mcg", "Iron pro 10mg") is a product of its own, not that nutrient.
+        if restWords.count == 1, amountFirstRows.contains(match.row.key), let noise = restWords.first,
+           noise.count <= 3, noise.allSatisfy(\.isLowercase),
+           !shortRowWords.contains(String(noise).lowercased())
+        {
+            return (name, match.row)
+        }
+        let forms = restWords.map { $0.lowercased() }
         guard !forms.isEmpty, forms.allSatisfy({ knownForms.contains($0) }) else { return (name, nil) }
         return (name, match.row)
     }
@@ -1599,6 +1730,11 @@ public enum NutritionFactsParser {
         if range.lowerBound != lower.startIndex {
             let before = lower[lower.index(before: range.lowerBound)]
             if before.isLetter || before.isNumber { return false }
+            // A hyphen joins the word before it ("Saturated-Fat"), so the alias after it is part of that name.
+            if before == "-", range.lowerBound != lower.startIndex, lower.index(before: range.lowerBound) != lower.startIndex,
+               lower[lower.index(lower.index(before: range.lowerBound), offsetBy: -1)].isLetter {
+                return false
+            }
         }
         if range.upperBound != lower.endIndex {
             let after = lower[range.upperBound]
@@ -1633,6 +1769,14 @@ public enum NutritionFactsParser {
     /// One line with its surrounding whitespace removed and its inner runs of whitespace collapsed, so a
     /// name and its amount read the same whether the capture wrote "Total Fat 7g" or "Total Fat  7 g".
     private static func cleanLine(_ line: String) -> String {
-        line.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        // A word that starts with a fullwidth digit is an amount word ("５０", "２g"), read as its ASCII form. A fullwidth
+        // digit inside a name ("Vitamin B１２") is left as printed, so the name is not read as a row.
+        line.split(whereSeparator: \.isWhitespace).map { word -> String in
+            guard let first = word.first, ("\u{FF10}"..."\u{FF19}").contains(first) else { return String(word) }
+            // The unit after a fullwidth amount is fullwidth too ("２ｇ"), so the whole fullwidth ASCII block maps.
+            return String(String.UnicodeScalarView(word.unicodeScalars.map { scalar -> Unicode.Scalar in
+                (0xFF01...0xFF5E).contains(scalar.value) ? Unicode.Scalar(scalar.value - 0xFF01 + 0x21)! : scalar
+            }))
+        }.joined(separator: " ")
     }
 }

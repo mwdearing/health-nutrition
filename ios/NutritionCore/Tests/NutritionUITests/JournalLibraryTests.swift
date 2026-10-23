@@ -9,6 +9,9 @@ private final class CountingStore: JournalStore, @unchecked Sendable {
     var createCalls = 0
     var editCalls = 0
     var deleteCalls = 0
+    /// Fails the delete call with this 1-based number, when set.
+    var failDeleteAt: Int?
+    var failsActiveReads = false
     var lastEditProductSnapshotID: String?
     /// What the last `edit` was asked to correct the entry's time to, and the zone it named with
     /// it. Nil for an edit that was not given a time, which is the amounts-only case.
@@ -52,9 +55,13 @@ private final class CountingStore: JournalStore, @unchecked Sendable {
     }
     func delete(intakeID: String, now: Date) throws {
         deleteCalls += 1
+        if deleteCalls == failDeleteAt { throw JournalError.injectedSaveFailure }
         try inner.delete(intakeID: intakeID, now: now)
     }
-    func activeIntakes() throws -> [Intake] { try inner.activeIntakes() }
+    func activeIntakes() throws -> [Intake] {
+        if failsActiveReads { throw JournalError.injectedSaveFailure }
+        return try inner.activeIntakes()
+    }
     func revisions(of intakeID: String) throws -> [IntakeRevision] { try inner.revisions(of: intakeID) }
     func projections(of intakeID: String) throws -> [DestinationProjection] { try inner.projections(of: intakeID) }
     func pendingOutbox() throws -> [OutboxOperation] { try inner.pendingOutbox() }
@@ -179,9 +186,19 @@ final class JournalLibraryTests: XCTestCase {
             let label = item.accessibilityLabel(forPick: true)
             XCTAssertFalse(label.hasPrefix("Add"))
             XCTAssertTrue(label.contains("Oats"))
-            XCTAssertTrue(label.contains("opens details"))
+            XCTAssertTrue(label.hasPrefix("Opens "))
             XCTAssertTrue(item.accessibilityLabel(forPick: false).hasPrefix("Add Oats"))
         }
+    }
+
+    /// The amounts stay in the accessibility value of a row and its Log control (#503).
+    func testRowAndLogControlStateTheAmountsAsTheirValue() {
+        let template = RepeatTemplate(displayName: "Oats", category: "food",
+            components: [IntakeComponent(componentID: "oats", name: "Oats", amount: 40, unit: .g)])
+        let item = LibraryItem(id: "oats", title: "Oats", detail: "40 g",
+            isFavorite: false, template: template, kind: .food)
+        XCTAssertEqual(item.accessibilityValue, "40 g")
+        XCTAssertEqual(item.logAccessibilityLabel, "Log Oats")
     }
 
     func testLogRowLabelKeepsAmountAndSupplementMark() {
@@ -189,13 +206,13 @@ final class JournalLibraryTests: XCTestCase {
             components: [IntakeComponent(componentID: "ipa", name: "Ipamorelin", amount: 2, unit: .mg)])
         let supplement = LibraryItem(id: "ipa", title: "Ipamorelin", detail: "2 mg",
             isFavorite: false, template: template, kind: .supplement)
-        XCTAssertEqual(supplement.logAccessibilityLabel, "Log Ipamorelin now, 2 mg, Supplement")
+        XCTAssertEqual(supplement.logAccessibilityLabel, "Log Ipamorelin, Supplement")
         let food = LibraryItem(id: "oats", title: "Oats", detail: "40 g",
             isFavorite: false, template: template, kind: .food)
-        XCTAssertEqual(food.logAccessibilityLabel, "Log Oats now, 40 g")
+        XCTAssertEqual(food.logAccessibilityLabel, "Log Oats")
         let bare = LibraryItem(id: "bare", title: "Oats", detail: "",
             isFavorite: false, template: template, kind: .food)
-        XCTAssertEqual(bare.logAccessibilityLabel, "Log Oats now")
+        XCTAssertEqual(bare.logAccessibilityLabel, "Log Oats")
     }
 
     func testTapLogsOnceAndOffersUndo() throws {
@@ -213,15 +230,9 @@ final class JournalLibraryTests: XCTestCase {
     }
 
     func testRowTapRoutesByMode() {
-        // Pick mode only ever opens details; it never logs. Normal mode only ever logs.
-        XCTAssertEqual(LibraryRowTap.forRow(pickMode: true), .openDetails)
-        XCTAssertEqual(LibraryRowTap.forRow(pickMode: false), .logOnce)
-    }
-
-    func testDetailsOfferedOnlyWhereTapLogsAndHandlerExists() {
-        XCTAssertTrue(LibraryRowTap.offersDetails(pickMode: false, hasOpenHandler: true))
-        XCTAssertFalse(LibraryRowTap.offersDetails(pickMode: true, hasOpenHandler: true))
-        XCTAssertFalse(LibraryRowTap.offersDetails(pickMode: false, hasOpenHandler: false))
+        // A row tap opens details in every mode and never logs (#503). Logging is the row's own Log control.
+        // Fails on a build where a row tap logs: main's forRow returns .logOnce outside pick mode (#503).
+        XCTAssertEqual(LibraryRowTap.forRow(), .openDetails, "a row tap never logs (#503)")
     }
 
     // MARK: Journal
@@ -303,6 +314,202 @@ final class JournalLibraryTests: XCTestCase {
         XCTAssertEqual(try store.revisions(of: second).count, 1)
         let today = try XCTUnwrap(model.sections.first)
         XCTAssertFalse(model.canCopyToToday(today, now: now))
+    }
+
+    /// Undo after copying a past day removes exactly the entries that copy created, and leaves the day alone.
+    func testUndoCopyToTodayRemovesExactlyTheCopiedEntries() throws {
+        let store = try makeStore()
+        let yesterday = now.addingTimeInterval(-86_400)
+        let first = try addFood(store, name: "Oats", at: yesterday, product: product("snap-a"), meal: "breakfast")
+        let second = try addFood(store, name: "Rice", at: yesterday.addingTimeInterval(60), product: product("snap-b"), meal: "dinner")
+        let model = JournalViewModel(store: store, timeZoneIdentifier: "UTC")
+        model.load(now: now)
+        let past = try XCTUnwrap(model.sections.first { $0.id != JournalViewModel.dayKey(now, zone: TimeZone(identifier: "UTC")!) })
+        let result = try XCTUnwrap(model.copyDayToToday(past.id, now: now))
+        XCTAssertEqual(result.createdIDs.count, 2)
+
+        XCTAssertTrue(model.undoCopy(now: now))
+
+        let activeIDs = Set(try store.activeIntakes().map(\.id))
+        XCTAssertTrue(activeIDs.isDisjoint(with: result.createdIDs))
+        XCTAssertEqual(activeIDs, Set([first, second]))
+        XCTAssertNil(model.copyNotice, "a successful undo leaves no stale 'Copied' notice")
+        XCTAssertFalse(model.undoCopy(now: now), "an undo offer is taken once")
+    }
+
+    /// A delete that fails partway leaves the copies it did not reach, so a retry removes them.
+    func testUndoCopyKeepsTheRemainingCopiesWhenADeleteFails() throws {
+        let store = try makeStore()
+        let yesterday = now.addingTimeInterval(-86_400)
+        let sources = try [
+            addFood(store, name: "Oats", at: yesterday, product: product("snap-a")),
+            addFood(store, name: "Rice", at: yesterday.addingTimeInterval(60), product: product("snap-b")),
+            addFood(store, name: "Milk", at: yesterday.addingTimeInterval(120), product: product("snap-c")),
+        ]
+        let model = JournalViewModel(store: store, timeZoneIdentifier: "UTC")
+        model.load(now: now)
+        let past = try XCTUnwrap(model.sections.first { $0.id != JournalViewModel.dayKey(now, zone: TimeZone(identifier: "UTC")!) })
+        let result = try XCTUnwrap(model.copyDayToToday(past.id, now: now))
+        XCTAssertEqual(result.createdIDs.count, 3)
+
+        store.failDeleteAt = 2
+        XCTAssertFalse(model.undoCopy(now: now))
+        XCTAssertTrue(model.canUndoCopy(now: now), "the copies not yet removed stay undoable")
+        XCTAssertEqual(model.copyNotice, "Couldn't remove 2 copied entries. Tap Undo to try again.")
+        // The first copy was removed; the other two copies are still there.
+        XCTAssertEqual(Set(try store.activeIntakes().map(\.id)), Set(sources).union(result.createdIDs.dropFirst()))
+
+        store.failDeleteAt = nil
+        XCTAssertTrue(model.undoCopy(now: now))
+        let activeIDs = Set(try store.activeIntakes().map(\.id))
+        XCTAssertTrue(activeIDs.isDisjoint(with: result.createdIDs))
+        XCTAssertEqual(activeIDs, Set(sources))
+    }
+
+    /// A copy the person deleted by hand does not block Undo for the other copies.
+    func testUndoCopySkipsACopyDeletedByHand() throws {
+        let store = try makeStore()
+        let yesterday = now.addingTimeInterval(-86_400)
+        let first = try addFood(store, name: "Oats", at: yesterday, product: product("snap-a"))
+        let second = try addFood(store, name: "Rice", at: yesterday.addingTimeInterval(60), product: product("snap-b"))
+        let model = JournalViewModel(store: store, timeZoneIdentifier: "UTC")
+        model.load(now: now)
+        let past = try XCTUnwrap(model.sections.first { $0.id != JournalViewModel.dayKey(now, zone: TimeZone(identifier: "UTC")!) })
+        let result = try XCTUnwrap(model.copyDayToToday(past.id, now: now))
+        let handDeleted = try XCTUnwrap(result.createdIDs.first)
+        try store.delete(intakeID: handDeleted, now: now)
+
+        XCTAssertTrue(model.undoCopy(now: now))
+
+        let activeIDs = Set(try store.activeIntakes().map(\.id))
+        XCTAssertEqual(activeIDs, Set([first, second]))
+    }
+
+    /// A failed undo says how many copies are still here, and its Undo stays so a retry removes them (#535).
+    func testFailedUndoSaysHowManyCopiesAreLeftAndARetryClearsIt() throws {
+        let store = try makeStore()
+        let yesterday = now.addingTimeInterval(-86_400)
+        _ = try addFood(store, name: "Oats", at: yesterday, product: product("snap-a"))
+        _ = try addFood(store, name: "Rice", at: yesterday.addingTimeInterval(60), product: product("snap-b"))
+        _ = try addFood(store, name: "Milk", at: yesterday.addingTimeInterval(120), product: product("snap-c"))
+        let model = JournalViewModel(store: store, timeZoneIdentifier: "UTC")
+        model.load(now: now)
+        let past = try XCTUnwrap(model.sections.first { $0.id != JournalViewModel.dayKey(now, zone: TimeZone(identifier: "UTC")!) })
+        _ = try XCTUnwrap(model.copyDayToToday(past.id, now: now))
+
+        store.failDeleteAt = 1
+        XCTAssertFalse(model.undoCopy(now: now))
+        XCTAssertEqual(model.copyNotice, "Couldn't remove 3 copied entries. Tap Undo to try again.")
+        XCTAssertTrue(model.canUndoCopy(now: now))
+
+        store.failDeleteAt = nil
+        XCTAssertTrue(model.undoCopy(now: now))
+        XCTAssertNil(model.copyNotice)
+    }
+
+    /// A copy deleted by hand is skipped, not counted: a failed undo of the rest says only what is still here (#535).
+    func testFailedUndoCountsOnlyTheCopiesStillHereAfterAHandDeletedOne() throws {
+        let store = try makeStore()
+        let yesterday = now.addingTimeInterval(-86_400)
+        _ = try addFood(store, name: "Oats", at: yesterday, product: product("snap-a"))
+        _ = try addFood(store, name: "Rice", at: yesterday.addingTimeInterval(60), product: product("snap-b"))
+        _ = try addFood(store, name: "Milk", at: yesterday.addingTimeInterval(120), product: product("snap-c"))
+        let model = JournalViewModel(store: store, timeZoneIdentifier: "UTC")
+        model.load(now: now)
+        let past = try XCTUnwrap(model.sections.first { $0.id != JournalViewModel.dayKey(now, zone: TimeZone(identifier: "UTC")!) })
+        let result = try XCTUnwrap(model.copyDayToToday(past.id, now: now))
+
+        // The first copy is deleted by hand (delete call 1). The undo then deletes the second (call 2) and fails the third (call 3).
+        try store.delete(intakeID: result.createdIDs[0], now: now)
+        store.failDeleteAt = 3
+        XCTAssertFalse(model.undoCopy(now: now))
+        XCTAssertEqual(model.copyNotice, "Couldn't remove 1 copied entry. Tap Undo to try again.")
+    }
+
+    /// A copy after a failed delete that was deleted by hand is not counted as still here (#535).
+    func testFailedUndoDoesNotCountACopyAfterTheFailureThatWasDeletedByHand() throws {
+        let store = try makeStore()
+        let yesterday = now.addingTimeInterval(-86_400)
+        _ = try addFood(store, name: "Oats", at: yesterday, product: product("snap-a"))
+        _ = try addFood(store, name: "Rice", at: yesterday.addingTimeInterval(60), product: product("snap-b"))
+        _ = try addFood(store, name: "Milk", at: yesterday.addingTimeInterval(120), product: product("snap-c"))
+        let model = JournalViewModel(store: store, timeZoneIdentifier: "UTC")
+        model.load(now: now)
+        let past = try XCTUnwrap(model.sections.first { $0.id != JournalViewModel.dayKey(now, zone: TimeZone(identifier: "UTC")!) })
+        let result = try XCTUnwrap(model.copyDayToToday(past.id, now: now))
+
+        // The third copy is deleted by hand (delete call 1). The undo removes the first (call 2), fails the second (call 3) and stops.
+        try store.delete(intakeID: result.createdIDs[2], now: now)
+        store.failDeleteAt = 3
+        XCTAssertFalse(model.undoCopy(now: now))
+        XCTAssertEqual(model.copyNotice, "Couldn't remove 1 copied entry. Tap Undo to try again.")
+    }
+
+    /// When the store cannot be read, the notice names no count, since the copies still here are unknown (#535).
+    func testFailedReadDuringUndoNamesNoCountEvenWithAHandDeletedCopy() throws {
+        let store = try makeStore()
+        let yesterday = now.addingTimeInterval(-86_400)
+        _ = try addFood(store, name: "Oats", at: yesterday, product: product("snap-a"))
+        _ = try addFood(store, name: "Rice", at: yesterday.addingTimeInterval(60), product: product("snap-b"))
+        _ = try addFood(store, name: "Milk", at: yesterday.addingTimeInterval(120), product: product("snap-c"))
+        let model = JournalViewModel(store: store, timeZoneIdentifier: "UTC")
+        model.load(now: now)
+        let past = try XCTUnwrap(model.sections.first { $0.id != JournalViewModel.dayKey(now, zone: TimeZone(identifier: "UTC")!) })
+        let result = try XCTUnwrap(model.copyDayToToday(past.id, now: now))
+        try store.delete(intakeID: result.createdIDs[0], now: now)
+
+        store.failsActiveReads = true
+        XCTAssertFalse(model.undoCopy(now: now))
+        XCTAssertEqual(model.copyNotice, "Couldn't remove the copied entries. Tap Undo to try again.")
+        XCTAssertTrue(model.canUndoCopy(now: now))
+    }
+
+    /// One copy left behind reads in the singular (#535).
+    func testFailedUndoOfOneCopyReadsInTheSingular() throws {
+        let store = try makeStore()
+        let yesterday = now.addingTimeInterval(-86_400)
+        _ = try addFood(store, name: "Oats", at: yesterday, product: product("snap-a"))
+        let model = JournalViewModel(store: store, timeZoneIdentifier: "UTC")
+        model.load(now: now)
+        let past = try XCTUnwrap(model.sections.first { $0.id != JournalViewModel.dayKey(now, zone: TimeZone(identifier: "UTC")!) })
+        _ = try XCTUnwrap(model.copyDayToToday(past.id, now: now))
+
+        store.failDeleteAt = 1
+        XCTAssertFalse(model.undoCopy(now: now))
+        XCTAssertEqual(model.copyNotice, "Couldn't remove 1 copied entry. Tap Undo to try again.")
+    }
+
+    /// The window is open just before its deadline and closed at it: offered at nine seconds, not at ten (#535).
+    func testUndoCopyWindowIsOpenAtNineSecondsAndClosedAtTen() throws {
+        let store = try makeStore()
+        let yesterday = now.addingTimeInterval(-86_400)
+        _ = try addFood(store, name: "Oats", at: yesterday, product: product("snap-a"))
+        let model = JournalViewModel(store: store, timeZoneIdentifier: "UTC")
+        model.load(now: now)
+        let past = try XCTUnwrap(model.sections.first { $0.id != JournalViewModel.dayKey(now, zone: TimeZone(identifier: "UTC")!) })
+        _ = try XCTUnwrap(model.copyDayToToday(past.id, now: now))
+
+        XCTAssertTrue(model.canUndoCopy(now: now.addingTimeInterval(9)))
+        XCTAssertFalse(model.canUndoCopy(now: now.addingTimeInterval(10)))
+    }
+
+    /// Undo is not offered after its ten-second window, even if the toast was hidden the whole time.
+    func testUndoCopyIsNotOfferedAfterItsWindowEvenIfTheToastWasHidden() throws {
+        let store = try makeStore()
+        let yesterday = now.addingTimeInterval(-86_400)
+        let source = try addFood(store, name: "Oats", at: yesterday, product: product("snap-a"))
+        let model = JournalViewModel(store: store, timeZoneIdentifier: "UTC")
+        model.load(now: now)
+        let past = try XCTUnwrap(model.sections.first { $0.id != JournalViewModel.dayKey(now, zone: TimeZone(identifier: "UTC")!) })
+        let result = try XCTUnwrap(model.copyDayToToday(past.id, now: now))
+        let later = now.addingTimeInterval(11)
+
+        XCTAssertFalse(model.canUndoCopy(now: later))
+        XCTAssertFalse(model.undoCopy(now: later))
+
+        let activeIDs = Set(try store.activeIntakes().map(\.id))
+        XCTAssertTrue(activeIDs.contains(result.createdIDs[0]), "a copy past its window is kept")
+        XCTAssertTrue(activeIDs.contains(source))
     }
 
     func testCopyMealToTodayCopiesOnlyThatMeal() throws {

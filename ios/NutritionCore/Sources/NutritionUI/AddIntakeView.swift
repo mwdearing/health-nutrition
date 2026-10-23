@@ -3,11 +3,16 @@ import NutritionDomain
 import NutritionJournal
 import NutritionProviders
 import SwiftUI
+#if os(iOS)
+import UIKit
+#endif
 
 public struct AddIntakeView: View {
     @ObservedObject var model: AddIntakeViewModel
+    @Environment(\.dismiss) private var dismiss
     /// The imported values open by default; the person can fold them away.
     @State private var allValuesOpen = true
+    @State private var confirmDiscard = false
     private let now: () -> Date
     private let onSaved: () -> Void
     /// Opens the pushed label scanner while keeping this form's edits.
@@ -91,6 +96,7 @@ public struct AddIntakeView: View {
                                 .font(.body)
                                 .digitsOnlyKeyboard()
                                 .focused(focus)
+                                .accessibilityLabel("Barcode (optional)")
                                 .accessibilityHint("Type the 8, 12 or 13 digits on the package, then look up")
                                 .onSubmit { Task { await self.model.lookUpBarcode() } }
                                 Button("Look up") {
@@ -138,6 +144,7 @@ public struct AddIntakeView: View {
                         .font(.body)
                         .decimalAmountKeyboard()
                         .focused(focus)
+                        .accessibilityLabel("Amount")
                         // The unit is a menu, so the picker shows its own chevron; the word above it names it.
                         VStack(alignment: .leading, spacing: DesignSpacing.xs) {
                             Text("Unit")
@@ -146,7 +153,7 @@ public struct AddIntakeView: View {
                                 .accessibilityHidden(true)
                             Picker("Unit", selection: $model.unit) {
                                 ForEach(model.unitOptions, id: \.symbol) { unit in
-                                    Text(unit.symbol).tag(unit)
+                                    Text(unit.screenSymbol).tag(unit)
                                 }
                             }
                             .labelsHidden()
@@ -167,10 +174,6 @@ public struct AddIntakeView: View {
                 }
                 if let hint = model.servingHint {
                     Text(hint).font(.footnote).foregroundStyle(TokenColors.textSecondary)
-                    ViewThatFits(in: .horizontal) {
-                        HStack(spacing: DesignSpacing.s) { servingChips }
-                        VStack(alignment: .leading, spacing: DesignSpacing.s) { servingChips }
-                    }
                 }
                 Picker("Meal", selection: $model.meal) {
                     Text("None").tag(MealLabel?.none)
@@ -211,8 +214,8 @@ public struct AddIntakeView: View {
                         }
                         if !model.additionalLabelNutrients.isEmpty {
                             Text("Also on the label")
-                                .font(.footnote)
-                                .foregroundStyle(TokenColors.textSecondary)
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(TokenColors.textPrimary)
                                 .accessibilityLabel("Also on the label")
                             ForEach(model.additionalLabelNutrients, id: \.self) { key in
                                 LabeledContent(
@@ -230,18 +233,27 @@ public struct AddIntakeView: View {
                     }
                 }
             }
-            HStack {
-                Text("Log to several days")
-                Spacer()
-                LaterBadge()
-            }
-            .disabled(true)
-            .accessibilityElement(children: .combine)
-            .accessibilityValue("Not available yet")
         }
         .scrollContentBackground(.hidden)
         .background(TokenColors.background)
-        .navigationTitle("Add")
+        .navigationTitle("Log entry")
+        // Typed input is not lost to a Back tap or a swipe: a form with input asks first.
+        .navigationBarBackButtonHidden(model.hasTypedInput)
+        .blocksEdgeSwipeBack(while: model.blocksSwipeBack)
+        .toolbar {
+            if model.hasTypedInput {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button {
+                        confirmDiscard = true
+                    } label: {
+                        Label("Back", systemImage: "chevron.backward")
+                    }
+                }
+            }
+        }
+        .confirmationDialog("Discard this entry?", isPresented: $confirmDiscard, titleVisibility: .visible) {
+            Button("Discard", role: .destructive) { dismiss() }
+        }
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: DesignSpacing.s) {
                 if let message = model.saveError {
@@ -254,9 +266,9 @@ public struct AddIntakeView: View {
                         .accessibilityLabel("Cannot save: \(message)")
                 }
                 if model.canChooseLibrary {
-                    Toggle("Save to Library", isOn: $model.savesToLibrary)
-                        .accessibilityHint("Scanned and searched products are kept in Library, or only this entry is logged")
-                    Text("Scanned and searched products are kept in Library > Products. Turn this off to leave this product out.")
+                    Toggle(SaveToLibraryAccessibility.label, isOn: $model.savesToLibrary)
+                        .accessibilityHint(Text(SaveToLibraryAccessibility.hint ?? ""))
+                    Text("Also keep this product in Library.")
                         .font(.footnote)
                         .foregroundStyle(TokenColors.textSecondary)
                 }
@@ -272,20 +284,6 @@ public struct AddIntakeView: View {
             }
             .padding(DesignSpacing.m)
             .background(TokenColors.background)
-        }
-    }
-
-    private var servingChips: some View {
-        ForEach(["1 serving", "½", "2"], id: \.self) { title in
-            HStack(spacing: DesignSpacing.s) {
-                Text(title).font(.body)
-                LaterBadge()
-            }
-            .padding(DesignSpacing.s)
-            .background(TokenColors.surface, in: Capsule())
-            .disabled(true)
-            .accessibilityElement(children: .combine)
-            .accessibilityValue("Not available yet")
         }
     }
 
@@ -340,7 +338,7 @@ public struct AddIntakeView: View {
         case .notApplicable:
             return "Does not apply"
         case .belowReportingThreshold(let unit):
-            return "Less than the label reports" + (unit.map { " (\($0.symbol))" } ?? "")
+            return "Less than the label reports" + (unit.map { " (\($0.screenSymbol))" } ?? "")
         case nil:
             return "Not on the label"
         }
@@ -363,8 +361,23 @@ extension View {
     func decimalAmountKeyboard() -> some View {
         #if os(iOS)
         self.keyboardType(.decimalPad)
+            .toolbar {
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("Done") {
+                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                    }
+                }
+            }
         #else
         self
         #endif
     }
+}
+
+/// The Save to Library switch's spoken text. The label says what the switch does, so it has no hint: a hint
+/// would repeat or contradict the label (#527). Kept here, so a test can pin the hint without a UI tree.
+public enum SaveToLibraryAccessibility {
+    public static let label = "Save to Library"
+    public static let hint: String? = nil
 }

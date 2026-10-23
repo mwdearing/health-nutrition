@@ -209,4 +209,90 @@ final class AddIntakeServingTests: XCTestCase {
         model.commitServingCount()
         XCTAssertEqual(model.amountText, "2")
     }
+
+    private struct StubPortions: HouseholdPortionLookup {
+        let grams: [MeasureUnit: Decimal]
+        func listedPortions(fdcId: Int) async -> [MeasureUnit: Decimal] { grams }
+    }
+
+    private func makePortionModel(_ grams: [MeasureUnit: Decimal]) throws -> AddIntakeViewModel {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let store = try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
+        return AddIntakeViewModel(
+            store: store, now: now, timeZoneIdentifier: "UTC", lookup: nil,
+            preferences: InMemoryDisplayPreferences(unitSystem: .usCustomary),
+            portionLookup: StubPortions(grams: grams))
+    }
+
+    /// A USDA-style pick: per 100 g, with the source's fdcId so its listed measures can be asked for.
+    private func usdaPick() -> LookedUpProduct {
+        LookedUpProduct(
+            barcode: "", name: "Cooked rice", brand: nil, basis: .per100g,
+            nutrients: [LookedUpProduct.energyKcal: .known(Decimal(200), .kcal)],
+            attribution: nil, serving: nil, version: nil, sourceID: "1")
+    }
+
+    func testListedCupTotalsThroughItsGramWeight() async throws {
+        let model = try makePortionModel([.cup: 150])
+        model.applyLookedUp(usdaPick())
+        await model.loadListedPortions()
+        XCTAssertTrue(model.unitOptions.contains(.cup), "a listed cup is offered")
+        model.unit = .cup
+        model.amountText = "1"
+        let energy = model.thisAdds.first { $0.key == LookedUpProduct.energyKcal }
+        // One cup is 150 g, so 200 kcal per 100 g is 300 kcal.
+        XCTAssertEqual(energy?.value, .known(300, .kcal))
+    }
+
+    func testUnlistedCupIsNotOffered() async throws {
+        let model = try makePortionModel([:])
+        model.applyLookedUp(usdaPick())
+        await model.loadListedPortions()
+        XCTAssertFalse(model.unitOptions.contains(.cup), "a food that lists no cup gets no cup")
+        XCTAssertFalse(model.unitOptions.contains(.teaspoon))
+    }
+
+    func testPerHundredMillilitrePickConvertsCupExactlyToMillilitres() throws {
+        let model = try makePortionModel([:])
+        model.applyLookedUp(LookedUpProduct(
+            barcode: "", name: "Oat drink", brand: nil, basis: .per100ml,
+            nutrients: [LookedUpProduct.energyKcal: .known(Decimal(45), .kcal)],
+            attribution: nil, serving: nil, version: nil, sourceID: nil))
+        model.unit = .cup
+        model.amountText = "1"
+        let energy = model.thisAdds.first { $0.key == LookedUpProduct.energyKcal }
+        // One US cup is 236.5882365 mL, so 45 kcal per 100 mL is about 106.4647 kcal.
+        let shown = try XCTUnwrap(energy).value
+        guard case .known(let kcal, _) = shown else { return XCTFail("energy should total") }
+        XCTAssertLessThan(abs(kcal - Decimal(string: "106.4647")!), Decimal(string: "0.001")!)
+    }
+
+    func testFailedPortionRequestHidesMeasuresAndGramsStillLog() async throws {
+        let model = try makePortionModel([:])
+        model.applyLookedUp(usdaPick())
+        await model.loadListedPortions()
+        XCTAssertFalse(model.unitOptions.contains(.cup))
+        XCTAssertFalse(model.unitOptions.contains(.tablespoon))
+        model.unit = .g
+        model.amountText = "100"
+        let energy = model.thisAdds.first { $0.key == LookedUpProduct.energyKcal }
+        XCTAssertEqual(energy?.value, .known(200, .kcal), "grams log normally with no measures listed")
+    }
+
+    func testDensityNoteWaitsForTheListedMeasures() async throws {
+        let model = try makePortionModel([:])
+        model.applyLookedUp(LookedUpProduct(
+            barcode: "", name: "Zzz unlisted food", brand: nil, basis: .per100g,
+            nutrients: [LookedUpProduct.energyKcal: .known(Decimal(100), .kcal)],
+            attribution: nil, serving: nil, version: nil, sourceID: "9"))
+        model.fieldDidBegin(.amount)
+        model.unit = .cup
+        // While the food's measures are still being asked for, no density line is shown either way.
+        XCTAssertNil(model.densityUnavailableNote, "the note waits until the listed measures have loaded")
+        await model.loadListedPortions()
+        // Once they have come back empty, the note says what is true for this food.
+        XCTAssertEqual(model.densityUnavailableNote, "No typical density is known for this food, so it is saved in mL.")
+    }
 }

@@ -13,6 +13,9 @@ public struct EntryDetailView: View {
     /// reloads the entry once it returns, so the row shows what the pass decided rather than "Waiting to send".
     private let onRetried: () async -> Void
     @State private var confirmingDelete = false
+    @State private var confirmingClose = false
+    /// True once Log again wrote the new entry: the sheet then confirms it and offers only Done.
+    @State private var loggedAgain = false
 
     public init(
         model: EntryDetailViewModel, now: @escaping () -> Date = { Date() }, onFinished: @escaping () -> Void,
@@ -36,6 +39,21 @@ public struct EntryDetailView: View {
             }
         }
         .navigationTitle("Entry")
+        // Closing with unsaved changes asks first, and an interactive swipe-down follows the same rule.
+        .interactiveDismissDisabled(model.closeAsksFirst)
+        .toolbar {
+            // A deleted entry shows its own Close in the empty state, so the toolbar one is left out there.
+            if !model.isDeleted {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") {
+                        if model.closeAsksFirst { confirmingClose = true } else { onFinished() }
+                    }
+                }
+            }
+        }
+        .confirmationDialog("Discard changes?", isPresented: $confirmingClose, titleVisibility: .visible) {
+            Button("Discard", role: .destructive) { onFinished() }
+        }
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 if model.isDirty {
@@ -172,8 +190,8 @@ public struct EntryDetailView: View {
                         // The compounds a captured panel printed, shown under their own heading.
                         if !model.additionalNutrients.isEmpty {
                             Text("Also on the label")
-                                .font(.footnote)
-                                .foregroundStyle(TokenColors.textSecondary)
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(TokenColors.textPrimary)
                                 .accessibilityLabel("Also on the label")
                             ForEach(model.additionalNutrients) { row in
                                 LabeledContent(row.name, value: row.amountText)
@@ -255,20 +273,29 @@ public struct EntryDetailView: View {
                 }
             }
             Section {
-                Button {
-                    if model.repeatEntry(now: now()) != nil { onFinished() }
-                } label: {
-                    Text("Log again").font(.headline)
+                if loggedAgain {
+                    // The sheet stays open to confirm the new entry, so a second tap is not a second log.
+                    InlineNotice("Logged again", tone: .waiting)
+                    Button("Done", action: onFinished).font(.headline)
+                } else {
+                    Button {
+                        if model.repeatEntry(now: now()) != nil { loggedAgain = true }
+                    } label: {
+                        Text("Log again").font(.headline)
+                    }
+                    .disabled(!model.canLogAgain)
+                    .accessibilityLabel("Log this entry again")
+                    .accessibilityHint(model.canLogAgain
+                        ? "Adds a new entry with the same amounts at the current time"
+                        : "Save your changes first.")
+                    LogOnOtherDaysButton(model: model, now: now, onFinished: onFinished)
+                    Button(role: .destructive) {
+                        confirmingDelete = true
+                    } label: {
+                        Text("Delete entry").font(.headline)
+                    }
+                    .accessibilityLabel("Delete entry")
                 }
-                .accessibilityLabel("Log this entry again")
-                .accessibilityHint("Adds a new entry with the same amounts at the current time")
-                LogOnOtherDaysButton(model: model, now: now, onFinished: onFinished)
-                Button(role: .destructive) {
-                    confirmingDelete = true
-                } label: {
-                    Text("Delete entry").font(.headline)
-                }
-                .accessibilityLabel("Delete entry")
             }
         }
         .scrollContentBackground(.hidden)
@@ -309,7 +336,7 @@ public struct EntryDetailView: View {
                     .entryAmountKeyboard()
                     .focused(focus)
                     .accessibilityLabel("Amount of \(component.name)")
-                    Text(component.unit.symbol).font(.body).foregroundStyle(TokenColors.textSecondary)
+                    Text(component.unit.screenSymbol).font(.body).foregroundStyle(TokenColors.textSecondary)
                 }
             }
             // The same amount in the unit the reader chose, shown beside the field that edits the stored one.

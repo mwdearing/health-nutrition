@@ -17,11 +17,11 @@ Signing in sends the account email address and identifier to the project server.
 
 ## Barcode lookup
 
-Open Food Facts is asked first when you submit the barcode field, tap Look up, or accept a barcode from the camera scanner. The camera scan sends nothing while the camera is open; after a code is accepted, it starts the lookup. If Open Food Facts has no product and you are signed in, the app also asks the authenticated community catalog. Turning Share labels off does not disable this read lookup. A signed-out person does not get the community fallback.
+The authenticated community catalog is asked when you submit the barcode field, tap Look up, or accept a barcode from the camera scanner, and only when you are signed in. The camera scan sends nothing while the camera is open; after a code is accepted, it starts the lookup. Open Food Facts is not asked about a barcode. Turning Share labels off does not disable this read lookup. A signed-out person does not get the community fallback.
 
 ## Searching and sharing a product you create
 
-When you are signed in and submit two or more characters in Find products, the words you typed are sent to the project's server with your signed-in account to search shared products, whether or not Share labels is on. A signed-out person does not make this request. A new custom product entered by hand is shared under the same conditions as a saved label (signed in, disclosure acknowledged for the account, sharing on at save time); it can send its kind, name, brand, any barcode, serving and each nutrient's name, state and amount, linked to your account.
+When you are signed in and submit two or more characters in Search foods, the words you typed are sent to the project's server with your signed-in account to search shared products, whether or not Share labels is on. A signed-out person does not make this request. A new custom product entered by hand is shared under the same conditions as a saved label (signed in, disclosure acknowledged for the account, sharing on at save time); it can send its kind, name, brand, any barcode, serving and each nutrient's name, state and amount, linked to your account.
 
 ## Sharing a saved label
 
@@ -33,7 +33,7 @@ An owner-reviewed label is a separate product-catalog snapshot, not a contributo
 
 ## What stays on this device
 
-Entries, product snapshots, goals, recipes, favorites, reminders and export files stay on this device. The unavailable Apple Health and HealthRelay controls are not saved as settings. Signing into another account does not partition, merge or replace local data. It remains available after sign-out or account deletion. Your device backup may also include its local app data, depending on your backup settings.
+Entries, product snapshots, goals, recipes, favorites, reminders and export files stay on this device and in your own iCloud or device backups. The unavailable Apple Health and HealthRelay controls are not saved as settings. Signing into another account does not partition, merge or replace local data. It remains available after sign-out or account deletion. Your device backup may also include its local app data, depending on your backup settings.
 
 ## Sign out, delete and erase
 

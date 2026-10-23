@@ -1047,6 +1047,355 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(try amount(.addedSugars, panel), dec("25"))
     }
 
+    /// Reproduces the 0.1.31 Entry screen: a Supplement Facts capture keeps unrecognized rows, so OCR
+    /// fragments became "Also on the label" compounds ("Added Sugars ela 25 g", "Inchides 0 g",
+    /// "lum 260 mg", "minD 0 mcg"). A misread name of a recognized nutrient lands on its field, and a
+    /// misread qualifier or a fragment is never a compound.
+    func testSupplementPanelDoesNotKeepOCRFragmentsAsCompounds() throws {
+        let panel = parse([
+            "Supplement Facts",
+            "Serving size 1 tablet",
+            "Added Sugars ela 25g",
+            "Inchides 0g",
+            "lum 260mg",
+            "minD 0mcg",
+        ])
+
+        XCTAssertEqual(try amount(.addedSugars, panel), dec("25"), "a misread Added Sugars row lands on its field")
+        XCTAssertEqual(panel.unnamedRowCount, 3, "Inchides, minD and lum stay unread and are counted for review")
+        XCTAssertFalse(panel.additionalNutrients.contains { $0.name.contains("ela") }, "no 'Added Sugars ela' compound")
+        XCTAssertFalse(panel.additionalNutrients.contains { ["Inchides", "lum", "minD"].contains($0.name) },
+                       "qualifier and fragment names are not compounds")
+    }
+
+    /// Real supplement rows that look like noise must not be read as noise or as their nutrient.
+    func testSupplementRowsThatLookLikeNoiseSurvive() throws {
+        let panel = parse([
+            "Supplement Facts",
+            "Serving size 1 capsule",
+            "Vitamin E oil 400 IU",
+            "IgG 200mg",
+            "Include Blend 100mg",
+        ])
+
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Vitamin E oil", "IgG", "Include Blend"],
+                       "each row stays its own extra, none is read as a named nutrient")
+    }
+
+    /// Capitalised real words that end a nutrient name are rows: a fragment starts lowercase, so "Mind",
+    /// "Hydrate", "Sterol" and "MIND" stay extras while "minD" is unread.
+    func testCapitalisedWordsEndingANutrientNameStayRows() throws {
+        let panel = parse(["Supplement Facts", "Serving size 1 capsule", "Mind 200mg", "Hydrate 50mg", "Sterol 100mg"])
+
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Mind", "Hydrate", "Sterol"])
+        XCTAssertEqual(panel.unnamedRowCount, 0)
+    }
+
+    /// An uppercase row whose letters end a nutrient name is a row: the fragment rule needs a lowercase start.
+    func testUppercaseMINDIsAnExtra() throws {
+        let panel = parse(["Supplement Facts", "Serving size 1 capsule", "MIND 200mg"])
+
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["MIND"])
+        XCTAssertEqual(panel.unnamedRowCount, 0)
+    }
+
+    /// The OCR digit and letter swaps the fragment rule reads (1 as l, 0 as o, rn as m) still make a fragment.
+    func testOCRSwapFragmentsAreUnread() throws {
+        let panel = parse(["Supplement Facts", "Serving size 1 capsule", "m1nD 0mcg", "rninD 0mcg", "pr0tein 5g"])
+
+        XCTAssertTrue(panel.additionalNutrients.isEmpty)
+        XCTAssertEqual(panel.unnamedRowCount, 3)
+    }
+
+    /// A lowercase head of a nutrient name is a product or abbreviation, not an OCR tail: "mag" and "pro" stay extras.
+    func testLowercaseHeadsOfNutrientNamesStayRows() throws {
+        let panel = parse(["Supplement Facts", "Serving size 1 capsule", "mag 100mg", "pro 5g"])
+
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["mag", "pro"])
+        XCTAssertEqual(panel.unnamedRowCount, 0)
+    }
+
+    /// A bare qualifier misread on a supplement row is structural noise, so both rows are counted unread.
+    func testBareQualifierMisreadsAreCountedUnread() throws {
+        let panel = parse(["Supplement Facts", "Serving size 1 capsule", "Include 100mg", "Contain 50mg"])
+
+        XCTAssertTrue(panel.additionalNutrients.isEmpty)
+        XCTAssertEqual(panel.unnamedRowCount, 2)
+    }
+
+    /// Short real words are rows, not fragments: only a piece of a known nutrient name is noise.
+    func testShortSupplementWordsThatAreNotNutrientPiecesSurvive() throws {
+        let panel = parse([
+            "Supplement Facts", "Serving size 1 capsule", "oat 100mg", "gum 50mg", "bcAA 200mg", "Mag 100mg", "Pro 5g",
+        ])
+
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["oat", "gum", "bcAA", "Mag", "Pro"])
+        XCTAssertEqual(panel.unnamedRowCount, 0)
+    }
+
+    /// A food panel's output is unchanged by the supplement-only fragment rule: its misread rows stay unread.
+    func testFoodPanelOutputIsUnchangedByFragmentRule() throws {
+        let panel = parse([
+            "Nutrition Facts", "Total Fat 8g", "Sugar Alcohol 3g", "Inchides 0g", "minD 0mcg", "lum 260mg",
+        ])
+
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Sugar Alcohol"])
+        XCTAssertEqual(panel.unnamedRowCount, 3)
+    }
+
+    /// "Added Sugars pro 5g" reads its misread word as noise on the Added Sugars field.
+    func testAddedSugarsProductWordLandsOnAddedSugars() throws {
+        let panel = parse(["Total Sugars 12g", "Added Sugars pro 5g"])
+
+        XCTAssertEqual(try amount(.addedSugars, panel), dec("5"))
+    }
+
+    /// "Added Sugars oil" is a product of its own: a short word from the list is never absorbed.
+    func testAddedSugarsOilIsNotAddedSugars() throws {
+        let panel = parse(["Total Sugars 12g", "Added Sugars oil 5g"])
+
+        if case .known = panel.value(for: .addedSugars) {
+            XCTFail("Added Sugars oil must not set the Added Sugars field")
+        }
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Added Sugars oil"])
+    }
+
+    /// A food panel's Added Sugars row with a misread word lands on its field, as a clean row would.
+    func testFoodPanelAddedSugarsWithNoiseWordLandsOnField() throws {
+        let panel = parse(["Nutrition Facts", "Total Sugars 12g", "Added Sugars ela 25g"])
+
+        XCTAssertEqual(try amount(.addedSugars, panel), dec("25"))
+        XCTAssertTrue(panel.additionalNutrients.isEmpty)
+    }
+
+    /// A real ingredient word that is not one edit from the qualifiers is not read as a misread qualifier.
+    func testRealIngredientNearQualifierIsKept() throws {
+        let panel = parse(["Supplement Facts", "Serving size 1 capsule", "Inclusion 100mg"])
+
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Inclusion"])
+    }
+
+    /// B-vitamins printed with a hyphen or a space before their number are read as one named row, with their amount.
+    func testHyphenatedAndNumberOnlyNamesAreRead() throws {
+        let hyphen = parse(["Nutrition Facts", "Total Fat 8g", "Vitamin B-12 2mcg"])
+        XCTAssertEqual(hyphen.additionalNutrients.map(\.name), ["Vitamin B-12"])
+        if case .known(let amount, let unit)? = hyphen.additionalNutrients.first?.value {
+            XCTAssertEqual(amount, dec("2"))
+            XCTAssertEqual(unit, .mcg)
+        } else {
+            XCTFail("Vitamin B-12 should carry 2 mcg")
+        }
+
+        let spaced = parse(["Nutrition Facts", "Total Fat 8g", "Vitamin B 12 2mcg"])
+        XCTAssertEqual(spaced.additionalNutrients.map(\.name), ["Vitamin B 12"])
+        if case .known(let amount, let unit)? = spaced.additionalNutrients.first?.value {
+            XCTAssertEqual(amount, dec("2"))
+            XCTAssertEqual(unit, .mcg)
+        } else {
+            XCTFail("Vitamin B 12 should carry 2 mcg")
+        }
+    }
+
+    /// A number joins a name only after a letter, so a second number is never part of a name. "Vitamin B 1 2 mcg"
+    /// is ambiguous and gives nothing: no extra and no known field.
+    func testSecondNumberIsNotPartOfAName() throws {
+        let panel = parse(["Nutrition Facts", "Total Fat 8g", "Vitamin B 1 2 mcg"])
+
+        // The line is ambiguous (B1 at 2 mcg, or B12 with its amount lost), so it gives nothing: no extra and no
+        // value on a known field. Its unread count is not asserted here; see the follow-up issue.
+        XCTAssertTrue(panel.additionalNutrients.isEmpty, "an ambiguous line is not an extra")
+        if case .known = panel.value(for: .vitaminD) { XCTFail("an ambiguous line is not vitamin D") }
+        if case .known = panel.value(for: .iron) { XCTFail("an ambiguous line is not iron") }
+    }
+
+    /// Regression guard, not fail-first: a supplement's vitamin with its unit keeps its name without the amount.
+    func testVitaminAWithUnitKeepsItsNameWithoutTheAmount() throws {
+        let panel = parse(["Supplement Facts", "Serving size 1 softgel", "Vitamin A 500 IU"])
+
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Vitamin A"])
+        if case .known(let amount, let unit)? = panel.additionalNutrients.first?.value {
+            XCTAssertEqual(amount, dec("500"))
+            XCTAssertEqual(unit, .iu)
+        } else {
+            XCTFail("Vitamin A should carry 500 IU")
+        }
+    }
+
+    /// Regression guard, not fail-first: "Calories 30" is the calorie field at 30, with no extra row.
+    func testCaloriesWithAmountIsNotAName() throws {
+        let panel = parse(["Nutrition Facts", "Total Fat 8g", "Calories 30"])
+
+        XCTAssertEqual(try amount(.calories, panel), dec("30"))
+        XCTAssertTrue(panel.additionalNutrients.isEmpty)
+    }
+
+    /// A hyphen is part of a name outside the B-vitamins too: a supplement's "Omega-3" row is a named extra.
+    func testHyphenatedSupplementNameIsAnExtra() throws {
+        let panel = parse(["Supplement Facts", "Serving size 1 capsule", "Omega-3 Fatty Acids 500mg"])
+
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Omega-3 Fatty Acids"])
+    }
+
+    /// A hyphen inside a known nutrient name is a line-break artifact: "So-dium 200mg" is sodium at 200 mg.
+    func testHyphenInsideKnownNutrientNameLandsOnItsField() throws {
+        let panel = parse(["Nutrition Facts", "Total Fat 8g", "So-dium 200mg"])
+
+        XCTAssertEqual(try amount(.sodium, panel), dec("200"))
+        XCTAssertEqual(panel.displayName(for: .sodium), "Sodium")
+        XCTAssertTrue(panel.additionalNutrients.isEmpty)
+    }
+
+    /// A hyphen inside a multi-word known nutrient name is a line-break artifact: "Saturated-Fat 3g" is saturated fat.
+    func testHyphenInsideMultiWordKnownNameLandsOnItsField() throws {
+        let panel = parse(["Nutrition Facts", "Total Fat 8g", "Saturated-Fat 3g"])
+
+        XCTAssertEqual(try amount(.saturatedFat, panel), dec("3"))
+        XCTAssertTrue(panel.additionalNutrients.isEmpty)
+    }
+
+    /// A hyphen joins the word before it: "Saturated-Fat 3g" is saturated fat only, not total fat as well.
+    func testHyphenatedSubrowDoesNotFillTotalFat() throws {
+        let panel = parse(["Nutrition Facts", "Saturated-Fat 3g"])
+
+        XCTAssertEqual(try amount(.saturatedFat, panel), dec("3"))
+        if case .known = panel.value(for: .fat) { XCTFail("Saturated-Fat must not set total fat") }
+    }
+
+    /// Supplement rows with a number inside the name stay extras with their printed name and amount.
+    func testSupplementNumberedRowsStayExtras() throws {
+        let panel = parse([
+            "Supplement Facts", "Serving size 1 capsule", "Vitamin B12 2.4mcg", "Vitamin B6 1.7mg", "Vitamin K2 90mcg",
+            "Omega-3 500mg",
+        ])
+
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Vitamin B12", "Vitamin B6", "Vitamin K2", "Omega-3"])
+        let expected: [(Decimal, MeasureUnit)] = [(dec("2.4"), .mcg), (dec("1.7"), .mg), (dec("90"), .mcg), (dec("500"), .mg)]
+        for (row, want) in zip(panel.additionalNutrients, expected) {
+            guard case .known(let value, let unit) = row.value else {
+                XCTFail("\(row.name) should carry its amount")
+                continue
+            }
+            XCTAssertEqual(value, want.0, row.name)
+            XCTAssertEqual(unit, want.1, row.name)
+        }
+    }
+
+    /// The ambiguous line gives nothing on a supplement panel either: "Vitamin B 1 2 mcg" is no extra.
+    func testAmbiguousBVitaminLineIsNoSupplementExtra() throws {
+        let panel = parse(["Supplement Facts", "Serving size 1 capsule", "Vitamin B 1 2 mcg"])
+
+        XCTAssertTrue(panel.additionalNutrients.isEmpty, "an ambiguous line is not an extra")
+    }
+
+    /// A hyphen joins the word before it, so a hyphenated total-form label still lands on its known field.
+    func testHyphenatedTotalFormsLandOnTheirFields() throws {
+        let panel = parse(["Nutrition Facts", "Total-Fat 5g", "Total-Sugars 10g", "Dietary-Fiber 3g"])
+
+        XCTAssertEqual(try amount(.fat, panel), dec("5"))
+        XCTAssertEqual(try amount(.sugars, panel), dec("10"))
+        XCTAssertEqual(try amount(.fiber, panel), dec("3"))
+        XCTAssertTrue(panel.additionalNutrients.isEmpty)
+    }
+
+    /// A hyphenated supplement name that is not a known nutrient stays an extra with its printed hyphen.
+    func testHyphenatedUnknownNameStaysAnExtra() throws {
+        let panel = parse(["Supplement Facts", "Serving size 1 tablet", "Vitamin-C 60mg"])
+
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Vitamin-C"])
+        if case .known(let amount, let unit)? = panel.additionalNutrients.first?.value {
+            XCTAssertEqual(amount, dec("60"))
+            XCTAssertEqual(unit, .mg)
+        } else {
+            XCTFail("Vitamin-C should carry 60 mg")
+        }
+    }
+
+    /// Vitamin D form digits are vitamin D: "D3" and "D 3" with an amount behind them are vitamin D at that amount.
+    func testVitaminDFormDigitsLandOnVitaminD() throws {
+        func vitaminD(_ line: String) throws -> (Decimal, MeasureUnit) {
+            let panel = parse(["Nutrition Facts", "Total Fat 8g", line])
+            XCTAssertTrue(panel.additionalNutrients.isEmpty, "\(line) is vitamin D, not an extra")
+            guard case .known(let value, let unit) = panel.value(for: .vitaminD) else {
+                XCTFail("\(line) should read as vitamin D")
+                return (0, .mcg)
+            }
+            return (value, unit)
+        }
+
+        let d3 = try vitaminD("Vitamin D3 25mcg")
+        XCTAssertEqual(d3.0, dec("25"))
+        XCTAssertEqual(d3.1, .mcg)
+        let spacedD3 = try vitaminD("Vitamin D 3 25mcg")
+        XCTAssertEqual(spacedD3.0, dec("25"))
+        XCTAssertEqual(spacedD3.1, .mcg)
+        let amountNoSpace = try vitaminD("Vitamin D 3mcg")
+        XCTAssertEqual(amountNoSpace.0, dec("3"))
+        XCTAssertEqual(amountNoSpace.1, .mcg)
+        let amountSpaced = try vitaminD("Vitamin D 3 mcg")
+        XCTAssertEqual(amountSpaced.0, dec("3"))
+        XCTAssertEqual(amountSpaced.1, .mcg)
+    }
+
+    /// A hyphenated panel or packaging label is not a nutrient: "Net-Wt 85g" and "Serving-Size 30g" stay out of the extras.
+    func testHyphenatedPanelLabelsAreNotExtras() throws {
+        let panel = parse(["Nutrition Facts", "Total Fat 8g", "Net-Wt 85g", "Serving-Size 30g"])
+
+        XCTAssertTrue(panel.additionalNutrients.isEmpty)
+    }
+
+    /// Non-ASCII digits are never a name's number: "Vitamin B１２" (fullwidth digits) is not an extra with that name.
+    func testFullwidthDigitsAreNotANameNumber() throws {
+        let panel = parse(["Supplement Facts", "Serving size 1 capsule", "Vitamin B１２ 2mcg"])
+
+        XCTAssertTrue(panel.additionalNutrients.isEmpty, "the fullwidth row is not an extra")
+        if case .known = panel.value(for: .vitaminD) { XCTFail("the fullwidth row is not vitamin D") }
+    }
+
+    /// Standalone EPA and DHA rows are real supplement ingredients, kept as extras with their own names.
+    func testEPAAndDHAStandaloneRowsSurvive() throws {
+        let panel = parse(["Supplement Facts", "Serving size 2 softgels", "EPA 500mg", "DHA 300mg"])
+
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["EPA", "DHA"])
+    }
+
+    /// A multi-word nutrient followed by a product word is that product, not the nutrient's amount.
+    func testVitaminDProductWordIsNotVitaminD() throws {
+        let panel = parse(["Supplement Facts", "Serving size 1 tablet", "Vitamin D pro 10mcg"])
+
+        if case .known = panel.value(for: .vitaminD) { XCTFail("Vitamin D pro is not Vitamin D") }
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Vitamin D pro"])
+    }
+
+    /// A one-word product name that begins with a nutrient is its own compound, not that nutrient.
+    func testOneWordProductAfterSingleWordNutrientStaysACompound() throws {
+        let panel = parse(["Supplement Facts", "Serving size 1 tablet", "Iron pro 10mg"])
+
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Iron pro"])
+    }
+
+    /// A name that begins with a nutrient but is a product's own name stays a compound, not that nutrient.
+    func testIronSupportBlendIsACompoundNotIron() throws {
+        let panel = parse(["Supplement Facts", "Serving size 1 capsule", "Iron Support Blend 10mg"])
+
+        if case .known = panel.value(for: .iron) { XCTFail("Iron Support Blend is not iron") }
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Iron Support Blend"])
+    }
+
+    /// A real supplement ingredient survives next to the OCR noise rows of the same capture.
+    func testSupplementIngredientSurvivesBesideOCRNoise() throws {
+        let panel = parse([
+            "Supplement Facts",
+            "Serving size 1 capsule",
+            "Ashwagandha root extract 300mg",
+            "Inchides 0g",
+            "minD 0mcg",
+            "lum 260mg",
+        ])
+
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Ashwagandha root extract"])
+        XCTAssertEqual(panel.unnamedRowCount, 3, "the three noise rows stay unread and are counted")
+    }
+
     /// A food panel's real rows that the named table lacks keep their names, while misread fragments do not.
     func testFoodPanelKeepsPlausibleRowNamesAndDropsMisreadFragments() throws {
         let panel = parse([
@@ -1367,5 +1716,110 @@ final class NutritionFactsParserTests: XCTestCase {
     private func needsUnit(_ panel: ParsedNutritionFacts, _ key: NutritionFactKey) -> Bool {
         if case .known = panel.value(for: key) { return true }
         return false
+    }
+
+    // MARK: Issue 485 (label-scan follow-ups). Tests first: the parser is not changed in this commit.
+
+    func testNetWeightLineGivesNoExtra() {
+        let panel = parse(["Nutrition Facts", "Serving Size 1 cup", "Calories 50", "NET-WT 100 g"])
+        XCTAssertTrue(panel.additionalNutrients.isEmpty)
+    }
+
+    func testFullwidthDigitsReadEveryKnownField() throws {
+        let panel = parse([
+            "Nutrition Facts", "Serving Size 1 cup",
+            "Calories ５０", "Total Fat ２g", "Sodium １００mg", "Protein ３g",
+        ])
+        XCTAssertEqual(try amount(.calories, panel), 50)
+        XCTAssertEqual(try amount(.fat, panel), 2)
+        XCTAssertEqual(try amount(.sodium, panel), 100)
+        XCTAssertEqual(try amount(.protein, panel), 3)
+    }
+
+    func testHyphenatedIronFormLandsOnIron() throws {
+        let panel = parse(["Supplement Facts", "Serving Size 1 capsule", "Iron-Bisglycinate 10mg"])
+        XCTAssertEqual(try amount(.iron, panel), 10)
+        XCTAssertEqual(try unit(.iron, panel), .mg)
+    }
+
+    func testCalciumCitrateStillLandsOnCalcium() throws {
+        let panel = parse(["Supplement Facts", "Serving Size 1 tablet", "Calcium Citrate 200mg"])
+        XCTAssertEqual(try amount(.calcium, panel), 200)
+    }
+
+    func testVitaminD3AndSpacedD3ReadAsVitaminDWithTheCanonicalName() {
+        let attached = parse(["Supplement Facts", "Serving Size 1 softgel", "Vitamin D3 25mcg"])
+        let spaced = parse(["Supplement Facts", "Serving Size 1 softgel", "Vitamin D 3 25mcg"])
+        // The form digit never shows: neither the attached nor the spaced form keeps "Vitamin D 3" as its name.
+        XCTAssertNotEqual(attached.nutrientDisplayNames[NutritionFactKey.vitaminD.rawValue], "Vitamin D 3")
+        XCTAssertNotEqual(spaced.nutrientDisplayNames[NutritionFactKey.vitaminD.rawValue], "Vitamin D 3")
+        XCTAssertEqual(try amount(.vitaminD, spaced), 25)
+    }
+
+    func testVitaminBTwelveWrittenTwoWaysKeepsBothRowsInOneParse() {
+        let panel = parse(["Supplement Facts", "Serving Size 1 tablet", "Vitamin B-12 25mcg", "Vitamin B 12 10mcg"])
+        // Both spellings name one nutrient, so they are one row under one key.
+        XCTAssertEqual(panel.additionalNutrients.count, 1)
+        XCTAssertEqual(panel.additionalNutrients.first?.key, "vitamin-b-12")
+    }
+
+    func testSugarAlcoholGivesNoExtraOnANutritionFactsPanel() {
+        let panel = parse(["Nutrition Facts", "Serving Size 1 bar", "Sugar-Alcohol 2g"])
+        XCTAssertTrue(panel.additionalNutrients.isEmpty)
+        XCTAssertEqual(panel.unnamedRowCount, 1)
+    }
+
+    func testHyphenatedSugarAlcoholIsAnExtraOnASupplementPanelLikeTheSpacedForm() {
+        let hyphen = parse(["Supplement Facts", "Serving Size 1 bar", "Sugar-Alcohol 2g"])
+        let spaced = parse(["Supplement Facts", "Serving Size 1 bar", "Sugar Alcohol 2g"])
+        XCTAssertEqual(hyphen.additionalNutrients.count, 1)
+        XCTAssertEqual(spaced.additionalNutrients.count, 1)
+        XCTAssertEqual(hyphen.additionalNutrients[0].value, spaced.additionalNutrients[0].value)
+    }
+
+    func testMultiWordAliasWithAnAmountGivesNoExtraOnBothPanels() {
+        for header in ["Nutrition Facts", "Supplement Facts"] {
+            let panel = parse([header, "Serving Size 1 bar", "Added Sugars 5g", "Total Sugars 8g"])
+            XCTAssertTrue(panel.additionalNutrients.isEmpty, "\(header): a known alias is not an extra")
+        }
+    }
+
+    func testVitaminsAKAndEAreExtrasWithTheirExactNames() {
+        let panel = parse(["Supplement Facts", "Serving Size 1 softgel", "Vitamin A 900mcg", "Vitamin E 15mg", "Vitamin K 120mcg"])
+        XCTAssertEqual(panel.additionalNutrients.map(\.name), ["Vitamin A", "Vitamin E", "Vitamin K"])
+    }
+
+    func testBAmbiguousSpacedNumbersAreUnreadAndAttachedUnitGivesNothing() {
+        let spaced = parse(["Nutrition Facts", "Serving Size 1 tablet", "Vitamin B 1 2 mcg"])
+        let attached = parse(["Nutrition Facts", "Serving Size 1 tablet", "Vitamin B 1 2mcg"])
+        XCTAssertTrue(spaced.additionalNutrients.isEmpty)
+        XCTAssertEqual(spaced.unnamedRowCount, 1, "a row the parser cannot place counts as unread")
+        XCTAssertTrue(attached.additionalNutrients.isEmpty)
+        XCTAssertEqual(attached.unnamedRowCount, 0, "the attached form gives nothing")
+    }
+
+    func testSpacedVitaminD3RowIsNotCountedAsUnread() {
+        let panel = parse(["Supplement Facts", "Serving size 1 softgel", "Vitamin D 3 25 mcg"])
+        XCTAssertEqual(panel.unnamedRowCount, 0, "a vitamin D form digit is not the B1/B12 ambiguity")
+    }
+
+    // MARK: Issue 495 (non-ASCII digits and fullwidth units). Tests first: the parser is not changed in this commit.
+
+    func testArabicIndicDigitsNeverReadAsZero() {
+        let panel = parse(["Nutrition Facts", "Serving size 1 cup", "Calories ٥٠", "Protein 3g"])
+        // Arabic-Indic digits are not mapped, so the field has no value: unknown, never zero.
+        XCTAssertEqual(value(.calories, panel), .unknown, "an unread field has no value")
+    }
+
+    func testDevanagariDigitsNeverReadAsZero() {
+        let panel = parse(["Nutrition Facts", "Serving size 1 cup", "Sodium १००mg", "Protein 3g"])
+        // Devanagari digits are not mapped, so the field has no value: unknown, never zero.
+        XCTAssertEqual(value(.sodium, panel), .unknown, "an unread field has no value")
+    }
+
+    func testFullwidthAmountWithFullwidthUnitIsTheValue() {
+        let panel = parse(["Nutrition Facts", "Serving size 1 cup", "Total Fat ２ｇ", "Protein 3g"])
+        // A fullwidth amount is the printed value in another width, so the row reads as 2 g: never zero, never a guessed unit.
+        XCTAssertEqual(value(.fat, panel), .known(2, .g))
     }
 }

@@ -547,4 +547,17 @@ final class GoalSetupViewModelTests: XCTestCase {
         XCTAssertFalse(model.save())
         XCTAssertEqual(try store.goals(), [])
     }
+
+    /// The About step names exactly what is missing, and nothing once both fields are set.
+    func testAboutNamesWhatIsMissing() {
+        let model = GoalSetupViewModel(goals: GoalsViewModel(store: InMemoryGoalStore(goals: [])))
+        XCTAssertEqual(model.aboutMissingNotice, "Choose your sex and enter your age to continue.")
+        model.sex = .female
+        XCTAssertEqual(model.aboutMissingNotice, "Enter your age to continue.")
+        model.sex = nil
+        model.ageText = "34"
+        XCTAssertEqual(model.aboutMissingNotice, "Choose your sex to continue.")
+        model.sex = .male
+        XCTAssertNil(model.aboutMissingNotice)
+    }
 }

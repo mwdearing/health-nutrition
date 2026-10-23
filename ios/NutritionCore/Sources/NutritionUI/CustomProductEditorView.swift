@@ -9,6 +9,8 @@ public struct CustomProductEditorView: View {
     private let sharing: CustomProductSharingModel?
     private let onSaved: (CustomProductRevision, Bool) -> Void
     @State private var openDetails = false
+    @Environment(\.dismiss) private var dismiss
+    @State private var confirmDiscard = false
     public init(model: CustomProductEditorViewModel, sharing: CustomProductSharingModel? = nil, onSaved: @escaping (CustomProductRevision, Bool) -> Void) {
         self.model = model; self.sharing = sharing; self.onSaved = onSaved
     }
@@ -19,7 +21,7 @@ public struct CustomProductEditorView: View {
             }
             if !model.historicalIntakeReference.isEmpty {
                 Section("Historical intake reference") {
-                    Text("These are consumed amounts, not product serving or label facts. Choose the product kind, facts basis and any stated facts below.")
+                    Text("Amounts you ate or drank, not the product's label values. Choose the product kind, facts basis and any stated facts below.")
                     ForEach(Array(model.historicalIntakeReference.enumerated()), id: \.offset) { _, text in Text(text) }
                 }
             }
@@ -50,7 +52,7 @@ public struct CustomProductEditorView: View {
                     TextField("Product serving quantity (optional)", text: $model.servingQuantity).decimalAmountKeyboard().focused(focus)
                 }
                 Picker("Product serving unit", selection: $model.servingUnit) {
-                    ForEach(CustomProductEditorViewModel.servingUnits, id: \.self) { Text($0.symbol).tag($0) }
+                    ForEach(CustomProductEditorViewModel.servingUnits, id: \.self) { Text($0.screenSymbol).tag($0) }
                 }
                 LabeledField("Serving description (optional)") { focus in
                     TextField("Serving description (optional)", text: $model.servingText).focused(focus)
@@ -91,11 +93,12 @@ public struct CustomProductEditorView: View {
                         if fact.state == .known || fact.state == .belowReportingThreshold {
                             Picker("Fact unit", selection: $fact.unit) {
                                 Text("No unit stated").tag(MeasureUnit?.none)
-                                ForEach(CustomProductEditorViewModel.units, id: \.self) { Text($0.symbol).tag(Optional($0)) }
+                                ForEach(CustomProductEditorViewModel.units, id: \.self) { Text($0.screenSymbol).tag(Optional($0)) }
                             }
                             Text("IU amounts stay in IU.").font(.footnote)
                         }
                         Button("Remove fact", role: .destructive) { model.facts.removeAll { $0.id == fact.id } }
+                            .accessibilityLabel("Remove \(fact.displayName)")
                     }
                     .accessibilityElement(children: .contain)
                 }
@@ -115,6 +118,19 @@ public struct CustomProductEditorView: View {
             if let item = model.revision, let sharing { CustomProductSharingSection(item: item, model: sharing) }
         }
         .navigationTitle("Product editor")
+        // Changes are only at risk once made: a changed product asks before leaving.
+        .navigationBarBackButtonHidden(model.hasTypedInput)
+        .blocksEdgeSwipeBack(while: model.hasTypedInput)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel") {
+                    if model.hasTypedInput { confirmDiscard = true } else { dismiss() }
+                }
+            }
+        }
+        .confirmationDialog("Discard changes?", isPresented: $confirmDiscard, titleVisibility: .visible) {
+            Button("Discard", role: .destructive) { dismiss() }
+        }
     }
 }
 
@@ -149,7 +165,7 @@ public struct CustomProductSharingSection: View {
                         Text(preview.revision.content.kind.displayName)
                         Text(preview.revision.content.basis.rawValue)
                         if let serving = preview.revision.content.serving {
-                            Text("Serving: \(NSDecimalNumber(decimal: serving.quantity).stringValue) \(serving.unit.symbol)")
+                            Text("Serving: \(NSDecimalNumber(decimal: serving.quantity).stringValue) \(serving.unit.screenSymbol)")
                             if let text = serving.text { Text(text) }
                         }
                         if let barcode = preview.revision.content.barcode { Text("Barcode: \(barcode)") }
@@ -186,7 +202,7 @@ public struct CustomProductSharingSection: View {
             Text(content.kind.displayName)
             Text(content.basis.rawValue)
             ForEach(content.facts, id: \.rawKeyIdentity) { fact in
-                Text("\(fact.displayName): \(fact.amount ?? fact.state.rawValue) \(fact.unit?.symbol ?? "")")
+                Text("\(fact.displayName): \(fact.amount ?? fact.state.rawValue) \(fact.unit?.screenSymbol ?? "")")
             }
         case .legacyLabel(let label):
             Text(label.kind?.displayName ?? "Kind needs review")
@@ -198,10 +214,10 @@ public struct CustomProductSharingSection: View {
     }
     private static func describe(_ value: NutrientValue) -> String {
         switch value {
-        case .known(let amount, let unit): return "\(NSDecimalNumber(decimal: amount).stringValue) \(unit.symbol)"
+        case .known(let amount, let unit): return "\(NSDecimalNumber(decimal: amount).stringValue) \(unit.screenSymbol)"
         case .unknown: return "Unknown"
         case .notApplicable: return "Not applicable"
-        case .belowReportingThreshold(let unit): return "Below reporting threshold" + (unit.map { " (\($0.symbol))" } ?? "")
+        case .belowReportingThreshold(let unit): return "Below reporting threshold" + (unit.map { " (\($0.screenSymbol))" } ?? "")
         }
     }
     private func perform(_ action: () throws -> Void) {

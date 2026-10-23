@@ -1,4 +1,5 @@
 import NutritionDomain
+import NutritionJournal
 import SwiftUI
 
 public struct JournalView: View {
@@ -7,6 +8,8 @@ public struct JournalView: View {
     private let onSelect: (String) -> Void
     /// Adds an entry from the empty journal. Nil leaves the empty state without a button.
     private let onAdd: (() -> Void)?
+    /// Opens the add flow on today with a meal chosen. Nil hides the add rows under empty meals.
+    private let onAddToMeal: ((MealLabel) -> Void)?
     /// The day picked in the jump sheet, read when the sheet opens.
     @State private var pickedDay = Date()
     @State private var showingJumpSheet = false
@@ -16,6 +19,11 @@ public struct JournalView: View {
     /// even when two jumps choose the same day.
     @State private var jumpSection: String?
     @State private var jumpSerial = 0
+    /// The day sections currently on screen, kept as the list scrolls. The arrows step from the top one.
+    @State private var visibleDayIDs: Set<String> = []
+    /// The day the last arrow or jump asked for, and the section it revealed (nil when that day has no section).
+    @State private var lastRequestedDay: Date?
+    @State private var lastRevealedSection: String?
     /// The meal group "Save as meal" is naming, while its name prompt is up.
     @State private var saveMealTarget: SaveMealTarget?
     @State private var saveMealName = ""
@@ -28,11 +36,13 @@ public struct JournalView: View {
 
     public init(
         model: JournalViewModel, now: @escaping () -> Date = { Date() }, onSelect: @escaping (String) -> Void,
-        onAdd: (() -> Void)? = nil
+        onAdd: (() -> Void)? = nil,
+        onAddToMeal: ((MealLabel) -> Void)? = nil
     ) {
         self.model = model
         self.now = now
         self.onSelect = onSelect
+        self.onAddToMeal = onAddToMeal
         self.onAdd = onAdd
     }
 
@@ -53,7 +63,7 @@ public struct JournalView: View {
                         actionTitle: onAdd == nil ? nil : AddIntakeAction.title,
                         action: onAdd)
                 }
-                ForEach(model.sections) { section in
+                ForEach(model.diarySections) { section in
                     daySection(section)
                 }
                 if let skipped = model.skippedText {
@@ -77,9 +87,19 @@ public struct JournalView: View {
                         .padding(DesignSpacing.m)
                         .background(TokenColors.background)
                 } else if let copied = model.copyNotice {
-                    InlineNotice(copied, tone: model.copyFailed ? .failed : .waiting)
-                        .padding(DesignSpacing.m)
-                        .background(TokenColors.background)
+                    if model.canUndoCopy(now: now()) {
+                        UndoToast(copied) { _ = model.undoCopy(now: now()) }
+                            .id(model.copyCount)
+                            .padding(DesignSpacing.m)
+                            .task(id: model.copyCount) {
+                                do { try await Task.sleep(for: .seconds(10)) } catch { return }
+                                model.expireCopyUndo()
+                            }
+                    } else {
+                        InlineNotice(copied, tone: model.copyFailed ? .failed : .waiting)
+                            .padding(DesignSpacing.m)
+                            .background(TokenColors.background)
+                    }
                 }
             }
             // A notice about an earlier jump goes whenever the journal reloads, except the reload on return to the app.
@@ -101,6 +121,13 @@ public struct JournalView: View {
                 reloadingOnReturn = false
                 model.load(now: now())
                 jumpNotice = nil
+            }
+            // A time-zone change while the app is open reloads the days in the new zone (#648).
+            .task {
+                await model.runZoneChangeReloads(
+                    NotificationCenter.default.notifications(named: NSNotification.Name.NSSystemTimeZoneDidChange)
+                        .map { _ in () },
+                    now: now)
             }
             // Coming back to the app reloads the day titles, so "Yesterday" moves on after midnight.
             .onChange(of: scenePhase) { phase in
@@ -125,7 +152,7 @@ public struct JournalView: View {
                 LabeledField("Meal name") { focus in
                     TextField("Such as Usual breakfast", text: $saveMealName).focused(focus)
                 }
-                Text("Keeps the \(target.entryCountText) of \(target.title) together, so you can log them again in one go from Add, in Find products.")
+                Text("Keeps the \(target.entryCountText) of \(target.title) together, so you can log them again in one go from Add, in Search foods.")
                     .font(.footnote)
                     .foregroundStyle(TokenColors.textSecondary)
                 // A refusal keeps the prompt open with the typed name, so the person can change it.
@@ -155,19 +182,75 @@ public struct JournalView: View {
         .presentationDetents([.medium])
     }
 
-    /// Opens the jump sheet on today. The row is a button, so a screen reader hears what it does.
+    /// Opens the jump sheet on today, with one-day arrows beside it. The arrows step from the day last shown.
     private var jumpToDateRow: some View {
-        Button {
-            pickedDay = now()
-            showingJumpSheet = true
-        } label: {
-            HStack(spacing: DesignSpacing.s) {
-                Label("Jump to date", systemImage: "calendar")
-                    .foregroundStyle(TokenColors.textPrimary)
-                Spacer(minLength: DesignSpacing.s)
+        HStack(spacing: DesignSpacing.s) {
+            Button {
+                pickedDay = now()
+                showingJumpSheet = true
+            } label: {
+                // The label fills the row, so the whole empty stretch before the arrows is part of the target.
+                HStack(spacing: DesignSpacing.s) {
+                    Label("Jump to date", systemImage: "calendar")
+                        .foregroundStyle(TokenColors.textPrimary)
+                    Spacer(minLength: DesignSpacing.s)
+                }
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
             }
+            .accessibilityHint("Opens a calendar to choose a day")
+            Button { stepDay(-1) } label: {
+                Image(systemName: "chevron.left")
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Previous day")
+            Button { stepDay(1) } label: {
+                Image(systemName: "chevron.right")
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Next day")
+            .disabled(isShowingToday)
         }
-        .accessibilityHint("Opens a calendar to choose a day")
+    }
+
+    /// The day the last arrow or jump asked for, while the list still has the same top section it had then.
+    /// An empty day reveals the nearest day, or nothing, so the anchor is the top section from before the step.
+    /// Once the user scrolls, the top visible day is used again.
+    private var arrowBase: Date {
+        if let day = lastRequestedDay, topVisibleID == lastRevealedSection {
+            return day
+        }
+        return JournalViewModel.arrowBaseDay(sectionIDs: model.arrowSectionIDs, visible: visibleDayIDs, zone: model.dayZone, now: now())
+    }
+
+    private var topVisibleID: String? {
+        model.arrowSectionIDs.first { visibleDayIDs.contains($0) }
+    }
+
+    /// Forward is disabled when the arrows already point at today.
+    private var isShowingToday: Bool {
+        JournalViewModel.dayKey(arrowBase, zone: model.dayZone) >= JournalViewModel.dayKey(now(), zone: model.dayZone)
+    }
+
+    /// Moves one calendar day back or forward from the day at the top of the list, using the same jump as the sheet.
+    /// Forward stops at today.
+    private func stepDay(_ days: Int) {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = model.dayZone
+        guard let date = calendar.date(byAdding: .day, value: days, to: arrowBase),
+              days < 0 || JournalViewModel.dayKey(date, zone: model.dayZone) <= JournalViewModel.dayKey(now(), zone: model.dayZone)
+        else { return }
+        let target = model.jumpTarget(for: date, now: now())
+        model.reveal(target)
+        jumpNotice = target.message
+        jumpSection = target.sectionID
+        jumpSerial += 1
+        lastRequestedDay = date
+        lastRevealedSection = target.sectionID ?? topVisibleID
     }
 
     /// The seven days ending today: a heading, the logged count, and one line per goal. It reads as one element.
@@ -230,6 +313,8 @@ public struct JournalView: View {
         jumpNotice = target.message
         jumpSection = target.sectionID
         jumpSerial += 1
+        lastRequestedDay = pickedDay
+        lastRevealedSection = target.sectionID ?? topVisibleID
         showingJumpSheet = false
     }
 
@@ -247,13 +332,14 @@ public struct JournalView: View {
             }
             if model.isExpanded(section) {
                 // Each meal is its own row in its own card, so the List still lays out and recycles rows per meal.
-                ForEach(section.mealGroups) { group in
+                ForEach(JournalViewModel.visibleMealGroups(JournalViewModel.diaryMealGroups(for: section.rows), sectionID: section.id, now: now(), zone: model.dayZone)) { group in
                     Card {
                         VStack(alignment: .leading, spacing: DesignSpacing.m) {
                             mealHeader(group, in: section)
                             ForEach(group.rows) { row in
                                 entryButton(row)
                             }
+                            if group.rows.isEmpty { addFoodRow(group, in: section) }
                         }
                     }
                     .listRowSeparator(.hidden)
@@ -262,6 +348,8 @@ public struct JournalView: View {
             }
         }
         .id(section.id)
+        .onAppear { visibleDayIDs.insert(section.id) }
+        .onDisappear { visibleDayIDs.remove(section.id) }
     }
 
     /// The title, the day's energy when it is known, one bar per goal, and the disabled add action.
@@ -288,15 +376,21 @@ public struct JournalView: View {
                 .buttonStyle(.borderless)
                 .accessibilityHint("Adds every entry of this day to today as new entries")
             }
-            HStack(spacing: DesignSpacing.s) {
-                Label("Add to this day", systemImage: "plus")
-                    .foregroundStyle(TokenColors.textPrimary)
-                Spacer(minLength: DesignSpacing.s)
-                LaterBadge()
+        }
+    }
+
+    /// The add row under an empty meal, labelled with the shared add action. Only today's section offers it, since
+    /// the add flow logs to now, and a past day's add belongs to the add owner's routing work.
+    @ViewBuilder
+    private func addFoodRow(_ group: JournalMealGroup, in section: JournalDaySection) -> some View {
+        if let onAddToMeal, let meal = JournalViewModel.addMeal(forGroupTitle: group.title),
+           model.showsAddRow(sectionID: section.id, now: now()) {
+            // The add flow stamps new entries with TimeZone.current, which the journal zone defaults to.
+            Button { onAddToMeal(meal) } label: {
+                Label(AddIntakeAction.title, systemImage: "plus").font(.subheadline)
             }
-            .accessibilityElement(children: .combine)
-            .disabled(true)
-            .accessibilityValue("Not available yet")
+            .buttonStyle(.borderless)
+            .accessibilityLabel("\(AddIntakeAction.title) for \(group.title)")
         }
     }
 
@@ -335,7 +429,7 @@ public struct JournalView: View {
             .buttonStyle(.borderless)
             .accessibilityLabel("Save \(group.title) as a meal")
         }
-        if model.canCopyToToday(section, now: now()) {
+        if !group.rows.isEmpty, model.canCopyToToday(section, now: now()) {
             Button {
                 model.copyMealToToday(section.id, groupID: group.id, now: now())
             } label: {

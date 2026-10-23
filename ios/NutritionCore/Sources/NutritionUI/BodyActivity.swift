@@ -17,14 +17,21 @@ public struct BodyActivityReadings: Equatable, Sendable {
     public var outsideNutrients: [String: Decimal]
     /// True when reading other apps' entries failed, so the card says so instead of showing nothing.
     public var outsideReadFailed: Bool
+    /// True only when the app target actually tried to read other apps' entries this time.
+    public var outsideRead: Bool
+    /// The canonical keys whose Health query succeeded this read. A key here with no value is a known zero.
+    public var outsideReadKeys: Set<String>
 
     public init(
         steps: Decimal? = nil, activeEnergyKcal: Decimal? = nil, latestWeightKg: Decimal? = nil,
         latestWeightDate: Date? = nil, earlierWeightKg: Decimal? = nil, earlierWeightDate: Date? = nil,
-        outsideNutrients: [String: Decimal] = [:], outsideReadFailed: Bool = false
+        outsideNutrients: [String: Decimal] = [:], outsideReadFailed: Bool = false, outsideRead: Bool = false,
+        outsideReadKeys: Set<String> = []
     ) {
         self.outsideNutrients = outsideNutrients
         self.outsideReadFailed = outsideReadFailed
+        self.outsideRead = outsideRead
+        self.outsideReadKeys = outsideReadKeys
         self.steps = steps
         self.activeEnergyKcal = activeEnergyKcal
         self.latestWeightKg = latestWeightKg
@@ -35,6 +42,12 @@ public struct BodyActivityReadings: Equatable, Sendable {
 
     public static let empty = BodyActivityReadings()
     public var isEmpty: Bool { self == .empty }
+
+    /// Health's side of Today's totals, from this read.
+    public var outsideIntake: HealthIntakeTotals.Outside {
+        guard outsideRead else { return .notConnected }
+        return .read(values: outsideNutrients, readKeys: outsideReadKeys)
+    }
 }
 
 /// The app target's HealthKit reader. This package never imports HealthKit.
@@ -105,7 +118,7 @@ public final class BodyActivityViewModel: ObservableObject {
     }
 
     public var activeEnergyText: String? {
-        readings.activeEnergyKcal.map { "\(Self.whole($0)) kcal active" }
+        readings.activeEnergyKcal.map { "\(Self.whole($0)) Calories active" }
     }
 
     public var weightText: String? {
@@ -114,18 +127,25 @@ public final class BodyActivityViewModel: ObservableObject {
 
     /// "From other apps: 620 kcal, 48 g protein, 16 fl oz water", naming only what other apps logged today.
     public var outsideText: String? {
-        if readings.outsideReadFailed { return "From other apps: could not be read" }
+        // A partial failure still shows the values that were read; the failure copy is only for a read with nothing.
         var parts: [String] = []
-        if let energy = readings.outsideNutrients["energy"] { parts.append("\(Self.whole(energy)) kcal") }
-        if let protein = readings.outsideNutrients["protein"] { parts.append("\(Self.whole(protein)) g protein") }
-        if let water = readings.outsideNutrients["water"] {
+        // One check for every nutrient: a value is shown only when its read completed.
+        func completed(_ key: String) -> Decimal? {
+            readings.outsideReadKeys.contains(key) ? readings.outsideNutrients[key] : nil
+        }
+        if let energy = completed("energy") { parts.append("\(Self.whole(energy)) Calories") }
+        if let protein = completed("protein") { parts.append("\(Self.whole(protein)) g protein") }
+        if let water = completed("water") {
             if unitSystem() == .usCustomary {
                 parts.append("\(Self.whole(water / Self.millilitersPerFluidOunce)) fl oz water")
             } else {
                 parts.append("\(Self.whole(water)) mL water")
             }
         }
-        guard !parts.isEmpty else { return nil }
+        guard !parts.isEmpty else {
+            // Nothing was read: a failed query and no successful query and no value.
+            return readings.outsideReadFailed && readings.outsideReadKeys.isEmpty ? "From other apps: could not be read" : nil
+        }
         return "From other apps: " + parts.joined(separator: ", ")
     }
 

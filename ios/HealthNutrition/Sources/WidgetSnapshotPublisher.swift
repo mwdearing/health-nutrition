@@ -96,21 +96,53 @@ final class WidgetSnapshotPublisher {
     }
 
     static func snapshot(from today: TodayViewModel, now: Date) -> WidgetSnapshot {
+        var partial: [String] = []
+        // `shownAmount` is the known sum on a day where some entries have no value, the whole-day figure otherwise;
+        // a figure that is only the known part is listed so the widget can say so.
         func total(_ key: String, in unit: MeasureUnit) -> Double? {
-            guard let line = today.progress.first(where: { $0.nutrient == key }),
-                case .known(let value, let stored) = line.amount
-            else { return nil }
-            return WidgetSnapshotUnits.value(Quantity(value: value, unit: stored), in: unit)
+            let figure = Self.figure(today.progress.first { $0.nutrient == key }, in: unit)
+            if figure.isPartial { partial.append(key) }
+            return figure.value
         }
         let energyGoal = today.progress.first { $0.nutrient == "energy" }?.goal.flatMap {
             WidgetSnapshotUnits.value(Quantity(value: $0.target, unit: $0.unit), in: .kcal)
         }
+        let energy = total("energy", in: .kcal)
+        let protein = total("protein", in: .g)
+        let carbohydrate = total("carbohydrate", in: .g)
+        let fat = total("fat", in: .g)
+        let calories = Self.calorieFigures(today.calorieRemaining)
         return WidgetSnapshot(
-            generatedAt: now, hasEntries: !today.rows.isEmpty, energyKcal: total("energy", in: .kcal),
-            energyGoalKcal: energyGoal, proteinGrams: total("protein", in: .g),
-            carbohydrateGrams: total("carbohydrate", in: .g), fatGrams: total("fat", in: .g),
+            generatedAt: now, hasEntries: !today.rows.isEmpty, energyKcal: energy,
+            energyGoalKcal: energyGoal, proteinGrams: protein,
+            carbohydrateGrams: carbohydrate, fatGrams: fat,
             waterMilliliters: NSDecimalNumber(decimal: today.waterTotalMilliliters).doubleValue,
-            usUnits: today.unitSystem == .usCustomary)
+            usUnits: today.unitSystem == .usCustomary, partialFigures: partial.isEmpty ? nil : partial,
+            remainingKcal: calories.remaining, burnedKcal: calories.burned, remainingIsPartial: calories.isPartial)
+    }
+}
+
+extension WidgetSnapshotPublisher {
+    /// The calories-left model as snapshot figures. Each value is nil when the model has none (never zero), and the
+    /// partial flag is only set when there is a Remaining for it to qualify.
+    static func calorieFigures(_ model: CalorieRemaining) -> (remaining: Double?, burned: Double?, isPartial: Bool?) {
+        func number(_ value: Decimal?) -> Double? {
+            guard let value else { return nil }
+            let number = NSDecimalNumber(decimal: value).doubleValue
+            return number.isFinite ? number : nil
+        }
+        let remaining = number(model.remaining)
+        return (remaining, number(model.burned), remaining == nil ? nil : (model.isPartial ? true : nil))
+    }
+
+    /// One line's figure for the snapshot: the shown amount (the known sum on a partial day) in the snapshot's unit,
+    /// and whether it is only the known part. A figure that is unknown, or cannot be converted, is nil and never
+    /// counted as zero.
+    static func figure(_ line: NutrientProgressLine?, in unit: MeasureUnit) -> (value: Double?, isPartial: Bool) {
+        guard let line, case .known(let value, let stored) = line.shownAmount,
+            let converted = WidgetSnapshotUnits.value(Quantity(value: value, unit: stored), in: unit)
+        else { return (nil, false) }
+        return (converted, line.isPartial)
     }
 }
 
@@ -171,6 +203,8 @@ final class WidgetSnapshotEraser: JournalErasing, @unchecked Sendable {
         self.watch = watch
         self.now = now
     }
+
+    var erasureName: String { "widget data" }
 
     func eraseAll() throws {
         // The generation moves first: from here on no write announced earlier can land, even if the empty write

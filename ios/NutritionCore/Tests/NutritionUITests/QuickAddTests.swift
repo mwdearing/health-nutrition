@@ -20,6 +20,27 @@ final class QuickAddTests: XCTestCase {
         QuickAddViewModel(store: store, meal: meal, now: { self.now }, timeZoneIdentifier: { "UTC" })
     }
 
+    func testFreshQuickAddHasNoTypedInput() throws {
+        XCTAssertFalse(makeModel(try makeStore()).hasTypedInput)
+    }
+
+    func testTypedAmountOrNameCountsAsTypedInput() throws {
+        let amount = makeModel(try makeStore())
+        amount.caloriesText = "250"
+        XCTAssertTrue(amount.hasTypedInput)
+
+        let name = makeModel(try makeStore())
+        name.name = "Toast"
+        XCTAssertTrue(name.hasTypedInput)
+    }
+
+    func testBlankNameAndAmountIsNotTypedInput() throws {
+        let model = makeModel(try makeStore())
+        model.name = "   "
+        model.caloriesText = " "
+        XCTAssertFalse(model.hasTypedInput)
+    }
+
     private func totals(_ store: SwiftDataJournalStore) throws -> DailyTotals {
         try DailyTotalsBuilder.totals(
             for: store.activeIntakes(), store: store, lookup: SnapshotNutrientFacts(), nutrients: tracked)
@@ -36,7 +57,7 @@ final class QuickAddTests: XCTestCase {
         let intake = try XCTUnwrap(store.activeIntakes().first)
         XCTAssertEqual(try store.activeIntakes().count, 1)
         XCTAssertEqual(token.intakeID, intake.id)
-        XCTAssertEqual(token.message, "Added Quick add, 250 kcal")
+        XCTAssertEqual(token.message, "Added Quick add, 250 Calories")
         XCTAssertEqual(intake.category, "food")
         XCTAssertEqual(intake.meal, "lunch")
         XCTAssertEqual(intake.occurredAt, now)
@@ -44,6 +65,42 @@ final class QuickAddTests: XCTestCase {
 
         let day = try totals(store)
         XCTAssertEqual(day.total(for: "energy")?.value, .known(Decimal(250), .kcal))
+    }
+
+    /// A late lunch is logged at the time it was eaten, not at the moment of saving.
+    func testAnEarlierWhenIsStoredAsTheTimeItWasEaten() throws {
+        let store = try makeStore()
+        let model = makeModel(store, meal: .lunch)
+        model.caloriesText = "400"
+        let eaten = now.addingTimeInterval(-3 * 3_600)
+        model.occurredAt = eaten
+
+        _ = try XCTUnwrap(model.save())
+        let intake = try XCTUnwrap(store.activeIntakes().first)
+        XCTAssertEqual(intake.occurredAt, eaten)
+    }
+
+    /// Log means what was already eaten: a future time is clamped to the moment of saving.
+    func testAFutureWhenIsClampedToNow() throws {
+        let store = try makeStore()
+        let model = makeModel(store)
+        model.caloriesText = "100"
+        model.occurredAt = now.addingTimeInterval(3_600)
+
+        _ = try XCTUnwrap(model.save())
+        let intake = try XCTUnwrap(store.activeIntakes().first)
+        XCTAssertEqual(intake.occurredAt, now)
+    }
+
+    /// With nothing typed, the screen says what is missing; it is not a silent disabled button.
+    func testNothingTypedIsReportedAsNoAmount() {
+        let store = try! makeStore()
+        let model = makeModel(store)
+        XCTAssertTrue(model.hasNoAmountTyped)
+        model.caloriesText = "  "
+        XCTAssertTrue(model.hasNoAmountTyped)
+        model.caloriesText = "10"
+        XCTAssertFalse(model.hasNoAmountTyped)
     }
 
     /// A field left empty is not stated at all, so it reads as unknown and never as zero.
@@ -220,18 +277,18 @@ final class QuickAddTests: XCTestCase {
         XCTAssertNotNil(second.save())
 
         let titles = try RecentItemsProvider(store: store).recents().map(\.template.displayName)
-        XCTAssertEqual(Set(titles), ["Quick add · 250 kcal", "Quick add · 400 kcal, 30 g protein"])
+        XCTAssertEqual(Set(titles), ["Quick add · 250 Calories", "Quick add · 400 Calories, 30 g protein"])
 
         let journal = JournalViewModel(store: store)
         journal.load(now: now)
         XCTAssertEqual(
             Set(journal.sections.flatMap(\.rows).map(\.title)),
-            ["Quick add · 250 kcal", "Quick add · 400 kcal, 30 g protein"])
+            ["Quick add · 250 Calories", "Quick add · 400 Calories, 30 g protein"])
 
         let today = TodayViewModel(store: store, lookup: SnapshotNutrientFacts(), timeZoneIdentifier: "UTC")
         today.load(now: now)
         XCTAssertEqual(
-            Set(today.rows.map(\.title)), ["Quick add · 250 kcal", "Quick add · 400 kcal, 30 g protein"])
+            Set(today.rows.map(\.title)), ["Quick add · 250 Calories", "Quick add · 400 Calories, 30 g protein"])
     }
 
     /// The region's own digits and separator are read, as the decimal pad types them.
@@ -255,7 +312,7 @@ final class QuickAddTests: XCTestCase {
     /// A typed name can never read as another field, so two different entries never share a snapshot id.
     func testSnapshotIdentityCannotBeForgedByTheName() throws {
         let forged = QuickAddViewModel.snapshotIdentity(
-            name: "foo|energyKcal=100 kcal", nutrients: ["protein": .known(1, .g)])
+            name: "foo|energyKcal=100 Calories", nutrients: ["protein": .known(1, .g)])
         let plain = QuickAddViewModel.snapshotIdentity(
             name: "foo", nutrients: ["energyKcal": .known(100, .kcal), "protein": .known(1, .g)])
         XCTAssertNotEqual(forged, plain)
@@ -264,7 +321,7 @@ final class QuickAddTests: XCTestCase {
 
         let store = try makeStore()
         let first = makeModel(store)
-        first.name = "foo|energyKcal=100 kcal"
+        first.name = "foo|energyKcal=100 Calories"
         first.proteinText = "1"
         XCTAssertNotNil(first.save())
         let second = makeModel(store)
@@ -297,7 +354,7 @@ final class QuickAddTests: XCTestCase {
             snapshotID: "quick-x", productID: "quick-x", name: "Quick add", labelBasis: "per serving",
             catalogOrigin: "quick_add", catalogVersion: "1", nutrients: ["energyKcal": .known(250, .kcal)])
         let two = [IntakeComponent(componentID: "quick-add", name: "Quick add", amount: 2, unit: .serving)]
-        XCTAssertEqual(QuickAddViewModel.rowTitle(components: two, product: product), "Quick add · 500 kcal")
+        XCTAssertEqual(QuickAddViewModel.rowTitle(components: two, product: product), "Quick add · 500 Calories")
     }
 
     /// A store that fails leaves no entry and says so.
@@ -308,6 +365,29 @@ final class QuickAddTests: XCTestCase {
         store.failNextSaveForTesting = true
         XCTAssertNil(model.save())
         XCTAssertEqual(model.saveError, "Could not save the entry.")
+        XCTAssertEqual(try store.activeIntakes().count, 0)
+    }
+
+    /// #536: a typed zero is not an amount, so the reason line shows and nothing can be logged.
+    func testATypedZeroShowsTheReasonLineAndCannotLog() throws {
+        let store = try makeStore()
+        let model = makeModel(store)
+        model.caloriesText = "0"
+        XCTAssertTrue(model.hasNoAmountTyped, "a typed zero shows the reason line")
+        XCTAssertFalse(model.canSave, "a typed zero cannot log")
+    }
+
+    /// #689: text that is not a number is not a typed zero, so the reason line stays off and the save is refused.
+    func testInvalidTextIsNotATypedZeroAndSaveReturnsNil() throws {
+        let store = try makeStore()
+        for text in ["abc", "20001"] {
+            let model = makeModel(store)
+            model.caloriesText = text
+            XCTAssertFalse(model.hasNoAmountTyped, "\(text) is not a typed zero")
+        }
+        let zero = makeModel(store)
+        zero.caloriesText = "0"
+        XCTAssertNil(zero.save(), "save returns nil for a typed zero")
         XCTAssertEqual(try store.activeIntakes().count, 0)
     }
 }

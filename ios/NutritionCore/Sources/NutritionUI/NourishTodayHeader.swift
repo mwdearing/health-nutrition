@@ -58,18 +58,96 @@ public struct NourishTodayHeader: View {
     }
 
     private var otherBars: [GoalBarModel] {
-        let shown = Set(Self.macroKeys + [Self.ringKey])
-        return model.goalBars.filter { !shown.contains($0.id) }
+        model.nutrientCard
+    }
+
+    /// The one spoken line for the summary: remaining, food and burned as labels, then the partial note and the goal footnote.
+    static func spokenSummary(_ calories: CalorieRemaining, partial: String?, footnote: String?) -> String {
+        [
+            calories.remaining.map { "\(BodyActivityViewModel.whole($0)) calories remaining" },
+            calories.food.map { "Food, \(BodyActivityViewModel.whole($0)) calories" },
+            calories.burned.map { "Burned, \(BodyActivityViewModel.whole($0)) calories" },
+            partial,
+            footnote,
+        ].compactMap { $0 }.joined(separator: ", ")
+    }
+
+    /// The figures the calorie summary shows. Food is a dash until something is logged, never 0. Remaining is hidden
+    /// without a goal and a dash with one but no known food. Burned is hidden unless the model has a Health figure.
+    struct SummaryFigures: Equatable {
+        let remaining: String?
+        let food: String
+        let burned: String?
+    }
+
+    static func summaryFigures(_ calories: CalorieRemaining) -> SummaryFigures {
+        let remaining: String?
+        if let value = calories.remaining {
+            remaining = BodyActivityViewModel.whole(value)
+        } else if calories.goal != nil {
+            remaining = "—"
+        } else {
+            remaining = nil
+        }
+        return SummaryFigures(
+            remaining: remaining,
+            food: calories.food.map { BodyActivityViewModel.whole($0) } ?? "—",
+            burned: calories.burned.map { BodyActivityViewModel.whole($0) })
+    }
+
+    /// Calories remaining in large type, with food and burned beneath, as MyFitnessPal lays them out. It is the
+    /// top block on Today every day. A day without a goal shows food and burned only.
+    /// Remaining is hidden without a goal; burned is hidden when there is no Health reading or the setting is off.
+    /// A partly known day reuses the existing partial note; Remaining is then an upper bound.
+    private var calorieSummary: some View {
+        let calories = model.calorieRemaining
+        let figures = Self.summaryFigures(calories)
+        // The note comes from the calorie model, which builds it from the same missing count as its partial flag.
+        let partial = calories.partialNote
+        let spoken = Self.spokenSummary(calories, partial: partial, footnote: calories.showsRemaining ? ringFootnote : nil)
+        return VStack(alignment: .leading, spacing: DesignSpacing.s) {
+            if let remaining = figures.remaining {
+                Text(remaining)
+                    .font(.largeTitle.weight(.semibold))
+                    .foregroundStyle(TokenColors.textPrimary)
+                Text("Calories remaining")
+                    .font(.subheadline)
+                    .foregroundStyle(TokenColors.textSecondary)
+                if let ringFootnote {
+                    Text(ringFootnote).font(.footnote).foregroundStyle(TokenColors.textSecondary)
+                }
+            }
+            HStack(alignment: .top, spacing: DesignSpacing.l) {
+                Label {
+                    Text("\(figures.food) Food")
+                } icon: {
+                    Image(systemName: "fork.knife").accessibilityHidden(true)
+                }
+                .font(.subheadline)
+                .foregroundStyle(TokenColors.textPrimary)
+                .accessibilityElement(children: .combine)
+                if let burned = figures.burned {
+                    Label {
+                        Text("\(burned) Burned")
+                    } icon: {
+                        Image(systemName: "flame").accessibilityHidden(true)
+                    }
+                    .font(.subheadline)
+                    .foregroundStyle(TokenColors.textPrimary)
+                    .accessibilityElement(children: .combine)
+                }
+            }
+            if let note = partial {
+                Text(note).font(.footnote).foregroundStyle(TokenColors.textSecondary)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(spoken)
     }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: DesignSpacing.l) {
-            if let ring = bar(Self.ringKey) {
-                CalorieRing(
-                    fraction: fraction(ring), figure: figure(Self.ringKey), caption: "logged",
-                    footnote: [partialNote(Self.ringKey), ringFootnote].compactMap { $0 }.joined(separator: " "),
-                    spoken: ring.accessibilityText)
-            }
+            calorieSummary
             let macros = Self.macroKeys.compactMap { key in bar(key).map { (key, $0) } }
             if !macros.isEmpty {
                 HStack(alignment: .top, spacing: DesignSpacing.m) {
@@ -91,6 +169,8 @@ public struct NourishTodayHeader: View {
                 Button("Edit goals") { onEditGoals() }
                     .font(.subheadline)
                     .foregroundStyle(TokenColors.accent)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
                     .accessibilityHint("Opens the daily goals")
             }
         }

@@ -95,14 +95,18 @@ public enum DailyTotalsBuilder {
             let snapshot = Self.snapshot(of: current, in: &snapshots, using: store)
             entries.append((current.components, snapshot, intake.category))
         }
+        // Decided once per entry over a fixed universe of nutrients, so the answer does not depend on which nutrients
+        // a caller asks for. Every caller, the meal section included, gets the same answer for the same entry.
+        let distrustedEntries = entries.map { Self.isDistrusted($0, lookup: lookup) }
         var totals: [String: NutrientTotal] = [:]
         var knownSums: [String: NutrientValue] = [:]
         var missingCounts: [String: Int] = [:]
         for nutrient in nutrients {
             var values: [NutrientValue] = []
             var missing = 0
-            for entry in entries {
-                let contribution = contributions(of: entry, nutrient: nutrient, lookup: lookup)
+            for (index, entry) in entries.enumerated() {
+                let contribution = contributions(
+                    of: entry, nutrient: nutrient, lookup: lookup, distrusted: distrustedEntries[index])
                 // An entry counts as missing when one of its values is unknown, which is exactly the case the sum
                 // leaves out. A supplement with an undeclared nutrient contributes nothing, so it is not counted;
                 // one whose label basis cannot be scaled does contribute unknown, and is counted.
@@ -116,6 +120,48 @@ public enum DailyTotalsBuilder {
             }
         }
         return DailyTotals(totals: totals, knownSums: knownSums, missingCounts: missingCounts)
+    }
+
+    /// The nutrients a negative value is looked for under, whatever the caller asks for: the reference table,
+    /// the Health mapping keys, water, every goal choice, and the default tracked nutrients.
+    static let distrustUniverse: [String] = {
+        var keys = Set(ReferenceIntakes.nutrients)
+        keys.insert(waterKey)
+        keys.formUnion(NutrientGoalChoices.keys)
+        keys.formUnion(TodayViewModel.defaultTrackedNutrients)
+        for mapping in HealthKitWritePlanner.mappings { keys.formUnion(mapping.acceptedKeys) }
+        return keys.sorted()
+    }()
+
+    /// Whether one entry is distrusted: a logged amount that is negative, a stated value on its product snapshot
+    /// that is negative, or, for an entry with no product, a lookup value over the universe that is negative. A
+    /// product's lookup values are not re-read here: the snapshot scan already covers every value the lookup can
+    /// answer from it.
+    static func isDistrusted(
+        _ entry: (components: [IntakeComponent], snapshot: ProductDefinition?, category: String),
+        lookup: NutrientFactsLookup
+    ) -> Bool {
+        if entry.components.contains(where: { $0.amount < 0 }) { return true }
+        if let snapshot = entry.snapshot {
+            return snapshot.nutrients.values.contains { value in
+                if case .known(let stated, _) = value { return stated < 0 }
+                return false
+            }
+        }
+        for nutrient in distrustUniverse {
+            for component in entry.components {
+                // Every key the nutrient may be stored under, not only the first one that answers: a negative alias
+                // distrusts the entry even when its canonical key states a positive value (#521 item 6).
+                for key in HealthKitWritePlanner.acceptedKeys(for: nutrient) {
+                    if case .known(let stated, _) = lookup.value(for: component, snapshot: nil, nutrient: key),
+                        stated < 0
+                    {
+                        return true
+                    }
+                }
+            }
+        }
+        return false
     }
 
     /// A drink's water: each volume component times its share (its own, else the drink default). Non-volume
@@ -135,12 +181,21 @@ public enum DailyTotalsBuilder {
     private static func contributions(
         of entry: (components: [IntakeComponent], snapshot: ProductDefinition?, category: String),
         nutrient: String,
-        lookup: NutrientFactsLookup
+        lookup: NutrientFactsLookup,
+        distrusted: Bool = false
     ) -> [NutrientValue] {
+        // A distrusted drink row is unknown for water and contributes nothing to any other nutrient, as a drink does.
+        if distrusted && entry.category == waterCategory {
+            return nutrient == waterKey ? [.unknown] : []
+        }
         if entry.category == waterCategory {
             // Water is dietary water only for a drink. A food can carry a volume component, and
             // that is not a glass of water the person drank, so a non-drink contributes no water.
             guard nutrient == waterKey else { return [] }
+            // waterContributions counts only a positive volume; a volume that is not positive adds no water and
+            // leaves the day's water unknown. Typed add and edit store only amounts above zero (AmountParser.parse),
+            // and Quick add writes a fixed one-serving component. Journal import accepts a zero component amount
+            // (JournalImporter: the guard is amount >= 0), so an imported zero-volume drink reaches this line.
             return waterContributions(entry.components)
         }
         // The other way round: a drink states nothing but its own volume, so it is no evidence
@@ -148,6 +203,26 @@ public enum DailyTotalsBuilder {
         // answers unknown there — a snapshot states no water unless the product states water — and a
         // day holding one food makes the day's water unknown rather than what was actually drunk.
         // The one exception is a stored water share, which counts toward the day's water as Today shows it.
+        // One decision per entry, made in totals() from every value the entry carries: a negative logged amount,
+        // a negative stated value, or a negative lookup value on any nutrient. A distrusted food row is unknown for
+        // every nutrient, except that a food with no water share contributes nothing to water. A distrusted supplement
+        // row is unknown for the nutrients it declares, and undeclared ones
+        // still contribute nothing, as on a healthy supplement. A zero is a known zero, except for water, which counts
+        // only a positive amount (see waterContributions), so a 0 mL drink is unknown.
+        if distrusted {
+            // A food with no water share never contributed to water, so a distrusted food still contributes nothing
+            // to water. An entry that carries a water share, or a distrusted drink, makes its water unknown.
+            if nutrient == waterKey {
+                return entry.components.contains(where: { $0.hydrationPercent != nil }) ? [.unknown] : []
+            }
+            guard let snapshot = entry.snapshot, snapshot.kind == .supplement,
+                let component = entry.components.first
+            else { return [.unknown] }
+            if case .unknown = Self.value(for: component, snapshot: snapshot, nutrient: nutrient, lookup: lookup) {
+                return []
+            }
+            return [.unknown]
+        }
         guard nutrient != waterKey else { return drinkWaterContributions(entry.components) }
         // A snapshot states the product's own values once, not once per component, so it is scaled
         // and summed once per entry. Summing it per component would count a two-component product's
@@ -294,13 +369,37 @@ public enum DailyTotalsBuilder {
         return values
     }
 
-    /// The known part of a day with some unknown entries: the sum of the known values, only when no value is a
-    /// below-threshold bound (a bound is not an amount) and at least one value is known.
+    /// The known part of a day with some unknown entries: the sum of the known values. A below-threshold entry is
+    /// a bound ("at least 0") and adds nothing; a day whose only known information is bounds is 0 in the unit.
     static func partialKnownSum(_ values: [NutrientValue], nutrient: String) -> NutrientValue? {
-        let raw = rawSum(values, nutrient: nutrient)
-        guard raw.coverage.hasUnknown, !raw.coverage.hasBelowReportingThreshold else { return nil }
-        if case .known = raw.value { return raw.value }
-        return nil
+        let partialDay = values.contains { value in
+            switch value {
+            case .unknown, .belowReportingThreshold: return true
+            case .known, .notApplicable: return false
+            }
+        }
+        guard partialDay else { return nil }
+        // A below-threshold bound adds 0, so it is left out of the sum rather than stated as a zero.
+        let knownOnly = values.filter {
+            if case .known = $0 { return true }
+            return false
+        }
+        if !knownOnly.isEmpty {
+            let raw = rawSum(knownOnly, nutrient: nutrient)
+            if case .known = raw.value { return raw.value }
+            return nil
+        }
+        // Only bounds (or nothing) are known: the zero needs a unit to be stated in.
+        let mapping = HealthKitWritePlanner.canonicalKey(for: nutrient) == nutrient
+            ? HealthKitWritePlanner.mapping(for: nutrient) : nil
+        // Only a bound makes a zero known: a day with nothing known at all stays unknown.
+        let bounds: [MeasureUnit?] = values.compactMap { value in
+            if case .belowReportingThreshold(let unit) = value { return unit }
+            return nil
+        }
+        guard !bounds.isEmpty else { return nil }
+        guard let unit = bounds.compactMap({ $0 }).first ?? mapping?.unit else { return nil }
+        return .known(0, unit)
     }
 
     /// `NutrientTotal.sum`, with any unknown left in the day making the whole nutrient unknown.
@@ -311,15 +410,11 @@ public enum DailyTotalsBuilder {
     /// person ate. Unknown is never zero: "0 g of protein" and "protein was never known" are
     /// different facts and only one of them is true.
     ///
-    /// **Coverage that is uncertain is answered as unknown, not as a lower bound.** One entry that
-    /// states its nutrient below the reporting threshold carries no amount, only a bound, so adding
-    /// it to what the other entries stated cannot produce the day's total; it produces a number that
-    /// is smaller than the truth by an unknown amount. That is the same defect as the unknown case
-    /// above and is decided the same way, so the sum reads as unknown instead. It is a deliberate loss
-    /// of precision against printing "at least 5 g" beside a goal: the screen would then compare a
-    /// bound against a target as though the bound were the day's figure, and a person reading "at
-    /// least 5 g of 60 g" cannot tell whether the day is met. Unknown is the one answer that cannot
-    /// be mistaken for the day being short.
+    /// **A below-threshold entry is a bound, "at least 0", and never the day's exact total.** It adds 0
+    /// to the known sum (see `partialKnownSum`), so the figure is the exact entries' sum. The day is always
+    /// marked partial, so the figure is shown with the missing-value note and is never presented as complete.
+    /// A day where every entry is below the threshold shows 0 with the note. "No data" is used only when
+    /// nothing at all is known. This total itself (`total(for:)`) stays unknown for such a day.
     private static func sum(_ values: [NutrientValue], nutrient: String) -> NutrientTotal {
         let total = rawSum(values, nutrient: nutrient)
         guard total.coverage.hasUnknown || total.coverage.hasBelowReportingThreshold else {

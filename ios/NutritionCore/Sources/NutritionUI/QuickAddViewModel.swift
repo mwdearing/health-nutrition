@@ -62,6 +62,8 @@ public final class QuickAddViewModel: ObservableObject, Identifiable {
     @Published public var carbohydratesText = ""
     @Published public var fatText = ""
     @Published public var meal: MealLabel?
+    /// When the amounts were eaten. Nil until the picker is changed, so an untouched entry is dated to the moment of saving.
+    @Published public var occurredAt: Date?
     @Published public private(set) var saveError: String?
 
     private let store: JournalStore
@@ -80,6 +82,22 @@ public final class QuickAddViewModel: ObservableObject, Identifiable {
         self.now = now
         self.timeZoneIdentifier = timeZoneIdentifier
         self.makeID = makeID
+    }
+
+    /// Whether a name or an amount has been typed. Closing the sheet then asks before dropping it.
+    public var hasTypedInput: Bool {
+        !name.trimmingCharacters(in: .whitespaces).isEmpty || !hasNoAmountTyped
+    }
+
+    /// True while no field carries an amount: each is blank or a typed zero, which is not above zero (#536).
+    public var hasNoAmountTyped: Bool {
+        Field.allCases.allSatisfy { field in
+            switch Self.parse(text(for: field), field: field) {
+            case .blank: return true
+            case .value(let value): return value == 0
+            case .invalid: return false
+            }
+        }
     }
 
     public func text(for field: Field) -> String {
@@ -123,8 +141,10 @@ public final class QuickAddViewModel: ObservableObject, Identifiable {
         let entryName = storedName
         let identity = Self.snapshotIdentity(name: entryName, nutrients: nutrients)
         let date = now()
+        // Log means what was already eaten or drunk: a future time is clamped to now.
+        let when = min(occurredAt ?? date, date)
         let intake = Intake(
-            id: makeID(), category: ProductKind.food.rawValue, occurredAt: date,
+            id: makeID(), category: ProductKind.food.rawValue, occurredAt: when,
             timeZoneIdentifier: timeZoneIdentifier(), meal: meal?.rawValue)
         let component = IntakeComponent(
             componentID: Self.componentID, name: entryName, amount: 1, unit: .serving)
@@ -151,7 +171,7 @@ public final class QuickAddViewModel: ObservableObject, Identifiable {
         Field.allCases.compactMap { field -> String? in
             guard case .known(let value, let unit) = nutrients[field.nutrientKey] else { return nil }
             let amount = rounded
-                ? AmountDisplay.nutrient(value, unit: unit).text : "\(DecimalFormatting.text(value)) \(unit.symbol)"
+                ? AmountDisplay.nutrient(value, unit: unit).text : "\(DecimalFormatting.text(value)) \(unit.screenSymbol)"
             return field == .calories ? amount : amount + " " + field.label.lowercased()
         }.joined(separator: ", ")
     }

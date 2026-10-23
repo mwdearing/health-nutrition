@@ -11,19 +11,6 @@ import UIKit
 import Vision
 import VisionKit
 
-/// Whether this device can read a Nutrition Facts panel with the camera right now. `isSupported` is
-/// a build-time answer, `isAvailable` the runtime one: a device may support the scanner and still
-/// have it unavailable (no camera, or the camera in use by something else). Both have to hold;
-/// Add home keeps an unavailable tile visible with an explanation.
-enum LabelTextScanner {
-    // Both properties are main-actor isolated, so this is too. It is read from the form's Scan label
-    // action, which runs on the main actor like the rest of the view.
-    @MainActor
-    static var isAvailable: Bool {
-        DataScannerViewController.isSupported && DataScannerViewController.isAvailable
-    }
-}
-
 /// Holds the lines the camera can see right now, so the Capture button can ask for them.
 ///
 /// Only text is kept, never an image: each frame's recognized items replace the previous frame's, so
@@ -169,6 +156,12 @@ final class LabelCaptureSheetState: ObservableObject {
         failureMessage = message
     }
 
+    /// Back from Settings: clears the failure when access is allowed, so the scanner starts again.
+    func resumeAfterSettings(access: CameraAccessState) {
+        guard failureMessage != nil else { return }
+        failureMessage = CameraAccessNotice.messageAfterReturn(access: access, sheet: .label)
+    }
+
     /// Goes back to the reviewed draft, keeping every value already on screen and forgetting what the
     /// camera had read in the photo that failed. Returns whether there was a draft to return to.
     @discardableResult
@@ -194,6 +187,7 @@ struct LabelCaptureSheet: View {
     let onUse: (ProductDefinition) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var session: LabelCaptureSession
     @StateObject private var state: LabelCaptureSheetState
 
@@ -209,6 +203,9 @@ struct LabelCaptureSheet: View {
         content
             .navigationTitle(model.isReviewing ? "Check the label" : "Scan the label")
             .navigationBarTitleDisplayMode(.inline)
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { state.resumeAfterSettings(access: CameraAccess.current()) }
+            }
     }
 
     /// The camera while it reads, the review screen once the Capture button has handed it the lines. A
@@ -292,6 +289,13 @@ struct LabelCaptureSheet: View {
                     .accessibilityLabel("Back to the values you checked")
                     .accessibilityHint("Goes back to the review screen and keeps what you have checked")
             }
+            if CameraAccessNotice.offersOpenSettings(for: CameraAccess.current()) {
+                Button(CameraAccessNotice.openSettingsTitle) {
+                    if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                }
+                .font(.headline)
+                .accessibilityHint(CameraAccessNotice.openSettingsHint)
+            }
             Button("Close") { dismiss() }
                 .font(state.canReturnToValues ? .body : .headline)
                 .accessibilityHint("Closes label capture and throws the values on screen away")
@@ -361,15 +365,17 @@ struct LabelCaptureDataScanner: UIViewControllerRepresentable {
         func startScanning(on controller: DataScannerViewController) {
             parent.session.attach(controller)
             guard !isRunning, !hasFailed else { return }
-            guard DataScannerViewController.isSupported, DataScannerViewController.isAvailable else {
-                report("This device cannot read text with the camera. Type the values in instead.")
+            if let message = CameraAccessNotice.unavailableMessage(
+                isSupported: DataScannerViewController.isSupported, access: CameraAccess.current(),
+                isAvailable: DataScannerViewController.isAvailable, sheet: .label) {
+                report(message)
                 return
             }
             do {
                 try controller.startScanning()
                 isRunning = true
             } catch {
-                report("The camera could not be started. Type the values in instead.")
+                report(CameraAccessNotice.failureMessage(for: CameraAccess.current(), sheet: .label))
             }
         }
 
@@ -405,7 +411,9 @@ struct LabelCaptureDataScanner: UIViewControllerRepresentable {
             _ dataScanner: DataScannerViewController,
             becameUnavailableWithError error: DataScannerViewController.ScanningUnavailable
         ) {
-            report("The camera stopped, so the panel was not read. Try again in a moment.")
+            report(CameraAccessNotice.stoppedMessage(
+                access: CameraAccess.current(), sheet: .label,
+                fallback: "The camera stopped, so the panel was not read. Try again in a moment."))
         }
 
         /// Replaces the held lines with what the scanner recognizes now, so Capture submits the frame

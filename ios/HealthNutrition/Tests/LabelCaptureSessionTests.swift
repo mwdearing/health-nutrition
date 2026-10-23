@@ -129,16 +129,45 @@ final class LabelCaptureSessionTests: XCTestCase {
 
     /// A failure with no reviewed draft behind it has nothing to go back to, so the sheet only offers
     /// to close: before the first photo there is nothing on screen to lose.
-    func testAFailureBeforeAnyDraftOffersNoWayBack() {
+    func testAFailureBeforeAnyDraftOffersNoWayBack() throws {
         let model = LabelCaptureViewModel()
         let session = LabelCaptureSession(model: model)
         let state = LabelCaptureSheetState(model: model, session: session)
 
-        state.report("This device cannot read text with the camera. Type the values in instead.")
+        // The production copy for an unsupported device, from the same chooser the sheet calls.
+        let unsupported = CameraAccessNotice.unavailableMessage(
+            isSupported: false, access: .authorized, isAvailable: false, sheet: .label)
+        XCTAssertEqual(unsupported, CameraAccessNotice.labelUnsupportedMessage)
+
+        state.report(try XCTUnwrap(unsupported))
 
         XCTAssertFalse(state.canReturnToValues)
         XCTAssertFalse(state.backToValues(), "there is no draft to return to")
-        XCTAssertEqual(state.failureMessage, "This device cannot read text with the camera. Type the values in instead.")
+        XCTAssertEqual(state.failureMessage, CameraAccessNotice.labelUnsupportedMessage)
+    }
+
+    /// Back from Settings with access allowed clears the failure, so the camera starts again.
+    func testReturningWithAccessAllowedClearsTheFailure() {
+        let model = LabelCaptureViewModel()
+        let session = LabelCaptureSession(model: model)
+        let state = LabelCaptureSheetState(model: model, session: session)
+        state.report(CameraAccessNotice.labelAccessOffMessage)
+
+        state.resumeAfterSettings(access: .authorized)
+
+        XCTAssertNil(state.failureMessage)
+    }
+
+    /// Back from Settings with access still off keeps the message for that access.
+    func testReturningWithAccessStillOffKeepsItsMessage() {
+        let model = LabelCaptureViewModel()
+        let session = LabelCaptureSession(model: model)
+        let state = LabelCaptureSheetState(model: model, session: session)
+        state.report("stale")
+
+        state.resumeAfterSettings(access: .denied)
+
+        XCTAssertEqual(state.failureMessage, CameraAccessNotice.labelAccessOffMessage)
     }
 }
 #endif

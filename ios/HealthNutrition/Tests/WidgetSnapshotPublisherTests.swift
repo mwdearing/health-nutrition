@@ -1,4 +1,6 @@
 import Foundation
+import NutritionDomain
+import NutritionJournal
 import NutritionUI
 import XCTest
 
@@ -73,5 +75,74 @@ final class WidgetSnapshotPublisherTests: XCTestCase {
         let publisher = WidgetSnapshotPublisher(store: store, erasure: WidgetSnapshotErasure(), watch: nil)
         publisher.start(today: today, isErasing: { true })
         XCTAssertNil(store.read(), "the launch-time publish also waits out an erase")
+    }
+
+    // MARK: Partial days
+
+    private func line(
+        _ amount: NutrientValue, isPartial: Bool = false, knownSum: NutrientValue? = nil
+    ) -> NutrientProgressLine {
+        NutrientProgressLine(
+            nutrient: "protein", amount: amount, goal: nil, isPartial: isPartial, knownSum: knownSum)
+    }
+
+    func testAPartialDayPublishesTheKnownSumAndSaysItIsPartial() {
+        let partial = line(.unknown, isPartial: true, knownSum: .known(23, .g))
+        let figure = WidgetSnapshotPublisher.figure(partial, in: .g)
+        XCTAssertEqual(figure.value, 23)
+        XCTAssertTrue(figure.isPartial)
+    }
+
+    func testAWholeDayPublishesItsTotalAsWhole() {
+        let figure = WidgetSnapshotPublisher.figure(line(.known(40, .g)), in: .g)
+        XCTAssertEqual(figure.value, 40)
+        XCTAssertFalse(figure.isPartial)
+    }
+
+    func testAnUnknownFigureIsNilNeverZero() {
+        XCTAssertNil(WidgetSnapshotPublisher.figure(line(.unknown), in: .g).value)
+        XCTAssertNil(WidgetSnapshotPublisher.figure(nil, in: .g).value)
+        // A partial flag with no known sum behind it shows what the whole-day figure is: unknown.
+        let nothingKnown = WidgetSnapshotPublisher.figure(line(.unknown, isPartial: true), in: .g)
+        XCTAssertNil(nothingKnown.value)
+        XCTAssertFalse(nothingKnown.isPartial)
+    }
+
+    // MARK: Calories remaining
+
+    func testRemainingBurnedAndPartialAreTakenFromTheModelOnce() {
+        let model = CalorieRemaining.make(goal: 2_000, food: 800, partial: true, missingCount: 1, burned: 300, energyLabel: "Energy")
+        let figures = WidgetSnapshotPublisher.calorieFigures(model)
+        XCTAssertEqual(figures.remaining, 1_500)
+        XCTAssertEqual(figures.burned, 300)
+        XCTAssertEqual(figures.isPartial, true)
+    }
+
+    func testAWholeDayHasNoPartialFlag() {
+        let figures = WidgetSnapshotPublisher.calorieFigures(
+            CalorieRemaining.make(goal: 2_000, food: 800, partial: false, missingCount: 0, burned: nil, energyLabel: "Energy"))
+        XCTAssertEqual(figures.remaining, 1_200)
+        XCTAssertNil(figures.burned, "no counted burned means no Burned figure, not zero")
+        XCTAssertNil(figures.isPartial)
+    }
+
+    func testNoGoalOrNoFoodMeansNoRemainingAndNoPartialFlag() {
+        let noGoal = WidgetSnapshotPublisher.calorieFigures(
+            CalorieRemaining.make(goal: nil, food: 800, partial: true, missingCount: 1, burned: 200, energyLabel: "Energy"))
+        XCTAssertNil(noGoal.remaining)
+        XCTAssertNil(noGoal.isPartial, "nothing for a partial flag to qualify")
+        XCTAssertEqual(noGoal.burned, 200)
+        let noFood = WidgetSnapshotPublisher.calorieFigures(
+            CalorieRemaining.make(goal: 2_000, food: nil, partial: false, missingCount: 0, burned: nil, energyLabel: "Energy"))
+        XCTAssertNil(noFood.remaining)
+        let none = WidgetSnapshotPublisher.calorieFigures(.none)
+        XCTAssertNil(none.remaining)
+        XCTAssertNil(none.burned)
+    }
+
+    func testAnOverspentDayKeepsItsNegativeRemaining() {
+        let figures = WidgetSnapshotPublisher.calorieFigures(
+            CalorieRemaining.make(goal: 2_000, food: 2_300, partial: false, missingCount: 0, burned: nil, energyLabel: "Energy"))
+        XCTAssertEqual(figures.remaining, -300)
     }
 }

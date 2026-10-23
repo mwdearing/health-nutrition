@@ -10,7 +10,7 @@ enum AddFlowMessage {
     static let productDetailsFailed = "Could not open product details."
 }
 
-/// The tab shell: Today, Diary (the journal), Library, Trends and Settings, all reading the same store.
+/// The tab shell: Today, Diary (the journal), Library and Trends, all reading the same store.
 @MainActor
 struct RootView: View {
     let services: AppServices
@@ -33,6 +33,8 @@ struct RootView: View {
     /// for here and shown when the first has finished going away.
     @State private var settingsAfterWelcome = false
     @State private var settingsAfterAdding = false
+    /// Sign-in opened over Search foods, so the query and results stay on screen after signing in.
+    @State private var presentSignInOverSearch = false
     @State private var welcomeAfterSettings = false
     /// Confirms a save whose screen has closed, on the tab bar or on the screen the person lands on.
     @State private var saveNotice: SaveNotice?
@@ -45,6 +47,7 @@ struct RootView: View {
     @State private var addHome: AddHomeViewModel?
     @State private var productSearchModel: CommunityProductSearchViewModel?
     @State private var addIntakeModel: AddIntakeViewModel?
+    @State private var confirmDiscardAdd = false
     @State private var labelCapture: LabelCaptureViewModel?
     @StateObject private var addNavigation = AddNavigationModel()
     @State private var addFlowError: String?
@@ -57,7 +60,6 @@ struct RootView: View {
     /// its routes through one method a test can call.
     @StateObject private var recipeNavigation = RecipeNavigation()
     @State private var recipeList: RecipeListViewModel
-    @StateObject private var privacyShield = PrivacyShieldController()
     @Environment(\.scenePhase) private var scenePhase
     /// Today's view model, observed so this body is re-evaluated when its values change. Read only for
     /// the water total below, which is the one journal write that does not go through `reload()`.
@@ -90,8 +92,6 @@ struct RootView: View {
         case journal
         case library
         case trends
-        /// Not a screen: choosing it opens the settings sheet and returns to the tab the person was on.
-        case settings
         #if DEBUG
         case spike
         #endif
@@ -136,7 +136,9 @@ struct RootView: View {
             .tag(AppTab.today)
 
             NavigationStack {
-                JournalView(model: services.journal, onSelect: { selectedIntakeID = $0 })
+                JournalView(
+                    model: services.journal, onSelect: { selectedIntakeID = $0 },
+                    onAddToMeal: { meal in self.startAddingIntake(meal: meal) })
                     .toolbar { settingsToolbar }
             }
                 .safeAreaInset(edge: .bottom) { addCapsule }
@@ -173,12 +175,6 @@ struct RootView: View {
                 .tabItem { Label("Trends", systemImage: "chart.bar") }
                 .tag(AppTab.trends)
 
-            // The mockup's fourth tab. The settings sheet keeps every existing entry point (goals, the
-            // welcome, erase), so this tab only opens it and puts the selection back.
-            Color.clear
-                .tabItem { Label("Settings", systemImage: "gearshape") }
-                .tag(AppTab.settings)
-
             #if DEBUG
             // Debug builds only: the real HealthKit delivery driver, then the spike that measured how
             // HealthKit resolves a repeated sync identifier. Not in the screenshots.
@@ -194,19 +190,6 @@ struct RootView: View {
                 .tag(AppTab.spike)
             }
             #endif
-        }
-        .onChange(of: selection) { previous, current in
-            let outcome = SettingsTabRedirect.resolve(
-                previous: previous, current: current, settings: .settings, fallback: .today)
-            guard outcome.opensSettings else { return }
-            selection = outcome.selection
-            openSettings(goals: false)
-        }
-        .background {
-            PrivacyShieldWindowAttachment(controller: privacyShield, phase: scenePhase)
-                .frame(width: 1, height: 1)
-                .accessibilityHidden(true)
-                .allowsHitTesting(false)
         }
         .saveConfirmation(saveNotice)
         // One entry sheet for the whole shell, so Today and the Journal open the same screen: both
@@ -229,11 +212,6 @@ struct RootView: View {
                         // reloads its own model when it settles, so it shows what the pass decided.
                         onRetried: { await healthKitDeliveryStatus.runAndSettle() }
                     )
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Close") { selectedIntakeID = nil }
-                        }
-                    }
                 }
             }
         }
@@ -292,7 +270,6 @@ struct RootView: View {
         // Today's totals depend on the local day: recompute them when the app comes back to the
         // foreground, e.g. after midnight or a time-zone change while it stayed on one tab.
         .onChange(of: scenePhase) { _, phase in
-            privacyShield.update(phase: phase)
             if phase == .active {
                 reload()
                 Task { await self.services.reminders.syncOnLaunch() }
@@ -301,11 +278,6 @@ struct RootView: View {
                     await self.services.productSharing?.runDueOperations(now: Date())
                 }
             }
-        }
-        // UIKit posts this before the app-switcher snapshot. Filter by the attached scene so a
-        // different window resigning active cannot leave this still-active window covered.
-        .onReceive(NotificationCenter.default.publisher(for: UIScene.willDeactivateNotification)) { notification in
-            privacyShield.coverBeforeSnapshot(for: notification.object as AnyObject?)
         }
         // An erase in Settings empties the stores these tabs read, so their
         // held values go with it rather than showing entries that no longer exist.
@@ -361,8 +333,19 @@ struct RootView: View {
                 }
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") { self.finishAdding() }
+                        Button("Cancel") {
+                            // Live state: a form still on the stack with typed input asks; a form already popped
+                            // (its model is kept until the flow ends) does not.
+                            if !self.addNavigation.path.isEmpty && self.addIntakeModel?.hasTypedInput == true {
+                                self.confirmDiscardAdd = true
+                            } else {
+                                self.finishAdding()
+                            }
+                        }
                     }
+                }
+                .confirmationDialog("Discard this entry?", isPresented: $confirmDiscardAdd, titleVisibility: .visible) {
+                    Button("Discard", role: .destructive) { self.finishAdding() }
                 }
             }
             .saveConfirmation(addNotice)
@@ -409,10 +392,10 @@ struct RootView: View {
         let services = self.services
         return AddHomeViewModel(
             store: services.journalStore, meal: meal,
-            scannerAvailability: AddScannerAvailability(
-                barcode: BarcodeScanner.isAvailable, label: LabelTextScanner.isAvailable),
+            scannerAvailability: AddScannerAvailability.forSupport(BarcodeScanner.isSupported),
             lookup: services.barcodeLookup, preferences: services.displayPreferences,
             labelSubmitter: services.community,
+            portionLookup: services.householdPortions,
             isSharingAllowed: { services.account?.sharingAllowed ?? false })
     }
 
@@ -506,11 +489,11 @@ struct RootView: View {
 
     /// Opens the details form prefilled from a favorite or recent picked in Add. Nothing is logged until Save.
     private func openTemplate(_ template: RepeatTemplate, home: AddHomeViewModel) {
-        // The picker and Find products share this message: one screen's failure must not show on the other.
+        // The picker and Search foods share this message: one screen's failure must not show on the other.
         self.addFlowError = nil
         do {
             let model = try home.makeDetails(prefill: template, now: Date())
-            // A meal chosen on Add wins. With none chosen (Find products opened from the Library tab starts
+            // A meal chosen on Add wins. With none chosen (Search foods opened from the Library tab starts
             // with none), the item keeps the meal it was logged under, as a tap in the Library does.
             if home.meal == nil { model.meal = LibraryViewModel.mealLabel(for: template) }
             self.addIntakeModel = model
@@ -576,11 +559,15 @@ struct RootView: View {
                 CommunityProductSearchView(model: search,
                     onSelect: { self.openProductDetails($0, home: home) },
                     onLegacy: { self.openProductEditor(home: home, legacy: $0) },
-                    onSignIn: { self.settingsAfterAdding = true; self.finishAdding() },
+                    onSignIn: SearchSignIn.choose(hasAccount: self.services.account != nil) == .presentOverSearch
+                        ? { self.presentSignInOverSearch = true } : nil,
                     onOpenFoodFacts: { self.addNavigation.openLookedUp($0, kind: $1, home: home) },
                     library: self.services.library, onPick: { self.openTemplate($0, home: home) },
                     focusSearchOnAppear: true,
                     onSaved: { self.confirmInAddCover(SaveLabels.productSaved) })
+                .sheet(isPresented: $presentSignInOverSearch) {
+                    if let account = self.services.account { SignInSheet(model: account) }
+                }
                     .overlay(alignment: .bottom) {
                         if let message = self.addFlowError { InlineNotice(message, tone: .failed) }
                     }

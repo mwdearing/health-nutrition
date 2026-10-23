@@ -74,7 +74,7 @@ final class NutrientGapsTests: XCTestCase {
         XCTAssertEqual(complete.referenceText, "RDA 11 mg, upper limit 40 mg")
         let partial = try row("zinc", NutrientDayTally(fromFood: 6, known: 1, missing: 1))
         XCTAssertEqual(partial.status, .belowReferenceSoFar)
-        XCTAssertEqual(partial.statusText, "Below the RDA so far")
+        XCTAssertEqual(partial.statusText, "Below the RDA so far today")
         XCTAssertEqual(partial.amountText, "At least 6 mg")
     }
 
@@ -119,7 +119,7 @@ final class NutrientGapsTests: XCTestCase {
         // 1,500 mcg from a supplement may be folic acid stated as DFE, or methylfolate: not a proven excess.
         let folate = try row("folate", NutrientDayTally(fromSupplements: 1500, known: 1), unit: .mcg)
         XCTAssertEqual(folate.status, .reachedReference)
-        XCTAssertEqual(folate.referenceText, "RDA 400 mcg, upper limit 1000 mcg of folic acid")
+        XCTAssertEqual(folate.referenceText, "RDA 400 mcg, upper limit 1,000 mcg of folic acid")
         XCTAssertEqual(
             folate.detailLines.last,
             "The upper limit counts folic acid only. The app can't tell it from other folate, so it isn't checked.")
@@ -271,6 +271,97 @@ final class NutrientGapsTests: XCTestCase {
         // The egg's zinc is known and kept; the toast's is not, so the entry is also one unknown.
         XCTAssertEqual(zinc.tally, NutrientDayTally(fromFood: Decimal(string: "0.65")!, known: 1, missing: 1))
         XCTAssertEqual(zinc.amountText, "At least 0.65 mg")
+    }
+
+    func testAHandTypedSupplementCountsAsSupplementNotFood() throws {
+        let store = try makeStore()
+        let intake = Intake(
+            id: UUID().uuidString.lowercased(), category: "supplement", occurredAt: noon, timeZoneIdentifier: "UTC")
+        try store.create(
+            intake, components: [
+                IntakeComponent(componentID: "magnesium", name: "Magnesium", amount: 100, unit: .mg),
+            ], product: nil, now: noon)
+        let lookup = GapsComponentFacts(values: ["magnesium": ["magnesium": .known(100, .mg)]])
+        let model = NutrientGapsViewModel(store: store, lookup: lookup)
+        model.load(now: noon)
+        let magnesium = try XCTUnwrap(model.rows.first { $0.nutrient == "magnesium" })
+        // A supplement with no snapshot still goes to the supplement side of the tally.
+        XCTAssertEqual(magnesium.tally, NutrientDayTally(fromSupplements: 100, known: 1, missing: 0))
+    }
+
+    func testAHandTypedVitaminDInInternationalUnitsIsRestatedToMcg() throws {
+        let store = try makeStore()
+        let intake = Intake(id: UUID().uuidString.lowercased(), category: "food", occurredAt: noon, timeZoneIdentifier: "UTC")
+        try store.create(
+            intake, components: [
+                IntakeComponent(componentID: "d3drops", name: "Drops", amount: 400, unit: .iu),
+            ], product: nil, now: noon)
+        let lookup = GapsComponentFacts(values: ["d3drops": ["vitaminD": .known(400, .iu)]])
+        let model = NutrientGapsViewModel(store: store, lookup: lookup)
+        model.load(now: noon)
+        let vitaminD = try XCTUnwrap(model.rows.first { $0.nutrient == "vitaminD" })
+        // 400 IU is 10 mcg (0.025 mcg per IU), the same restatement the totals path makes.
+        XCTAssertEqual(vitaminD.tally, NutrientDayTally(fromFood: 10, known: 1, missing: 0))
+    }
+
+    func testAnEntryWithTwoMissingComponentsCountsOnceAsMissing() throws {
+        let store = try makeStore()
+        let intake = Intake(id: UUID().uuidString.lowercased(), category: "food", occurredAt: noon, timeZoneIdentifier: "UTC")
+        try store.create(
+            intake, components: [
+                IntakeComponent(componentID: "toast", name: "Toast", amount: 30, unit: .g),
+                IntakeComponent(componentID: "jam", name: "Jam", amount: 15, unit: .g),
+            ], product: nil, now: noon)
+        let model = NutrientGapsViewModel(store: store, lookup: GapsComponentFacts(values: [:]))
+        model.load(now: noon)
+        // Neither component states zinc, so the entry is one missing entry, not two.
+        let zinc = try XCTUnwrap(model.rows.first { $0.nutrient == "zinc" })
+        XCTAssertEqual(zinc.tally, NutrientDayTally(fromFood: 0, known: 0, missing: 1))
+    }
+
+    func testABelowThresholdBoundCountsAsMissingNotAsKnownOnTheGapsScreen() throws {
+        let store = try makeStore()
+        try log(store, "Seasoning", at: noon, product: product("seasoning", kind: .food, nutrients: [
+            "vitaminC": .belowReportingThreshold(.mg),
+        ]))
+        let model = NutrientGapsViewModel(store: store, lookup: GapsSnapshotFacts())
+        model.load(now: noon)
+        // A bound says the amount is small, not what it is: the entry is one missing entry and adds no known amount.
+        let vitaminC = try XCTUnwrap(model.rows.first { $0.nutrient == "vitaminC" })
+        XCTAssertEqual(vitaminC.tally, NutrientDayTally(fromFood: 0, known: 0, missing: 1))
+    }
+
+    func testAKnownAmountAndABoundOfTheSameNutrientKeepTheKnownPartAndAddTheNote() throws {
+        let store = try makeStore()
+        let intake = Intake(id: UUID().uuidString.lowercased(), category: "food", occurredAt: noon, timeZoneIdentifier: "UTC")
+        try store.create(
+            intake, components: [
+                IntakeComponent(componentID: "typedvitc", name: "Typed", amount: 30, unit: .g),
+                IntakeComponent(componentID: "boundvitc", name: "Bound", amount: 10, unit: .g),
+            ], product: nil, now: noon)
+        let lookup = GapsComponentFacts(values: [
+            "typedvitc": ["vitaminC": .known(30, .mg)],
+            "boundvitc": ["vitaminC": .belowReportingThreshold(.mg)],
+        ])
+        let model = NutrientGapsViewModel(store: store, lookup: lookup)
+        model.load(now: noon)
+        let vitaminC = try XCTUnwrap(model.rows.first { $0.nutrient == "vitaminC" })
+        XCTAssertEqual(vitaminC.tally, NutrientDayTally(fromFood: 30, known: 1, missing: 1))
+        // The same entry on the totals path Today uses: 30 mg known, with the bound unknown.
+        let totals = try DailyTotalsBuilder.totals(
+            for: try store.activeIntakes(), store: store, lookup: lookup, nutrients: ["vitaminC"])
+        XCTAssertEqual(totals.knownSum(for: "vitaminC"), .known(30, .mg))
+    }
+
+    func testAFullyKnownEntryIsTalliedOnItsOwnWithNoMissingEntry() throws {
+        let store = try makeStore()
+        try log(store, "Orange", at: noon, product: product("orange", kind: .food, nutrients: [
+            "vitaminC": .known(60, .mg),
+        ]))
+        let model = NutrientGapsViewModel(store: store, lookup: GapsSnapshotFacts())
+        model.load(now: noon)
+        let vitaminC = try XCTUnwrap(model.rows.first { $0.nutrient == "vitaminC" })
+        XCTAssertEqual(vitaminC.tally, NutrientDayTally(fromFood: 60, known: 1, missing: 0))
     }
 
     func testAnEntryWhoseDayCannotBeToldIsCountedAndSaid() throws {
@@ -521,7 +612,7 @@ final class NutrientGapsTests: XCTestCase {
             tally: NutrientDayTally(fromFood: 3600, known: 1),
             reference: ReferenceIntakes.intake(for: "phosphorus", group: pregnant))
         XCTAssertEqual(phosphorus.status, .aboveUpperLimit)
-        XCTAssertEqual(phosphorus.referenceText, "RDA 700 mg, upper limit 3500 mg")
+        XCTAssertEqual(phosphorus.referenceText, "RDA 700 mg, upper limit 3,500 mg")
         // 18 mg of iron reaches a woman's RDA but is below pregnancy's 27 mg.
         let iron = NutrientGapRow(
             nutrient: "iron", label: "Iron", unit: .mg, tally: NutrientDayTally(fromFood: 18, known: 1),

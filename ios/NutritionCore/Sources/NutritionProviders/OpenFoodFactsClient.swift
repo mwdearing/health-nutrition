@@ -1,10 +1,6 @@
 import Foundation
 
 public actor OpenFoodFactsClient {
-    public static let requestedFields = [
-        "code", "product_name", "brands", "serving_size", "serving_quantity",
-        "nutrition_data_per", "nutriments", "last_modified_t", "product_quantity_unit",
-    ]
     /// Open Food Facts publishes 15 product reads per minute for apps; we stay below that at 10.
     public static let maxLookups = 10
     public static let windowSeconds: TimeInterval = 60
@@ -48,43 +44,6 @@ public actor OpenFoodFactsClient {
         self.userAgent = "HealthNutrition/\(appVersion) (https://github.com/mwdearing/health-nutrition/issues)"
         self.now = now
         self.monotonic = monotonic
-    }
-
-    public func lookup(barcode: String) async -> OpenFoodFactsOutcome {
-        guard BarcodeValidator.isValid(barcode) else {
-            return .invalidBarcode
-        }
-        let current = monotonic()
-        recent.removeAll { current - $0 >= Self.windowSeconds }
-        if recent.count >= Self.maxLookups, let oldest = recent.first {
-            return .rateLimited(retryAfter: max(0, oldest + Self.windowSeconds - current))
-        }
-        recent.append(current)
-
-        guard let request = makeRequest(barcode: barcode) else {
-            return .transport("could not build the request")
-        }
-        let data: Data
-        let response: HTTPURLResponse
-        do {
-            (data, response) = try await transport.get(request)
-        } catch BoundedResponseError.responseTooLarge {
-            return .transport("response exceeded the local size limit")
-        } catch {
-            return .transport(String(describing: error))
-        }
-        switch response.statusCode {
-        case 200..<300:
-            break
-        case 404:
-            return .notFound
-        case 429, 503:
-            let header = response.value(forHTTPHeaderField: "Retry-After")
-            return .rateLimited(retryAfter: header.flatMap { parseRetryAfter($0, now: now()) })
-        default:
-            return .transport("HTTP status \(response.statusCode)")
-        }
-        return Self.interpret(data, barcode: barcode)
     }
 
     /// Name search on the full-text search service, which ranks products by how well their name matches.
@@ -246,37 +205,6 @@ public actor OpenFoodFactsClient {
         let limited = Array(ordered.prefix(Self.searchPageSize))
         return limited.isEmpty ? .empty : .results(limited)
     }
-
-    private func makeRequest(barcode: String) -> URLRequest? {
-        var components = URLComponents(url: environment.baseURL, resolvingAgainstBaseURL: false)
-        components?.path = "/api/v3/product/\(barcode)"
-        components?.queryItems = [URLQueryItem(name: "fields", value: Self.requestedFields.joined(separator: ","))]
-        guard let url = components?.url else {
-            return nil
-        }
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.timeoutInterval = 15
-        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        if let auth = environment.authorizationHeader {
-            request.setValue(auth, forHTTPHeaderField: "Authorization")
-        }
-        return request
-    }
-
-    private static func interpret(_ data: Data, barcode: String) -> OpenFoodFactsOutcome {
-        guard let decoded = try? JSONDecoder().decode(OpenFoodFactsResponse.self, from: data) else {
-            return .transport("unreadable response")
-        }
-        if decoded.result?.id == "product_not_found" {
-            return .notFound
-        }
-        guard let body = decoded.product else {
-            return .transport("response without a product")
-        }
-        return .found(OpenFoodFactsProduct(body: body, requestedBarcode: barcode))
-    }
 }
 
 /// The longest wait a Retry-After header can ask for. A larger or unreadable-as-a-number value is cut to this, so a
@@ -299,3 +227,4 @@ func parseRetryAfter(_ raw: String, now: Date) -> TimeInterval? {
     }
     return min(max(0, date.timeIntervalSince(now)), maxRetryAfter)
 }
+

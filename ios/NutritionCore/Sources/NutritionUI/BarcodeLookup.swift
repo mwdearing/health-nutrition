@@ -112,11 +112,13 @@ public struct LookedUpProduct: Sendable, Hashable {
     /// The source's own version or last-modified marker, stored with an entry so a later reader can
     /// tell how fresh the values were.
     public let version: String?
+    /// The source's own id for the food, when it has one (a USDA fdcId), used to ask for its listed measures.
+    public let sourceID: String?
 
     public init(
         barcode: String, name: String?, brand: String?, basis: BarcodeLookupBasis,
         nutrients: [String: NutrientValue], attribution: ProductAttribution? = nil,
-        serving: ServingDefinition? = nil, version: String? = nil
+        serving: ServingDefinition? = nil, version: String? = nil, sourceID: String? = nil
     ) {
         self.barcode = barcode
         self.name = name
@@ -125,6 +127,7 @@ public struct LookedUpProduct: Sendable, Hashable {
         self.attribution = attribution
         self.serving = serving
         self.version = version
+        self.sourceID = sourceID
         var complete: [String: NutrientValue] = [:]
         for key in Self.standardKeys where nutrients[key] == nil {
             complete[key] = .unknown
@@ -166,16 +169,19 @@ public struct LookedUpProduct: Sendable, Hashable {
 
     /// One line per nutrient for the form and for a stable signature. Unknown is spelled out, never
     /// rendered as zero.
-    static func describe(_ value: NutrientValue) -> String {
+    /// `describe` is part of the snapshot identity and must keep the stored symbol. `screen: true` is for
+    /// text shown to the person only, where energy reads as Calories.
+    static func describe(_ value: NutrientValue, screen: Bool = false) -> String {
+        func label(_ unit: MeasureUnit) -> String { screen ? unit.screenSymbol : unit.symbol }
         switch value {
         case .known(let amount, let unit):
-            return "\(NSDecimalNumber(decimal: amount).stringValue) \(unit.symbol)"
+            return "\(NSDecimalNumber(decimal: amount).stringValue) \(label(unit))"
         case .unknown:
             return "unknown"
         case .notApplicable:
             return "not applicable"
         case .belowReportingThreshold(let unit):
-            return "below reporting threshold" + (unit.map { " \($0.symbol)" } ?? "")
+            return "below reporting threshold" + (unit.map { " \(label($0))" } ?? "")
         }
     }
 
@@ -205,6 +211,8 @@ public enum BarcodeLookupResult: Sendable, Equatable {
     case notFound
     case rateLimited(retryAfterSeconds: Int?)
     case failed(String)
+    /// The request could not reach the source: no connection, or a network that dropped it.
+    case offline
 }
 
 /// Digit, length and GS1 check digit check for the barcode field: EAN-8, UPC-A or EAN-13, nothing

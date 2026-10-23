@@ -90,6 +90,20 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
         return "Step \(position) of \(list.count)"
     }
 
+    /// What the About step still needs before Next works, named in the words of the fields. Nil when nothing is missing.
+    public var aboutMissingNotice: String? {
+        switch (sex == nil, ageYears() == nil) {
+        case (true, true): return Self.missingSexAndAgeNotice
+        case (true, false): return Self.missingSexNotice
+        case (false, true): return Self.missingAgeNotice
+        case (false, false): return nil
+        }
+    }
+
+    public static let missingSexNotice = "Choose your sex to continue."
+    public static let missingAgeNotice = "Enter your age to continue."
+    public static let missingSexAndAgeNotice = "Choose your sex and enter your age to continue."
+
     /// Whether the screen's Next button may move on. The results screen has its own save.
     public var canGoNext: Bool {
         switch step {

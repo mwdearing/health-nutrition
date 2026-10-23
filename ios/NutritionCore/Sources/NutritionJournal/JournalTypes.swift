@@ -36,6 +36,8 @@ public enum JournalError: Error, Sendable, Equatable {
     case unknownIntake(String)
     case intakeAlreadyExists(String)
     case intakeDeleted(String)
+    /// Undo of a delete is refused: the window has passed, or a delete already reached a destination.
+    case undoUnavailable(String)
     case snapshotConflict(String)
     case unknownOperation(String)
     case corruptRecord(String)
@@ -480,6 +482,17 @@ public protocol JournalStore: AnyObject, Sendable {
     ) throws -> IntakeRevision
     /// Marks the intake deleted and queues delete operations at the current revision, in one save.
     func delete(intakeID: String, now: Date) throws
+    /// As `delete`, and returns the delete's place in the store's commit order.
+    func deleteSequenced(intakeID: String, now: Date) throws -> UInt64
+    /// As `create`, and returns the write's place in the store's commit order.
+    func createSequenced(
+        _ intake: Intake, components: [IntakeComponent], product: ProductDefinition?, now: Date
+    ) throws -> (IntakeRevision, UInt64)
+    /// The place of the latest delete in the store's commit order.
+    var deleteSequence: UInt64 { get }
+    /// Takes back a delete inside the Undo window: withdraws its queued delete operations and restores the
+    /// intake and its projections as they were. Refused once a delete has reached a destination.
+    func undoDelete(intakeID: String) throws
 
     func activeIntakes() throws -> [Intake]
     func revisions(of intakeID: String) throws -> [IntakeRevision]
@@ -492,7 +505,31 @@ public protocol JournalStore: AnyObject, Sendable {
     func close()
 }
 
+/// How long a delete can still be taken back. A delete reaches Apple Health and the relay only after it.
+public enum JournalUndo {
+    public static let deleteWindow: TimeInterval = 10
+}
+
 extension JournalStore {
+    /// Stores that do not track commit order report zero, so no delete can be ordered after an offer.
+    public func deleteSequenced(intakeID: String, now: Date) throws -> UInt64 {
+        try delete(intakeID: intakeID, now: now)
+        return 0
+    }
+
+    public var deleteSequence: UInt64 { 0 }
+
+    public func createSequenced(
+        _ intake: Intake, components: [IntakeComponent], product: ProductDefinition?, now: Date
+    ) throws -> (IntakeRevision, UInt64) {
+        (try create(intake, components: components, product: product, now: now), 0)
+    }
+
+    /// Stores without undo support refuse it rather than restoring an entry in the app alone.
+    public func undoDelete(intakeID: String) throws {
+        throw JournalError.undoUnavailable(intakeID)
+    }
+
     /// Corrects the amounts only and leaves the entry's time as it was.
     @discardableResult
     public func edit(
@@ -685,7 +722,7 @@ public protocol JournalOutboxDelivery: JournalStore {
 /// The kind of drink an entry is, used only to prefill its water share when it is logged. The share is
 /// stored on the component, so no drink type is stored. Presets are typical values, editable per entry.
 public enum DrinkType: String, CaseIterable, Sendable {
-    case water, tea, coffee, soda, sportsDrink, juice, milk
+    case water, tea, coffee, soda, sportsDrink, juice, milk, sparklingWater, energyDrink, smoothie
 
     public var displayName: String {
         switch self {
@@ -696,6 +733,9 @@ public enum DrinkType: String, CaseIterable, Sendable {
         case .sportsDrink: "Sports drink"
         case .juice: "Juice"
         case .milk: "Milk"
+        case .sparklingWater: "Sparkling water"
+        case .energyDrink: "Energy drink"
+        case .smoothie: "Smoothie"
         }
     }
 
@@ -709,6 +749,9 @@ public enum DrinkType: String, CaseIterable, Sendable {
         case .sportsDrink: 92
         case .juice: 88
         case .milk: 87
+        case .sparklingWater: 100
+        case .energyDrink: 89
+        case .smoothie: 85
         }
     }
 }

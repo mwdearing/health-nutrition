@@ -2,10 +2,12 @@ import Foundation
 import NutritionDomain
 import NutritionJournal
 
-/// A water entry that can still be taken back.
+/// A water entry or a deleted entry that can still be taken back.
 public struct UndoHandle: Equatable {
     public let intakeID: String
     public let expiresAt: Date
+    /// True for a delete, which Undo restores; false for a quick-added water entry, which Undo removes.
+    public var isDelete = false
 }
 
 /// One row on the Today screen.
@@ -76,7 +78,38 @@ public final class TodayViewModel: ObservableObject {
     /// What Today totals for everyone, goal or not, in label order. Energy, carbohydrate and fat are here so
     /// the calorie ring and the macro columns show from the first day rather than only once a goal is set.
     public static let defaultTrackedNutrients = ["energy", "protein", "carbohydrate", "fat", "fiber", "sodium", "potassium"]
-    public static let undoWindow: TimeInterval = 10
+    public static let undoWindow: TimeInterval = JournalUndo.deleteWindow
+    /// The most rows the nutrient card shows.
+    public static let nutrientCardLimit = 3
+    /// The one importance ranking for the nutrient card, most important first. Source key in each comment:
+    /// DGA = Dietary Guidelines for Americans nutrient of public health concern or limit; FDA = Nutrition Facts
+    /// label; Journal = a nutrient the goal list offers; Default = tracked by default; Snapshot = a captured compound.
+    public static let nutrientCardRanking: [String] = [
+        "fiber",           // DGA concern; FDA label; Journal; Default
+        "sodium",          // DGA limit; FDA label; Journal; Default
+        "potassium",       // DGA concern; FDA label; Journal; Default
+        "addedSugars",     // DGA limit; FDA label; Snapshot
+        "saturatedFat",    // DGA limit; FDA label; Snapshot
+        "calcium",         // DGA concern; FDA label; Journal
+        "iron",            // DGA concern; FDA label; Journal
+        "vitaminD",        // DGA concern; FDA label; Snapshot (excluded from goals)
+        "sugars",          // FDA label; Snapshot
+        "cholesterol",     // FDA label; Snapshot
+        "transFat",        // FDA label; Snapshot
+        "magnesium",       // Journal
+        "vitaminC",        // Journal
+        "folate",          // Journal
+        "vitaminB12",      // Journal
+        "zinc",            // Journal
+        "vitaminA",        // Snapshot (excluded from goals)
+        "vitaminE",        // Snapshot (excluded from goals)
+        "vitaminK",        // Journal
+        "phosphorus",      // Journal
+        "thiamin", "riboflavin", "niacin", "vitaminB6", "pantothenicAcid", "biotin",
+        "chloride", "chromium", "copper", "iodine", "manganese", "molybdenum", "selenium", // Journal
+    ]
+    /// Rows the card never shows: energy and the macros have their own place, and water has its own card.
+    static let nutrientCardExcluded: Set<String> = ["energy", "protein", "carbohydrate", "fat", "water"]
     /// Shown when a water amount is zero, negative or not a number.
     public static let waterAmountInvalidMessage = "Enter a water amount above zero."
 
@@ -90,12 +123,21 @@ public final class TodayViewModel: ObservableObject {
     @Published public private(set) var coverage: [CoverageLine] = []
     /// One line per tracked nutrient: what the day has reached, against a target where one is set.
     @Published public private(set) var progress: [NutrientProgressLine] = []
+    /// The Today nutrient card under the macros: value-only, goal nutrients first, then the rest by
+    /// `nutrientCardRanking`, at most `nutrientCardLimit` rows (#817).
+    @Published public private(set) var nutrientCard: [GoalBarModel] = []
     /// One bar per tracked nutrient except water, in tracked order. A nutrient with a goal draws a bar;
     /// one without shows its value alone. Built from `progress` and `coverage`, which stay published.
     @Published public private(set) var goalBars: [GoalBarModel] = []
+    /// Calories left today: the stored goal, less food, plus burned when the setting counts it. Nil fields are
+    /// not stated; `remaining` is nil without a goal or without a known food total.
+    @Published public private(set) var calorieRemaining: CalorieRemaining = .none
     /// Today's active energy from Apple Health, set by the activity card after it reads. Only used
     /// when the person switched on adding it to the calorie goal.
     public var activeEnergyKcal: Decimal?
+    /// Health's side of Today's totals, set by the activity card after it reads. Until a read says otherwise
+    /// Health is not connected, so the totals stay journal-only.
+    public var outsideIntake: HealthIntakeTotals.Outside = .notConnected
     /// Says the calorie goal was raised by activity, and by how much; nil when it was not.
     @Published public private(set) var activityGoalNote: String?
     static let energyKey = "energy"
@@ -150,6 +192,23 @@ public final class TodayViewModel: ObservableObject {
         self.preferences = preferences
     }
 
+    /// The card rows: a nutrient with a known amount above zero today (a partial day's known sum counts), goal
+    /// nutrients first, then the rest; each group in `nutrientCardRanking` order, uncategorised ones alphabetically
+    /// after; at most `nutrientCardLimit`.
+    static func nutrientCardRows(goalBars: [GoalBarModel], progress: [NutrientProgressLine]) -> [GoalBarModel] {
+        func progressLine(_ id: String) -> NutrientProgressLine? { progress.first { $0.nutrient == id } }
+        func hasValue(_ id: String) -> Bool {
+            guard let line = progressLine(id), case .known(let value, _) = line.shownAmount else { return false }
+            return value > 0
+        }
+        func hasGoal(_ id: String) -> Bool { progressLine(id)?.hasGoal == true }
+        func rankKey(_ id: String) -> (Int, String) { (nutrientCardRanking.firstIndex(of: id) ?? Int.max, id) }
+        let valued = goalBars.filter { !nutrientCardExcluded.contains($0.id) && hasValue($0.id) }
+        let withGoal = valued.filter { hasGoal($0.id) }.sorted { rankKey($0.id) < rankKey($1.id) }
+        let rest = valued.filter { !hasGoal($0.id) }.sorted { rankKey($0.id) < rankKey($1.id) }
+        return Array((withGoal + rest).prefix(nutrientCardLimit))
+    }
+
     /// The tracked list: the fallback's own order first, then the goals' other keys alphabetically.
     ///
     /// What the screen falls back to when a nutrient has no goal: it is still tracked, because the
@@ -169,6 +228,13 @@ public final class TodayViewModel: ObservableObject {
             ordered.append(nutrient)
         }
         return ordered
+    }
+
+    /// Whether Today must reload for these readings: only when the figures it reads from Health changed.
+    public static func needsReload(
+        activeEnergyKcal: Decimal?, outsideIntake: HealthIntakeTotals.Outside, for readings: BodyActivityReadings
+    ) -> Bool {
+        activeEnergyKcal != readings.activeEnergyKcal || outsideIntake != readings.outsideIntake
     }
 
     /// The nutrients a day's totals are summed for: the tracked ones, plus water.
@@ -214,7 +280,7 @@ public final class TodayViewModel: ObservableObject {
             var countedWater = 0
             // One snapshot is read once per load, however many components and nutrients refer to it.
             var snapshots: [String: ProductDefinition?] = [:]
-            let loggedUnits = LoggedUnitIndex.load(from: store)
+            let loggedUnits = try LoggedUnitIndex.loadOrThrow(from: store)
             for intake in intakes.sorted(by: { $0.occurredAt > $1.occurredAt }) {
                 let revisions = try store.revisions(of: intake.id)
                 let current = revisions.first { $0.number == intake.currentRevision }
@@ -222,9 +288,10 @@ public final class TodayViewModel: ObservableObject {
                 // Read once per entry, and once per snapshot however many components name it: what the
                 // entry is comes from the same snapshot its values come from.
                 let snapshot = Self.snapshot(of: current, in: &snapshots, using: store)
-                // An entry typed by hand has no product to say what it is, so it is the food it was
-                // always recorded as; a snapshot's own kind is what an entry with a product states.
-                let kind = snapshot?.kind ?? .food
+                // An entry with no product snapshot takes its stored category, so a typed supplement is a supplement;
+                // an entry with a snapshot states its kind through that snapshot (#416, #364).
+                let kind = ProductKindResolution.kind(
+                    snapshotID: current?.productSnapshotID, snapshotKind: { _ in snapshot?.kind }, category: intake.category)
                 if intake.category == "water" {
                     waterEntries += 1
                     for component in components {
@@ -253,10 +320,13 @@ public final class TodayViewModel: ObservableObject {
                         // A stored share counts toward the goal bar too, so the bar reads it as a logged amount.
                         countedWater += 1
                     }
-                    if kind != .supplement {
-                        for component in components { foodComponents.append((component, snapshot, kind)) }
+                    // Totals count an entry as it always has (#364): a typed entry in the food total, a snapshot-backed
+                    // supplement on its own. The row's kind above is what the entry is, not how the totals count it.
+                    let countsAs = ProductKindResolution.totalsKind(snapshotKind: snapshot?.kind)
+                    if countsAs != .supplement {
+                        for component in components { foodComponents.append((component, snapshot, countsAs)) }
                     }
-                    foodEntries.append((components, snapshot, kind))
+                    foodEntries.append((components, snapshot, countsAs))
                 }
                 newRows.append(
                     TodayRow(
@@ -313,12 +383,14 @@ public final class TodayViewModel: ObservableObject {
             // Today's active energy, when the person asked for it to count: the calorie target grows by
             // what Health reports burned so far. The stored goal is never changed.
             activityGoalNote = nil
+            // The stored calorie target before activity is added, for "Calories remaining".
+            let storedEnergyTarget = storedGoals.first { $0.nutrient == Self.energyKey && $0.unit == .kcal }?.target
             if let bonus = activeEnergyKcal, bonus > 0,
                (preferences as? ActivityGoalPreferences)?.addsActiveEnergyToGoal == true,
                let index = storedGoals.firstIndex(where: { $0.nutrient == Self.energyKey && $0.unit == .kcal }) {
                 let goal = storedGoals[index]
                 storedGoals[index] = NutrientGoal(nutrient: goal.nutrient, target: goal.target + bonus, unit: goal.unit)
-                activityGoalNote = "Calorie goal includes \(BodyActivityViewModel.whole(bonus)) kcal from activity"
+                activityGoalNote = "Calorie goal includes \(BodyActivityViewModel.whole(bonus)) calories from activity"
             }
             let tracked = Self.totalsNutrients(goals: storedGoals, fallback: trackedNutrients)
             // Coverage is built from the same goal-expanded list the totals are, so a nutrient with
@@ -345,9 +417,9 @@ public final class TodayViewModel: ObservableObject {
                 // drink at all — only water, or only supplements, which are not foods and are excluded
                 // from the count — and "0 of 0 foods lack fiber" tells a reader nothing.
                 .filter { $0.total > 0 }
-            progress = try Self.progressLines(
+            progress = HealthIntakeTotals.combine(try Self.progressLines(
                 tracked: tracked, goals: storedGoals, intakes: intakes, store: store, lookup: lookup,
-                displayNames: Self.printedNames(in: snapshots))
+                displayNames: Self.printedNames(in: snapshots)), outside: outsideIntake)
             mealSections = Self.withMealEnergy(mealSections, intakes: intakes, store: store, lookup: lookup)
             let trackedFood = tracked.filter { $0 != DailyTotalsBuilder.waterKey }
             // A goal switched off on the Goals screen keeps its target and its totals, but no bar.
@@ -372,6 +444,7 @@ public final class TodayViewModel: ObservableObject {
                 return GoalBarModel.make(
                     line: line, hasEntries: hasEntries, missingCount: line.missingCount, someKnown: someKnown)
             }
+            nutrientCard = Self.nutrientCardRows(goalBars: goalBars, progress: progress)
             waterBar = progress.first {
                 $0.nutrient == DailyTotalsBuilder.waterKey && $0.hasGoal
                     && !hiddenGoals.contains(DailyTotalsBuilder.waterKey)
@@ -380,6 +453,18 @@ public final class TodayViewModel: ObservableObject {
                     line: line, hasEntries: waterEntries > 0 || countedWater > 0, missingCount: 0,
                     skippedWaterCount: skipped, someKnown: countedWater > 0, unitSystem: self.preferences.unitSystem)
             }
+            let burnedCounted = (preferences as? ActivityGoalPreferences)?.addsActiveEnergyToGoal == true
+            let foodLine = progress.first { $0.nutrient == Self.energyKey }
+            calorieRemaining = CalorieRemaining.make(
+                goal: storedEnergyTarget,
+                food: foodLine.flatMap { line -> Decimal? in
+                    if case .known(let value, _) = line.shownAmount { return value }
+                    return nil
+                },
+                partial: foodLine?.isPartial ?? false,
+                missingCount: foodLine?.missingCount ?? 0,
+                burned: burnedCounted ? activeEnergyKcal.flatMap { $0 >= 0 ? $0 : nil } : nil,
+                energyLabel: foodLine?.label ?? "Energy")
             missingValuesSummary = Self.makeMissingValuesSummary(
                 entries: foodEntries, trackedNutrients: trackedFood, lookup: lookup)
             errorMessage = goalsUnreadable ? GoalsViewModel.readFailedMessage : nil
@@ -388,6 +473,7 @@ public final class TodayViewModel: ObservableObject {
             // Clear what the last good read showed, so a failed reload never shows old rows as today's.
             rows = []
             mealSections = []
+            calorieRemaining = .none
             waterTotalMilliliters = 0
             waterEntryCount = 0
             waterSkippedCount = 0
@@ -395,6 +481,7 @@ public final class TodayViewModel: ObservableObject {
             coverage = []
             progress = []
             goalBars = []
+            nutrientCard = []
             waterBar = nil
             missingValuesSummary = nil
             activityGoalNote = nil
@@ -450,7 +537,8 @@ public final class TodayViewModel: ObservableObject {
             id: makeID(), category: "water", occurredAt: now, timeZoneIdentifier: timeZoneIdentifier)
         let component = IntakeComponent(componentID: "water", name: "Water", amount: milliliters, unit: .mL)
         do {
-            try store.create(intake, components: [component], product: nil, now: now)
+            // The place of the write in commit order is taken inside its own commit.
+            offerSequence = try store.createSequenced(intake, components: [component], product: nil, now: now).1
         } catch {
             errorMessage = "Could not save the water."
             return nil
@@ -501,12 +589,43 @@ public final class TodayViewModel: ObservableObject {
             return false
         }
         do {
-            try store.delete(intakeID: handle.intakeID, now: now)
+            if handle.isDelete {
+                try store.undoDelete(intakeID: handle.intakeID)
+            } else {
+                try store.delete(intakeID: handle.intakeID, now: now)
+            }
         } catch {
             errorMessage = "Could not undo."
             return false
         }
         undo = nil
+        load(now: now)
+        return true
+    }
+
+    /// Where the offer on screen sits in the store's commit order: the delete it offers, or the latest water.
+    private var offerSequence: UInt64 = 0
+
+    /// A delete committed anywhere in the app, reported with its place in commit order. Undo is offered for the
+    /// most recent change only, so the offer goes only when a delete committed after it. A late hook for an
+    /// earlier delete, or for the offered delete itself, carries a lower or equal place and leaves it alone.
+    public func deleteCommitted(sequence: UInt64) {
+        guard undo != nil, sequence > offerSequence else { return }
+        undo = nil
+    }
+
+    /// Deletes an entry from Today, offering Undo for the window. Nothing reaches Apple Health until it passes.
+    @discardableResult
+    public func deleteEntry(intakeID: String, now: Date) -> Bool {
+        do {
+            offerSequence = try store.deleteSequenced(intakeID: intakeID, now: now)
+        } catch {
+            errorMessage = "Could not delete the entry."
+            return false
+        }
+        errorMessage = nil
+        undo = UndoHandle(
+            intakeID: intakeID, expiresAt: now.addingTimeInterval(Self.undoWindow), isDelete: true)
         load(now: now)
         return true
     }

@@ -34,11 +34,6 @@ struct TodayProvider: TimelineProvider {
     }
 }
 
-private func figure(_ value: Double?, unit: String) -> String {
-    guard let text = WidgetFigure.wholeNumber(value) else { return "—" }
-    return "\(text) \(unit)"
-}
-
 struct TodayWidgetView: View {
     @Environment(\.widgetFamily) private var family
     let entry: TodayEntry
@@ -54,36 +49,41 @@ struct TodayWidgetView: View {
             Gauge(value: snapshot?.energyFraction ?? 0) {
                 Image(systemName: "fork.knife")
             } currentValueLabel: {
-                Text(WidgetFigure.wholeNumber(snapshot?.energyKcal) ?? "—")
+                Text(snapshot?.gaugeHeadline ?? "—")
             }
             .gaugeStyle(.accessoryCircularCapacity)
-            .accessibilityLabel(WidgetFigure.caloriesSpoken(snapshot?.energyKcal))
+            .accessibilityLabel(snapshot?.calorieSpoken ?? "Calories unknown")
             .privacySensitive()
         case .accessoryRectangular:
-            VStack(alignment: .leading) {
-                Text("Today").font(.headline)
-                if isEmpty {
-                    Text("Nothing logged today")
-                } else {
-                    Text(WidgetFigure.calories(snapshot?.energyKcal))
-                        .accessibilityLabel(WidgetFigure.caloriesSpoken(snapshot?.energyKcal))
-                    Text("Water \(WidgetFigure.water(snapshot?.waterMilliliters, usUnits: snapshot?.usUnits))")
-                }
+            if isEmpty {
+                Text("Nothing logged today")
+            } else {
+                WidgetCalorieSummary(snapshot: snapshot)
             }
-            .privacySensitive()
         case .accessoryInline:
-            Text(isEmpty ? "Nothing logged today" : WidgetFigure.calories(snapshot?.energyKcal))
-                .accessibilityLabel(isEmpty ? "Nothing logged today" : WidgetFigure.caloriesSpoken(snapshot?.energyKcal))
-                .privacySensitive()
+            if isEmpty {
+                Text("Nothing logged today")
+            } else if let remaining = snapshot?.remainingInlineText {
+                Text("Calories remaining \(remaining)")
+                    .accessibilityLabel(snapshot?.calorieSpoken ?? "Calories unknown")
+                    .privacySensitive()
+            } else {
+                Text("\(snapshot?.foodText ?? "—") Food")
+                    .accessibilityLabel(snapshot?.calorieSpoken ?? "Calories unknown")
+                    .privacySensitive()
+            }
         case .systemMedium:
             HStack(alignment: .top, spacing: 16) {
                 summary
                 if !isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Protein \(figure(snapshot?.proteinGrams, unit: "g"))")
-                        Text("Carbohydrate \(figure(snapshot?.carbohydrateGrams, unit: "g"))")
-                        Text("Fat \(figure(snapshot?.fatGrams, unit: "g"))")
+                        Text("Protein \(WidgetFigure.figure(snapshot?.proteinGrams, unit: "g", partial: snapshot?.isPartial("protein") == true))")
+                        Text("Carbohydrate \(WidgetFigure.figure(snapshot?.carbohydrateGrams, unit: "g", partial: snapshot?.isPartial("carbohydrate") == true))")
+                        Text("Fat \(WidgetFigure.figure(snapshot?.fatGrams, unit: "g", partial: snapshot?.isPartial("fat") == true))")
                         Text("Water \(WidgetFigure.water(snapshot?.waterMilliliters, usUnits: snapshot?.usUnits))")
+                        if snapshot?.partialFigures?.isEmpty == false {
+                            Text("+ Some entries are missing nutrients").font(.caption2).foregroundStyle(.secondary)
+                        }
                     }
                     .font(.footnote)
                     .privacySensitive()
@@ -96,17 +96,11 @@ struct TodayWidgetView: View {
 
     private var summary: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Today").font(.headline)
             if isEmpty {
+                Text("Today").font(.headline)
                 Text("Nothing logged today").font(.footnote)
             } else {
-                Text(WidgetFigure.calories(snapshot?.energyKcal))
-                    .accessibilityLabel(WidgetFigure.caloriesSpoken(snapshot?.energyKcal))
-                    .font(.title2.weight(.semibold))
-                    .privacySensitive()
-                if let fraction = snapshot?.energyFraction {
-                    ProgressView(value: fraction).privacySensitive()
-                }
+                WidgetCalorieSummary(snapshot: snapshot, verticalDetails: true)
             }
         }
     }

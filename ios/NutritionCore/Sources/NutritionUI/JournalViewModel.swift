@@ -14,13 +14,15 @@ public struct JournalRow: Equatable, Identifiable {
     /// What kind of product the entry was recorded with, read from the same snapshot its amounts come
     /// from. Food unless that snapshot says otherwise, which is what an entry typed by hand is.
     public let kind: ProductKind
+    /// The kind totals and the logged-day count use for this entry (ProductKindResolution.totalsKind).
+    public let countsAs: ProductKind
     public let isWater: Bool
 
     public var iconName: String { EntryRow.symbol(for: self.kind, isWater: self.isWater) }
 
     public init(
         id: String, title: String, detail: String, occurredAt: Date, timeZoneIdentifier: String,
-        meal: String?, kind: ProductKind = .food, isWater: Bool = false
+        meal: String?, kind: ProductKind = .food, countsAs: ProductKind, isWater: Bool = false
     ) {
         self.id = id
         self.title = title
@@ -29,6 +31,7 @@ public struct JournalRow: Equatable, Identifiable {
         self.timeZoneIdentifier = timeZoneIdentifier
         self.meal = meal
         self.kind = kind
+        self.countsAs = countsAs
         self.isWater = isWater
     }
 
@@ -124,7 +127,16 @@ public struct JournalWeekSummary: Equatable {
 
 @MainActor
 public final class JournalViewModel: ObservableObject {
-    @Published public private(set) var sections: [JournalDaySection] = []
+    @Published public private(set) var sections: [JournalDaySection] = [] {
+        didSet { arrowSectionIDs = diarySections.map(\.id) }
+    }
+    /// Today's section when it has no entries of its own; nil otherwise. The Diary lists it above `sections`.
+    @Published public private(set) var todaySection: JournalDaySection? {
+        didSet { arrowSectionIDs = diarySections.map(\.id) }
+    }
+
+    /// Every section the Diary lists, today first when it is empty.
+    public var diarySections: [JournalDaySection] { (todaySection.map { [$0] } ?? []) + sections }
     /// Intakes left out because their time zone identifier is invalid or their record could not be read.
     @Published public private(set) var skippedCount: Int = 0
     /// How many times the journal has finished loading. The screen watches it to drop state tied to an earlier load.
@@ -153,6 +165,11 @@ public final class JournalViewModel: ObservableObject {
     /// The zone a picked day is read in, and the zone "today" is read in for a future date. The same
     /// resolved zone the repeater uses, so the device zone in production and "UTC" in tests.
     private let journalZoneID: () -> String
+    /// The zone the Diary groups its days in. The arrows and the jump both use it, so they agree with the sections.
+    public var dayZone: TimeZone { TimeZone(identifier: journalZoneID()) ?? TimeZone.current }
+    /// The day keys the Diary arrows step through, in list order: today's empty day too, which the
+    /// sections leave out (#539). Refreshed by every change to the sections, so no writer can leave them stale (#611).
+    @Published public private(set) var arrowSectionIDs: [String] = []
     private let locale: Locale
     private let preferences: DisplayPreferences
 
@@ -161,7 +178,7 @@ public final class JournalViewModel: ObservableObject {
         goals: GoalStore? = nil,
         lookup: NutrientFactsLookup = UnknownNutrientFacts(),
         timeZoneIdentifier: String? = nil,
-        timeZoneProvider: @escaping () -> String = { TimeZone.current.identifier },
+        timeZoneProvider: @escaping () -> String = { DiaryZone.identifier() },
         locale: Locale = .current,
         makeID: @escaping () -> String = { UUID().uuidString.lowercased() },
         preferences: DisplayPreferences = InMemoryDisplayPreferences()
@@ -175,6 +192,18 @@ public final class JournalViewModel: ObservableObject {
         self.journalZoneID = zoneID
         self.repeater = IntakeRepeater(store: store, timeZoneProvider: zoneID, makeID: makeID)
         self.copier = IntakeCopier(store: store, timeZoneProvider: zoneID, makeID: makeID)
+    }
+
+    /// Reloads the Diary on each time-zone change, so its days follow the device zone without a relaunch (#648).
+    /// The changes are injected so a test can send one without a system notification.
+    public func runZoneChangeReloads<Changes: AsyncSequence>(
+        _ changes: Changes, now: @escaping () -> Date
+    ) async where Changes.Element == Void {
+        do {
+            for try await _ in changes { load(now: now()) }
+        } catch {
+            return
+        }
     }
 
     /// Groups active intakes by the local day of each intake's own time zone, newest first.
@@ -191,7 +220,7 @@ public final class JournalViewModel: ObservableObject {
             var intakesByDay: [String: [Intake]] = [:]
             // One snapshot is read once per load, however many entries name it.
             var snapshots: [String: ProductDefinition?] = [:]
-            let loggedUnits = LoggedUnitIndex.load(from: store)
+            let loggedUnits = try LoggedUnitIndex.loadOrThrow(from: store)
             for intake in try store.activeIntakes() where intake.lifecycle == .active {
                 guard let zone = TimeZone(identifier: intake.timeZoneIdentifier) else {
                     skipped += 1
@@ -204,15 +233,17 @@ public final class JournalViewModel: ObservableObject {
                     continue
                 }
                 let snapshot = Self.snapshot(of: current, in: &snapshots, using: store)
+                let rowKind = ProductKindResolution.kind(
+                    snapshotID: current.productSnapshotID, snapshotKind: { _ in snapshot?.kind }, category: intake.category)
                 let row = JournalRow(
                     id: intake.id, title: QuickAddViewModel.rowTitle(components: current.components, product: snapshot),
                     detail: current.components.isEmpty ? "unknown" : current.components.map { component in
                         guard intake.category == "water", !component.amount.isNaN else {
                             return AmountText.describe(
                                 component, unitSystem: self.preferences.unitSystem,
-                                loggedUnit: (snapshot?.kind ?? .food) == .supplement
+                                loggedUnit: rowKind == .supplement
                                     ? loggedUnits[intake.id]?[component.componentID] : nil,
-                                isSupplement: (snapshot?.kind ?? .food) == .supplement)
+                                isSupplement: rowKind == .supplement)
                         }
                         return AmountDisplay.water(
                             component.amount, unit: component.unit, system: self.preferences.unitSystem).text
@@ -220,7 +251,8 @@ public final class JournalViewModel: ObservableObject {
                     occurredAt: intake.occurredAt,
                     timeZoneIdentifier: intake.timeZoneIdentifier,
                     meal: MealLabel.displayName(for: intake.meal),
-                    kind: snapshot?.kind ?? .food,
+                    kind: rowKind,
+                    countsAs: ProductKindResolution.totalsKind(snapshotKind: snapshot?.kind),
                     isWater: intake.category == "water")
                 let key = Self.dayKey(intake.occurredAt, zone: zone)
                 if titles[key] == nil {
@@ -244,7 +276,15 @@ public final class JournalViewModel: ObservableObject {
             let queried = tracked.contains(Self.energyKey) ? tracked : tracked + [Self.energyKey]
             // The same choice as Today: a goal switched off there gets no bar in the day header either.
             let hiddenGoals = hiddenTodayGoals(in: preferences)
-            sections = try groups.keys.sorted(by: >).map { key in
+            // Once the journal has a readable entry, today is built even with none of its own, so the Diary can show its
+            // meal cards and add rows. It is kept apart from `sections`, which keeps its entry-day contract.
+            let todayKey = Self.dayKey(now, zone: dayZone)
+            var sectionKeys = Set(groups.keys)
+            if !groups.isEmpty {
+                if titles[todayKey] == nil { titles[todayKey] = Self.dayTitle(now, zone: dayZone, locale: locale, now: now) }
+                sectionKeys.insert(todayKey)
+            }
+            let built = try sectionKeys.sorted(by: >).map { key in
                 let totals = try DailyTotalsBuilder.totals(
                     for: intakesByDay[key] ?? [], store: store, lookup: lookup, nutrients: queried)
                 let rows = (groups[key] ?? []).sorted { $0.occurredAt > $1.occurredAt }
@@ -257,12 +297,14 @@ public final class JournalViewModel: ObservableObject {
                         totals: totals, goals: storedGoals, hasFoodEntries: Self.hasFoodEntries(rows),
                         unitSystem: self.preferences.unitSystem, hidden: hiddenGoals),
                     energyText: Self.energyText(totals: totals),
-                    isCollapsedByDefault: rows.allSatisfy { row in
+                    isCollapsedByDefault: !rows.isEmpty && rows.allSatisfy { row in
                         let zone = TimeZone(identifier: row.timeZoneIdentifier) ?? TimeZone.current
                         return Self.isMoreThanAWeekBefore(Self.dayKey(row.occurredAt, zone: zone), now: now, zone: zone)
                     },
                     entryCountText: Self.entryCountText(rows.count))
             }
+            todaySection = built.first { $0.id == todayKey && $0.rows.isEmpty }
+            sections = built.filter { !($0.id == todayKey && $0.rows.isEmpty) }
             weekSummary = Self.makeWeekSummary(
                 sections: sections, now: now,
                 zone: TimeZone(identifier: journalZoneID()) ?? TimeZone.current,
@@ -273,6 +315,12 @@ public final class JournalViewModel: ObservableObject {
             goalsErrorMessage = goalsReadFailed ? GoalsViewModel.readFailedMessage : nil
             hasLoaded = true
         } catch {
+            // Clear everything the last successful load built: a failed read must not leave its totals on screen.
+            todaySection = nil
+            sections = []
+            skippedCount = 0
+            weekSummary = nil
+            goalsErrorMessage = nil
             errorMessage = "Could not read the journal."
         }
     }
@@ -310,6 +358,23 @@ public final class JournalViewModel: ObservableObject {
         } else {
             expandedDays.insert(id)
         }
+    }
+
+    /// The day the Diary arrows step from: the earliest visible day in list order, clamped to today, or `now`
+    /// when none is visible. A section with an entry dated in the future is clamped, so the arrows never start there.
+    public static func arrowBaseDay(sectionIDs: [String], visible: Set<String>, zone: TimeZone, now: Date) -> Date {
+        guard let top = sectionIDs.first(where: { visible.contains($0) }), let day = dayDate(top, zone: zone) else { return now }
+        return min(day, now)
+    }
+
+    /// The local midnight of a day key such as "2026-10-14", read in the given zone.
+    static func dayDate(_ key: String, zone: TimeZone) -> Date? {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = zone
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.date(from: key)
     }
 
     /// Where a picked day lands. A day with entries is its own section with no sentence. A day with none
@@ -383,14 +448,85 @@ public final class JournalViewModel: ObservableObject {
     /// Copies every entry of a past day to now, as new entries. The day's own entries are untouched.
     @discardableResult
     public func copyDayToToday(_ sectionID: String, now: Date) -> IntakeCopyResult? {
-        runCopy(now: now) { try copier.copyDay(dayKey: sectionID, now: now) }
+        let result = runCopy(now: now) { try copier.copyDay(dayKey: sectionID, now: now) }
+        setCopyUndo(result, now: now)
+        return result
+    }
+
+    /// The entries the latest copy created, held so Undo can remove exactly them. A new copy replaces them.
+    @Published private(set) var copiedIDs: [String] = []
+
+    /// The moment the latest copy's Undo window closes: ten seconds after the copy. Held in the model, so the window
+    /// holds whether or not the toast is on screen.
+    private var copyUndoDeadline: Date?
+    private static let copyUndoWindow: TimeInterval = 10
+
+    /// Records the latest copy as the one Undo can take back, until its deadline.
+    private func setCopyUndo(_ result: IntakeCopyResult?, now: Date) {
+        copiedIDs = result?.createdIDs ?? []
+        copyUndoDeadline = result == nil ? nil : now.addingTimeInterval(Self.copyUndoWindow)
+        copyCount += 1
+    }
+
+    /// Whether the latest copy can still be undone at `now`: it has ids left and its window is open.
+    public func canUndoCopy(now: Date) -> Bool {
+        guard !copiedIDs.isEmpty, let deadline = copyUndoDeadline else { return false }
+        return now < deadline
+    }
+
+    /// Counts each copy, so the Undo control restarts its window when a new copy lands.
+    @Published public private(set) var copyCount = 0
+
+    /// Ends the Undo window for the latest copy without undoing it.
+    public func expireCopyUndo() {
+        copiedIDs = []
+        copyUndoDeadline = nil
+    }
+
+    /// Removes exactly the entries the latest copy created, and nothing else. Taken once: a second call finds
+    /// nothing to undo.
+    @discardableResult
+    public func undoCopy(now: Date) -> Bool {
+        guard canUndoCopy(now: now) else { return false }
+        // A copy the person already deleted by hand is not active any more: it is skipped, not counted as a failure.
+        guard let active = try? Set(store.activeIntakes().map(\.id)) else {
+            load(now: now)
+            // A failed read cannot tell which copies are still here, so the notice names no count (#535).
+            copyNotice = "Couldn't remove the copied entries. Tap Undo to try again."
+            return false
+        }
+        var succeeded = true
+        // An id leaves copiedIDs only once it is gone, so a failed delete keeps the rest for a retry.
+        while let id = copiedIDs.first {
+            if active.contains(id) {
+                do { try store.delete(intakeID: id, now: now) } catch {
+                    succeeded = false
+                    break
+                }
+            }
+            copiedIDs.removeFirst()
+        }
+        load(now: now)
+        // A failed undo leaves the copies still here, and the Undo control stays so tapping it tries again.
+        // A copy after a failed delete may have been deleted by hand, so count only the ids still active (#535).
+        copyNotice = succeeded ? nil : Self.undoFailureText(copiedIDs.filter { active.contains($0) }.count)
+        return succeeded
+    }
+
+    /// The notice after an undo could not remove every copy: `remaining` copies are still here (#535).
+    static func undoFailureText(_ remaining: Int) -> String {
+        remaining == 1
+            ? "Couldn't remove 1 copied entry. Tap Undo to try again."
+            : "Couldn't remove \(remaining) copied entries. Tap Undo to try again."
     }
 
     /// Copies one meal group of a past day to now. "Other" copies the entries with no named meal.
     @discardableResult
     public func copyMealToToday(_ sectionID: String, groupID: String, now: Date) -> IntakeCopyResult? {
         let selector = MealLabel.allCases.first { $0.displayName == groupID }.map(MealSelector.named) ?? .other
-        return runCopy(now: now) { try copier.copyMeal(selector, dayKey: sectionID, now: now) }
+        let result = runCopy(now: now) { try copier.copyMeal(selector, dayKey: sectionID, now: now) }
+        setCopyUndo(result, now: now)
+        return result
     }
 
     /// The saved meals "Save as meal" writes to. Set once by the app; nil leaves the action out.
@@ -413,6 +549,8 @@ public final class JournalViewModel: ObservableObject {
             return false
         }
         let saved = savedMeals.save(name: name, meal: label, intakes: intakes)
+        // Saving a meal is a newer action than the copy, so the copy's Undo is no longer offered once it has saved.
+        if saved { expireCopyUndo() }
         copyNotice = savedMeals.notice
         copyFailed = savedMeals.noticeIsFailure
         return saved
@@ -513,8 +651,8 @@ public final class JournalViewModel: ObservableObject {
         return found
     }
 
-    /// The day's entries grouped by meal. A meal that is not one of the four named ones, or none at
-    /// all, is "Other"; water with no meal lands there too. Rows keep the order they are given.
+    /// The day's entries grouped by meal, as the Journal's section list has always carried them: only the meals
+    /// with entries, then "Other". The Diary adds the empty named meals itself through `diaryMealGroups`.
     static func mealGroups(for rows: [JournalRow]) -> [JournalMealGroup] {
         let named = MealLabel.allCases.map(\.displayName)
         var buckets: [String: [JournalRow]] = [:]
@@ -527,10 +665,56 @@ public final class JournalViewModel: ObservableObject {
         }
     }
 
+    /// The meals a Diary day lists: the four named meals in their fixed order, empty ones included, then "Other"
+    /// only when an entry has no named meal. Which of them a day shows is decided by `visibleMealGroups`.
+    static func diaryMealGroups(for rows: [JournalRow]) -> [JournalMealGroup] {
+        let named = MealLabel.allCases.map(\.displayName)
+        var buckets: [String: [JournalRow]] = [:]
+        for row in rows {
+            let title = row.meal.flatMap { named.contains($0) ? $0 : nil } ?? "Other"
+            buckets[title, default: []].append(row)
+        }
+        let namedGroups = named.map { JournalMealGroup(id: $0, title: $0, rows: buckets[$0] ?? []) }
+        guard let other = buckets["Other"] else { return namedGroups }
+        return namedGroups + [JournalMealGroup(id: "Other", title: "Other", rows: other)]
+    }
+
+    /// Whether a section is the day an add flow logs to: today in the device's own zone, which is the zone a new
+    /// entry is stamped with. Section ids are each intake's own local day, so the comparison uses the same zone.
+    static func isAddDay(_ sectionID: String, now: Date, zone: TimeZone = .current) -> Bool {
+        sectionID == addDayID(now: now, zone: zone)
+    }
+
+    /// The section id an entry added now would get: the same day key every section uses, read in the zone the add
+    /// flow stamps new entries with. Section ids come from each intake's own zone, so for a new entry this is the device zone.
+    static func addDayID(now: Date, zone: TimeZone = .current) -> String {
+        dayKey(now, zone: zone)
+    }
+
+    /// The meal groups a Diary day shows. Today's day shows every named meal, so each can take an add. A past day
+    /// shows only the meals that have entries, because an add there would log to now, not to that day.
+    static func visibleMealGroups(
+        _ groups: [JournalMealGroup], sectionID: String, now: Date, zone: TimeZone = .current
+    ) -> [JournalMealGroup] {
+        guard !isAddDay(sectionID, now: now, zone: zone) else { return groups }
+        return groups.filter { !$0.rows.isEmpty }
+    }
+
+    /// Whether a day's section offers the add row: the day an add made now lands in, judged in this journal's zone,
+    /// the same zone the arrows and Copy to today use. The view asks this rather than comparing zones itself.
+    public func showsAddRow(sectionID: String, now: Date) -> Bool {
+        Self.isAddDay(sectionID, now: now, zone: dayZone)
+    }
+
+    /// The meal an add opens with for a group: the named meal, or nil for "Other", which has no add of its own.
+    static func addMeal(forGroupTitle title: String) -> MealLabel? {
+        MealLabel.allCases.first { $0.displayName == title }
+    }
+
     /// A day counts as logged when it holds a food or drink entry. Water and supplements do not count.
     /// The day header and the week summary both use this rule.
     static func hasFoodEntries(_ rows: [JournalRow]) -> Bool {
-        rows.contains { !$0.isWater && $0.kind != .supplement }
+        rows.contains { !$0.isWater && $0.countsAs != .supplement }
     }
 
     /// The week summary for the loaded sections, or nil when the journal has no day at all. The window is
@@ -654,8 +838,11 @@ public final class JournalViewModel: ObservableObject {
     /// The day's energy as "1240 kcal", or nil when the day cannot total it. Never a zero for unknown.
     static func energyText(totals: DailyTotals) -> String? {
         let line = NutrientProgressLine.make(nutrient: energyKey, total: totals.total(for: energyKey), goal: nil)
-        guard case .known(let value, let unit) = line.amount else { return nil }
-        return AmountDisplay.nutrient(value, unit: unit).text
+        guard case .known(let value, _) = line.amount else { return nil }
+        // Energy reads as "400 Calories": the Diary never shows the kcal symbol on a screen. A small positive
+        // amount reads "under 1", never "0", the same as Today's ring.
+        if value > 0 && value < 1 { return "under 1 Calories" }
+        return "\(BodyActivityViewModel.whole(value)) Calories"
     }
 
     /// "1 entry" or "9 entries".
@@ -708,4 +895,10 @@ public final class JournalViewModel: ObservableObject {
         let parts = calendar.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
     }
+}
+
+/// The zone a new entry is stamped with and the Diary groups its days in, when no override is given (#539).
+/// The add flow and the Diary both default to this one function, so the two cannot drift apart.
+public enum DiaryZone {
+    public static func identifier() -> String { TimeZone.current.identifier }
 }

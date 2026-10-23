@@ -31,7 +31,7 @@ public struct AddLibraryPicker: View {
             }
             .pickerStyle(.segmented)
             .padding(DesignSpacing.m)
-            if let onSearchProducts { Button("Find shared products", action: onSearchProducts) }
+            if let onSearchProducts { Button("Search foods", action: onSearchProducts) }
             if segment == "Recipes" {
                 List {
                     if recipes.items.isEmpty {

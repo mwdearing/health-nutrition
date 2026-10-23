@@ -43,21 +43,23 @@ final class BodyActivityTests: XCTestCase {
         XCTAssertEqual(reader.requests, 1)
         XCTAssertFalse(model.showsConnect)
         XCTAssertEqual(model.stepsText, "8,214 steps")
-        XCTAssertEqual(model.activeEnergyText, "413 kcal active")
+        XCTAssertEqual(model.activeEnergyText, "413 Calories active")
     }
 
     func testOutsideTotalsNameWhatOtherAppsLoggedInTheRightUnits() async {
         let reader = FakeReader()
         reader.hasAskedForReadAccess = true
-        reader.readings = BodyActivityReadings(outsideNutrients: ["energy": 620, "protein": 48, "water": 473.1765])
+        reader.readings = BodyActivityReadings(
+            outsideNutrients: ["energy": 620, "protein": 48, "water": 473.1765], outsideRead: true,
+            outsideReadKeys: ["energy", "protein", "water"])
         var system = UnitSystem.usCustomary
         let model = BodyActivityViewModel(reader: reader, unitSystem: { system })
         await model.load(now: now)
 
-        XCTAssertEqual(model.outsideText, "From other apps: 620 kcal, 48 g protein, 16 fl oz water")
+        XCTAssertEqual(model.outsideText, "From other apps: 620 Calories, 48 g protein, 16 fl oz water")
 
         system = .metric
-        XCTAssertEqual(model.outsideText, "From other apps: 620 kcal, 48 g protein, 473 mL water")
+        XCTAssertEqual(model.outsideText, "From other apps: 620 Calories, 48 g protein, 473 mL water")
     }
 
     func testAFailedOutsideReadSaysSoRatherThanShowingNothing() async {

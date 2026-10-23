@@ -9,6 +9,17 @@ public struct SavedMealUndoToken: Equatable {
     public let message: String
 }
 
+/// What a removed saved meal needs to come back: the meal and where it sat, while Undo is offered.
+public struct SavedMealRemoval: Equatable {
+    /// New for every removal, so the ten-second window restarts even for the same meal removed again.
+    public let id = UUID()
+    public let meal: SavedMeal
+    public let index: Int
+    public let message: String
+    /// The erase epoch when the meal was removed. An erase or a wipe since then means the meal is not written back.
+    public let epoch: String
+}
+
 /// The saved meals screens share: the list, saving a Journal meal, logging one and undoing it.
 ///
 /// It keeps what it last read. The app reads it again after Erase all data and after a journal restore (which
@@ -26,6 +37,8 @@ public final class SavedMealsModel: ObservableObject {
     @Published public private(set) var noticeIsFailure = false
     /// The entries the last log wrote, while Undo is offered.
     @Published public private(set) var undoToken: SavedMealUndoToken?
+    /// The saved meal just removed, while Undo is offered.
+    @Published public private(set) var removalUndo: SavedMealRemoval?
     /// Set while entries a failed log or a failed Undo left behind are still in the journal. Unlike `notice` it
     /// is not dropped by a later action or read: it goes only when those entries are gone, removed by Undo,
     /// in the Journal or by an erase. It is kept in memory, so it lasts while the app runs; the entries
@@ -72,6 +85,8 @@ public final class SavedMealsModel: ObservableObject {
     /// not saved at all: a meal missing an item would log less than was eaten without saying so.
     @discardableResult
     public func save(name: String, meal: MealLabel?, intakes: [Intake]) -> Bool {
+        // A save is now the latest action, so the earlier removal is final and its Undo goes.
+        removalUndo = nil
         let provider = RecentItemsProvider(store: journal)
         // The templates below read which entries were kept out of Library; a failed read refuses the save rather
         // than building them as if none were.
@@ -113,7 +128,7 @@ public final class SavedMealsModel: ObservableObject {
             }
             let saved = try book.add(name: name, meal: meal, templates: templates, itemIDs: itemIDs)
             load()
-            notice = "Saved \(saved.name). Log it again from Add, in Find products."
+            notice = "Saved \(saved.name). Log it again from Add, in Search foods."
             noticeIsFailure = false
             return true
         } catch let error as SavedMealError {
@@ -186,19 +201,49 @@ public final class SavedMealsModel: ObservableObject {
     /// Drops any Undo offer, for when the screen showing it goes away.
     public func clearUndo() {
         undoToken = nil
+        removalUndo = nil
     }
 
     public func remove(_ saved: SavedMeal) {
+        // The position comes from the same store write as the removal, so Undo puts the meal back where it was.
+        // The epoch is read before the write: an erase during it leaves the Undo refused, never allowed.
+        let epoch = book.removalEpoch()
         do {
-            try book.remove(id: saved.id)
+            let index = try book.remove(id: saved.id)
             load()
             notice = nil
             noticeIsFailure = false
+            removalUndo = SavedMealRemoval(meal: saved, index: index, message: "Removed \(saved.name).",
+                epoch: epoch)
         } catch let error as SavedMealError {
             finish(failure: error.message)
         } catch {
             finish(failure: "Could not remove the saved meal.")
         }
+    }
+
+    /// Puts the last removed meal back where it was. A failure says so, and the meal is then not offered again.
+    @discardableResult
+    public func undoRemove() -> Bool {
+        guard let removal = removalUndo else { return false }
+        do {
+            let restored = try book.restore(removal.meal, at: removal.index, epoch: removal.epoch)
+            removalUndo = nil
+            load()
+            return restored
+        } catch SavedMealError.erasedSinceRemoval {
+            // Erased data is not put back: the offer ends with the notice, and nothing is written.
+            removalUndo = nil
+            return finish(failure: "Couldn't put back \(removal.meal.name).")
+        } catch {
+            // The offer stays up, so the meal can still be put back once there is room for it.
+            return finish(failure: "Couldn't put back \(removal.meal.name). Tap Undo to try again.")
+        }
+    }
+
+    /// Ends the removal's Undo window, but only if `removal` is still the current offer.
+    public func expireRemoval(_ removal: SavedMealRemoval) {
+        if removalUndo == removal { removalUndo = nil }
     }
 
     /// The meals to offer when logging `saved`: the one it was saved with first, then the others, then none.

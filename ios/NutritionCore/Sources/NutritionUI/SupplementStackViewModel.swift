@@ -147,7 +147,7 @@ public final class SupplementStackViewModel: ObservableObject {
     public func load(now: Date) {
         do {
             let stored = try favorites.list()
-            let loggedUnitIndex = LoggedUnitIndex.load(from: store)
+            let loggedUnitIndex = try LoggedUnitIndex.loadOrThrow(from: store)
             let byID = Dictionary(stored.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             let planned = try pruned(schedules.schedules(), keeping: Set(byID.keys))
             guard let clock = SupplementStackClock(now: now, zoneIdentifier: zoneID()) else {
@@ -169,8 +169,7 @@ public final class SupplementStackViewModel: ObservableObject {
                 return found
             }
             func kind(_ snapshotID: String?, category: String) -> ProductKind {
-                guard snapshotID != nil else { return category == Self.supplementCategory ? .supplement : .food }
-                return product(snapshotID)?.kind ?? .food
+                ProductKindResolution.kind(snapshotID: snapshotID, snapshotKind: { product($0)?.kind }, category: category)
             }
             let limits = upperLimitRows(now: now, intakes: active)
             bases = planned.compactMap { entry -> RowBasis? in
@@ -368,7 +367,7 @@ public final class SupplementStackViewModel: ObservableObject {
         favorites stored: [FavoriteTemplate], planned: Set<String>,
         kind: (String?, String) -> ProductKind
     ) throws -> [SupplementStackCandidate] {
-        let loggedUnitIndex = LoggedUnitIndex.load(from: store)
+        let loggedUnitIndex = try LoggedUnitIndex.loadOrThrow(from: store)
         let onList = Set(stored.filter { planned.contains($0.id) }.map { Self.matchKey($0) })
         let favoriteCandidates = stored
             .filter { !planned.contains($0.id) && !onList.contains(Self.matchKey($0)) }
@@ -666,7 +665,7 @@ public final class SupplementStackViewModel: ObservableObject {
     }
 
     /// The category an entry typed as a supplement carries when it has no product snapshot.
-    static let supplementCategory = "supplement"
+    static let supplementCategory = ProductKindResolution.supplementCategory
 
     static func matchKey(_ favorite: FavoriteTemplate) -> String {
         SupplementStackDay.matchKey(

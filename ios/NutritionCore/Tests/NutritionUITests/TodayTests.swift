@@ -1,6 +1,6 @@
 import NutritionDomain
-import NutritionJournal
 import XCTest
+@testable import NutritionJournal
 @testable import NutritionUI
 
 private struct FixedFacts: NutrientFactsLookup {
@@ -121,6 +121,59 @@ final class TodayTests: XCTestCase {
         model.quickAddWater(milliliters: Decimal(string: "330.5")!, now: now)
         XCTAssertEqual(try store.activeIntakes().count, 1)
         XCTAssertEqual(model.waterTotalMilliliters, Decimal(string: "330.5")!)
+    }
+
+    func testRapidDeletesKeepUndoOnTheSecondAndRestoreOnlyIt() throws {
+        let store = try makeStore()
+        // The window is checked against the commit clock, so this test uses the real clock throughout.
+        let stamp = Date()
+        let first = try addFood(store, name: "Oats", id: "oats", at: stamp)
+        let second = try addFood(store, name: "Eggs", id: "eggs", at: stamp)
+        let model = TodayViewModel(store: store, timeZoneIdentifier: "UTC")
+        model.load(now: stamp)
+        XCTAssertTrue(model.deleteEntry(intakeID: first, now: stamp))
+        let firstSequence = store.deleteSequence
+        XCTAssertTrue(model.deleteEntry(intakeID: second, now: stamp))
+        let secondSequence = store.deleteSequence
+        // The commit hooks arrive late, after both deletes have been made.
+        model.deleteCommitted(sequence: firstSequence)
+        model.deleteCommitted(sequence: secondSequence)
+        XCTAssertEqual(model.undo?.intakeID, second)
+        XCTAssertTrue(model.undoLastQuickAdd(now: stamp))
+        XCTAssertEqual(try store.activeIntakes().map(\.id), [second])
+        // The first delete is still queued, so it reaches Health and the relay once its window ends.
+        XCTAssertEqual(try store.pendingDeleteRowCountForTesting(intakeID: first), 2)
+    }
+
+    func testLateHookForAnEarlierForeignDeleteKeepsTheNewerTodayOffer() throws {
+        let store = try makeStore()
+        // The window is checked against the commit clock, so this test uses the real clock throughout.
+        let stamp = Date()
+        let foreign = try addFood(store, name: "Milk", id: "milk", at: stamp)
+        let mine = try addFood(store, name: "Oats", id: "oats", at: stamp)
+        let model = TodayViewModel(store: store, timeZoneIdentifier: "UTC")
+        model.load(now: stamp)
+        // Another screen deletes first, then Today deletes; the other screen's hook arrives after Today's offer.
+        let foreignSequence = try store.deleteSequenced(intakeID: foreign, now: stamp)
+        XCTAssertTrue(model.deleteEntry(intakeID: mine, now: stamp))
+        model.deleteCommitted(sequence: foreignSequence)
+        XCTAssertEqual(model.undo?.intakeID, mine)
+        XCTAssertTrue(model.undoLastQuickAdd(now: stamp))
+        XCTAssertEqual(try store.activeIntakes().map(\.id), [mine])
+    }
+
+    func testForeignDeleteCommittedAfterTodayDeleteTakesTheOfferAway() throws {
+        let store = try makeStore()
+        let stamp = Date()
+        let foreign = try addFood(store, name: "Milk", id: "milk", at: stamp)
+        let mine = try addFood(store, name: "Oats", id: "oats", at: stamp)
+        let model = TodayViewModel(store: store, timeZoneIdentifier: "UTC")
+        model.load(now: stamp)
+        XCTAssertTrue(model.deleteEntry(intakeID: mine, now: stamp))
+        // A delete on another screen commits after Today's, so it is the most recent change.
+        let foreignSequence = try store.deleteSequenced(intakeID: foreign, now: stamp)
+        model.deleteCommitted(sequence: foreignSequence)
+        XCTAssertNil(model.undo)
     }
 
     func testQuickAddWaterInvalidAmountsWriteNothing() throws {

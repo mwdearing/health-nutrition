@@ -54,10 +54,12 @@ public struct DisplayAmount: Equatable {
     /// The amount and its symbol, as one line of text. An amount too small to name says so instead of
     /// showing a zero, because a non-zero stored amount must never read as none of it.
     public var text: String {
+        // Energy is read as "Calories" on screen; the kcal symbol never reaches a screen.
+        let word = unit == .kcal ? "Calories" : unit.symbol
         guard isBelowSmallest else {
-            return "\(self.numberText) \(unit.symbol)"
+            return "\(self.numberText) \(word)"
         }
-        return "< \(DecimalFormatting.text(self.smallestAmount)) \(unit.symbol)"
+        return "< \(DecimalFormatting.text(self.smallestAmount)) \(word)"
     }
 
     /// The figures alone, for a sentence that spells the unit out in words.
@@ -71,8 +73,9 @@ public struct DisplayAmount: Equatable {
 
     private var numberText: String {
         guard self.groupsWholeAmount else { return DecimalFormatting.text(self.amount) }
+        // Up to two decimals, so a rounded 3.5 g keeps its fraction; a whole amount has none to show.
         return self.amount.formatted(
-            .number.locale(Locale(identifier: "en_US")).precision(.fractionLength(0)))
+            .number.locale(Locale(identifier: "en_US")).precision(.fractionLength(0...2)))
     }
 }
 
@@ -181,7 +184,8 @@ public enum AmountDisplay {
         let smallest = unit == .kcal ? Decimal(1) : Decimal(string: "0.01", locale: AmountParser.locale)!
         let rounded = DisplayRounding.rounded(amount, fractionDigits: digits)
         return DisplayAmount(
-            amount: rounded, unit: unit, isBelowSmallest: rounded == 0 && amount > 0, smallestAmount: smallest)
+            amount: rounded, unit: unit, isBelowSmallest: rounded == 0 && amount > 0,
+            groupsWholeAmount: true, smallestAmount: smallest)
     }
 
     /// The most fraction digits a figure printed on a label carries: the catalog states none with more
@@ -278,4 +282,8 @@ public enum AmountDisplay {
         default: return unit.symbol
         }
     }
+}
+extension MeasureUnit {
+    /// The unit as a screen shows it. Energy reads as "Calories"; the kcal symbol stays for storage and Health.
+    public var screenSymbol: String { self == .kcal ? "Calories" : symbol }
 }

@@ -128,7 +128,7 @@ public enum NutritionTokens: Sendable {
     public static let semantic: [Token] = [
         Token(name: "background", light: "#FFFFFF", dark: "#07222E"),
         Token(name: "surface", light: "#F2F2F7", dark: "#0B3D4A"),
-        Token(name: "border", light: "#D1D5DB", dark: "#1F5663"),
+        Token(name: "border", light: "#86868B", dark: "#5B98A4"),
         Token(name: "textPrimary", light: "#111827", dark: "#F0F6FC"),
         Token(name: "textSecondary", light: "#6C6C70", dark: "#AEAEB2"),
         Token(name: "accent", light: "#0F6B78", dark: "#5EEAD4"),

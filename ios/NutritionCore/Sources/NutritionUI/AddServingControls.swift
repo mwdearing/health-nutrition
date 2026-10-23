@@ -23,7 +23,7 @@ struct AddServingControls: View {
     @ViewBuilder private var servingsSection: some View {
         if model.canCountServings, let serving = model.servingOption {
             Section {
-                LabeledField("Servings", onFocusEnd: { model.commitServingCount() }) { focus in
+                LabeledField("Servings", spokenTitle: true, onFocusEnd: { model.commitServingCount() }) { focus in
                     TextField(
                         "Servings",
                         text: Binding(get: { model.servingCount }, set: { model.setServingCount($0) })
@@ -46,7 +46,7 @@ struct AddServingControls: View {
     }
 
     @ViewBuilder private func previewRows(_ preview: AmountPreview) -> some View {
-        row("Calories", preview.kcal, unit: "kcal")
+        row("Calories", preview.kcal, unit: "")
         row("Protein", preview.protein, unit: "g")
         row("Carbohydrates", preview.carbohydrates, unit: "g")
         row("Fat", preview.fat, unit: "g")
@@ -56,7 +56,7 @@ struct AddServingControls: View {
         HStack {
             Text(name)
             Spacer()
-            Text(value.map { "\(DecimalFormatting.text($0)) \(unit)" } ?? "Unknown")
+            Text(value.map { unit.isEmpty ? DecimalFormatting.text($0) : "\(DecimalFormatting.text($0)) \(unit)" } ?? "Unknown")
                 .foregroundStyle(TokenColors.textSecondary)
         }
         .accessibilityElement(children: .combine)

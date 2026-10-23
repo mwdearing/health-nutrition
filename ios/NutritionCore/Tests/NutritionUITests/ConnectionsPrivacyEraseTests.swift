@@ -6,10 +6,16 @@ import XCTest
 
 /// A journal store that is never asked to read anything here, so the erase test only exercises the
 /// screen's own bookkeeping.
-private final class EraseStubStore: JournalStore, @unchecked Sendable {
+private final class EraseStubStore: JournalStore, JournalRestoreProgress, @unchecked Sendable {
     private struct Unsupported: Error {}
 
     var failNextSaveForTesting = false
+    var failClearRestoreForTesting = false
+    func markRestoreInProgress(fileDigest: String) throws {}
+    func restoreInProgressDigest() throws -> String? { nil }
+    func clearRestoreInProgress() throws {
+        if failClearRestoreForTesting { throw Unsupported() }
+    }
 
     func create(_ intake: Intake, components: [IntakeComponent], product: ProductDefinition?, now: Date) throws -> IntakeRevision {
         throw Unsupported()
@@ -48,12 +54,14 @@ private final class EraseStubFavorites: FavoritesStore, @unchecked Sendable {
 /// One injected store. `eraseCount` says the screen ran it; `failure` stands in for a store that
 /// cannot erase, e.g. one that was closed.
 private final class RecordingEraser: JournalErasing, @unchecked Sendable {
+    let erasureName: String
     var eraseCount = 0
     var beforeErase: (() -> Void)?
     var failure: Error?
 
-    init(failure: Error? = nil) {
+    init(failure: Error? = nil, name: String = "test store") {
         self.failure = failure
+        self.erasureName = name
     }
 
     func eraseAll() throws {
@@ -184,7 +192,7 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
     /// One store that cannot erase must not stop the others, and the person has to be told that
     /// something was left behind.
     func testAStoreThatFailsIsReportedAndTheRestStillRun() async {
-        let failing = RecordingEraser(failure: EraseFailure())
+        let failing = RecordingEraser(failure: EraseFailure(), name: "goals")
         let working = RecordingEraser()
         let model = makeModel([failing, working])
 
@@ -193,9 +201,153 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
 
         XCTAssertEqual(failing.eraseCount, 1)
         XCTAssertEqual(working.eraseCount, 1)
-        XCTAssertEqual(model.errorMessage, ConnectionsPrivacyViewModel.eraseFailedMessage)
+        XCTAssertEqual(model.errorMessage, ConnectionsPrivacyViewModel.eraseLeftBehindMessage(["goals"]))
+        XCTAssertTrue(model.eraseRetryAvailable)
         XCTAssertEqual(model.exportState, .idle)
         XCTAssertEqual(model.entryCount, 0)
+    }
+
+    /// A reminder request still pending after the erase is reported as "reminders" still on the phone.
+    func testARemainingReminderRequestIsReportedAsStillOnThePhone() async {
+        let model = ConnectionsPrivacyViewModel(
+            store: EraseStubStore(), favorites: EraseStubFavorites(), erasers: [RecordingEraser()],
+            remindersStillPending: { ["reminders"] })
+
+        let erased = await model.eraseAllData()
+        XCTAssertFalse(erased)
+        XCTAssertEqual(model.errorMessage, ConnectionsPrivacyViewModel.eraseLeftBehindMessage(["reminders"]))
+    }
+
+    /// A custom reminder request still pending after the erase is reported as "custom reminders" still on the phone.
+    func testARemainingCustomReminderIsReportedAsStillOnThePhone() async {
+        let center = FakePendingReminderCenter(["custom-reminder-\(UUID().uuidString)"])
+        let model = ConnectionsPrivacyViewModel(
+            store: EraseStubStore(), favorites: EraseStubFavorites(), erasers: [RecordingEraser()],
+            remindersStillPending: { await ReminderReadback.namesStillPending(in: center, pause: {}) })
+
+        let erased = await model.eraseAllData()
+        XCTAssertFalse(erased)
+        XCTAssertEqual(model.errorMessage, ConnectionsPrivacyViewModel.eraseLeftBehindMessage(["custom reminders"]))
+    }
+
+    /// The erase list keeps each store instance it was given, in the pinned order: the builder returns the same
+    /// objects, not copies with matching names.
+    func testTheEraseOrderBuilderKeepsTheExactInstancesInOrder() {
+        let log = EraseOrderLog()
+        let widgets = OrderedEraser("widget data", log)
+        let savedMeals = OrderedEraser("saved meals", log)
+        let supplements = OrderedEraser("supplements", log)
+        let daily = OrderedEraser("reminders", log)
+        let custom = OrderedEraser("custom reminders", log)
+        let journal = OrderedEraser("journal", log)
+        let favorites = OrderedEraser("favorites", log)
+        let recipes = OrderedEraser("recipes", log)
+        let goals = OrderedEraser("goals", log)
+
+        let order = ConnectionsPrivacyViewModel.eraseOrder(ConnectionsPrivacyViewModel.EraseStores(
+            widgets: widgets, savedMeals: savedMeals, supplements: supplements,
+            reminders: [daily, custom], journal: journal, favorites: favorites, recipes: recipes, goals: goals))
+
+        let expected: [JournalErasing] = [
+            widgets, savedMeals, supplements, daily, custom, journal, favorites, recipes, goals,
+        ]
+        XCTAssertEqual(order.count, expected.count)
+        for (actual, wanted) in zip(order, expected) {
+            XCTAssertTrue(actual === wanted, "\(wanted.erasureName) is not the instance the builder was given")
+        }
+    }
+
+    /// Erase and Retry only ask for confirmation: nothing is erased until the person confirms.
+    func testARequestedEraseErasesNothingUntilConfirmed() async {
+        let eraser = RecordingEraser()
+        let model = makeModel([eraser])
+        model.requestErase()
+        XCTAssertTrue(model.eraseConfirmationPending)
+        XCTAssertEqual(eraser.eraseCount, 0)
+
+        model.cancelEraseRequest()
+        XCTAssertFalse(model.eraseConfirmationPending)
+        XCTAssertEqual(eraser.eraseCount, 0)
+
+        model.requestErase()
+        let erased = await model.confirmErase()
+        XCTAssertTrue(erased)
+        XCTAssertEqual(eraser.eraseCount, 1)
+        XCTAssertFalse(model.eraseConfirmationPending)
+    }
+
+    /// The erase runs the stores in the order the app builds them: widget data first, journal after the lists.
+    func testTheEraseOrderIsWidgetFirstAndJournalAfterTheLists() async {
+        let log = EraseOrderLog()
+        let order = ConnectionsPrivacyViewModel.eraseOrder(ConnectionsPrivacyViewModel.EraseStores(
+            widgets: OrderedEraser("widget data", log), savedMeals: OrderedEraser("saved meals", log),
+            supplements: OrderedEraser("supplements", log),
+            reminders: [OrderedEraser("reminders", log), OrderedEraser("custom reminders", log)],
+            journal: OrderedEraser("journal", log), favorites: OrderedEraser("favorites", log),
+            recipes: OrderedEraser("recipes", log), goals: OrderedEraser("goals", log)))
+        let model = makeModel(order)
+
+        let erased = await model.eraseAllData()
+        XCTAssertTrue(erased)
+        XCTAssertEqual(log.names, [
+            "widget data", "saved meals", "supplements", "reminders", "custom reminders",
+            "journal", "favorites", "recipes", "goals",
+        ])
+    }
+
+    /// Community sharing is paused only once the erase is going ahead. A restore flag that cannot be cleared
+    /// stops the erase before the stores, so it must not pause sharing.
+    func testBeforeEraseDoesNotRunWhenTheFlagCannotBeCleared() async {
+        let store = EraseStubStore()
+        store.failClearRestoreForTesting = true
+        var paused = false
+        let model = ConnectionsPrivacyViewModel(
+            store: store, favorites: EraseStubFavorites(), erasers: [RecordingEraser()],
+            beforeErase: { paused = true })
+
+        let erased = await model.eraseAllData()
+        XCTAssertFalse(erased)
+        XCTAssertFalse(paused)
+    }
+
+    /// Every store still on the phone is named, in the order the erase ran, and none of them stops the rest.
+    func testEverySurvivingStoreIsNamedInEraseOrder() async {
+        let savedMeals = RecordingEraser(failure: EraseFailure(), name: "saved meals")
+        let working = RecordingEraser()
+        let journal = RecordingEraser(failure: EraseFailure(), name: "journal")
+        let goals = RecordingEraser(failure: EraseFailure(), name: "goals")
+        let model = makeModel([savedMeals, working, journal, goals])
+
+        let erased = await model.eraseAllData()
+        XCTAssertFalse(erased)
+
+        XCTAssertEqual(working.eraseCount, 1)
+        XCTAssertEqual(goals.eraseCount, 1)
+        XCTAssertEqual(
+            model.errorMessage,
+            "Erase didn't finish. Still on this phone: saved meals, journal and goals. Tap Retry to erase them.")
+    }
+
+    /// A restore flag that cannot be cleared stops the erase before any store is touched, and says so.
+    func testNothingIsErasedWhenTheRestoreFlagCannotBeCleared() async {
+        let store = EraseStubStore()
+        store.failClearRestoreForTesting = true
+        let journal = RecordingEraser(name: "journal")
+        let model = ConnectionsPrivacyViewModel(store: store, favorites: EraseStubFavorites(), erasers: [journal])
+
+        let erased = await model.eraseAllData()
+        XCTAssertFalse(erased)
+
+        XCTAssertEqual(journal.eraseCount, 0)
+        XCTAssertEqual(model.errorMessage, ConnectionsPrivacyViewModel.eraseNothingErasedMessage)
+        XCTAssertTrue(model.eraseRetryAvailable)
+
+        store.failClearRestoreForTesting = false
+        let retried = await model.eraseAllData()
+        XCTAssertTrue(retried)
+        XCTAssertEqual(journal.eraseCount, 1)
+        XCTAssertNil(model.errorMessage)
+        XCTAssertFalse(model.eraseRetryAvailable)
     }
 
     /// A local account-keychain failure is included in the partial result, while every other local eraser still runs.
@@ -214,7 +366,7 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
 
         XCTAssertEqual(accountEraseCount, 1)
         XCTAssertEqual(journal.eraseCount, 1)
-        XCTAssertEqual(model.errorMessage, ConnectionsPrivacyViewModel.eraseFailedMessage)
+        XCTAssertEqual(model.errorMessage, ConnectionsPrivacyViewModel.eraseLeftBehindMessage(["community sign-in"]))
     }
 
     /// With no store injected there is nothing to erase, so the screen does not offer the action at all
@@ -285,7 +437,7 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
         let eraseResult7 = await model.eraseAllData()
         XCTAssertFalse(eraseResult7)
 
-        XCTAssertEqual(model.errorMessage, ConnectionsPrivacyViewModel.eraseFailedMessage)
+        XCTAssertEqual(model.errorMessage, ConnectionsPrivacyViewModel.eraseLeftBehindMessage(["export files"]))
         XCTAssertTrue(FileManager.default.fileExists(atPath: stray.path))
     }
 
@@ -377,4 +529,30 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
             XCTAssertFalse(message.contains("nothing needs to be deleted"), message)
         }
     }
+}
+
+/// Records the order the erase calls each store in.
+private final class EraseOrderLog: @unchecked Sendable {
+    var names: [String] = []
+}
+
+private final class OrderedEraser: JournalErasing, @unchecked Sendable {
+    let erasureName: String
+    private let log: EraseOrderLog
+
+    init(_ name: String, _ log: EraseOrderLog) {
+        erasureName = name
+        self.log = log
+    }
+
+    func eraseAll() throws {
+        log.names.append(erasureName)
+    }
+}
+
+/// A notification center whose pending requests are fixed by the test.
+struct FakePendingReminderCenter: PendingReminderCenter {
+    let identifiers: [String]
+    init(_ identifiers: [String]) { self.identifiers = identifiers }
+    func pendingRequestIdentifiers() async -> [String] { identifiers }
 }

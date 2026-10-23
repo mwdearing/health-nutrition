@@ -65,6 +65,8 @@ public enum BarcodeLookupState: Sendable, Equatable {
     /// How long the source asked the caller to wait, when it said.
     case rateLimited(retryAfterSeconds: Int?)
     case failed(String)
+    /// The request could not reach the source: no connection, or a network that dropped it.
+    case offline
 
     public var isLoading: Bool {
         if case .loading = self { return true }
@@ -104,7 +106,7 @@ extension LookedUpProduct {
         case .unknown: return "Not on the label"
         case .notApplicable: return "Does not apply"
         case .belowReportingThreshold(let unit):
-            return "Less than the label reports" + (unit.map { " (\($0.symbol))" } ?? "")
+            return "Less than the label reports" + (unit.map { " (\($0.screenSymbol))" } ?? "")
         }
     }
 
@@ -165,6 +167,13 @@ public final class AddIntakeViewModel: ObservableObject {
     private var isSettingServings = false
     /// The separator a typed count is read with: the device's, unless a test sets another.
     private let countDecimalSeparator: String?
+    /// Grams for one cup, tablespoon or teaspoon, as the picked food's own record lists them. Empty when none is listed.
+    @Published public private(set) var listedPortions: [MeasureUnit: Decimal] = [:]
+    private let portionLookup: (any HouseholdPortionLookup)?
+    /// Whether the picked food's measures have been asked for, so focusing the amount again sends nothing new.
+    private var portionsAsked = false
+    /// Whether the asked-for measures have come back, or the request has failed.
+    private var portionsLoaded = false
     /// True while the amount is the one a count of servings set, so an emptied Servings field can clear it.
     private var amountFromServings = false
     /// Why a typed amount was cleared when a pick came in with a unit it cannot total in. Nil otherwise; it
@@ -271,6 +280,8 @@ public final class AddIntakeViewModel: ObservableObject {
     /// stays `.unknown` and is never stored as zero.
     @Published public private(set) var prefilledNutrients: [String: NutrientValue] = [:]
     @Published public private(set) var lookupBasis: BarcodeLookupBasis?
+    /// The basis of a label the camera captured, so the amount preview can scale it like a looked-up product.
+    @Published private(set) var capturedLabelBasis: String?
     /// What one serving is, when the values are per serving.
     @Published public private(set) var serving: ServingDefinition?
     /// The attribution the source requires next to its values.
@@ -292,7 +303,9 @@ public final class AddIntakeViewModel: ObservableObject {
     private var filledName: String?
     private var filledBrand: String?
 
-    public let timeZoneIdentifier: String
+    /// The zone a new entry is stamped with. Read at save, through the same resolver the Diary uses (#539).
+    private let zoneID: () -> String
+    public var timeZoneIdentifier: String { zoneID() }
     /// The units the picker offers, read through so a preference changed on another screen is
     /// honored the next time this form is opened. Metric offers the whole registry; the US system
     /// puts ounces, fluid ounces, cups, tablespoons and teaspoons first.
@@ -304,7 +317,7 @@ public final class AddIntakeViewModel: ObservableObject {
     /// dimension it is stated in; a "serving" or a count logged against it saves unknown values for the day.
     public var unitOptions: [MeasureUnit] {
         switch lookedUp?.basis {
-        case .per100g?: return units.filter { $0.dimension == .mass }
+        case .per100g?: return units.filter { $0.dimension == .mass || listedPortions[$0] != nil }
         case .per100ml?: return units.filter { $0.dimension == .volume }
         default: return units
         }
@@ -331,19 +344,22 @@ public final class AddIntakeViewModel: ObservableObject {
     public init(
         store: JournalStore,
         now: Date,
-        timeZoneIdentifier: String = TimeZone.current.identifier,
+        timeZoneIdentifier: String? = nil,
+        timeZoneProvider: @escaping () -> String = { DiaryZone.identifier() },
         makeID: @escaping () -> String = { UUID().uuidString.lowercased() },
         lookup: BarcodeProductLookup? = nil,
         preferences: DisplayPreferences = InMemoryDisplayPreferences(),
         labelScannerAvailable: Bool = true,
         labelSubmitter: CommunityLabelSubmitting? = nil,
         isSharingAllowed: @escaping @MainActor () -> Bool = { false },
-        countDecimalSeparator: String? = Locale.current.decimalSeparator
+        countDecimalSeparator: String? = Locale.current.decimalSeparator,
+        portionLookup: (any HouseholdPortionLookup)? = nil
     ) {
         self.store = store
         self.countDecimalSeparator = countDecimalSeparator
+        self.portionLookup = portionLookup
         self.occurredAt = now
-        self.timeZoneIdentifier = timeZoneIdentifier
+        self.zoneID = IntakeRepeater.resolver(override: timeZoneIdentifier, provider: timeZoneProvider)
         self.makeID = makeID
         self.lookup = lookup
         self.preferences = preferences
@@ -433,7 +449,42 @@ public final class AddIntakeViewModel: ObservableObject {
     public func fieldDidBegin(_ field: AddIntakeField) {
         objectWillChange.send()
         leftFields.remove(field)
+        // The household measures are asked for only once the person starts an amount, not when a food is picked.
+        if field == .amount, !portionsAsked, portionLookup != nil {
+            portionsAsked = true
+            Task { await loadListedPortions() }
+        }
     }
+
+    /// Asks the source for the cup, tablespoon and teaspoon weights a USDA food lists. A failed or slow request
+    /// means those units are not offered; nothing else waits on it.
+    public func loadListedPortions() async {
+        guard let lookup = portionLookup, let picked = lookedUp, picked.basis == .per100g,
+              let sourceID = picked.sourceID, let fdcId = Int(sourceID)
+        else { return }
+        // Settled however the request ends, so the density notes wait for it and then say what is true.
+        defer { if lookedUp?.sourceID == sourceID { portionsLoaded = true } }
+        let portions = await lookup.listedPortions(fdcId: fdcId)
+        // A later pick may have replaced this food while the request ran; its portions are not this food's.
+        guard lookedUp?.sourceID == sourceID else { return }
+        listedPortions = portions
+    }
+
+    /// True while a USDA food's listed measures are still being asked for. The density notes wait for it, so
+    /// they never say a cup cannot be measured when the food does list one.
+    private var portionsPending: Bool {
+        portionLookup != nil && lookedUp?.basis == .per100g && lookedUp?.sourceID != nil
+            && portionsAsked && !portionsLoaded
+    }
+
+    /// Whether the person has typed or changed anything worth keeping. Leaving the form then asks first.
+    public var hasTypedInput: Bool {
+        !name.trimmingCharacters(in: .whitespaces).isEmpty
+            || !amountText.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    /// Whether the edge swipe-back of the pushed details form must be blocked: exactly when typed input would be lost.
+    public var blocksSwipeBack: Bool { hasTypedInput }
 
     /// Clears the attempted save and the per-field history, for when the form is reset.
     public func resetFieldErrors() {
@@ -452,7 +503,8 @@ public final class AddIntakeViewModel: ObservableObject {
     /// The line under the amount when a typical density converts the volume: the grams and the food
     /// whose density gave them. Nil when no conversion applies.
     public var densityNote: String? {
-        guard let conversion = volumeToMass else { return nil }
+        // A measure the food lists converts through its own gram weight, so no density is described for it.
+        guard listedPortions[unit] == nil, !portionsPending, let conversion = volumeToMass else { return nil }
         return "About \(DecimalFormatting.text(conversion.grams)) g, using a typical density for "
             + "\(conversion.ingredientName)."
     }
@@ -460,8 +512,8 @@ public final class AddIntakeViewModel: ObservableObject {
     /// The line shown when a volume is chosen for a food the catalog does not name, so the amount is saved in
     /// milliliters. Nil for a mass, or for a volume the density rule does not reach.
     public var densityUnavailableNote: String? {
-        guard UnitSelection.typedVolumes.contains(unit), densityApplies, !typedName.isEmpty,
-            IngredientDensityCatalog.match(typedName) == nil
+        guard listedPortions[unit] == nil, !portionsPending, UnitSelection.typedVolumes.contains(unit), densityApplies,
+            !typedName.isEmpty, IngredientDensityCatalog.match(typedName) == nil
         else { return nil }
         return "No typical density is known for this food, so it is saved in mL."
     }
@@ -496,6 +548,10 @@ public final class AddIntakeViewModel: ObservableObject {
         // An amount shown rounded in the reader's unit and left alone is saved as the exact stored quantity.
         if let backing = prefillBacking, backing.shownAmount == amount, backing.shownUnit == unit {
             return (backing.storedAmount, backing.storedUnit)
+        }
+        // A household measure the food lists converts through its own gram weight, which wins over any density.
+        if let gramsPerUnit = listedPortions[unit] {
+            return (amount * gramsPerUnit, .g)
         }
         if let conversion = densityConversion(amount: amount, unit: unit, name: name) {
             return (conversion.grams, .g)
@@ -559,6 +615,8 @@ public final class AddIntakeViewModel: ObservableObject {
             return Self.rateLimitMessage(retryAfterSeconds: retryAfterSeconds)
         case .failed:
             return "The lookup did not finish. Try again in a moment."
+        case .offline:
+            return "No internet connection. Try again when you're online."
         }
     }
 
@@ -685,6 +743,9 @@ public final class AddIntakeViewModel: ObservableObject {
         case .failed(let reason):
             invalidateLookup()
             lookupState = .failed(reason)
+        case .offline:
+            invalidateLookup()
+            lookupState = .offline
         }
     }
 
@@ -736,6 +797,12 @@ public final class AddIntakeViewModel: ObservableObject {
         labelValues = product
         prefilledFromCapture = fromLabelCapture
         fillProductValues(product)
+        // The captured panel's serving and basis feed the Servings control and the amount preview, the same
+        // as a looked-up product's. Form state only; the stored values are not changed.
+        // Only a label capture sets the Servings control. The captured basis still drives the amount preview for
+        // every caller, so a repeated per-serving product keeps its preview.
+        servingOption = fromLabelCapture ? Self.capturedServing(of: product) : nil
+        capturedLabelBasis = product.labelBasis
     }
 
     /// Prefills a Library product without changing its saved snapshot identity.
@@ -822,6 +889,10 @@ public final class AddIntakeViewModel: ObservableObject {
         lookedUp = nil
         // A serving from an earlier product must not stay on the Servings control or count the next entry.
         servingOption = nil
+        capturedLabelBasis = nil
+        listedPortions = [:]
+        portionsAsked = false
+        portionsLoaded = false
         unitNotice = nil
         servingCount = ""
         amountFromServings = false
@@ -872,7 +943,7 @@ public final class AddIntakeViewModel: ObservableObject {
             unit = first
             amountText = ""
             if hadAmount {
-                unitNotice = "Amount cleared. This food can't be measured in \(typed.symbol)."
+                unitNotice = "Amount cleared. This food can't be measured in \(typed.screenSymbol)."
             }
         }
         // An amount the person typed before the lookup is theirs and stays; the serving only opens an empty field.
@@ -985,8 +1056,36 @@ public final class AddIntakeViewModel: ObservableObject {
     /// Calories and macros for the amount as typed, from per-100 g values. Nil when the amount is not a
     /// mass or the values are not per 100 g; per-serving values are not scaled here.
     public var amountPreview: AmountPreview? {
-        AmountPreview.make(
-            nutrients: prefilledNutrients, basis: lookupBasis ?? lookedUp?.basis, amountText: amountText, unit: unit)
+        if let basis = lookupBasis ?? lookedUp?.basis {
+            return AmountPreview.make(nutrients: prefilledNutrients, basis: basis, amountText: amountText, unit: unit)
+        }
+        guard let labelBasis = capturedLabelBasis else { return nil }
+        return capturedPreview(labelBasis: labelBasis)
+    }
+
+    /// The preview for a captured panel. A per-serving panel scales the same way the "This adds" lines and the
+    /// save path do: IntakeContextSnapshotBasis's scaling factor for the stored label basis and the amount typed.
+    /// Only a mass amount is scaled, so a volume or count amount shows no preview.
+    private func capturedPreview(labelBasis: String) -> AmountPreview? {
+        guard let amount = AmountParser.parseTyped(amountText), unit.dimension == .mass,
+              let converted = try? Quantity(value: amount, unit: unit).converted(to: .g)
+        else { return nil }
+        let component = IntakeComponent(componentID: "preview", name: name, amount: amount, unit: unit)
+        guard let factor = DailyTotalsBuilder.scalingFactor(labelBasis: labelBasis, logged: [component]) else {
+            return nil
+        }
+        func scaled(_ key: String, in expected: MeasureUnit) -> Decimal? {
+            guard case .known(let value, let stated) = prefilledNutrients[key] ?? .unknown, stated == expected else {
+                return nil
+            }
+            return value * factor
+        }
+        return AmountPreview(
+            grams: converted.value,
+            kcal: scaled(LookedUpProduct.energyKcal, in: .kcal),
+            protein: scaled(LookedUpProduct.protein, in: .g),
+            carbohydrates: scaled(LookedUpProduct.carbohydrates, in: .g),
+            fat: scaled(LookedUpProduct.fat, in: .g))
     }
 
     /// The "Save to Library" switch. It starts on every time the form opens, so no earlier choice carries over.
@@ -1219,4 +1318,10 @@ extension String {
     var nilIfEmpty: String? {
         isEmpty ? nil : self
     }
+}
+
+/// Asks a food source for the cup, tablespoon and teaspoon gram weights a food lists. Implemented by the app
+/// target over the USDA client, so the form never holds a key or a network client.
+public protocol HouseholdPortionLookup: Sendable {
+    func listedPortions(fdcId: Int) async -> [MeasureUnit: Decimal]
 }

@@ -11,6 +11,12 @@ public struct AddScannerAvailability {
         self.barcode = barcode
         self.label = label
     }
+
+    /// The Add tiles follow hardware support only. A denied or restricted camera stays reachable so its message
+    /// and Open Settings action can show; a busy camera is handled by the sheet's own start failure.
+    public static func forSupport(_ isSupported: Bool) -> AddScannerAvailability {
+        AddScannerAvailability(barcode: isSupported, label: isSupported)
+    }
 }
 
 public struct AddUndoToken: Equatable {
@@ -33,6 +39,7 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
     private let preferences: DisplayPreferences
     private let now: () -> Date
     private let labelSubmitter: CommunityLabelSubmitting?
+    private let portionLookup: (any HouseholdPortionLookup)?
     private let isSharingAllowed: @MainActor () -> Bool
 
     public init(store: JournalStore, meal: MealLabel? = nil,
@@ -41,6 +48,7 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
         preferences: DisplayPreferences = InMemoryDisplayPreferences(),
         now: @escaping () -> Date = { Date() },
         labelSubmitter: CommunityLabelSubmitting? = nil,
+        portionLookup: (any HouseholdPortionLookup)? = nil,
         isSharingAllowed: @escaping @MainActor () -> Bool = { false }) {
         self.store = store
         self.meal = meal
@@ -49,6 +57,7 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
         self.preferences = preferences
         self.now = now
         self.labelSubmitter = labelSubmitter
+        self.portionLookup = portionLookup
         self.isSharingAllowed = isSharingAllowed
     }
 
@@ -63,17 +72,27 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
         let model = AddIntakeViewModel(
             store: store, now: now, lookup: lookup, preferences: preferences,
             labelScannerAvailable: scannerAvailability.label,
-            labelSubmitter: labelSubmitter, isSharingAllowed: isSharingAllowed)
+            labelSubmitter: labelSubmitter, isSharingAllowed: isSharingAllowed,
+            portionLookup: portionLookup)
         model.meal = meal
         return model
     }
 
     /// A template's amounts as the reader's unit system shows them.
     public func amountSummary(of template: RepeatTemplate) -> String {
-        let kind = template.productSnapshotID.flatMap { try? store.product(snapshotID: $0) }?.kind
+        let kind = ProductKindResolution.kind(
+            snapshotID: template.productSnapshotID, snapshotKind: { (try? store.product(snapshotID: $0))?.kind },
+            category: template.category)
         return AmountText.summary(
             template.components, unitSystem: preferences.unitSystem,
             loggedUnits: kind == .supplement ? template.loggedUnits : [:], isSupplement: kind == .supplement)
+    }
+
+    /// A Recent row's second line: its amounts, then its meal, separated the way the Library row shows them.
+    public func recentSubtitle(of template: RepeatTemplate) -> String {
+        let amounts = amountSummary(of: template)
+        guard let meal = MealLabel.displayName(for: template.meal) else { return amounts }
+        return "\(amounts) · \(meal)"
     }
 
     public func makeDetails(product: CustomProductRevision, now: Date) throws -> AddIntakeViewModel {
@@ -88,7 +107,9 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
         if prefill.components.count > 1 {
             // The current Details form has one amount. Present the whole recorded combination as
             // one serving, spelling out all original amounts rather than silently dropping any.
-            let comboKind = prefill.productSnapshotID.flatMap { try? store.product(snapshotID: $0) }?.kind
+            let comboKind = ProductKindResolution.kind(
+                snapshotID: prefill.productSnapshotID, snapshotKind: { (try? store.product(snapshotID: $0))?.kind },
+                category: prefill.category)
             model.name = prefill.components.map {
                 let loggedUnit = comboKind == .supplement ? prefill.loggedUnits[$0.componentID] : nil
                 return "\($0.name) (\(AmountText.describe($0, unitSystem: preferences.unitSystem, loggedUnit: loggedUnit, isSupplement: comboKind == .supplement)))"
@@ -126,7 +147,9 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
         }
         model.name = prefill.displayName
         model.category = prefill.category
-        let kind = prefill.productSnapshotID.flatMap { try? store.product(snapshotID: $0) }?.kind
+        let kind = ProductKindResolution.kind(
+            snapshotID: prefill.productSnapshotID, snapshotKind: { (try? store.product(snapshotID: $0))?.kind },
+            category: prefill.category)
         // A supplement opens in the unit it was logged in, or, when none was recorded and its amount is stored in
         // milliliters, in the spoon those milliliters can only have been typed in. Other units open as they are.
         var openedIn: MeasureUnit?
@@ -167,7 +190,8 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
     @discardableResult
     public func quickAdd(_ recent: RecentItem) -> AddUndoToken? {
         var template = recent.template
-        template.meal = meal?.rawValue
+        // Only a meal the person chose overrides the item's own meal; None keeps the one it was logged under.
+        if let meal { template.meal = meal.rawValue }
         let date = now()
         do {
             let repeater = IntakeRepeater(store: store, timeZoneProvider: { TimeZone.current.identifier },

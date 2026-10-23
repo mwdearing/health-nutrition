@@ -32,7 +32,7 @@ final class AppServices {
     let connections: ConnectionsPrivacyViewModel
     /// The Daily goals screen, reached from the Library screen's Connections section.
     let goals: GoalsViewModel
-    /// Saved meals, saved from the Journal and logged from Find products. Kept in the defaults domain and
+    /// Saved meals, saved from the Journal and logged from Search foods. Kept in the defaults domain and
     /// erased with everything else.
     let savedMeals: SavedMealsModel
     /// The first-day checklist on Today. It reads the journal and the goals, and the display settings
@@ -68,8 +68,10 @@ final class AppServices {
     /// same builds as `account`, and then no catalog call is made.
     let community: CommunityClient?
     let productService: (any CommunityProductServicing)?
-    /// Name search for Find products over USDA and Open Food Facts. Nil in builds that make no network calls at all.
+    /// Name search for Search foods over USDA and Open Food Facts. Nil in builds that make no network calls at all.
     var productNameSearch: (any ProductNameSearching)? = nil
+    /// Cup, tablespoon and teaspoon weights a picked USDA food lists. Nil when the build has no USDA key.
+    var householdPortions: (any HouseholdPortionLookup)? = nil
     let productSharing: ProductShareCoordinator?
     private var connectivityMonitor: NWPathMonitor?
     /// Keeps the supplement list in step with the journal: the app's reloads reread it while the list is on
@@ -88,7 +90,7 @@ final class AppServices {
         reminderScheduler: ReminderScheduling,
         productService: (any CommunityProductServicing)? = nil,
         accountServiceOverride: CommunityAccountServicing? = nil,
-        widgetSnapshotEraser: JournalErasing
+        widgetSnapshotEraser: WidgetSnapshotEraser
     ) {
         self.displayPreferences = displayPreferences
         let community = Self.makeCommunity()
@@ -132,25 +134,29 @@ final class AppServices {
             lookup: SnapshotNutrientFacts(), referencePreferences: displayPreferences,
             preferences: displayPreferences)
         goals = GoalsViewModel(store: goalStore, journal: journalStore, preferences: displayPreferences)
-        firstDayChecklist = FirstDayChecklistModel(
-            store: journalStore, goals: goalStore, preferences: displayPreferences)
         let savedMealStore = UserDefaultsSavedMealStore()
         let savedMeals = SavedMealsModel(store: savedMealStore, journal: journalStore)
         self.savedMeals = savedMeals
         let reminderEraser = ReminderEraser(scheduler: reminderScheduler, erasures: reminderErasures)
-        var reminderErasers: [JournalErasing] = [reminderEraser]
         // Only the system scheduler also schedules the custom reminders; a test's fake leaves them out.
-        if let custom = reminderScheduler as? (ReminderScheduling & CustomReminderScheduling) {
+        var customReminderEraser: CustomReminderEraser?
+        if let custom = Self.customReminderScheduling(of: reminderScheduler) {
             let store = UserDefaultsCustomReminderStore()
             reminderController.customReminders = CustomReminderController(
                 store: store, permissions: custom, scheduler: custom, erasures: reminderErasures)
-            reminderErasers.append(CustomReminderEraser(store: store, scheduler: custom, erasures: reminderErasures))
+            customReminderEraser = CustomReminderEraser(store: store, scheduler: custom, erasures: reminderErasures)
         }
+        // The order the stores are erased in, and so the order their failures are listed in. The widget eraser runs
+        // first so no publish announced before the erase can land after it. The reminder readback is not in this
+        // list: it runs after the stores.
+        let erasers = ConnectionsPrivacyViewModel.eraseOrder(
+            Self.eraseStores(
+                widgets: widgetSnapshotEraser, savedMeals: savedMealStore, supplements: supplementSchedules,
+                dailyReminders: reminderEraser, customReminders: customReminderEraser,
+                journal: journalStore, favorites: favoritesStore, recipes: recipeStore, goals: goalStore))
         connections = ConnectionsPrivacyViewModel(
             store: journalStore, favorites: favoritesStore, savedMeals: savedMealStore, appVersion: Self.appVersion,
-            erasers: [widgetSnapshotEraser]
-                + ([journalStore, favoritesStore, recipeStore, goalStore, savedMealStore] as [JournalErasing])
-                + reminderErasers + ([supplementSchedules] as [JournalErasing]),
+            erasers: erasers,
             preferences: displayPreferences,
             beforeErase: {
                 if let owner = productSharing?.accountContext?.ownerID {
@@ -171,18 +177,21 @@ final class AppServices {
             eraseLocalAccount: {
                 guard let account else { return }
                 try await account.discardLocalSession()
-            })
+            },
+            remindersStillPending: { await ReminderReadback.namesStillPending(in: SystemPendingReminderCenter()) })
         let openFoodFacts = OpenFoodFactsProductLookup(
             client: OpenFoodFactsClient(appVersion: Self.appVersion))
-        barcodeLookup = Self.makeBarcodeLookup(primary: openFoodFacts, community: community, account: account)
+        barcodeLookup = Self.makeBarcodeLookup(community: community, account: account)
         // USDA FoodData Central joins name search when the build carries a key; without one, search is
         // Open Food Facts alone, as before.
         let usdaKey = (Bundle.main.object(forInfoDictionaryKey: "USDA_FDC_API_KEY") as? String)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         // An unexpanded build setting reads as the literal "$(USDA_FDC_API_KEY)"; that is no key.
-        let usda = usdaKey.flatMap { key -> USDAProductNameSearch? in
-            key.isEmpty || key.contains("$(") ? nil : USDAProductNameSearch(client: USDAFoodDataClient(apiKey: key))
+        let usdaClient = usdaKey.flatMap { key -> USDAFoodDataClient? in
+            key.isEmpty || key.contains("$(") ? nil : USDAFoodDataClient(apiKey: key)
         }
+        householdPortions = usdaClient
+        let usda = usdaClient.map { USDAProductNameSearch(client: $0) }
         productNameSearch = FoodDatabaseSearch(openFoodFacts: openFoodFacts, usda: usda)
         let totals = JournalSnapshotTotals(store: journalStore)
         let healthKitDelivery = HealthKitDeliveryWorker(
@@ -194,7 +203,19 @@ final class AppServices {
         let healthKitDeliveryStatus = HealthKitDeliveryStatus(
             healthKitDelivery: healthKitDelivery, store: journalStore, accessDefaults: .standard)
         self.healthKitDeliveryStatus = healthKitDeliveryStatus
+        // A delete is held for the Undo window; once it ends, run the same pass a write triggers, so the
+        // delete reaches Health without waiting for the next foreground.
+        let todayModel = today
+        journalStore.setOnDeleteCommitted { [weak healthKitDeliveryStatus] _, sequence in
+            Task { @MainActor in todayModel.deleteCommitted(sequence: sequence) }
+            Task {
+                try? await Task.sleep(for: .seconds(JournalUndo.deleteWindow + 0.5))
+                await healthKitDeliveryStatus?.run(now: Date(), automatic: true)
+            }
+        }
         appleHealth = AppleHealthConnectionViewModel(connector: healthKitDeliveryStatus)
+        firstDayChecklist = FirstDayChecklistModel(
+            store: journalStore, goals: goalStore, preferences: displayPreferences, health: appleHealth)
         bodyActivity = BodyActivityViewModel(
             reader: HealthKitReader(), unitSystem: { [displayPreferences] in displayPreferences.unitSystem })
         // Set after every stored property, so the Library can link to the supplement list.
@@ -217,8 +238,11 @@ final class AppServices {
         // Today counts the active energy toward the calorie goal when the person switched that on;
         // it reloads only when the figure changed, so a foreground does not load Today twice for nothing.
         bodyActivity.onRead = { [today] readings in
-            guard today.activeEnergyKcal != readings.activeEnergyKcal else { return }
+            guard TodayViewModel.needsReload(
+                activeEnergyKcal: today.activeEnergyKcal, outsideIntake: today.outsideIntake, for: readings
+            ) else { return }
             today.activeEnergyKcal = readings.activeEnergyKcal
+            today.outsideIntake = readings.outsideIntake
             today.load(now: Date())
         }
         if let productSharing {
@@ -230,7 +254,7 @@ final class AppServices {
             connectivityMonitor = monitor
             monitor.start(queue: DispatchQueue(label: "product-sharing-connectivity"))
         }
-        // Set once every stored property is, so the Journal and Find products can reach saved meals.
+        // Set once every stored property is, so the Journal and Search foods can reach saved meals.
         library.savedMeals = savedMeals
         journal.savedMeals = savedMeals
         // A restore writes the saved meals list as well as the journal, so the list is read again once its
@@ -251,12 +275,14 @@ final class AppServices {
 
     /// Open Food Facts first. A barcode it does not find is asked of the community catalog, for a person who is
     /// signed in. Without an account the lookup is Open Food Facts alone, as before accounts existed.
+    /// Barcodes resolve through the community catalog only (see CatalogOnlyBarcodeLookup).
     private static func makeBarcodeLookup(
-        primary: BarcodeProductLookup, community: CommunityClient?, account: AccountViewModel?
+        community: CommunityClient?, account: AccountViewModel?
     ) -> BarcodeProductLookup {
-        guard let community, let account else { return primary }
-        return CommunityFallbackLookup(
-            primary: primary, community: community, isSignedIn: { account.phase == .signedIn })
+        let signedIn: (@MainActor @Sendable () -> Bool)? = account.map { account in
+            { @MainActor @Sendable in account.phase == .signedIn }
+        }
+        return CatalogOnlyBarcodeLookup.make(community: community, isSignedIn: signedIn)
     }
 
     /// The human check for sign-in, or nil when the build has no site key. Without a provider the sign-in
@@ -279,6 +305,27 @@ final class AppServices {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
     }
 
+    /// The erase's stores, one labeled field per slot. Each argument goes to its own slot here, so a test can check
+    /// that every store lands where it was given.
+    static func eraseStores(
+        widgets: WidgetSnapshotEraser, savedMeals: UserDefaultsSavedMealStore,
+        supplements: UserDefaultsSupplementStackStore, dailyReminders: ReminderEraser,
+        customReminders: CustomReminderEraser?, journal: SwiftDataJournalStore, favorites: SwiftDataFavoritesStore,
+        recipes: SwiftDataRecipeStore, goals: SwiftDataGoalStore
+    ) -> ConnectionsPrivacyViewModel.EraseStores {
+        let reminders: [JournalErasing] = [dailyReminders] + (customReminders.map { [$0] } ?? [])
+        return ConnectionsPrivacyViewModel.EraseStores(
+            widgets: widgets, savedMeals: savedMeals, supplements: supplements, reminders: reminders,
+            journal: journal, favorites: favorites, recipes: recipes, goals: goals)
+    }
+
+    /// The custom-reminder side of a scheduler, when it takes custom reminders. The system scheduler does; a fake may not.
+    static func customReminderScheduling(
+        of scheduler: ReminderScheduling
+    ) -> (ReminderScheduling & CustomReminderScheduling)? {
+        scheduler as? (ReminderScheduling & CustomReminderScheduling)
+    }
+
     /// Opens all four store files in `directory`, creating the directory and the files if needed.
     ///
     /// The directory is a parameter so a test can build a whole app on throwaway files instead of the
@@ -295,7 +342,7 @@ final class AppServices {
         reminderScheduler: ReminderScheduling,
         productService: (any CommunityProductServicing)? = nil,
         accountServiceOverride: CommunityAccountServicing? = nil,
-        widgetSnapshotEraser: JournalErasing = WidgetSnapshotEraser()
+        widgetSnapshotEraser: WidgetSnapshotEraser = WidgetSnapshotEraser()
     ) throws -> AppServices {
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         // Which destinations the journal queues work for.

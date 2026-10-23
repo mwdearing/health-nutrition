@@ -94,7 +94,7 @@ targets:
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
         # The app requests write access and read access to the nutrient types it writes. Read access is used
         # only to total what other apps logged for the day; the debug HealthKit spike reads back its own test samples.
-        INFOPLIST_KEY_NSHealthShareUsageDescription: "If you tap Show steps, activity and weight on Today, HealthNutrition reads your steps, active energy and weight to show them there. When you connect Apple Health, it also reads the nutrients and water other apps logged to Health, so your totals match Health. Nothing else is read except the nutrient samples other apps logged and the samples it wrote, which it looks up to update or remove them when you edit or delete an entry, and a debug build's HealthKit test screen reads back the test water and protein samples it wrote."
+        INFOPLIST_KEY_NSHealthShareUsageDescription: "If you tap Show steps, activity and weight on Today, HealthNutrition reads your steps, active energy and weight to show them there. When you connect Apple Health, it also reads the nutrients and water other apps logged to Health, so your totals match Health. Nothing else is read except the nutrient samples other apps logged and the samples it wrote, which it looks up to update or remove them when you edit or delete an entry."
         # Write access is asked for when you tap Connect Apple Health in Settings. The delivery driver then
         # writes the nutrients of the entries you log, and removes them again when you delete an entry.
         INFOPLIST_KEY_NSHealthUpdateUsageDescription: "When you connect Apple Health, HealthNutrition writes the nutrients and water of the entries you log to Health, and removes them again when you delete an entry."
@@ -221,7 +221,6 @@ targets:
     sources:
       - path: Tests
         excludes:
-          - PrivacyShieldUITests/**
           - AddSearchUITests/**
     dependencies:
       - target: HealthNutrition
@@ -252,19 +251,6 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: dev.example.HealthNutritionAddUITests
         GENERATE_INFOPLIST_FILE: YES
 
-  HealthNutritionPrivacyUITests:
-    type: bundle.ui-testing
-    platform: iOS
-    deploymentTarget: "18.0"
-    sources:
-      - path: Tests/PrivacyShieldUITests
-    dependencies:
-      - target: HealthNutrition
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: dev.example.HealthNutritionPrivacyUITests
-        GENERATE_INFOPLIST_FILE: YES
-
 schemes:
   HealthNutrition:
     build:
@@ -272,12 +258,14 @@ schemes:
         HealthNutrition: all
         HealthNutritionWidgets: all
         HealthNutritionTests: [test]
+        HealthNutritionAddUITests: [test]
     run:
       config: Debug
     test:
       config: Debug
       targets:
         - HealthNutritionTests
+        - HealthNutritionAddUITests
     archive:
       config: Release
 
@@ -293,14 +281,3 @@ schemes:
       targets:
         - HealthNutritionAddUITests
 
-  HealthNutritionPrivacy:
-    build:
-      targets:
-        HealthNutrition: all
-        HealthNutritionPrivacyUITests: [test]
-    run:
-      config: Debug
-    test:
-      config: Debug
-      targets:
-        - HealthNutritionPrivacyUITests

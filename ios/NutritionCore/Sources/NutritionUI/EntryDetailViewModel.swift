@@ -185,6 +185,10 @@ public final class EntryDetailViewModel: ObservableObject {
     /// time edit is waiting to be saved (choosing a meal reloads the screen). A meal this build does not name
     /// (an imported free-text value) is shown as written and is left as it is.
     public var canChangeMeal: Bool { (mealText == nil || selectedMeal != nil) && !isDirty }
+
+    /// Log again copies the stored entry, so it is offered only when no edit is waiting to be saved: then the copy
+    /// matches what the sheet shows. With unsaved edits the person saves first.
+    public var canLogAgain: Bool { !isDirty }
     /// The time exactly as the journal holds it, and nil until `load` has read the entry. A draft
     /// may only correct that, so a save made before the first load cannot move an entry whose
     /// stored time this model has not seen.
@@ -258,10 +262,11 @@ public final class EntryDetailViewModel: ObservableObject {
             sourceDetailRows = Self.sourceDetails(for: snapshot)
             productName = snapshot?.name
             brand = snapshot?.brand
-            kind = snapshot?.kind ?? .food
+            kind = ProductKindResolution.kind(
+                snapshotID: current.productSnapshotID, snapshotKind: { _ in snapshot?.kind }, category: intake.category)
             waterSharePercent = current.components.compactMap(\.hydrationPercent).first
             loadedWaterSharePercent = waterSharePercent
-            loggedUnits = LoggedUnitIndex.load(from: store)[intakeID] ?? [:]
+            loggedUnits = try LoggedUnitIndex.loadOrThrow(from: store)[intakeID] ?? [:]
             allValues = Self.allValues(of: snapshot)
             adds = Self.adds(of: snapshot, logged: current.components)
             // The field reads at the digits a reading carries (354.9 mL, not 354.88235475 mL). Untouched, a
@@ -365,6 +370,9 @@ public final class EntryDetailViewModel: ObservableObject {
         guard let storedOccurredAt else { return false }
         return occurredAt != storedOccurredAt
     }
+
+    /// Whether Close must ask first: unsaved changes would be lost by closing the entry.
+    public var closeAsksFirst: Bool { isDirty }
 
     /// Whether two amount texts state the same amount. Both are trimmed; when both parse, the decimals
     /// decide, so "40.0" and " 40 " match a stored 40. Otherwise the trimmed text decides. The loaded text

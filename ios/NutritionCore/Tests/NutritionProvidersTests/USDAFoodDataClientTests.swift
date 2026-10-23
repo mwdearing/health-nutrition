@@ -213,3 +213,20 @@ private let sampleReply = """
     #expect(USDAFoodDataClient.retryAfter(formatter.string(from: later), now: now) == 120)
     #expect(USDAFoodDataClient.retryAfter(formatter.string(from: now.addingTimeInterval(-60)), now: now) == 0)
 }
+
+@Test func listedPortionsKeepCupTablespoonAndTeaspoonWeights() throws {
+    let body = Data(#"""
+    {"foodPortions":[
+      {"amount":1,"gramWeight":174,"modifier":"cup"},
+      {"amount":1,"gramWeight":12.5,"measureUnit":{"name":"tbsp"}},
+      {"amount":2,"gramWeight":10,"modifier":"teaspoon, heaping"},
+      {"amount":1,"gramWeight":50,"modifier":"slice"},
+      {"amount":1,"gramWeight":0,"modifier":"cup"}
+    ]}
+    """#.utf8)
+    let grams = try USDAFoodDataClient.parsePortions(body)
+    #expect(grams[.cup] == 174)
+    #expect(grams[.tablespoon] == Decimal(string: "12.5"))
+    #expect(grams[.teaspoon] == 5)
+    #expect(grams.count == 3, "other measures and zero weights are not kept")
+}

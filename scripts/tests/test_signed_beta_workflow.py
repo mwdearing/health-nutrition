@@ -2,9 +2,9 @@
 
 The workflow signs with an App Store Connect API key held in a protected GitHub
 Environment. The repository is public, so what keeps the key safe is the shape of
-the workflow: it can start only by hand, it needs a reviewer's approval, it never
-reads secrets outside its own steps, and it never writes a secret to a log or an
-artifact.
+the workflow: it can start only by dispatch, it runs only from main and only builds a commit
+already on main, it never reads secrets outside its own steps, and it never writes a secret
+to a log or an artifact.
 """
 
 from __future__ import annotations
@@ -185,7 +185,7 @@ def test_the_bundle_id_is_a_secret_not_an_input_and_no_identity_is_in_the_file()
         "dict[str, object]",
         cast("dict[str, object]", _load()["on"])["workflow_dispatch"],
     )
-    assert set(cast("dict[str, object]", inputs["inputs"])) == {"marketing_version"}
+    assert set(cast("dict[str, object]", inputs["inputs"])) == {"marketing_version", "sha"}
     assert "inputs.bundle_id" not in text
     assert "com.mwdearing" not in text
     assert "dev.example" not in text  # the placeholder never reaches a signed build
@@ -380,3 +380,14 @@ def test_every_run_script_parses_as_shell() -> None:
         if "run" in step:
             result = subprocess.run(["bash", "-n"], input=str(step["run"]), text=True, capture_output=True, check=False)
             assert result.returncode == 0, f"{step.get('name')}: {result.stderr[:200]}"
+
+
+def test_every_step_before_the_checkout_runs_outside_the_missing_workspace() -> None:
+    """A fresh macOS runner has no workspace directory until the checkout creates it, so a step that runs
+    earlier must name a directory that exists, or bash cannot start (the first scheduled build failed so)."""
+    steps = _steps()
+    index = next(i for i, step in enumerate(steps) if "actions/checkout" in str(step.get("uses")))
+    assert index > 0
+    for step in steps[:index]:
+        if "run" in step:
+            assert step.get("working-directory") == "${{ runner.temp }}", step.get("name")

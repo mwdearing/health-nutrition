@@ -3,7 +3,7 @@ import NutritionDomain
 import NutritionProviders
 import NutritionUI
 
-/// Name search for Find products over USDA FoodData Central and Open Food Facts together. Each source runs on
+/// Name search for Search foods over USDA FoodData Central and Open Food Facts together. Each source runs on
 /// its own; a source that fails or is rate limited does not hide the other source's results.
 struct FoodDatabaseSearch: ProductNameSearching {
     /// Results shown at most, across both sources.
@@ -58,6 +58,8 @@ struct FoodDatabaseSearch: ProductNameSearching {
     }
 }
 
+extension USDAFoodDataClient: HouseholdPortionLookup {}
+
 /// Adapts the USDA client to the name-search protocol. USDA has no barcodes, so rows carry an empty barcode,
 /// which the draft stores as none.
 struct USDAProductNameSearch: ProductNameSearching {
@@ -99,6 +101,7 @@ struct USDAProductNameSearch: ProductNameSearching {
             // per 100 g internally.
             serving: food.servingGrams.map { ServingDefinition(quantity: $0 / Self.gramsPerOunce, unit: .oz, text: food.servingText) }
                 ?? food.servingText.map { ServingDefinition(quantity: nil, unit: nil, text: $0) },
-            version: nil)
+            version: nil,
+            sourceID: String(food.fdcId))
     }
 }

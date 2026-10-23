@@ -1,16 +1,26 @@
 name: Signed beta upload
 
-# Manual only. Generates the Xcode project, archives with automatic signing and an App Store Connect API key,
-# and uploads the build to App Store Connect for INTERNAL beta testing. The key, its ids and the team id live
-# only in the protected `testflight` GitHub Environment (a reviewer approves each run) and are read only by
-# the steps that need them. The bundle id is ALSO an environment secret (not an input), because a public repository
+# Started by hand or by scheduled-beta.yml, never by a push or a pull request. Generates the Xcode project, archives
+# with automatic signing and an App Store Connect API key, and uploads the build to App Store Connect for INTERNAL
+# beta testing. The key, its ids and the team id live only in the protected `testflight` GitHub Environment, which
+# is restricted to the `main` branch and needs no reviewer so the scheduled build can run unattended; they are read
+# only by the steps that need them. An optional `sha` builds that exact commit instead of the head of main, and only
+# a commit that is already on main is accepted. The bundle id is ALSO an environment secret (not an input), because a public repository
 # shows workflow inputs and step environments in its logs; secrets are masked. The job runs only from `main`, and the
 # environment must be restricted to the `main` branch in the repository settings. This workflow never runs on a pull
 # request, never uploads an artifact, keeps xcodebuild output out of the public log and always removes the key file.
 
+# The version and commit are in the run's name because the API does not expose inputs; announce-beta.yml and
+# scheduled-beta.yml read them back from here.
+run-name: ${{ inputs.sha && inputs.marketing_version && format('Signed beta {0} {1}', inputs.marketing_version, inputs.sha) || 'Signed beta upload' }}
+
 on:
   workflow_dispatch:
     inputs:
+      sha:
+        description: Commit to build (40 hex characters, must already be on main); empty = the head of main
+        required: false
+        default: ""
       marketing_version:
         description: Marketing version to stamp (three parts, like 0.1.0); empty = the MARKETING_VERSION in ios/HealthNutrition/project.yml (the build number is run number + 100)
         required: false
@@ -34,9 +44,38 @@ jobs:
       run:
         working-directory: ios/HealthNutrition
     steps:
+      # The commit is data from a dispatch input: it is passed through the environment, never into the script text,
+      # and accepted only when it is the head of main or an ancestor of it, so a branch or fork commit can never be
+      # signed. It is compared with the commit this run was dispatched from (the head of main, because the job runs
+      # only from main), not with the name "main", which a tag could shadow.
+      - name: Check the commit to build is on main
+        # Nothing is checked out yet, so the step cannot start in the default workspace directory.
+        working-directory: ${{ runner.temp }}
+        env:
+          SHA: ${{ inputs.sha }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [ -z "$SHA" ]; then
+            echo "Building the head of main."
+            exit 0
+          fi
+          if [[ ! "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::sha must be 40 lowercase hex characters."
+            exit 1
+          fi
+          relation=$(gh api "repos/$REPO/compare/$SHA...$GITHUB_SHA" --jq .status 2>/dev/null || true)
+          if [ "$relation" != "identical" ] && [ "$relation" != "ahead" ]; then
+            echo "::error::That commit is not on main."
+            exit 1
+          fi
+          echo "The commit is on main."
+
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.sha || github.sha }}
           persist-credentials: false
 
       - name: Show Xcode version

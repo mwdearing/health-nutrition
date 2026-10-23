@@ -1,6 +1,25 @@
 import Foundation
 import NutritionDomain
+import SQLite3
 import SwiftData
+
+/// The two file operations an erase performs on the store, so a test can make each one fail.
+struct StoreFileOperations {
+    var checkpoint: (URL) throws -> Void
+    var remove: (URL) throws -> Void
+    /// Opens the store file as a container; the erase calls it again to reopen the emptied store.
+    var openContainer: (URL) throws -> ModelContainer
+
+    static let system = StoreFileOperations(
+        checkpoint: { try SwiftDataJournalStore.checkpointStoreFile(at: $0) },
+        remove: { try FileManager.default.removeItem(at: $0) },
+        openContainer: { try SwiftDataJournalStore.makeContainer(url: $0) })
+}
+
+/// The store's checkpoint failed, so the erase stopped before any companion or main file was removed.
+enum StoreFileError: Error {
+    case checkpointFailed
+}
 
 enum JournalSchemaV1: VersionedSchema {
     static var versionIdentifier: Schema.Version { Schema.Version(1, 0, 0) }
@@ -1084,12 +1103,22 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     @unchecked Sendable
 {
     private let lock = NSLock()
+    private var deleteCommittedHandler: (@Sendable (String, UInt64) -> Void)?
+    /// Counts committed deletes in commit order. Only read or changed under writeLock.
+    private var deleteCounter: UInt64 = 0
     /// Serializes whole writes so two edits never read the same current revision. Separate from `lock`.
     private let writeLock = NSLock()
     private var failFlag = false
     private var container: ModelContainer?
+    /// Set when the reopen after an erase fails. The reopen runs after a failed checkpoint or file removal as well as
+    /// after a successful removal, so the flag covers each of those cases. The next call retries the reopen; it does
+    /// not stay closed for good. `close()` clears it, so a closed store stays closed.
+    private var reopenPending = false
     /// Where `markRestoreInProgress(fileDigest:)` keeps its flag, beside the store file.
     private let restoreMarkerURL: URL
+    /// The store file itself. An erase deletes it with its write-ahead and shared-memory files.
+    private let storeURL: URL
+    private let fileOperations: StoreFileOperations
     private let enabledDestinations: Set<JournalDestination>
 
     public var failNextSaveForTesting: Bool {
@@ -1099,18 +1128,31 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
 
     /// Opens or creates the store file at `url`. Destinations not in `enabledDestinations` get a
     /// disabled projection and no outbox operation.
-    public init(url: URL, enabledDestinations: Set<JournalDestination> = [.healthKit, .relay]) throws {
+    public convenience init(url: URL, enabledDestinations: Set<JournalDestination> = [.healthKit, .relay]) throws {
+        try self.init(url: url, enabledDestinations: enabledDestinations, fileOperations: .system)
+    }
+
+    init(url: URL, enabledDestinations: Set<JournalDestination>, fileOperations: StoreFileOperations) throws {
         self.enabledDestinations = enabledDestinations
+        self.fileOperations = fileOperations
+        storeURL = url
         restoreMarkerURL = url.appendingPathExtension("restore-in-progress")
-        let schema = Schema(versionedSchema: JournalSchemaV10.self)
-        let configuration = ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
-        container = try ModelContainer(
-            for: schema, migrationPlan: JournalMigrationPlan.self, configurations: configuration)
+        container = try fileOperations.openContainer(url)
         try recoverProductOperations()
     }
 
+    static func makeContainer(url: URL) throws -> ModelContainer {
+        let schema = Schema(versionedSchema: JournalSchemaV10.self)
+        let configuration = ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
+        return try ModelContainer(
+            for: schema, migrationPlan: JournalMigrationPlan.self, configurations: configuration)
+    }
+
     public func close() {
-        lock.withLock { container = nil }
+        lock.withLock {
+            container = nil
+            reopenPending = false
+        }
     }
 
     /// Opens a store with the first released schema, so a test can write a file the current one has to
@@ -1256,8 +1298,12 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
 
     func openContainer() throws -> ModelContainer {
         try lock.withLock {
-            guard let container else { throw JournalError.closed }
-            return container
+            if let container { return container }
+            guard reopenPending else { throw JournalError.closed }
+            let reopened = try fileOperations.openContainer(storeURL)
+            container = reopened
+            reopenPending = false
+            return reopened
         }
     }
 
@@ -1270,9 +1316,18 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     }
 
     /// Runs `body` on a fresh context and saves once. Any failure rolls the context back.
-    func commit<T>(injectable: Bool = true, _ body: (ModelContext) throws -> T) throws -> T {
+    func commit<T>(
+        injectable: Bool = true, onSaved: () -> Void = {}, _ body: (ModelContext) throws -> T
+    ) throws -> T {
         writeLock.lock()
         defer { writeLock.unlock() }
+        return try commitLocked(injectable: injectable, onSaved: onSaved, body)
+    }
+
+    /// The body of `commit`, for a caller that already holds writeLock.
+    private func commitLocked<T>(
+        injectable: Bool, onSaved: () -> Void, _ body: (ModelContext) throws -> T
+    ) throws -> T {
         let context = ModelContext(try openContainer())
         context.autosaveEnabled = false
         do {
@@ -1281,6 +1336,8 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
                 throw JournalError.injectedSaveFailure
             }
             try context.save()
+            // Still under writeLock, so the next writer sees what this one published.
+            onSaved()
             return result
         } catch {
             context.rollback()
@@ -1415,8 +1472,25 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
         }
     }
 
+    /// Called after a delete commits, with the intake it removed. The app uses it for every delete, whatever
+    /// screen made it, to start delivery once the Undo window ends and to drop an older Undo offer.
+    public func setOnDeleteCommitted(_ handler: @escaping @Sendable (String, UInt64) -> Void) {
+        lock.withLock { deleteCommittedHandler = handler }
+    }
+
+    public var deleteSequence: UInt64 {
+        writeLock.lock()
+        defer { writeLock.unlock() }
+        return deleteCounter
+    }
+
     public func delete(intakeID: String, now: Date) throws {
-        try commit { context in
+        _ = try deleteSequenced(intakeID: intakeID, now: now)
+    }
+
+    public func deleteSequenced(intakeID: String, now: Date) throws -> UInt64 {
+        var staged: UInt64 = 0
+        try commit(onSaved: { deleteCounter = staged }) { context in
             guard let record = try Self.intakeRecord(intakeID, in: context) else {
                 throw JournalError.unknownIntake(intakeID)
             }
@@ -1429,6 +1503,75 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             queueWork(
                 intakeID: intakeID, revision: revision, kind: .delete,
                 payload: "delete:\(intakeID):\(revision)", deletedAt: now, context: context)
+            // Published only by onSaved, so a failed save leaves no gap in the numbers.
+            staged = deleteCounter + 1
+        }
+        let sequence = staged
+        let handler = lock.withLock { deleteCommittedHandler }
+        handler?(intakeID, sequence)
+        return sequence
+    }
+
+    /// As `create`, and returns the write's place in the store's commit order, for a water offer to compare with.
+    public func createSequenced(
+        _ intake: Intake, components: [IntakeComponent], product: ProductDefinition?, now: Date
+    ) throws -> (IntakeRevision, UInt64) {
+        var staged: UInt64 = 0
+        let revision = try commit(onSaved: { deleteCounter = staged }) { context in
+            let revision = try insertIntake(intake, components: components, product: product, now: now, context: context)
+            staged = deleteCounter + 1
+            return revision
+        }
+        return (revision, staged)
+    }
+
+    /// Test support: the delete rows still queued for an intake, held or not.
+    func pendingDeleteRowCountForTesting(intakeID: String) throws -> Int {
+        let context = ModelContext(try openContainer())
+        let deleteKind = OutboxKind.delete.rawValue
+        return try context.fetch(FetchDescriptor<OutboxRecord>(
+            predicate: #Predicate<OutboxRecord> {
+                $0.intakeID == intakeID && $0.kindRaw == deleteKind && $0.acknowledgedAt == nil
+            })).count
+    }
+
+    public func undoDelete(intakeID: String) throws {
+        try commit { context in
+            guard let record = try Self.intakeRecord(intakeID, in: context) else {
+                throw JournalError.unknownIntake(intakeID)
+            }
+            guard record.lifecycleRaw == IntakeLifecycle.deleted.rawValue else {
+                throw JournalError.undoUnavailable(intakeID)
+            }
+            let deleteKind = OutboxKind.delete.rawValue
+            let deleteRows = try context.fetch(FetchDescriptor<OutboxRecord>(
+                predicate: #Predicate<OutboxRecord> { $0.intakeID == intakeID && $0.kindRaw == deleteKind }))
+            // Nothing is withdrawn once a delete is acknowledged, and not after its Undo window. A delete row
+            // without its instant cannot be placed in the window, so it is refused rather than guessed at.
+            // The window is read at commit, not from the caller's clock: a delivery pass that reads the hold
+            // after this commit sees the row withdrawn, so Health cannot get the delete first.
+            if !deleteRows.isEmpty {
+                let committedAt = Date()
+                let stillOpen = deleteRows.allSatisfy {
+                    $0.acknowledgedAt == nil
+                        && committedAt < ($0.deletedAt ?? .distantPast).addingTimeInterval(JournalUndo.deleteWindow)
+                }
+                guard stillOpen else { throw JournalError.undoUnavailable(intakeID) }
+            }
+            for row in deleteRows { context.delete(row) }
+            record.lifecycleRaw = IntakeLifecycle.active.rawValue
+            // The delete superseded the projections of the current revision and queued its own; put the
+            // first back and drop the second.
+            let revision = record.currentRevision
+            let projections = try context.fetch(FetchDescriptor<ProjectionRecord>(
+                predicate: #Predicate<ProjectionRecord> { $0.intakeID == intakeID }))
+            for row in projections where row.revision == revision {
+                if row.actionRaw == deleteKind {
+                    context.delete(row)
+                } else {
+                    row.isCurrent = true
+                }
+            }
         }
     }
 
@@ -1646,24 +1789,47 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
 
     // MARK: Erasing
 
+    public var erasureName: String { "journal" }
+
     /// Removes every row the journal file holds: intakes, their revision history, product snapshots,
     /// projections and queued outbox operations. A deleted entry leaves no tombstone behind either,
     /// because a tombstone only exists so a later export can retract the entry.
     ///
     /// The rows are fetched and deleted one at a time rather than with the batch delete, which runs
     /// against the persistent store immediately, outside the save and outside the rollback. Fetching
-    /// keeps the whole erase inside one commit, so a failure anywhere in it leaves the journal exactly
-    /// as it was: a journal emptied by a failed save would be worse than an unerased one, because the
-    /// person cannot tell which half is gone.
+    /// keeps the whole erase inside one commit. A failure before that commit leaves the journal unchanged. A failure
+    /// after it leaves no rows. If the files were not yet removed they are still on disk; if the reopen failed after
+    /// they were removed, the next call retries the reopen. The caller reports either case as a partial erase that names
+    /// the journal (ConnectionsPrivacyViewModel records the failed eraser), so Retry finishes it (the #566 design).
     ///
-    /// The container is not closed: the store reads empty and accepts new entries afterwards.
+    /// On success the store file is then deleted and reopened empty, so the store reads empty and accepts new entries
+    /// afterwards. The erased rows leave the store when the store file itself is deleted and recreated empty.
     public func eraseAll() throws {
-        // A restore flag left behind would let the next import of that file put back favorites the person is
-        // erasing, so it goes first: an erase that fails partway (this store or another) can then leave journal
-        // rows, but never a way for a re-import to bring erased favorites back. A flag that cannot be removed
-        // fails the erase before anything is deleted, so the screen reports it.
+        // The store clears its own restore flag too: a direct caller of the store must not leave a flag that lets a
+        // re-import put erased favorites back. The erase screen clears it first, so this second clear is a no-op there.
         try clearRestoreInProgress()
-        _ = try commit { context in
+        // The row delete and the file removal run under one hold of writeLock, so no write can commit between them and
+        // be deleted with the file.
+        try Self.deleteRowsThenFiles(
+            under: writeLock,
+            deleteRows: { try self.deleteEveryRow() },
+            removeFiles: { try self.removeStoreFiles() })
+    }
+
+    /// Runs the two erase steps inside one hold of `lock`, in order: the rows, then the files. A failed row delete
+    /// skips the files, and the lock is released on every path.
+    static func deleteRowsThenFiles(
+        under lock: NSLocking, deleteRows: () throws -> Void, removeFiles: () throws -> Void
+    ) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        try deleteRows()
+        try removeFiles()
+    }
+
+    /// Deletes every row of every journal record type. The caller holds writeLock.
+    private func deleteEveryRow() throws {
+        _ = try commitLocked(injectable: true, onSaved: {}) { context in
             for row in try context.fetch(FetchDescriptor<JournalSchemaV10.LoggedUnitRecord>()) { context.delete(row) }
             for row in try context.fetch(FetchDescriptor<JournalSchemaV9.LibraryExclusionRecord>()) { context.delete(row) }
             for row in try context.fetch(FetchDescriptor<JournalSchemaV8.HealthKitWrittenRecord>()) { context.delete(row) }
@@ -1676,6 +1842,76 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             for row in try context.fetch(FetchDescriptor<ProjectionRecord>()) { context.delete(row) }
             for row in try context.fetch(FetchDescriptor<ProductRecord>()) { context.delete(row) }
             for row in try context.fetch(FetchDescriptor<IntakeRecord>()) { context.delete(row) }
+        }
+    }
+
+    /// Deletes the store file with its write-ahead and shared-memory files, then opens an empty store at the same
+    /// place. The write-ahead file is always checkpointed into the store file first; only the removal is conditional.
+    /// On success the checkpoint leaves the main store file holding the erased state. If the checkpoint fails, nothing
+    /// is removed, the deleted rows may still be in the store files (main or write-ahead) until Retry removes them, and
+    /// the error is StoreFileError.checkpointFailed. The erase screen names the
+    /// journal as still on the phone; a retry removes the files. The companion files go before the main file: once the checkpoint has emptied
+    /// the write-ahead file, the shared-memory file is only an index, so removing the companions first leaves a
+    /// complete main file if the erase stops partway. The store reopens when it can; if
+    /// that reopen fails, the next call retries it (reopenPending) and throws the reopen error if it fails again; `close()` leaves the store closed.
+    private func removeStoreFiles() throws {
+        try lock.withLock {
+            container = nil
+            var removalError: Error?
+            // The checkpoint, the file removal and the reopen all run while `lock` is held, so a read that needs the
+            // container during an erase waits for them. The checkpoint's own busy timeout (2 s, in checkpointStoreFile)
+            // is the only bound on the checkpoint; the removal and the reopen have none. This wait is accepted as is.
+            do {
+                try fileOperations.checkpoint(storeURL)
+            } catch {
+                removalError = error
+            }
+            for suffix in ["-shm", "-wal", ""] {
+                // Stop at the first failure, so no later file is removed after an earlier one failed.
+                if removalError != nil { break }
+                let file = URL(fileURLWithPath: storeURL.path + suffix)
+                guard FileManager.default.fileExists(atPath: file.path) else { continue }
+                do {
+                    try fileOperations.remove(file)
+                } catch {
+                    removalError = error
+                }
+            }
+            // A reopen failure is thrown only when no earlier step failed, so the first error is the one reported.
+            do {
+                container = try fileOperations.openContainer(storeURL)
+                reopenPending = false
+            } catch {
+                reopenPending = true
+                throw removalError ?? error
+            }
+            if let removalError { throw removalError }
+        }
+    }
+
+    /// Moves every page of the write-ahead file into the store file and truncates the write-ahead file to nothing.
+    /// A checkpoint that cannot run to completion (for example, while another connection still reads the store)
+    /// throws, and the erase reports it.
+    static func checkpointStoreFile(at url: URL) throws {
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        var database: OpaquePointer?
+        defer { sqlite3_close(database) }
+        guard sqlite3_open_v2(url.path, &database, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK else {
+            throw StoreFileError.checkpointFailed
+        }
+        // Another connection may hold the file for a moment; wait for it rather than fail the erase on the first try.
+        // A busy timeout that cannot be set is a failed checkpoint, not a silent default.
+        guard sqlite3_busy_timeout(database, 2_000) == SQLITE_OK else {
+            throw StoreFileError.checkpointFailed
+        }
+        var logFrames: Int32 = 0
+        var checkpointedFrames: Int32 = 0
+        guard
+            sqlite3_wal_checkpoint_v2(database, nil, SQLITE_CHECKPOINT_TRUNCATE, &logFrames, &checkpointedFrames)
+                == SQLITE_OK,
+            logFrames == checkpointedFrames
+        else {
+            throw StoreFileError.checkpointFailed
         }
     }
 
@@ -2227,8 +2463,16 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     /// Operations not yet acknowledged, oldest revision first, upsert before delete within a revision.
     public func pendingOutbox() throws -> [OutboxOperation] {
         let context = ModelContext(try openContainer())
+        // The clock is read and the rows fetched under writeLock, the lock a commit holds. An undo therefore
+        // either lands first, and the row is withdrawn, or waits and then sees the window closed and refuses.
+        writeLock.lock()
+        defer { writeLock.unlock() }
+        // A delete waits out its Undo window, so an undone delete never reaches Apple Health or the relay.
+        let holdCutoff = Date().addingTimeInterval(-JournalUndo.deleteWindow)
         let rows = try context.fetch(FetchDescriptor<OutboxRecord>(
-            predicate: #Predicate<OutboxRecord> { $0.acknowledgedAt == nil }))
+            predicate: #Predicate<OutboxRecord> { $0.acknowledgedAt == nil })).filter { row in
+            row.kindRaw != OutboxKind.delete.rawValue || (row.deletedAt ?? .distantPast) <= holdCutoff
+        }
         return try rows.map { row in
             guard let kind = OutboxKind(rawValue: row.kindRaw),
                   let destination = JournalDestination(rawValue: row.destinationRaw)

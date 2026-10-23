@@ -58,7 +58,7 @@ final class AllValuesFigureTests: XCTestCase {
         XCTAssertNotEqual(DisplayRounding.rounded(sodium, fractionDigits: 10), sodium, "the value is the long quotient")
         XCTAssertEqual(AddIntakeView.text(for: details.prefilledValue(for: "sodium")), "40 mg")
         XCTAssertEqual(AddIntakeView.text(for: details.prefilledValue(for: "carbohydrate")), "1.3 g")
-        XCTAssertEqual(AddIntakeView.text(for: details.prefilledValue(for: "energy")), "13 kcal")
+        XCTAssertEqual(AddIntakeView.text(for: details.prefilledValue(for: "energy")), "13 Calories")
 
         let existing = Set(try store.activeIntakes().map(\.id))
         XCTAssertTrue(details.save(now: now))
@@ -80,17 +80,13 @@ final class AllValuesFigureTests: XCTestCase {
     /// listed as stated.
     func testAProviderFigureWithFloatDigitsIsListedRounded() async throws {
         let json = """
-        {"code":"2000000000015","status":"success","result":{"id":"product_found"},
-         "product":{"code":"2000000000015","product_name":"Sample Crackers","nutrition_data_per":"100g",
-          "nutriments":{"proteins_100g":7.5,"salt_100g":0.1,"sodium_100g":0.0393700787401575,
-                        "fat_100g":"0.000125"}}}
+        {"code":"2000000000015","product_name":"Sample Crackers",
+         "nutriments":{"proteins_100g":7.5,"salt_100g":0.1,"sodium_100g":0.0393700787401575,
+                       "fat_100g":"0.000125"}}
         """
-        let client = OpenFoodFactsClient(
-            environment: .production, transport: FixedResponse(body: Data(json.utf8)), appVersion: "1.0.0",
-            now: { Date(timeIntervalSince1970: 1_800_000_000) }, monotonic: { 5_000 })
-        guard case .found(let product) = await client.lookup(barcode: "2000000000015") else {
-            return XCTFail("the fixture is a found product")
-        }
+        // A search hit maps straight to a product, the same way a barcode's product body used to.
+        let hit = try JSONDecoder().decode(OpenFoodFactsSearchResponse.Hit.self, from: Data(json.utf8))
+        let product = OpenFoodFactsProduct(hit: hit, barcode: "2000000000015", name: "Sample Crackers")
         XCTAssertEqual(product.nutrients[OpenFoodFactsProduct.sodium], .known(decimal("0.0393700787401575"), .g))
 
         XCTAssertEqual(AddIntakeView.text(for: product.nutrients[OpenFoodFactsProduct.sodium]), "0.04 g")
@@ -107,7 +103,7 @@ final class AllValuesFigureTests: XCTestCase {
     func testSixFractionDigitsSeparateAStatedFigureFromAWorkedOutOne() {
         XCTAssertEqual(AmountDisplay.stated(decimal("1.25"), unit: .g).text, "1.25 g")
         XCTAssertEqual(AmountDisplay.stated(decimal("0.000123"), unit: .g).text, "0.000123 g")
-        XCTAssertEqual(AmountDisplay.stated(decimal("107.728187875"), unit: .kcal).text, "108 kcal")
+        XCTAssertEqual(AmountDisplay.stated(decimal("107.728187875"), unit: .kcal).text, "108 Calories")
         XCTAssertEqual(AmountDisplay.stated(decimal("0.0000004"), unit: .mg).text, "< 0.01 mg")
         XCTAssertEqual(AmountDisplay.stated(0, unit: .mg).text, "0 mg")
     }
@@ -120,11 +116,3 @@ final class AllValuesFigureTests: XCTestCase {
     }
 }
 
-/// Answers every request with one body, so a lookup reads a fixture instead of the network.
-private struct FixedResponse: OpenFoodFactsTransport {
-    let body: Data
-
-    func get(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
-        (body, HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: [:])!)
-    }
-}

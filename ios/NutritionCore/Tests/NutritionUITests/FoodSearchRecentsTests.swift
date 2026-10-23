@@ -17,7 +17,7 @@ private final class RecordingNameSearch: ProductNameSearching, @unchecked Sendab
     }
 }
 
-/// Find products lists the person's own recents and favorites, narrowed as they type, and keeps every
+/// Search foods lists the person's own recents and favorites, narrowed as they type, and keeps every
 /// search that leaves the phone behind the Search button.
 ///
 /// Synthetic names and ids only. Lowercase UUID intake ids.

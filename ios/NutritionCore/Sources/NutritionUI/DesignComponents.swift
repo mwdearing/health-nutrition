@@ -53,12 +53,16 @@ public struct LabeledField<Content: View>: View {
     private let onFocusEnd: (() -> Void)?
     private let onFocusBegin: (() -> Void)?
     private let content: (FocusState<Bool>.Binding) -> Content
+    private let spokenTitle: Bool
     @FocusState private var ownFocus: Bool
 
+    /// - Parameter spokenTitle: when true, the content's spoken name is the visible title. Only for content that is a
+    ///   single control; content holding a second control (a picker, a button) keeps its own names.
     public init(
         _ label: String,
         error: String? = nil,
         focus: FocusState<Bool>.Binding? = nil,
+        spokenTitle: Bool = false,
         onFocusEnd: (() -> Void)? = nil,
         onFocusBegin: (() -> Void)? = nil,
         @ViewBuilder content: @escaping (FocusState<Bool>.Binding) -> Content
@@ -66,9 +70,15 @@ public struct LabeledField<Content: View>: View {
         self.label = label
         self.error = error
         self.externalFocus = focus
+        self.spokenTitle = spokenTitle
         self.onFocusEnd = onFocusEnd
         self.onFocusBegin = onFocusBegin
         self.content = content
+    }
+
+    /// The content with the title as its spoken name when opted in; otherwise the content unchanged.
+    @ViewBuilder private func spoken(_ view: Content) -> some View {
+        if LabeledFieldSpokenTitle.applies(spokenTitle) { view.accessibilityLabel(label) } else { view }
     }
 
     private var focus: FocusState<Bool>.Binding { externalFocus ?? $ownFocus }
@@ -79,7 +89,7 @@ public struct LabeledField<Content: View>: View {
                 .font(.footnote)
                 .foregroundStyle(TokenColors.textSecondary)
                 .accessibilityHidden(true)
-            content(focus)
+            spoken(content(focus))
                 .padding(.horizontal, DesignSpacing.m)
                 .padding(.vertical, DesignSpacing.s)
                 .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
@@ -123,6 +133,8 @@ public struct PrimaryCapsule: View {
         self.action = action
     }
 
+    @Environment(\.isEnabled) private var isEnabled
+
     public var body: some View {
         Button(action: action) {
             HStack(spacing: DesignSpacing.s) {
@@ -134,6 +146,8 @@ public struct PrimaryCapsule: View {
             .foregroundStyle(TokenColors.onMint)
             .frame(maxWidth: .infinity, minHeight: 50)
             .background(TokenColors.mint, in: Capsule())
+            // A disabled capsule looks disabled: the fixed colours alone read as tappable.
+            .opacity(isEnabled ? 1 : 0.5)
         }
         .buttonStyle(.plain)
     }
@@ -159,30 +173,6 @@ public struct QuietCapsule: View {
                 .background(TokenColors.accentTint, in: Capsule())
         }
         .buttonStyle(.plain)
-    }
-}
-
-/// The small "Later" chip that marks a placeholder: a feature the product intends and this build does
-/// not have. A row carrying it is disabled; see `laterPlaceholder()`.
-public struct LaterBadge: View {
-    public init() {}
-
-    public var body: some View {
-        Text("Later")
-            .font(.caption)
-            .foregroundStyle(TokenColors.waitingInk)
-            .padding(.horizontal, DesignSpacing.s)
-            .padding(.vertical, DesignSpacing.xs)
-            .background(TokenColors.waitingTint, in: Capsule())
-    }
-}
-
-extension View {
-    /// Makes a row a placeholder: disabled, announced as not available, with no handler behind it.
-    public func laterPlaceholder() -> some View {
-        self
-            .disabled(true)
-            .accessibilityValue("Not available yet")
     }
 }
 
@@ -291,14 +281,37 @@ public struct UndoToast: View {
         self.onUndo = onUndo
     }
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     public var body: some View {
-        HStack(spacing: DesignSpacing.m) {
+        // Stacked at accessibility sizes so the Undo button keeps its width and the message can wrap.
+        let stacked = dynamicTypeSize.isAccessibilitySize
+        let layout: AnyLayout = stacked ? AnyLayout(VStackLayout(alignment: .leading, spacing: DesignSpacing.s))
+            : AnyLayout(HStackLayout(spacing: DesignSpacing.m))
+        layout {
             Text(message).font(.body)
-            Spacer(minLength: DesignSpacing.s)
-            QuietCapsule("Undo", action: onUndo)
+            if !stacked { Spacer(minLength: DesignSpacing.s) }
+            // Undo is an accent fill with the background ink, so it reads apart from the accentTint toast.
+            Button(action: onUndo) {
+                Text("Undo")
+                    .font(.headline)
+                    .foregroundStyle(TokenColors.background)
+                    .padding(.horizontal, DesignSpacing.m)
+                    .frame(minHeight: 44)
+                    .background(TokenColors.accent, in: Capsule())
+            }
+            .buttonStyle(.plain)
         }
         .foregroundStyle(TokenColors.textPrimary)
         .padding(DesignSpacing.m)
-        .background(TokenColors.accentTint, in: RoundedRectangle(cornerRadius: DesignRadius.control))
+        .background(TokenColors.accentTint, in: RoundedRectangle(cornerRadius: DesignRadius.control, style: .continuous))
+        // VoiceOver hears the toast's own message when it appears. It is announced again when the toast is shown
+        // again, such as navigating back inside its offer window: the person returns to a live offer, so repeating it is intended.
+        .onAppear { AccessibilityNotification.Announcement(message).post() }
     }
+}
+
+/// Whether a LabeledField's content takes the title as its spoken name. Kept as a pure rule so a test can pin it.
+enum LabeledFieldSpokenTitle {
+    static func applies(_ optedIn: Bool) -> Bool { optedIn }
 }

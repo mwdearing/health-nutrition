@@ -2,7 +2,7 @@
 
 A saved meal is a named group of foods logged together, such as "Usual breakfast". It is the M1 "saved meals" item of the parity roadmap.
 
-**Screens.** A meal is saved from the Journal with **Save as meal** on any meal title, and logged from Add's **Find products** screen, which lists saved meals under All kinds, asks which meal to log one under and offers Undo. Swiping a saved meal there removes it. [Journal, entry detail, Library, favorites and repeat](journal-library.md) describes both screens. `SavedMealsModel` (`SavedMealsModel.swift`) is the model they share.
+**Screens.** A meal is saved from the Journal with **Save as meal** on any meal title, and logged from Add's **Search foods** screen, which lists saved meals under All kinds, asks which meal to log one under and offers Undo. Swiping a saved meal there removes it. [Journal, entry detail, Library, favorites and repeat](journal-library.md) describes both screens. `SavedMealsModel` (`SavedMealsModel.swift`) is the model they share.
 
 ## What a saved meal holds
 
@@ -28,7 +28,7 @@ Each change reads the list, edits it and writes it back as one step under the st
 
 ## Where it is kept
 
-The list is kept on this phone only, as JSON in the app's defaults domain under the key `library.savedMeals.v1` (`UserDefaultsSavedMealStore`). The list itself is never sent anywhere. Erase all data removes the key through the store's `eraseAll()`, then reads the list again (see [Erase all data](erase-all-data.md)). The model reads the list again whenever Find products appears, so a list changed in another window is not shown stale; a notice belongs to the action that set it and is dropped with the next read.
+The list is kept on this phone only, as JSON in the app's defaults domain under the key `library.savedMeals.v1` (`UserDefaultsSavedMealStore`). The list itself is never sent anywhere. Erase all data removes the key through the store's `eraseAll()`, then reads the list again (see [Erase all data](erase-all-data.md)). The model reads the list again whenever Search foods appears, so a list changed in another window is not shown stale; a notice belongs to the action that set it and is dropped with the next read.
 
 **Export and restore.** From journal export version 4, a backup carries the saved meals in the list's order, with the products their items use, and a restore brings them back into an empty list, in the same second phase as the favorites (see [Journal export](journal-export.md)). A restore writes the list and then a receipt naming the file (`library.savedMeals.restoreReceipt.v1`), which Erase all data also removes. The limits above are shared with the importer (`JournalSavedMealLimits`), so a restore cannot write a list the app would refuse to save.
 

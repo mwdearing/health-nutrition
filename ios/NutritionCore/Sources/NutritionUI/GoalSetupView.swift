@@ -73,7 +73,7 @@ public struct GoalSetupView: View {
             choice("Female", selected: model.sex == .female) { model.sex = .female }
             choice("Male", selected: model.sex == .male) { model.sex = .male }
             choice("Prefer not to say", selected: model.sex == .unspecified) { model.sex = .unspecified }
-            LabeledField("Age in years") { focus in
+            LabeledField("Age in years", spokenTitle: true) { focus in
                 TextField(text: $model.ageText, prompt: Text("For example, 30")) {
                     Text("Age in years")
                 }
@@ -145,7 +145,7 @@ public struct GoalSetupView: View {
                         .foregroundStyle(TokenColors.textPrimary)
                 }
                 ForEach(resultRows, id: \.key) { row in
-                    LabeledField(row.label, error: model.fieldErrors[row.key]) { focus in
+                    LabeledField(row.label, error: model.fieldErrors[row.key], spokenTitle: true) { focus in
                         TextField(text: draftBinding(row.key), prompt: Text(row.label)) {
                             Text(row.label)
                         }
@@ -183,6 +183,11 @@ public struct GoalSetupView: View {
                     }
                 }
             } else {
+                if model.step == .about, let notice = model.aboutMissingNotice {
+                    Text(notice)
+                        .font(.footnote)
+                        .foregroundStyle(TokenColors.textSecondary)
+                }
                 PrimaryCapsule("Next") { model.next() }
                     .disabled(!model.canGoNext)
             }
@@ -199,7 +204,7 @@ public struct GoalSetupView: View {
 
     private var resultRows: [ResultRow] {
         [
-            ResultRow(key: "energy", label: "Energy (kcal)"),
+            ResultRow(key: "energy", label: "Calories"),
             ResultRow(key: "protein", label: "Protein (g)"),
             ResultRow(key: "carbohydrate", label: "Carbohydrate (g)"),
             ResultRow(key: "fat", label: "Fat (g)"),
@@ -245,7 +250,7 @@ public struct GoalSetupView: View {
     }
 
     private func measured(_ label: String, text: Binding<String>, prompt: String, decimal: Bool) -> some View {
-        LabeledField(label) { focus in
+        LabeledField(label, spokenTitle: true) { focus in
             TextField(text: text, prompt: Text(prompt)) {
                 Text(label)
             }

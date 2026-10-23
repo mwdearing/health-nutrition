@@ -16,55 +16,6 @@ public enum NourishGauge {
     }
 }
 
-/// The calorie ring on Today: a track, a mint arc, and the figure and caption inside it.
-public struct CalorieRing: View {
-    private let fraction: Double
-    private let figure: String
-    private let caption: String
-    private let footnote: String?
-    private let spoken: String?
-
-    public init(
-        fraction: Double, figure: String, caption: String, footnote: String? = nil, spoken: String? = nil
-    ) {
-        self.spoken = spoken
-        self.fraction = NourishGauge.clamped(fraction)
-        self.figure = figure
-        self.caption = caption
-        self.footnote = footnote
-    }
-
-    public var body: some View {
-        ZStack {
-            Circle().stroke(TokenColors.track, lineWidth: 18)
-            Circle()
-                .trim(from: 0, to: fraction)
-                .stroke(TokenColors.mint, style: StrokeStyle(lineWidth: 18, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-            VStack(spacing: DesignSpacing.xs) {
-                Text(figure)
-                    .font(.largeTitle.weight(.bold))
-                    .minimumScaleFactor(0.6)
-                    .foregroundStyle(TokenColors.textPrimary)
-                Text(caption)
-                    .font(.subheadline)
-                    .foregroundStyle(TokenColors.textPrimary)
-                if let footnote {
-                    Text(footnote)
-                        .font(.footnote)
-                        .foregroundStyle(TokenColors.textSecondary)
-                }
-            }
-            .padding(DesignSpacing.l)
-        }
-        .frame(maxWidth: 240)
-        .aspectRatio(1, contentMode: .fit)
-        .frame(maxWidth: .infinity)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(spoken ?? "\(figure) \(caption)")
-    }
-}
-
 /// One of the three macro columns under the ring: label, figure and a thin bar.
 public struct MacroColumn: View {
     private let label: String
@@ -109,7 +60,7 @@ public struct ThinBar: View {
         GeometryReader { proxy in
             ZStack(alignment: .leading) {
                 Capsule().fill(TokenColors.track)
-                Capsule().fill(TokenColors.mint).frame(width: proxy.size.width * fraction)
+                Capsule().fill(TokenColors.accent).frame(width: proxy.size.width * fraction)
             }
         }
         .frame(height: 6)

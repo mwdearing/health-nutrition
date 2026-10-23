@@ -3,6 +3,8 @@ import SwiftUI
 
 public struct RecipeEditorView: View {
     @ObservedObject var model: RecipeEditorViewModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var confirmDiscard = false
     private let now: () -> Date
     private let onSaved: () -> Void
 
@@ -85,6 +87,19 @@ public struct RecipeEditorView: View {
         .scrollContentBackground(.hidden)
         .background(TokenColors.background)
         .navigationTitle("Recipe")
+        // Changes are only at risk once the person has made them: a changed recipe asks before leaving.
+        .navigationBarBackButtonHidden(model.hasTypedInput)
+        .blocksEdgeSwipeBack(while: model.hasTypedInput)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel") {
+                    if model.hasTypedInput { confirmDiscard = true } else { dismiss() }
+                }
+            }
+        }
+        .confirmationDialog("Discard changes?", isPresented: $confirmDiscard, titleVisibility: .visible) {
+            Button("Discard", role: .destructive) { dismiss() }
+        }
     }
 
     @ViewBuilder
@@ -135,7 +150,7 @@ public struct RecipeEditorView: View {
                         .accessibilityLabel(RecipeLabels.nutrientField(field.label, position: position))
                     }
                     // A value kept in its own unit says so, rather than sitting under the default one.
-                    Text(draft.nutrientUnits[field.id]?.symbol ?? field.unit.symbol)
+                    Text(draft.nutrientUnits[field.id]?.screenSymbol ?? field.unit.screenSymbol)
                         .font(.body).foregroundStyle(TokenColors.textSecondary)
                 }
             }
