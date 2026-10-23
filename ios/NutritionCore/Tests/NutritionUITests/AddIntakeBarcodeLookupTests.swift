@@ -437,7 +437,7 @@ final class AddIntakeBarcodeLookupTests: XCTestCase {
         today.load(now: now)
         XCTAssertEqual(today.rows.first?.kind, .supplement)
         XCTAssertTrue(today.coverage.isEmpty)
-        let document = try JournalExporter.makeExport(store: store, appVersion: "test", exportedAt: now)
+        let document = try JournalExporter.makeExport(store: store, goals: InMemoryGoalStore(), appVersion: "test", exportedAt: now)
         let decoded = try JournalExporter.decode(try JournalExporter.encode(document))
         XCTAssertEqual(decoded.products.first?.kind, .supplement)
         XCTAssertEqual(decoded.intakes.first?.revisions.first?.provenance?.kind, .supplement)

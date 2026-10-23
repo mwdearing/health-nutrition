@@ -327,7 +327,7 @@ final class JournalImportAtomicityTests: JournalImportTestCase {
             between: data,
             and: try JournalExporter.encode(
                 try JournalExporter.makeExport(
-                    store: journal, favorites: favoritesStore, appVersion: appVersion,
+                    store: journal, favorites: favoritesStore, goals: InMemoryGoalStore(), appVersion: appVersion,
                     exportedAt: exportedAt)))
         XCTAssertNil(changedField)
     }

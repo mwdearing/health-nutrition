@@ -125,7 +125,7 @@ class JournalImportTestCase: XCTestCase {
         }
         return try JournalExporter.encode(
             try JournalExporter.makeExport(
-                store: journal, favorites: favoritesStore, appVersion: appVersion, exportedAt: exportedAt))
+                store: journal, favorites: favoritesStore, goals: InMemoryGoalStore(), appVersion: appVersion, exportedAt: exportedAt))
     }
 
     /// Removes every component's water share, as a version 1 to 6 file has none.
@@ -300,7 +300,7 @@ final class JournalImportTests: JournalImportTestCase {
 
         let again = try JournalExporter.encode(
             try JournalExporter.makeExport(
-                store: journal, favorites: favoritesStore, appVersion: appVersion, exportedAt: exportedAt))
+                store: journal, favorites: favoritesStore, goals: InMemoryGoalStore(), appVersion: appVersion, exportedAt: exportedAt))
         // Named before the assertion, because an assertion message is built in a closure that may not
         // throw, and reading the two documents back is a throwing call.
         let changedField = try firstDifference(between: data, and: again)
@@ -359,7 +359,7 @@ final class JournalImportTests: JournalImportTestCase {
         XCTAssertEqual(deleted.first?.timeZoneIdentifier, "Europe/Berlin")
         // A re-export has to keep it out of the intakes again, or the next restore would revive it.
         let document = try JournalExporter.makeExport(
-            store: journal, favorites: nil, appVersion: appVersion, exportedAt: exportedAt)
+            store: journal, favorites: nil, goals: InMemoryGoalStore(), appVersion: appVersion, exportedAt: exportedAt)
         XCTAssertEqual(document.tombstones.map(\.intakeID), [goneID])
         XCTAssertFalse(document.intakes.contains { $0.id == goneID })
     }
@@ -401,7 +401,7 @@ final class JournalImportTests: JournalImportTestCase {
             String(
                 data: try JournalExporter.encode(
                     try JournalExporter.makeExport(
-                        store: journal, favorites: favoritesStore, appVersion: appVersion,
+                        store: journal, favorites: favoritesStore, goals: InMemoryGoalStore(), appVersion: appVersion,
                         exportedAt: exportedAt)),
                 encoding: .utf8))
         XCTAssertTrue(again.contains("\"amount\":\"55.5\""), again)
@@ -443,7 +443,7 @@ final class JournalImportTests: JournalImportTestCase {
             try JSONSerialization.data(withJSONObject: root), into: journal, favorites: favoritesStore)
         let exported = try object(of: JournalExporter.encode(
             try JournalExporter.makeExport(
-                store: journal, favorites: favoritesStore, appVersion: appVersion, exportedAt: exportedAt)))
+                store: journal, favorites: favoritesStore, goals: InMemoryGoalStore(), appVersion: appVersion, exportedAt: exportedAt)))
 
         let restoredIntakes = try XCTUnwrap(exported["intakes"] as? [[String: Any]])
         XCTAssertEqual(restoredIntakes[0]["meal"] as? String, "")
@@ -556,7 +556,7 @@ final class JournalImportTests: JournalImportTestCase {
                 id: oatsID, category: "food", occurredAt: base, timeZoneIdentifier: "UTC"),
             components: [oats("37.5")], product: supplement(), now: base)
         let data = try JournalExporter.encode(
-            try JournalExporter.makeExport(store: journal, appVersion: appVersion, exportedAt: exportedAt))
+            try JournalExporter.makeExport(store: journal, goals: InMemoryGoalStore(), appVersion: appVersion, exportedAt: exportedAt))
         journal.close()
 
         let restored = try store(directory())
@@ -670,7 +670,7 @@ final class JournalImportTests: JournalImportTestCase {
             now: base.addingTimeInterval(600), occurredAt: corrected, timeZoneIdentifier: "America/Chicago")
         let data = try JournalExporter.encode(
             try JournalExporter.makeExport(
-                store: source, favorites: nil, appVersion: appVersion, exportedAt: exportedAt))
+                store: source, favorites: nil, goals: InMemoryGoalStore(), appVersion: appVersion, exportedAt: exportedAt))
 
         let target = try store(try directory())
         _ = try JournalImporter.importExport(data, into: target, favorites: nil)
@@ -932,7 +932,7 @@ final class JournalImportTests: JournalImportTestCase {
             FavoriteTemplate(id: "fav-empty-1", displayName: "Sample empty template", category: "food", components: []))
         let data = try JournalExporter.encode(
             try JournalExporter.makeExport(
-                store: sourceJournal, favorites: sourceFavorites, appVersion: appVersion, exportedAt: exportedAt))
+                store: sourceJournal, favorites: sourceFavorites, goals: InMemoryGoalStore(), appVersion: appVersion, exportedAt: exportedAt))
 
         let target = try directory()
         let journal = try store(target)
@@ -942,7 +942,7 @@ final class JournalImportTests: JournalImportTestCase {
         XCTAssertEqual(try favoritesStore.list().first?.components.count, 0)
         let restored = try JournalExporter.encode(
             try JournalExporter.makeExport(
-                store: journal, favorites: favoritesStore, appVersion: appVersion, exportedAt: exportedAt))
+                store: journal, favorites: favoritesStore, goals: InMemoryGoalStore(), appVersion: appVersion, exportedAt: exportedAt))
         XCTAssertNil(try firstDifference(between: data, and: restored))
     }
 
@@ -1038,7 +1038,7 @@ final class JournalImportTests: JournalImportTestCase {
         XCTAssertEqual(try favoritesStore.list().first { $0.id == "fav-tea-1" }?.components.first?.amountText, padded)
         let roundTrip = try object(of: try JournalExporter.encode(
             try JournalExporter.makeExport(
-                store: journal, favorites: favoritesStore, appVersion: appVersion, exportedAt: exportedAt)))
+                store: journal, favorites: favoritesStore, goals: InMemoryGoalStore(), appVersion: appVersion, exportedAt: exportedAt)))
         let encodedIntakes = try XCTUnwrap(roundTrip["intakes"] as? [[String: Any]])
         let encodedRevisions = try XCTUnwrap(encodedIntakes[0]["revisions"] as? [[String: Any]])
         let encodedRevisionComponents = try XCTUnwrap(encodedRevisions[0]["components"] as? [[String: Any]])

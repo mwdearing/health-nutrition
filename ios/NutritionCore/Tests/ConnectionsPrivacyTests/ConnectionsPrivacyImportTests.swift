@@ -176,7 +176,7 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         }
         return try JournalExporter.encode(
             try JournalExporter.makeExport(
-                store: journal, favorites: favorites, appVersion: "0.1.0", exportedAt: now))
+                store: journal, favorites: favorites, goals: InMemoryGoalStore(), appVersion: "0.1.0", exportedAt: now))
     }
 
     func testASuccessfulImportPublishesTheSummaryAndRestoresTheJournal() async throws {

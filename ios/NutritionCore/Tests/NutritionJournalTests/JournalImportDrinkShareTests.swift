@@ -24,7 +24,7 @@ final class JournalImportDrinkShareTests: JournalImportTestCase {
         let source = try sourceWithDrink()
         return try JournalExporter.encode(
             try JournalExporter.makeExport(
-                store: source, favorites: nil, appVersion: appVersion, exportedAt: exportedAt))
+                store: source, favorites: nil, goals: InMemoryGoalStore(), appVersion: appVersion, exportedAt: exportedAt))
     }
 
     func testVersionSevenRoundTripsTheDrinkWaterShare() throws {

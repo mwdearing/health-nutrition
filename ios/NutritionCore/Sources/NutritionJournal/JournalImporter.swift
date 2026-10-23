@@ -409,16 +409,15 @@ public enum JournalImporter {
                 }
                 // Goals come last, and only the ones this run wrote. A goal that cannot be removed keeps its receipt and the flag.
                 let goalsLeft = !undoGoals(recordedGoals.filter { goalKeysSet.contains($0.nutrient) }, in: goalsTarget)
+                // The journal undo above succeeded, so no entry of this file remains to be counted.
                 if goalsLeft {
                     keepFlag = true
-                    throw JournalImportError.partialRestore(
-                        retainedIntakes: retainedIntakes, retainedTombstones: retainedTombstones)
+                    throw JournalImportError.partialRestore(retainedIntakes: 0, retainedTombstones: 0)
                 }
                 // A receipt that cannot be removed keeps the flag, so a resume can still finish or clear it.
                 do { try goalsTarget?.removeGoalRestoreReceipt(digest) } catch {
                     keepFlag = true
-                    throw JournalImportError.partialRestore(
-                        retainedIntakes: retainedIntakes, retainedTombstones: retainedTombstones)
+                    throw JournalImportError.partialRestore(retainedIntakes: 0, retainedTombstones: 0)
                 }
                 // A saved meal the phone keeps is not a transient failure: a retry meets the same meal, so its own message stays.
                 if case JournalImportError.savedMealsNotEmpty = secondPhaseFailure { throw secondPhaseFailure }
@@ -844,7 +843,7 @@ public enum JournalImporter {
         var seen = Set<String>()
         return try items.map { item in
             // The "restore-receipt:" prefix is the goal table's own receipt rows, so a goal can never use it.
-            guard !item.nutrient.isEmpty, item.nutrient.count <= 64, !item.nutrient.hasPrefix("restore-receipt:"),
+            guard !item.nutrient.isEmpty, item.nutrient.unicodeScalars.count <= 64, !item.nutrient.hasPrefix("restore-receipt:"),
                   seen.insert(item.nutrient).inserted
             else {
                 throw JournalImportError.corrupt("the export lists a goal with no name or more than once")

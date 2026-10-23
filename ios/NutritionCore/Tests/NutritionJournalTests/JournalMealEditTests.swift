@@ -116,7 +116,7 @@ final class JournalMealEditTests: XCTestCase {
         let store = try makeStore()
         try logBreakfast(store)
         try store.changeMeal(intakeID: intakeID, meal: "dinner", now: when)
-        let document = try JournalExporter.makeExport(store: store, appVersion: "0.1.0", exportedAt: when)
+        let document = try JournalExporter.makeExport(store: store, goals: InMemoryGoalStore(), appVersion: "0.1.0", exportedAt: when)
         let intake = try XCTUnwrap(document.intakes.first { $0.id == intakeID })
         XCTAssertEqual(intake.meal, "dinner")
         XCTAssertEqual(intake.currentRevision, 2)

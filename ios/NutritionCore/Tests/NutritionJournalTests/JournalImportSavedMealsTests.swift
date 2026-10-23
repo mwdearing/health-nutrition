@@ -74,7 +74,7 @@ final class JournalImportSavedMealsTests: JournalImportTestCase {
         return try JournalExporter.encode(
             try JournalExporter.makeExport(
                 store: try filledStore(directory), favorites: try filledFavorites(directory),
-                savedMeals: MemorySavedMeals(sampleMeals()), appVersion: appVersion, exportedAt: exportedAt))
+                savedMeals: MemorySavedMeals(sampleMeals()), goals: InMemoryGoalStore(), appVersion: appVersion, exportedAt: exportedAt))
     }
 
     private func fields(_ data: Data) throws -> [String: Any] {
@@ -112,7 +112,7 @@ final class JournalImportSavedMealsTests: JournalImportTestCase {
             items: [template("item-1", name: "Sample oats", snapshotID: "snap-oats-1")])
 
         let document = try JournalExporter.makeExport(
-            store: journal, savedMeals: MemorySavedMeals([meal]), appVersion: appVersion, exportedAt: exportedAt)
+            store: journal, savedMeals: MemorySavedMeals([meal]), goals: InMemoryGoalStore(), appVersion: appVersion, exportedAt: exportedAt)
         XCTAssertEqual(document.products.map(\.snapshotID), ["snap-oats-1"])
         XCTAssertEqual(document.savedMeals.first?.items.first?.productSnapshotID, "snap-oats-1")
     }
@@ -223,7 +223,7 @@ final class JournalImportSavedMealsTests: JournalImportTestCase {
         let directory = try self.directory()
         let data = try JournalExporter.encode(
             try JournalExporter.makeExport(
-                store: try filledStore(directory), savedMeals: MemorySavedMeals(), appVersion: appVersion,
+                store: try filledStore(directory), savedMeals: MemorySavedMeals(), goals: InMemoryGoalStore(), appVersion: appVersion,
                 exportedAt: exportedAt))
         let target = try self.directory()
         let journal = try store(target)
@@ -278,7 +278,7 @@ final class JournalImportSavedMealsTests: JournalImportTestCase {
         let data = try JournalExporter.encode(
             try JournalExporter.makeExport(
                 store: try store(source), favorites: favoritesSource, savedMeals: MemorySavedMeals([lunch]),
-                appVersion: appVersion, exportedAt: exportedAt))
+                goals: InMemoryGoalStore(), appVersion: appVersion, exportedAt: exportedAt))
         let digest = JournalImporter.fileDigest(data)
         let target = try directory()
         let journal = try store(target)
@@ -361,7 +361,7 @@ final class JournalImportSavedMealsTests: JournalImportTestCase {
         let directory = try self.directory()
         let data = try JournalExporter.encode(
             try JournalExporter.makeExport(
-                store: try filledStore(directory), savedMeals: MemorySavedMeals(sampleMeals()), appVersion: appVersion,
+                store: try filledStore(directory), savedMeals: MemorySavedMeals(sampleMeals()), goals: InMemoryGoalStore(), appVersion: appVersion,
                 exportedAt: exportedAt))
         let target = try self.directory()
         let journal = try store(target)
@@ -407,7 +407,7 @@ final class JournalImportSavedMealsTests: JournalImportTestCase {
         let data = try JournalExporter.encode(
             try JournalExporter.makeExport(
                 store: try filledStore(try directory()), favorites: nil,
-                savedMeals: MemorySavedMeals([shared]), appVersion: appVersion, exportedAt: exportedAt))
+                savedMeals: MemorySavedMeals([shared]), goals: InMemoryGoalStore(), appVersion: appVersion, exportedAt: exportedAt))
         let restoreDirectory = try directory()
         let target = try store(restoreDirectory)
         let savedMeals = MemorySavedMeals()
@@ -426,7 +426,7 @@ final class JournalImportSavedMealsTests: JournalImportTestCase {
         let directory = try self.directory()
         let meals = [JournalSavedMeal(id: "meal-x", name: "Lunch box", meal: nil, items: [template("item-x", name: "Sample apple")])]
         let encoded = try JournalExporter.encode(try JournalExporter.makeExport(
-            store: try store(directory), savedMeals: MemorySavedMeals(meals), appVersion: appVersion, exportedAt: exportedAt))
+            store: try store(directory), savedMeals: MemorySavedMeals(meals), goals: InMemoryGoalStore(), appVersion: appVersion, exportedAt: exportedAt))
         var root = try fields(encoded)
         root["goals"] = [["nutrient": "energy", "target": "2000", "unit": "kcal"]]
         let data = try JSONSerialization.data(withJSONObject: root)

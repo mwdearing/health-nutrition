@@ -1064,7 +1064,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     }
 
     /// One line saying what came back, so a restore that quietly did nothing still looks like an answer.
-    public static func importSummaryText(_ summary: JournalImportSummary, locale: Locale) -> String {
+    public static func importSummaryText(_ summary: JournalImportSummary, locale: Locale = .current) -> String {
         // Every count carries grouping separators (1,234 entries), in the locale the screen is shown in.
         func count(_ n: Int) -> String { n.formatted(.number.locale(locale)) }
         let entries = summary.intakes == 1 ? "1 entry" : "\(count(summary.intakes)) entries"
