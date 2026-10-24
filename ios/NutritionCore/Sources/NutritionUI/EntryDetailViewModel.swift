@@ -418,6 +418,11 @@ public final class EntryDetailViewModel: ObservableObject {
         return AmountDisplay.display(amount, unit: row.unit, system: preferences.unitSystem, roundsStoredUnit: true).text
     }
 
+    /// Whether the editor offers the water-share stepper: a drink, or an entry with no product record, with a volume amount (#462).
+    public var showsWaterShare: Bool {
+        (kind == .drink || productName == nil) && components.contains(where: { $0.unit.dimension == .volume })
+    }
+
     /// Writes one new revision with exactly one `edit` call. Invalid amounts write nothing.
     ///
     /// A draft time that differs from the stored one is a correction of when the entry was eaten,

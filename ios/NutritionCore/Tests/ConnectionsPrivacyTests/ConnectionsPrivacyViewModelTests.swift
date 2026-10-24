@@ -80,7 +80,7 @@ final class ConnectionsPrivacyViewModelTests: XCTestCase {
     }
 
     func testScreenStartsIdleWithNothingExportedAndNothingSent() {
-        let model = ConnectionsPrivacyViewModel(store: filledStore(), favorites: favorites(), appVersion: "0.1.0")
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(), store: filledStore(), favorites: favorites(), appVersion: "0.1.0")
         XCTAssertEqual(model.exportState, .idle)
         XCTAssertNil(model.exportFileURL)
         XCTAssertNil(model.exportFileName)
@@ -91,7 +91,7 @@ final class ConnectionsPrivacyViewModelTests: XCTestCase {
     }
 
     func testBothConnectionsAreListedButUnavailableAndSwitchingThemOnStaysOff() {
-        let model = ConnectionsPrivacyViewModel(store: filledStore())
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(), store: filledStore())
         let connections = model.connections
         XCTAssertEqual(connections.map(\.title), ["Apple Health", "HealthRelay"])
         XCTAssertTrue(connections.allSatisfy { !$0.isAvailable })
@@ -106,7 +106,7 @@ final class ConnectionsPrivacyViewModelTests: XCTestCase {
     }
 
     func testPrivacyTextExplainsAccountLookupAndSharingBoundaries() {
-        let model = ConnectionsPrivacyViewModel(store: filledStore())
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(), store: filledStore())
         let text = model.privacyText.lowercased()
         XCTAssertTrue(text.contains("stays on this device"))
         XCTAssertTrue(
@@ -126,7 +126,7 @@ final class ConnectionsPrivacyViewModelTests: XCTestCase {
     }
 
     func testExportWritesALocalFileThatDecodesAsTheCurrentVersion() throws {
-        let model = ConnectionsPrivacyViewModel(
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(),
             store: filledStore(), favorites: favorites(), appVersion: "0.1.0")
         XCTAssertTrue(model.export(now: now))
         XCTAssertEqual(model.exportState, .ready)
@@ -145,7 +145,7 @@ final class ConnectionsPrivacyViewModelTests: XCTestCase {
 
     func testExportDoesNothingUntilItIsAskedFor() {
         let store = filledStore()
-        let model = ConnectionsPrivacyViewModel(store: store, favorites: favorites())
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(), store: store, favorites: favorites())
         XCTAssertNil(model.exportFileURL)
         XCTAssertEqual(model.exportState, .idle)
         XCTAssertTrue(model.export(now: now))
@@ -157,7 +157,7 @@ final class ConnectionsPrivacyViewModelTests: XCTestCase {
 
     func testAFailedExportExplainsItselfAndClearsTheFile() throws {
         let store = filledStore()
-        let model = ConnectionsPrivacyViewModel(store: store, favorites: favorites())
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(), store: store, favorites: favorites())
         XCTAssertTrue(model.export(now: now))
         let firstURL = try XCTUnwrap(model.exportFileURL)
         store.failReads = true
@@ -169,7 +169,7 @@ final class ConnectionsPrivacyViewModelTests: XCTestCase {
     }
 
     func testExportingAgainInALaterSecondReplacesTheFileInsteadOfLeavingTheOldOne() throws {
-        let model = ConnectionsPrivacyViewModel(store: filledStore(), favorites: favorites())
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(), store: filledStore(), favorites: favorites())
         XCTAssertTrue(model.export(now: now))
         let firstURL = try XCTUnwrap(model.exportFileURL)
         XCTAssertTrue(FileManager.default.fileExists(atPath: firstURL.path))
@@ -188,7 +188,7 @@ final class ConnectionsPrivacyViewModelTests: XCTestCase {
     }
 
     func testExportingTwiceInTheSameSecondKeepsTheSingleFile() throws {
-        let model = ConnectionsPrivacyViewModel(store: filledStore(), favorites: favorites())
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(), store: filledStore(), favorites: favorites())
         XCTAssertTrue(model.export(now: now))
         let url = try XCTUnwrap(model.exportFileURL)
         addTeardownBlock { try? FileManager.default.removeItem(at: url) }
@@ -203,7 +203,7 @@ final class ConnectionsPrivacyViewModelTests: XCTestCase {
         // complete-until-first-authentication whatever was asked for, so the options themselves are checked.
         var seen: (url: URL, options: Data.WritingOptions)?
         var written: Data?
-        let model = ConnectionsPrivacyViewModel(
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(),
             store: filledStore(), favorites: favorites(), appVersion: "0.1.0",
             writer: { data, url, options in
                 seen = (url, options)
@@ -221,7 +221,7 @@ final class ConnectionsPrivacyViewModelTests: XCTestCase {
     }
 
 func testTheRealWriterLeavesADecodableFileBehind() throws {
-        let model = ConnectionsPrivacyViewModel(store: filledStore(), favorites: favorites())
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(), store: filledStore(), favorites: favorites())
         XCTAssertTrue(model.export(now: now))
         let url = try XCTUnwrap(model.exportFileURL)
         addTeardownBlock { try? FileManager.default.removeItem(at: url) }
@@ -230,7 +230,7 @@ func testTheRealWriterLeavesADecodableFileBehind() throws {
     }
 
 func testClearingTheExportWhenTheScreenGoesAwayLeavesNothingOnDisk() throws {
-        let model = ConnectionsPrivacyViewModel(store: filledStore(), favorites: favorites())
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(), store: filledStore(), favorites: favorites())
         XCTAssertTrue(model.export(now: now))
         let url = try XCTUnwrap(model.exportFileURL)
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
@@ -247,7 +247,7 @@ func testClearingTheExportWhenTheScreenGoesAwayLeavesNothingOnDisk() throws {
 
 func testTheExportActionStaysAvailableAfterAFailureSoItCanBeTriedAgain() {
         let store = filledStore()
-        let model = ConnectionsPrivacyViewModel(store: store, favorites: favorites())
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(), store: store, favorites: favorites())
         store.failReads = true
         XCTAssertFalse(model.export(now: now))
         XCTAssertEqual(model.exportState, .failed)
@@ -262,7 +262,7 @@ func testTheExportActionStaysAvailableAfterAFailureSoItCanBeTriedAgain() {
     }
 
     func testClearExportReturnsTheScreenToItsEmptyStateAndRemovesTheFile() throws {
-        let model = ConnectionsPrivacyViewModel(store: filledStore(), favorites: favorites())
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(), store: filledStore(), favorites: favorites())
         XCTAssertTrue(model.export(now: now))
         let url = try XCTUnwrap(model.exportFileURL)
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
@@ -277,7 +277,7 @@ func testTheExportActionStaysAvailableAfterAFailureSoItCanBeTriedAgain() {
     }
 
     func testClearingWithoutAnExportIsHarmlessAndReportsNothing() {
-        let model = ConnectionsPrivacyViewModel(store: filledStore(), favorites: favorites())
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(), store: filledStore(), favorites: favorites())
         model.clearExport()
         XCTAssertEqual(model.exportState, .idle)
         XCTAssertNil(model.exportFileURL)
@@ -292,7 +292,7 @@ func testTheExportActionStaysAvailableAfterAFailureSoItCanBeTriedAgain() {
                 id: deletedID, category: "food", occurredAt: Date(timeIntervalSince1970: 1_705_180_000),
                 timeZoneIdentifier: "Europe/Berlin", lifecycle: .deleted)
         ]
-        let model = ConnectionsPrivacyViewModel(store: store, favorites: favorites())
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(), store: store, favorites: favorites())
         XCTAssertTrue(model.export(now: now))
         let document = try JournalExporter.decode(try Data(contentsOf: try XCTUnwrap(model.exportFileURL)))
         XCTAssertEqual(document.tombstones.map(\.intakeID), [deletedID])
@@ -302,7 +302,7 @@ func testTheExportActionStaysAvailableAfterAFailureSoItCanBeTriedAgain() {
     /// A store that cannot clear the restore flag refuses the erase before any store is touched, and offers Retry.
     func testAStoreWithoutTheRestoreFlagErasesNothingAndOffersRetry() async {
         let eraser = CountingEraser()
-        let model = ConnectionsPrivacyViewModel(store: StubStore(), erasers: [eraser])
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(), store: StubStore(), erasers: [eraser])
 
         let erased = await model.eraseAllData()
 

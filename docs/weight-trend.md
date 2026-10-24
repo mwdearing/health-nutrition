@@ -71,7 +71,7 @@ just tracking does not change a stored plan. The plan is checked against the cur
 target is written, so a goal on the wrong side of it saves nothing.
 
 **Erase all data** removes the weight plan together with the targets, in the same save. The plan is
-not in the export: the export holds the journal only, the same as the targets.
+not in the export: the export carries the journal and, from version 8, the daily targets, but never the plan.
 
 ## Units and wording
 
