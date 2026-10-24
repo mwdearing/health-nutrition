@@ -226,6 +226,29 @@ final class GoalSetupWeightPlanTests: XCTestCase {
         XCTAssertNil(try store.weightPlan())
     }
 
+    func testAFailedPlanWriteRestoresATargetThatAnEmptyDraftRemoved() throws {
+        let store = GoalSetupPlanStore(
+            goals: [
+                NutrientGoal(nutrient: "energy", target: 2000, unit: .kcal),
+                NutrientGoal(nutrient: "protein", target: 100, unit: .g),
+            ],
+            refusesPlanWrites: true)
+        let model = makeModel(store: store)
+        answer(model, aim: .lose)
+        walk(model, to: .pace)
+        model.selectedPaceKilograms = model.paceOptions[1].kilogramsPerWeek
+        model.goalWeightKilogramsText = "75"
+        walk(model, to: .results)
+        model.draftTargets["energy"] = ""
+
+        XCTAssertFalse(model.save())
+
+        XCTAssertEqual(model.resultError, GoalSetupViewModel.saveFailedNotice)
+        XCTAssertEqual(try store.goal(for: "energy"), NutrientGoal(nutrient: "energy", target: 2000, unit: .kcal))
+        XCTAssertEqual(try store.goal(for: "protein"), NutrientGoal(nutrient: "protein", target: 100, unit: .g))
+        XCTAssertNil(try store.weightPlan())
+    }
+
     func testSaveChecksTheGoalAgainstTheWeightAsItNowReads() throws {
         let store = GoalSetupPlanStore()
         let model = makeModel(store: store)
