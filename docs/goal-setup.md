@@ -50,7 +50,7 @@ Age, sex, height and weight are used only to compute the numbers. They are held 
 sheet is open, are never stored, logged or sent, and are cleared when the sheet closes. The first screen
 says so: "Your age, sex, height and current weight stay on this phone and are not saved. Your aim, pace and goal weight are saved on this phone with the targets you choose."
 
-Only the targets a person saves are written, through the same goal store the Goals screen uses, in the
+The targets a person saves are written through the same goal store the Goals screen uses, in the
 stored units (kcal for energy, grams for the rest). Saving replaces any target already set for those
 nutrients; a blank result removes that target.
 
