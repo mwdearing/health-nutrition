@@ -16,14 +16,15 @@ public struct GoalPaceOption: Sendable, Equatable {
 
 /// Backs the guided goal setup: the answers, the steps through them, the estimate and the save.
 ///
-/// The answers live here only while the sheet is open. `clearAnswers()` empties them when it closes, and
-/// nothing in this type writes an answer anywhere: the only thing saved is a target a person keeps, and
-/// that goes through `GoalsViewModel` like any target typed on the Goals screen.
+/// The answers live here only while the sheet is open. `clearAnswers()` empties them when it closes. Of
+/// the answers, only the aim, the pace and the goal weight are saved, as the weight plan saved with the
+/// targets; the rest are never written. The targets go through `GoalsViewModel` like any typed on the
+/// Goals screen.
 @MainActor
 public final class GoalSetupViewModel: ObservableObject, Identifiable {
     public nonisolated var id: ObjectIdentifier { ObjectIdentifier(self) }
 
-    public static let privacyNotice = "Your answers stay on this phone and are not saved. Only the targets you choose are."
+    public static let privacyNotice = "Your age, sex, height and current weight stay on this phone and are not saved. Your aim, pace and goal weight are saved on this phone with the targets you choose."
     public static let estimateNotice = "These are estimates, not medical advice. If you are pregnant, have a medical condition or take medicines that affect weight or appetite, ask your doctor or dietitian."
     public static let replaceNotice = "This replaces your current targets for these nutrients."
     public static let adultNotice = "Goal estimates here are for adults. Ask a doctor or dietitian for advice on a target."
@@ -36,6 +37,8 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
     public static let genericErrorNotice = "Check your answers and try again."
     public static let saveFailedNotice = "Could not save your goals. Try again."
     public static let invalidFieldNotice = "Enter a number greater than zero."
+    public static let goalWeightBelowNotice = "To lose weight, your goal weight must be below your current weight."
+    public static let goalWeightAboveNotice = "To gain weight, your goal weight must be above your current weight."
 
     /// The nutrients the estimate sets, in the order the results screen lists them.
     public static let targetKeys = ["energy", "protein", "carbohydrate", "fat", "fiber"]
@@ -53,6 +56,8 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
     @Published public var heightInchesText = ""
     @Published public var weightKilogramsText = ""
     @Published public var weightPoundsText = ""
+    @Published public var goalWeightKilogramsText = ""
+    @Published public var goalWeightPoundsText = ""
     @Published public var activity: ActivityLevel?
     @Published public var selectedPaceKilograms: Decimal?
     /// The results as the person may edit them, one text per key in `targetKeys`.
@@ -111,9 +116,28 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
         case .about: return sex != nil && ageYears() != nil
         case .body: return heightCentimeters() != nil && weightKilograms() != nil
         case .activity: return activity != nil
-        case .pace: return selectedPaceKilograms != nil
+        case .pace: return selectedPaceKilograms != nil && goalWeightKilograms() != nil && goalWeightNotice == nil
         case .results: return false
         }
+    }
+
+    /// What is wrong with the goal weight, in plain words, or nil when it is fine or not asked for. Only a
+    /// loss or a gain asks for one, and a blank field is not yet a problem.
+    public var goalWeightNotice: String? {
+        guard aim == .lose || aim == .gain else { return nil }
+        let text = unitSystem == .usCustomary ? goalWeightPoundsText : goalWeightKilogramsText
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        guard let goal = goalWeightKilograms(), goal > 0 else { return Self.invalidFieldNotice }
+        guard GoalEstimator.weightRangeKilograms.contains(goal) else {
+            guard unitSystem == .usCustomary else { return "Check your goal weight. It must be between 30 and 300 kg." }
+            let least = Self.rounded(Decimal(30) / Self.kilogramsPerPound, scale: 0, .up)
+            let most = Self.rounded(Decimal(300) / Self.kilogramsPerPound, scale: 0, .down)
+            return "Check your goal weight. It must be between \(DecimalFormatting.text(least)) and \(DecimalFormatting.text(most)) lb."
+        }
+        guard let current = weightKilograms() else { return nil }
+        if aim == .lose && goal >= current { return Self.goalWeightBelowNotice }
+        if aim == .gain && goal <= current { return Self.goalWeightAboveNotice }
+        return nil
     }
 
     public func next() {
@@ -205,6 +229,28 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
             return false
         }
         resultError = nil
+        let planStore = goals.weightPlanStore
+        let plan = planStore == nil ? nil : makeWeightPlan()
+        if let plan {
+            // The goal is checked against the weight as it reads now, so a weight changed after the
+            // results cannot leave a plan the estimate was not made for. Nothing is written before this.
+            guard let current = weightKilograms() else {
+                resultError = Self.genericErrorNotice
+                return false
+            }
+            do {
+                try plan.validate(currentKilograms: current)
+            } catch WeightPlanError.goalNotBelowCurrent {
+                resultError = Self.goalWeightBelowNotice
+                return false
+            } catch WeightPlanError.goalNotAboveCurrent {
+                resultError = Self.goalWeightAboveNotice
+                return false
+            } catch {
+                resultError = Self.genericErrorNotice
+                return false
+            }
+        }
         var before: [(nutrient: String, goal: NutrientGoal?)] = []
         do {
             for key in Self.targetKeys {
@@ -232,6 +278,19 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
                 return false
             }
         }
+        if let plan, let planStore {
+            do {
+                try planStore.setWeightPlan(plan)
+            } catch {
+                // The plan is the last write, so every target written above is put back, newest first.
+                var restored = true
+                for entry in before.reversed() {
+                    if !goals.restoreGoal(entry.goal, for: entry.nutrient) { restored = false }
+                }
+                resultError = restored ? Self.saveFailedNotice : Self.saveRestoreFailedNotice
+                return false
+            }
+        }
         for key in Self.targetKeys {
             let text = (draftTargets[key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             // The Goals screen keeps its own text and unit per field. Set both to what was stored, so
@@ -243,6 +302,20 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
             goals.clearRowError(for: key)
         }
         return true
+    }
+
+    /// The weight plan for the aim as it is saved: a loss or gain keeps the typed goal and pace, a
+    /// maintenance keeps neither, and just tracking keeps no plan.
+    private func makeWeightPlan() -> WeightPlan? {
+        guard let aim else { return nil }
+        switch aim {
+        case .lose, .gain:
+            return WeightPlan(aim: aim, goalKilograms: goalWeightKilograms(), weeklyPaceKilograms: selectedPaceKilograms)
+        case .maintain:
+            return WeightPlan(aim: aim, goalKilograms: nil, weeklyPaceKilograms: nil)
+        case .justTrack:
+            return nil
+        }
     }
 
     /// Empties every answer and returns to the first step. Called when the sheet closes, so nothing a
@@ -257,6 +330,8 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
         heightInchesText = ""
         weightKilogramsText = ""
         weightPoundsText = ""
+        goalWeightKilogramsText = ""
+        goalWeightPoundsText = ""
         activity = nil
         selectedPaceKilograms = nil
         draftTargets = [:]
@@ -366,5 +441,14 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
             return pounds * Self.kilogramsPerPound
         }
         return AmountParser.parseTyped(weightKilogramsText)
+    }
+
+    /// The goal weight in kilograms, read in the unit system's field, with no range check.
+    private func goalWeightKilograms() -> Decimal? {
+        if unitSystem == .usCustomary {
+            guard let pounds = AmountParser.parseTyped(goalWeightPoundsText) else { return nil }
+            return pounds * Self.kilogramsPerPound
+        }
+        return AmountParser.parseTyped(goalWeightKilogramsText)
     }
 }
