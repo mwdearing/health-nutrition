@@ -47,6 +47,27 @@ for gaining, zero for maintaining or just tracking.
 weekly change and projected goal date. The planned date is counted from the trend's last day, and only
 when the aim points at the goal (losing toward a lower goal, gaining toward a higher one).
 
+## Weight plan
+
+A weight plan is the aim a person chose in goal setup, with its goal weight and weekly pace. It holds:
+
+- **Aim.** One of `lose`, `maintain`, `gain` or `just-track`. Just tracking carries no plan.
+- **Goal weight.** Required when losing or gaining, within the goal weight range of `GoalEstimator`.
+- **Weekly pace.** Required when losing or gaining, within the pace range of `GoalEstimator`.
+
+Maintaining carries neither a goal nor a pace. Losing needs a goal below the current weight, and gaining
+needs a goal above it. `WeightPlan.validate()` checks the plan alone, and `validate(currentKilograms:)`
+also checks the goal's direction against the current weight. The checks run in a fixed order, so the same
+plan always reports the same error.
+
+The plan is stored in `goals.store`, beside the daily nutrient targets, through `WeightPlanStore`. One plan
+is stored at most: writing a plan replaces the stored one, and removing a plan with none stored is not an
+error. An invalid plan is refused before anything is written. A stored row that cannot be read is reported
+as corrupt, never as "no plan".
+
+**Erase all data** removes the weight plan together with the targets, in the same save. The plan is
+not in the export: the export carries the journal and, from version 8, the daily targets, but never the plan.
+
 ## Units and wording
 
 Every value is in kilograms, the same as goal setup. The screen converts to the person's chosen units
