@@ -82,22 +82,18 @@ final class BodyActivityTests: XCTestCase {
         XCTAssertNil(model.outsideText)
     }
 
-    func testWeightFollowsTheUnitSystemAndShowsTheTrend() async {
+    func testWeightFollowsTheUnitSystem() async {
         let reader = FakeReader()
         reader.hasAskedForReadAccess = true
-        reader.readings = BodyActivityReadings(
-            latestWeightKg: 80, latestWeightDate: now, earlierWeightKg: 81,
-            earlierWeightDate: now.addingTimeInterval(-34 * 86_400))
+        reader.readings = BodyActivityReadings(latestWeightKg: 80, latestWeightDate: now)
         var system = UnitSystem.usCustomary
         let model = BodyActivityViewModel(reader: reader, unitSystem: { system })
         await model.load(now: now)
 
         XCTAssertEqual(model.weightText, "176.4 lb")
-        XCTAssertEqual(model.weightTrendText, "Down 2.2 lb over 34 days")
 
         system = .metric
         XCTAssertEqual(model.weightText, "80 kg")
-        XCTAssertEqual(model.weightTrendText, "Down 1 kg over 34 days")
     }
 
     func testForgettingTheRequestClearsWhatWasShown() async {
@@ -113,18 +109,6 @@ final class BodyActivityTests: XCTestCase {
 
         XCTAssertTrue(model.showsConnect)
         XCTAssertTrue(model.readings.isEmpty)
-    }
-
-    func testATinyChangeReadsAsNoChange() async {
-        let reader = FakeReader()
-        reader.hasAskedForReadAccess = true
-        reader.readings = BodyActivityReadings(
-            latestWeightKg: Decimal(string: "80.01")!, latestWeightDate: now, earlierWeightKg: 80,
-            earlierWeightDate: now.addingTimeInterval(-30 * 86_400))
-        let model = BodyActivityViewModel(reader: reader, unitSystem: { .metric })
-        await model.load(now: now)
-
-        XCTAssertEqual(model.weightTrendText, "No change over 30 days")
     }
 
     func testEveryReadIsHandedOnForTheCalorieGoal() async {

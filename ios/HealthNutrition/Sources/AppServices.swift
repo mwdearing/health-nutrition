@@ -218,7 +218,8 @@ final class AppServices {
         firstDayChecklist = FirstDayChecklistModel(
             store: journalStore, goals: goalStore, preferences: displayPreferences, health: appleHealth)
         bodyActivity = BodyActivityViewModel(
-            reader: HealthKitReader(), unitSystem: { [displayPreferences] in displayPreferences.unitSystem })
+            reader: HealthKitReader(), unitSystem: { [displayPreferences] in displayPreferences.unitSystem },
+            weightPlan: { [goalStore] in try? goalStore.weightPlan() })
         // Set after every stored property, so the Library can link to the supplement list.
         library.supplementStack = supplementStack
         // The list follows the journal. Every reload of the app's screens, from any window, reloads the
