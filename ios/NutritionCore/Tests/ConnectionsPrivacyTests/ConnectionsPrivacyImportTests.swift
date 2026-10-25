@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import Dispatch
 import NutritionDomain
@@ -719,30 +720,44 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
 
     /// The success side of the deferred-effect path: an import that completes while a successful erase is suspended
     /// is dropped, so its partial-restore warning never reaches the screen after the journal is gone.
+    ///
+    /// Signals hold the timing, not sleeps: the account step keeps the erase suspended until the import's outcome has
+    /// been applied, which writes `isImporting`. An outcome that arrives before the erase starts or after it ends never
+    /// satisfies that wait, so the test fails instead of passing without the deferred path.
     func testImportCompletingDuringASuccessfulEraseIsDiscarded() async throws {
         let journal = ImportStubStore()
         journal.failUndoForTesting = true
         journal.pauseAfterRestoreForTesting = true
         let favorites = ImportStubFavorites()
         favorites.failRestoreForTesting = true
+        var eraseUnderway = false
+        var importWritesDuringErase = 0
+        var outcomeArrivedDuringErase = false
         let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(),
             store: journal, favorites: favorites, erasers: [journal, favorites],
+            beforeErase: { eraseUnderway = true },
             eraseLocalAccount: {
-                // Keep the erase suspended long enough for the import's main-actor completion to arrive.
-                try await Task.sleep(nanoseconds: 500_000_000)
+                // Hold the erase here until the import's outcome has been applied on the main actor.
+                let deadline = Date(timeIntervalSinceNow: 10)
+                while importWritesDuringErase == 0, Date() < deadline {
+                    try await Task.sleep(nanoseconds: 1_000_000)
+                }
+                outcomeArrivedDuringErase = importWritesDuringErase > 0
             })
+        let importWrites = model.$isImporting.sink { _ in
+            if eraseUnderway { importWritesDuringErase += 1 }
+        }
+        defer { importWrites.cancel() }
 
         model.importJournal(data: try export(includeFavorite: true))
         let restorePaused = await waitForSignal(journal.restorePausedForTesting)
         XCTAssertTrue(restorePaused)
-        let resumeRestore = journal.resumeRestoreForTesting
-        Task.detached {
-            try? await Task.sleep(nanoseconds: 100_000_000)
-            resumeRestore.signal()
-        }
+        // The outcome needs the main actor, which the erase holds until it suspends in the account step.
+        journal.resumeRestoreForTesting.signal()
 
         let erased = await model.eraseAllData()
 
+        XCTAssertTrue(outcomeArrivedDuringErase, "the import's outcome did not arrive while the erase was suspended")
         XCTAssertTrue(erased)
         XCTAssertNil(model.incompleteRestoreWarning)
         XCTAssertEqual(model.journalRestoreGeneration, 0)
