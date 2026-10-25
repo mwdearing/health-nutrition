@@ -84,7 +84,8 @@ The "Activity and weight" card on Today shows the weight and up to four lines un
 
 The planned day counts from today, starting from the trend weight, or from the latest weigh-in when there
 is no trend. The card reads the saved plan each time it loads, so a plan saved in goal setup appears the
-next time Today loads. Nothing on the card grades the figures.
+next time Today loads. Days are Gregorian dates in the device's time zone, also on a device set to another
+calendar. Nothing on the card grades the figures.
 
 ## Units and wording
 

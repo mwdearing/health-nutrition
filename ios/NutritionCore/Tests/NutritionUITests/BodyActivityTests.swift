@@ -1,3 +1,4 @@
+import NutritionDomain
 import XCTest
 
 @testable import NutritionUI
@@ -135,7 +136,7 @@ final class BodyActivityTests: XCTestCase {
         XCTAssertFalse(preferences.addsActiveEnergyToGoal)
     }
 
-    func testNoEarlierWeightMeansNoTrend() async {
+    func testALatestWeightAloneGivesNoTrend() async {
         let reader = FakeReader()
         reader.hasAskedForReadAccess = true
         reader.readings = BodyActivityReadings(latestWeightKg: 80, latestWeightDate: now)
@@ -154,5 +155,28 @@ final class BodyActivityTests: XCTestCase {
 
         XCTAssertTrue(model.readings.isEmpty)
         XCTAssertTrue(BodyActivityViewModel.emptyDetail.contains("Health app"))
+    }
+
+    func testTheWeightLinesUseGregorianDaysOnADeviceSetToAnotherCalendar() async {
+        let reader = FakeReader()
+        reader.hasAskedForReadAccess = true
+        let today = Date(timeIntervalSince1970: 1_776_254_400)
+        var readings = BodyActivityReadings(latestWeightKg: 89, latestWeightDate: today)
+        readings.weightSamples = [
+            WeightSample(day: CalendarDay(iso: "2026-04-01")!, kilograms: 90),
+            WeightSample(day: CalendarDay(iso: "2026-04-15")!, kilograms: 89),
+        ]
+        reader.readings = readings
+        var buddhist = Calendar(identifier: .buddhist)
+        buddhist.timeZone = TimeZone(identifier: "UTC")!
+        let plan = WeightPlan(aim: .lose, goalKilograms: 80, weeklyPaceKilograms: Decimal(string: "0.25")!)
+        let model = BodyActivityViewModel(
+            reader: reader, unitSystem: { .metric }, weightPlan: { plan }, calendar: buddhist)
+        await model.load(now: today)
+
+        // The Buddhist year of April 15, 2026 is 2569; the days still count from April 15, 2026.
+        XCTAssertEqual(model.weightTrendText, "Trend: down 0.5 kg a week")
+        XCTAssertEqual(model.planGoalDayText, "Plan reaches 80 kg on Dec 23, 2026")
+        XCTAssertEqual(model.trendGoalDayText, "Trend reaches 80 kg on Aug 19, 2026")
     }
 }
