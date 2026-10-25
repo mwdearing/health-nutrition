@@ -39,9 +39,10 @@ Both shortcuts:
   tidy the list's saved times the way opening the list does.
 
 **Log supplement taken and your supplement names.** The action needs the device unlocked and local device
-authentication to run (the action sets `requiresLocalDeviceAuthentication`), and it speaks "Logged <supplement>" only then.
-No list of your supplement names is offered while the device is locked: the picker in Shortcuts and Siri's
-prompts get an empty list until you unlock (protected data is available only then). A shortcut you already saved
+authentication to run (the action sets `requiresLocalDeviceAuthentication`), and it speaks
+"Logged <supplement>" only then. No list of your supplement names is offered while the device is locked: the
+picker in Shortcuts and Siri's prompts get an empty list until you unlock (protected data is available only
+then). A shortcut you already saved
 holds the item's id rather than a list, so it still resolves while locked, shown with the stand-in title
 "Supplement" rather than the name, and then reaches the unlock requirement. The same stand-in is used when the
 saved item is no longer on your list, so the action can say "This item is no longer on your supplements."; asking
