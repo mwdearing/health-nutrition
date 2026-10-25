@@ -11,8 +11,7 @@
 - Nothing is sent anywhere because of it; it is local like the rest of the journal.
 
 Code: `HealthNutrition/Sources/LogWaterIntent.swift` (the intent and shortcut, with the testable
-`WaterShortcut`), `AppServicesRegistry.swift`. Not built yet: a Lock Screen control and widgets, which need a
-widget extension and an App Group.
+`WaterShortcut`), `AppServicesRegistry.swift`. Not built yet: a Lock Screen control. Today widgets are described in widgets.md.
 
 **Log supplement taken** records one Taken for a supplement on your supplement list ("Log <supplement> in <app
 name>", "I took <supplement> in <app name>", or the action in Shortcuts, which offers the items on your list).

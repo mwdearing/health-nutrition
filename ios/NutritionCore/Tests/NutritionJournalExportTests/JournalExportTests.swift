@@ -139,7 +139,7 @@ final class JournalExportTests: XCTestCase {
         store: StubJournalStore, favorites: StubFavoritesStore? = nil
     ) throws -> JournalExport {
         try JournalExporter.makeExport(
-            store: store, favorites: favorites, appVersion: "0.1.0", exportedAt: now)
+            store: store, favorites: favorites, goals: InMemoryGoalStore(), appVersion: "0.1.0", exportedAt: now)
     }
 
     private func contractFile(_ name: String, _ fileExtension: String) throws -> Data {
@@ -195,7 +195,7 @@ final class JournalExportTests: XCTestCase {
             components: [FavoriteComponent(componentID: "water", name: "Water", amountText: "250", unitSymbol: "mL")])]
         let data = try JournalExporter.encode(
             try JournalExporter.makeExport(
-                store: store, favorites: favoritesStore, appVersion: "0.1.0", exportedAt: now))
+                store: store, favorites: favoritesStore, goals: InMemoryGoalStore(), appVersion: "0.1.0", exportedAt: now))
         let text = try XCTUnwrap(String(data: data, encoding: .utf8))
         XCTAssertTrue(text.contains("\"meal\":null"), text)
         XCTAssertTrue(text.contains("\"note\":null"), text)
@@ -234,7 +234,7 @@ final class JournalExportTests: XCTestCase {
             components: [FavoriteComponent(componentID: "water", name: "Water", amountText: "250", unitSymbol: "mL")])]
         let data = try JournalExporter.encode(
             try JournalExporter.makeExport(
-                store: store, favorites: favoritesStore, appVersion: "0.1.0", exportedAt: now))
+                store: store, favorites: favoritesStore, goals: InMemoryGoalStore(), appVersion: "0.1.0", exportedAt: now))
         let encoded = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
         let schema = try XCTUnwrap(
             try JSONSerialization.jsonObject(with: try contractFile("v\(JournalExport.currentSchemaVersion).schema", "json")) as? [String: Any])
@@ -416,7 +416,7 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
                 createdAt: base.addingTimeInterval(0.999_999)),
         ]
         let document = try JournalExporter.makeExport(
-            store: store, favorites: nil, appVersion: "0.1.0",
+            store: store, favorites: nil, goals: InMemoryGoalStore(), appVersion: "0.1.0",
             exportedAt: base.addingTimeInterval(0.555_555))
         let text = try JournalExporter.json(document)
         XCTAssertTrue(text.contains("2024-01-14T20:30:00.123400Z"), text)
@@ -454,7 +454,7 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
         for interval in [Double.nan, Double.infinity, -Double.infinity] {
             let document = JournalExport(
                 exportedAt: Date(timeIntervalSince1970: interval), appVersion: "0.1.0",
-                intakes: [], tombstones: [], favorites: [])
+                intakes: [], tombstones: [], favorites: [], goals: [])
             XCTAssertThrowsError(try JournalExporter.encode(document)) { error in
                 XCTAssertEqual(error as? JournalExportError, .nonFiniteDate)
             }
@@ -471,7 +471,7 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
         for interval in unrepresentableIntervals {
             let document = JournalExport(
                 exportedAt: Date(timeIntervalSince1970: interval), appVersion: "0.1.0",
-                intakes: [], tombstones: [], favorites: [])
+                intakes: [], tombstones: [], favorites: [], goals: [])
             XCTAssertThrowsError(try JournalExporter.encode(document)) { error in
                 XCTAssertEqual(error as? JournalExportError, .unrepresentableDate, "interval \(interval)")
             }
@@ -487,7 +487,7 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
         for (interval, expected) in cases {
             let document = JournalExport(
                 exportedAt: Date(timeIntervalSince1970: interval), appVersion: "0.1.0",
-                intakes: [], tombstones: [], favorites: [])
+                intakes: [], tombstones: [], favorites: [], goals: [])
             let data = try JournalExporter.encode(document)
             let text = try XCTUnwrap(String(data: data, encoding: .utf8))
             XCTAssertTrue(text.contains(expected), text)
@@ -539,7 +539,7 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
 
     func testCurrentExportUsesLegacyCutoverTextWithoutLosingFractions() throws {
         let instant = Date(timeIntervalSince1970: -14_831_769_600 + 0.123_456)
-        let document = JournalExport(exportedAt: instant, appVersion: "0.1.0", intakes: [], tombstones: [], favorites: [])
+        let document = JournalExport(exportedAt: instant, appVersion: "0.1.0", intakes: [], tombstones: [], favorites: [], goals: [])
         let encoded = try JournalExporter.encode(document)
         let text = try XCTUnwrap(String(data: encoded, encoding: .utf8))
         let legacySecond = JournalExporter.dateFormatter().string(from: instant)
@@ -554,10 +554,10 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
     func testNegativeFractionAndHalfMicrosecondKeepExistingRoundingContract() throws {
         let halfMicrosecond = JournalExport(
             exportedAt: Date(timeIntervalSince1970: -0.000_000_5), appVersion: "0.1.0",
-            intakes: [], tombstones: [], favorites: [])
+            intakes: [], tombstones: [], favorites: [], goals: [])
         let beforeEpoch = JournalExport(
             exportedAt: Date(timeIntervalSince1970: -1.25), appVersion: "0.1.0",
-            intakes: [], tombstones: [], favorites: [])
+            intakes: [], tombstones: [], favorites: [], goals: [])
         let halfText = try XCTUnwrap(String(data: JournalExporter.encode(halfMicrosecond), encoding: .utf8))
         let negativeText = try XCTUnwrap(String(data: JournalExporter.encode(beforeEpoch), encoding: .utf8))
         // Floor plus rounding the positive fractional remainder makes negative ties round toward +infinity.
@@ -712,7 +712,7 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
             components: [FavoriteComponent(componentID: "oats", name: "Oats", amountText: "1.2.3", unitSymbol: "g")])]
         XCTAssertThrowsError(
             try JournalExporter.makeExport(
-                store: StubJournalStore(), favorites: favoritesStore, appVersion: "0.1.0", exportedAt: now)
+                store: StubJournalStore(), favorites: favoritesStore, goals: InMemoryGoalStore(), appVersion: "0.1.0", exportedAt: now)
         ) { error in
             XCTAssertEqual(error as? JournalExportError, .malformedFavoriteAmount("fav-broken-1", "1.2.3"))
         }
@@ -727,7 +727,7 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
 
         XCTAssertThrowsError(
             try JournalExporter.makeExport(
-                store: StubJournalStore(), favorites: favoritesStore, appVersion: "0.1.0", exportedAt: now)
+                store: StubJournalStore(), favorites: favoritesStore, goals: InMemoryGoalStore(), appVersion: "0.1.0", exportedAt: now)
         ) { error in
             XCTAssertEqual(error as? JournalExportError, .malformedFavoriteAmount("fav-too-precise", amount))
         }
@@ -744,7 +744,7 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
                     number: 1, createdAt: now, changeReason: "created", productSnapshotID: nil,
                     provenance: nil, components: [JournalExportComponent(
                         componentID: "oats", name: "Oats", amount: amount, unit: "g", valueState: .known)])])],
-            tombstones: [], favorites: [])
+            tombstones: [], favorites: [], goals: [])
 
         XCTAssertThrowsError(try JournalExporter.encode(document)) { error in
             XCTAssertEqual(error as? JournalExportError, .unrepresentableKnownAmount("intakes[0].revisions[0].components[0].amount"))
@@ -759,7 +759,7 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
             favorites: [JournalExportFavorite(
                 id: "fav-1", displayName: "Sample favorite", category: "food", meal: nil,
                 productSnapshotID: nil, components: [JournalExportComponent(
-                    componentID: "oats", name: "Oats", amount: amount, unit: "g", valueState: .known)])])
+                    componentID: "oats", name: "Oats", amount: amount, unit: "g", valueState: .known)])], goals: [])
 
         XCTAssertThrowsError(try JournalExporter.encode(document)) { error in
             XCTAssertEqual(error as? JournalExportError, .unrepresentableKnownAmount("favorites[0].components[0].amount"))
@@ -777,7 +777,7 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
                     number: 1, createdAt: now, changeReason: "created", productSnapshotID: nil,
                     provenance: nil, components: [JournalExportComponent(
                         componentID: "water", name: "Water", amount: nil, unit: "mL", valueState: .unknown)])])],
-            tombstones: [], favorites: [])
+            tombstones: [], favorites: [], goals: [])
 
         let text = try XCTUnwrap(String(data: JournalExporter.encode(document), encoding: .utf8))
         XCTAssertTrue(text.contains("\"amount\":null"), text)
@@ -790,7 +790,7 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
             favorites: [JournalExportFavorite(
                 id: "fav-1", displayName: "Sample favorite", category: "food", meal: nil,
                 productSnapshotID: nil, components: [JournalExportComponent(
-                    componentID: "oats", name: "Oats", amount: nil, unit: "g", valueState: .unknown)])])
+                    componentID: "oats", name: "Oats", amount: nil, unit: "g", valueState: .unknown)])], goals: [])
 
         XCTAssertThrowsError(try JournalExporter.encode(document)) { error in
             XCTAssertEqual(error as? JournalExportError, .unknownFavoriteAmount("favorites[0].components[0].value_state"))
@@ -807,7 +807,7 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
                     number: 1, createdAt: now, changeReason: "created", productSnapshotID: nil,
                     provenance: nil, components: [JournalExportComponent(
                         componentID: "oats", name: "Oats", amount: "40", unit: "cupful", valueState: .known)])])],
-            tombstones: [], favorites: [])
+            tombstones: [], favorites: [], goals: [])
 
         XCTAssertThrowsError(try JournalExporter.encode(document)) { error in
             XCTAssertEqual(error as? JournalExportError, .unknownRevisionUnit("intakes[0].revisions[0].components[0].unit"))
@@ -821,7 +821,7 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
         store.revisionsByIntake[firstID] = [revision(firstID, number: 1, components: [])]
 
         XCTAssertThrowsError(
-            try JournalExporter.makeExport(store: store, appVersion: "0.1.0", exportedAt: now)
+            try JournalExporter.makeExport(store: store, goals: InMemoryGoalStore(), appVersion: "0.1.0", exportedAt: now)
         ) { error in
             XCTAssertEqual(error as? JournalExportError, .emptyRevisionComponents(firstID, 1))
         }
@@ -837,7 +837,7 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
         XCTAssertThrowsError(try store.create(entry, components: [], product: nil, now: now)) { error in
             XCTAssertEqual(error as? JournalError, .noComponents(firstID))
         }
-        XCTAssertNoThrow(try JournalExporter.makeExport(store: store, appVersion: "0.1.0", exportedAt: now))
+        XCTAssertNoThrow(try JournalExporter.makeExport(store: store, goals: InMemoryGoalStore(), appVersion: "0.1.0", exportedAt: now))
     }
 
     func testExporterRefusesAnActiveIntakeWithoutRevisionHistory() {
@@ -859,7 +859,7 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
             store.revisionsByIntake[firstID] = [revision(
                 firstID, number: 1, components: [component("oats", 40)])]
             XCTAssertThrowsError(try JournalExporter.makeExport(
-                store: store, appVersion: appVersion, exportedAt: now))
+                store: store, goals: InMemoryGoalStore(), appVersion: appVersion, exportedAt: now))
         }
     }
 
@@ -882,7 +882,7 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
                 id: id, displayName: displayName, category: category,
                 components: [FavoriteComponent(componentID: "oats", name: "Oats", amountText: "40", unitSymbol: "g")])]
             XCTAssertThrowsError(try JournalExporter.makeExport(
-                store: StubJournalStore(), favorites: favoritesStore, appVersion: "0.1.0", exportedAt: now))
+                store: StubJournalStore(), favorites: favoritesStore, goals: InMemoryGoalStore(), appVersion: "0.1.0", exportedAt: now))
         }
     }
 
@@ -892,7 +892,7 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
             id: "fav-1", displayName: "Sample favorite", category: "food",
             components: [FavoriteComponent(componentID: "oats", name: "Oats", amountText: "40", unitSymbol: "")])]
         XCTAssertThrowsError(try JournalExporter.makeExport(
-            store: StubJournalStore(), favorites: favoritesStore, appVersion: "0.1.0", exportedAt: now))
+            store: StubJournalStore(), favorites: favoritesStore, goals: InMemoryGoalStore(), appVersion: "0.1.0", exportedAt: now))
     }
 
     func testExporterRefusesFavoriteUnitsTheImporterCannotRestore() {
@@ -901,7 +901,7 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
             id: "fav-1", displayName: "Sample favorite", category: "food",
             components: [FavoriteComponent(componentID: "oats", name: "Oats", amountText: "40", unitSymbol: "cupful")])]
         XCTAssertThrowsError(try JournalExporter.makeExport(
-            store: StubJournalStore(), favorites: favoritesStore, appVersion: "0.1.0", exportedAt: now)) { error in
+            store: StubJournalStore(), favorites: favoritesStore, goals: InMemoryGoalStore(), appVersion: "0.1.0", exportedAt: now)) { error in
             XCTAssertEqual(error as? JournalExportError, .unknownFavoriteUnit("favorites[0].components[0].unit"))
             XCTAssertFalse(String(describing: error).contains("cupful"))
         }
@@ -912,7 +912,7 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
                 id: "fav-1", displayName: "Sample favorite", category: "food", meal: nil,
                 productSnapshotID: nil,
                 components: [JournalExportComponent(
-                    componentID: "oats", name: "Oats", amount: "40", unit: "cupful", valueState: .known)])])
+                    componentID: "oats", name: "Oats", amount: "40", unit: "cupful", valueState: .known)])], goals: [])
         XCTAssertThrowsError(try JournalExporter.encode(document))
     }
 
@@ -933,13 +933,13 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
                 snapshotID: snapshotID, productID: productID, name: name,
                 labelBasis: labelBasis, catalogOrigin: catalogOrigin, catalogVersion: catalogVersion)
             XCTAssertThrowsError(try JournalExporter.makeExport(
-                store: store, appVersion: "0.1.0", exportedAt: now))
+                store: store, goals: InMemoryGoalStore(), appVersion: "0.1.0", exportedAt: now))
         }
     }
 
     func testEncoderRefusesEmptyRequiredMetadataOnDirectExportDocuments() {
         let document = JournalExport(
-            exportedAt: now, appVersion: "", intakes: [], tombstones: [], favorites: [])
+            exportedAt: now, appVersion: "", intakes: [], tombstones: [], favorites: [], goals: [])
         XCTAssertThrowsError(try JournalExporter.encode(document))
     }
 
@@ -961,7 +961,7 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
                     componentID: "oats", name: "Oats", amountText: padded, unitSymbol: "g")]),
         ]
         let document = try JournalExporter.makeExport(
-            store: StubJournalStore(), favorites: favoritesStore, appVersion: "0.1.0", exportedAt: now)
+            store: StubJournalStore(), favorites: favoritesStore, goals: InMemoryGoalStore(), appVersion: "0.1.0", exportedAt: now)
         // Sorted by id, not by the order the store happens to list them in, so two exports of the same
         // favorites are the same document.
         XCTAssertEqual(document.favorites.map(\.id), ["fav-a-1", "fav-b-1", "fav-c-1"])
@@ -969,7 +969,7 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
         let reversed = StubFavoritesStore()
         reversed.items = favoritesStore.items.reversed()
         let other = try JournalExporter.makeExport(
-            store: StubJournalStore(), favorites: reversed, appVersion: "0.1.0", exportedAt: now)
+            store: StubJournalStore(), favorites: reversed, goals: InMemoryGoalStore(), appVersion: "0.1.0", exportedAt: now)
         XCTAssertEqual(try JournalExporter.encode(other), try JournalExporter.encode(document))
     }
 
@@ -991,7 +991,7 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
             deletedIntakes: [])
         store.products["snap-1"] = snapshot
         let document = try JournalExporter.makeExport(
-            store: store, favorites: nil, appVersion: "0.1.0", exportedAt: now)
+            store: store, favorites: nil, goals: InMemoryGoalStore(), appVersion: "0.1.0", exportedAt: now)
         XCTAssertEqual(store.productQueryCount, 1, "an immutable snapshot must not be fetched once per revision")
         XCTAssertEqual(document.products.map(\.snapshotID), ["snap-1"])
         XCTAssertEqual(document.intakes.first?.revisions.count, 3)
@@ -1017,7 +1017,7 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
                 createdAt: base.addingTimeInterval(0.875)),
         ]
         let document = try JournalExporter.makeExport(
-            store: store, favorites: nil, appVersion: "0.1.0",
+            store: store, favorites: nil, goals: InMemoryGoalStore(), appVersion: "0.1.0",
             exportedAt: base.addingTimeInterval(0.5))
         let text = try JournalExporter.json(document)
         XCTAssertTrue(text.contains("2024-01-14T20:30:00.250000Z"), text)
@@ -1173,7 +1173,7 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
             components: [FavoriteComponent(componentID: "oats", name: "Oats", amountText: "55.5", unitSymbol: "g")],
             productSnapshotID: "snap-1")]
         let document = try JournalExporter.makeExport(
-            store: store, favorites: favoritesStore, appVersion: "0.1.0", exportedAt: now)
+            store: store, favorites: favoritesStore, goals: InMemoryGoalStore(), appVersion: "0.1.0", exportedAt: now)
         XCTAssertTrue(document.intakes.isEmpty)
         XCTAssertEqual(document.products.map(\.snapshotID), ["snap-1"])
         let product = try XCTUnwrap(document.products.first)
@@ -1197,7 +1197,7 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
             productSnapshotID: "snap-1")]
         XCTAssertThrowsError(
             try JournalExporter.makeExport(
-                store: store, favorites: favoritesStore, appVersion: "0.1.0", exportedAt: now)
+                store: store, favorites: favoritesStore, goals: InMemoryGoalStore(), appVersion: "0.1.0", exportedAt: now)
         ) { error in
             XCTAssertEqual(error as? JournalExportError, .missingProductSnapshot("snap-1"))
         }
@@ -1220,7 +1220,7 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
                 ])],
             deletedIntakes: [intake(secondID, at: Date(timeIntervalSince1970: 1_705_180_000))])
         let document = try JournalExporter.makeExport(
-            store: store, favorites: nil, appVersion: "0.1.0", exportedAt: now)
+            store: store, favorites: nil, goals: InMemoryGoalStore(), appVersion: "0.1.0", exportedAt: now)
         XCTAssertEqual(store.snapshotCallCount, 1)
         XCTAssertEqual(store.perListCallCount, 0, "a separate list read could miss an entry deleted in between")
         XCTAssertEqual(document.intakes.first?.revisions.map(\.number), [1, 2])
@@ -1365,7 +1365,7 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
         XCTAssertEqual(drinkJSON["hydration_percent"] as? String, "90")
         XCTAssertTrue(foodJSON.keys.contains("hydration_percent"))
         XCTAssertTrue(foodJSON["hydration_percent"] is NSNull)
-        XCTAssertEqual(JournalExport.currentSchemaVersion, 7)
+        XCTAssertEqual(JournalExport.currentSchemaVersion, 8)
     }
 
     /// A favorite's share is written on its component in the version 7 export, and a favorite saved before

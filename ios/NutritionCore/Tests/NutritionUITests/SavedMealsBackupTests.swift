@@ -100,7 +100,8 @@ final class SavedMealsBackupTests: XCTestCase {
         func text(favorites: Int, savedMeals: Int) -> String {
             ConnectionsPrivacyViewModel.importSummaryText(
                 JournalImportSummary(
-                    intakes: 12, revisions: 14, tombstones: 2, favorites: favorites, products: 3, savedMeals: savedMeals))
+                    intakes: 12, revisions: 14, tombstones: 2, favorites: favorites, products: 3, savedMeals: savedMeals),
+                locale: Locale(identifier: "en_US"))
         }
         XCTAssertEqual(text(favorites: 3, savedMeals: 2), "Imported 12 entries and 2 deleted, 3 favorites, 2 saved meals.")
         XCTAssertEqual(text(favorites: 3, savedMeals: 1), "Imported 12 entries and 2 deleted, 3 favorites, 1 saved meal.")

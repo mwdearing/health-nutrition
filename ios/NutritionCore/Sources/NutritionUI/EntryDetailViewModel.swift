@@ -266,7 +266,7 @@ public final class EntryDetailViewModel: ObservableObject {
                 snapshotID: current.productSnapshotID, snapshotKind: { _ in snapshot?.kind }, category: intake.category)
             waterSharePercent = current.components.compactMap(\.hydrationPercent).first
             loadedWaterSharePercent = waterSharePercent
-            loggedUnits = LoggedUnitIndex.load(from: store)[intakeID] ?? [:]
+            loggedUnits = try LoggedUnitIndex.loadOrThrow(from: store)[intakeID] ?? [:]
             allValues = Self.allValues(of: snapshot)
             adds = Self.adds(of: snapshot, logged: current.components)
             // The field reads at the digits a reading carries (354.9 mL, not 354.88235475 mL). Untouched, a
@@ -416,6 +416,11 @@ public final class EntryDetailViewModel: ObservableObject {
             return legacy.text
         }
         return AmountDisplay.display(amount, unit: row.unit, system: preferences.unitSystem, roundsStoredUnit: true).text
+    }
+
+    /// Whether the editor offers the water-share stepper: a drink, or an entry with no product record, with a volume amount (#462).
+    public var showsWaterShare: Bool {
+        (kind == .drink || productName == nil) && components.contains(where: { $0.unit.dimension == .volume })
     }
 
     /// Writes one new revision with exactly one `edit` call. Invalid amounts write nothing.

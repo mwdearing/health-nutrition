@@ -443,6 +443,7 @@ final class GoalSetupViewModelTests: XCTestCase {
         let (model, _, _) = makeModel(system: .metric)
         answerForALosingMan(model)
         model.selectedPaceKilograms = 2
+        model.goalWeightKilogramsText = "75"
         model.next(); model.next(); model.next(); model.next(); model.next()
         XCTAssertEqual(model.resultError, "Check your pace. It must be between 0.1 and 1 kg a week.")
     }
@@ -456,6 +457,7 @@ final class GoalSetupViewModelTests: XCTestCase {
         model.weightKilogramsText = ""
         model.weightPoundsText = "176"
         model.selectedPaceKilograms = 2
+        model.goalWeightPoundsText = "165"
         model.next(); model.next(); model.next(); model.next(); model.next()
         // 0.1 kg is 0.22 lb, so the least pace accepted is 0.3 lb a week; 1 kg is 2.2 lb.
         XCTAssertEqual(model.resultError, "Check your pace. It must be between 0.3 and 2.2 lb a week.")

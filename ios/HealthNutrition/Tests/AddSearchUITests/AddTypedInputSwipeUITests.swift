@@ -87,13 +87,23 @@ final class AddTypedInputSwipeUITests: XCTestCase {
         typeIt.tap()
 
         XCTAssertTrue(app.navigationBars["Log entry"].waitForExistence(timeout: 10), "the details form did not open")
+        // The push animation must finish before the drag: a drag that starts while the form is still sliding in
+        // does not pop it. Wait until the form's own Back button is hittable, then let the transition settle.
+        let formBack = app.navigationBars["Log entry"].buttons["BackButton"]
+        let settle = Date().addingTimeInterval(10)
+        while Date() < settle, !(formBack.exists && formBack.isHittable) {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        }
+        RunLoop.current.run(until: Date().addingTimeInterval(0.8))
         let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5))
         let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5))
         start.press(forDuration: 0.1, thenDragTo: end, withVelocity: .fast, thenHoldForDuration: 0)
 
         // The pop itself: back on Add, the Type it in tile is on screen again.
         let typeItAgain = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Type it in")).firstMatch
-        XCTAssertTrue(typeItAgain.waitForExistence(timeout: 10), "a clean details form did not pop back to Add on an edge swipe")
+        if !typeItAgain.waitForExistence(timeout: 10) {
+            XCTFail("a clean details form did not pop back to Add on an edge swipe. Element tree: \(app.debugDescription)")
+        }
     }
 }
 
