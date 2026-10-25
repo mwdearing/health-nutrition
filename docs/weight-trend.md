@@ -36,8 +36,8 @@ same samples give the same answer on every device.
 ## The planned goal date
 
 `PlanProjection.goalDay` works from the current weight, the goal and the weekly pace: the distance
-divided by the pace, times 7 days, rounded to 6 decimal places and then to the nearest whole day
-(halves away from zero). There is no date for a pace that is not above zero, when the current weight
+divided by the pace, times 7 days, rounded to 6 decimal places and then up to a whole day, the same as
+the trend's projected date. There is no date for a pace that is not above zero, when the current weight
 already equals the goal, or when the day would fall after 9999-12-31.
 
 `PlanProjection.plannedWeeklyChangeKilograms` signs the pace by the aim: negative for losing, positive
@@ -72,6 +72,20 @@ target is written, so a goal on the wrong side of it saves nothing.
 
 **Erase all data** removes the weight plan together with the targets, in the same save. The plan is
 not in the export: the export carries the journal and, from version 8, the daily targets, but never the plan.
+
+## On Today
+
+The "Activity and weight" card on Today shows the weight and up to four lines under it, in this order:
+
+- **Trend weekly change.** From the weigh-ins of the last 28 days ending today. Example: `Trend: down 0.5 kg a week`. It reads `Trend: no change` when the change rounds to zero at two places.
+- **Plan pace.** Shown only for a saved loss or gain plan. Example: `Plan: down 0.25 kg a week`.
+- **Planned goal day.** Shown only for a saved loss or gain plan whose goal has not been reached. Example: `Plan reaches 80 kg on Dec 23, 2026`.
+- **Trend goal day.** Shown when the trend projects a goal day. Example: `Trend reaches 80 kg on Aug 19, 2026`.
+
+The planned day counts from today, starting from the trend weight, or from the latest weigh-in when there
+is no trend. The card reads the saved plan each time it loads, so a plan saved in goal setup appears the
+next time Today loads. Days are Gregorian dates in the device's time zone, also on a device set to another
+calendar. Nothing on the card grades the figures.
 
 ## Units and wording
 
