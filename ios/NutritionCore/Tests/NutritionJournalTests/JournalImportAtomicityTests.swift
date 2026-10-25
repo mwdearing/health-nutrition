@@ -271,7 +271,7 @@ final class JournalImportAtomicityTests: JournalImportTestCase {
         addTeardownBlock { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: target.path) }
 
         XCTAssertThrowsError(try journal.eraseAll())
-        // The flag is still set, so the throw is the flag removal failing, not a SQLite error from the same directory.
+        // The flag is still set after the throw, so the erase did not finish and a resume can still see it.
         XCTAssertNotNil(try journal.restoreInProgressDigest())
         XCTAssertFalse(try journal.activeIntakes().isEmpty)
     }
