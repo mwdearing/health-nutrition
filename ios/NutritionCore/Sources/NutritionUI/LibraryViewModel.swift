@@ -450,11 +450,11 @@ public final class LibraryViewModel: ObservableObject {
     /// The Products segment also lists standalone products, so a search matched by a product is not empty (#546).
     public var isSearchEmpty: Bool {
         let standalone = segment == .products ? filteredProducts.count : 0
-        return Self.isSearchEmpty(visibleCount: visibleItems.count + standalone, searchText: searchText)
+        return Self.isSearchEmpty(visibleCount: visibleItems.count, standaloneCount: standalone, searchText: searchText)
     }
 
-    static func isSearchEmpty(visibleCount: Int, searchText: String) -> Bool {
-        visibleCount == 0 && !searchText.isEmpty
+    static func isSearchEmpty(visibleCount: Int, standaloneCount: Int, searchText: String) -> Bool {
+        visibleCount + standaloneCount == 0 && !searchText.isEmpty
     }
 
     public var visibleItems: [LibraryItem] {
