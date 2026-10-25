@@ -70,7 +70,7 @@ enum SupplementShortcut {
     /// Logs one Taken for the item with this id.
     ///
     /// - Parameter stack: the supplement list, or nil when the app's services are unavailable.
-    /// - Parameter isErasing: true while Erase all data or a restore runs. Nothing is written then, so a
+    /// - Parameter isErasing: true while an erase or restore runs. Nothing is written then, so a
     ///   Taken cannot land in a store that is being emptied.
     @MainActor
     static func log(
