@@ -267,7 +267,7 @@ public struct AddIntakeView: View {
                 }
                 if model.canChooseLibrary {
                     Toggle(SaveToLibraryAccessibility.label, isOn: $model.savesToLibrary)
-                        .accessibilityHint(Text(SaveToLibraryAccessibility.hint ?? ""))
+                        .accessibilityHint(SaveToLibraryAccessibility.hint.map { Text($0) })
                     Text("Also keep this product in Library.")
                         .font(.footnote)
                         .foregroundStyle(TokenColors.textSecondary)
