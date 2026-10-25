@@ -717,6 +717,38 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         XCTAssertEqual(try journal.activeIntakes().map(\.id), [entryID])
     }
 
+    /// The success side of the deferred-effect path: an import that completes while a successful erase is suspended
+    /// is dropped, so its partial-restore warning never reaches the screen after the journal is gone.
+    func testImportCompletingDuringASuccessfulEraseIsDiscarded() async throws {
+        let journal = ImportStubStore()
+        journal.failUndoForTesting = true
+        journal.pauseAfterRestoreForTesting = true
+        let favorites = ImportStubFavorites()
+        favorites.failRestoreForTesting = true
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(),
+            store: journal, favorites: favorites, erasers: [journal, favorites],
+            eraseLocalAccount: {
+                // Keep the erase suspended long enough for the import's main-actor completion to arrive.
+                try await Task.sleep(nanoseconds: 500_000_000)
+            })
+
+        model.importJournal(data: try export(includeFavorite: true))
+        let restorePaused = await waitForSignal(journal.restorePausedForTesting)
+        XCTAssertTrue(restorePaused)
+        let resumeRestore = journal.resumeRestoreForTesting
+        Task.detached {
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            resumeRestore.signal()
+        }
+
+        let erased = await model.eraseAllData()
+
+        XCTAssertTrue(erased)
+        XCTAssertNil(model.incompleteRestoreWarning)
+        XCTAssertEqual(model.journalRestoreGeneration, 0)
+        XCTAssertTrue(try journal.activeIntakes().isEmpty)
+    }
+
     func testSuccessfulJournalEraseDiscardsDeferredWarningDespiteLaterEraserFailure() async throws {
         let journal = ImportStubStore()
         journal.failUndoForTesting = true
