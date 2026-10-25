@@ -117,7 +117,7 @@ enum SupplementPickerPolicy {
     static let standInTitle = "Supplement"
 
     /// The entity list for an enumeration (the picker, Siri's prompts): the items while the device is unlocked,
-    /// nothing while it is locked or busy (Erase all data or an import running).
+    /// nothing while it is locked or busy (an erase or restore running).
     static func enumerated(_ items: [ShortcutSupplement], isUnlocked: Bool, isBusy: Bool) -> [ShortcutSupplement] {
         guard !isBusy, isUnlocked else { return [] }
         return items
@@ -144,7 +144,7 @@ struct SupplementEntityQuery: EntityQuery {
 
     /// Whether a list read may run at all: only while the device is unlocked and no erase or restore is running.
     /// The picker policy already gives no names in that state, so reading first would only do the list's tidy
-    /// writes for a request that is then answered with nothing.
+    /// writes (load saves pruned schedules and taken marks) for a request that is then answered with nothing.
     static func readsTheList(isUnlocked: Bool, isBusy: Bool) -> Bool {
         isUnlocked && !isBusy
     }
