@@ -239,7 +239,8 @@ public struct CommunityProductSearchView: View {
         }
     }
     /// Focus after the push animation. Setting focus during the transition can be dropped, so the request
-    /// waits 400 ms. The screen's focus is marked taken only when the field actually takes it.
+    /// waits 400 ms. The screen's focus is marked taken once the request sets it; a request cancelled
+    /// before then is marked when the screen disappears.
     private func requestAutoFocus() {
         guard focusSearchOnAppear, !didAutoFocus, focusTask == nil else { return }
         focusTask = Task { @MainActor in
