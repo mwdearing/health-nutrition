@@ -267,7 +267,7 @@ public struct AddIntakeView: View {
                 }
                 if model.canChooseLibrary {
                     Toggle(SaveToLibraryAccessibility.label, isOn: $model.savesToLibrary)
-                        .accessibilityHint(SaveToLibraryAccessibility.hint.map { Text($0) })
+                        .accessibilityHintIfPresent(SaveToLibraryAccessibility.hint)
                     Text("Also keep this product in Library.")
                         .font(.footnote)
                         .foregroundStyle(TokenColors.textSecondary)
@@ -380,4 +380,16 @@ extension View {
 public enum SaveToLibraryAccessibility {
     public static let label = "Save to Library"
     public static let hint: String? = nil
+}
+
+private extension View {
+    /// Applies the hint only when there is one, so a nil hint leaves the element with no hint at all (#644).
+    @ViewBuilder
+    func accessibilityHintIfPresent(_ hint: String?) -> some View {
+        if let hint {
+            accessibilityHint(Text(hint))
+        } else {
+            self
+        }
+    }
 }
