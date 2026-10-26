@@ -29,11 +29,14 @@ public struct GoalBarModel: Equatable, Identifiable {
     public let accessibilityText: String
     /// The one line that explains a state that needs explaining, or nil.
     public let reason: String?
+    /// Whether the track is drawn. Always true, so a nutrient with no goal keeps an empty track and its row lines up.
+    public let showsTrack: Bool
 
     public init(
         id: String, label: String, valueText: String, state: GoalBarState, fraction: Decimal?,
-        goalMarker: Decimal?, accessibilityText: String, reason: String?
+        goalMarker: Decimal?, accessibilityText: String, reason: String?, showsTrack: Bool = true
     ) {
+        self.showsTrack = showsTrack
         self.id = id
         self.label = label
         self.valueText = valueText
@@ -168,8 +171,9 @@ public struct GoalBar: View {
                     .foregroundStyle(valueColor)
                     .multilineTextAlignment(.trailing)
             }
-            // A nutrient with no goal keeps its empty track, so every row lines up with the goal rows.
-            track
+            if model.showsTrack {
+                track
+            }
             if let reason = model.reason {
                 Text(reason)
                     .font(.footnote)
