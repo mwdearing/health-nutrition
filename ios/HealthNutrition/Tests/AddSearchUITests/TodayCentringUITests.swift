@@ -32,13 +32,13 @@ final class TodayCentringUITests: XCTestCase {
     /// The visual Today title is hidden from VoiceOver, so the navigation title is the one spoken "Today".
     func testTheTodayTitleIsNotReadTwice() throws {
         let app = launchToToday()
-        // The navigation bar's own "Today" is the one spoken name, so it is counted out. Anything else is a second reading.
+        // The navigation bar and the tab bar carry their own "Today". The screen content, which is the scroll view,
+        // must not repeat it: the in-content heading is hidden from accessibility.
         let today = NSPredicate(format: "label == %@", "Today")
-        let everywhere = app.staticTexts.matching(today).count
-        let inNavigationBar = app.navigationBars["Today"].staticTexts.matching(today).count
+        let inContent = app.scrollViews.staticTexts.matching(today).count
         XCTAssertEqual(
-            everywhere - inNavigationBar, 0,
-            "the Today title is read \(everywhere - inNavigationBar) more time(s) besides the navigation bar")
+            inContent, 0,
+            "the Today title is read \(inContent) more time(s) inside the screen content")
     }
 
     /// Launches the app, dismisses onboarding if it shows, and waits for the Today screen's date line.
