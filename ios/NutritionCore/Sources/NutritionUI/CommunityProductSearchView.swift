@@ -164,7 +164,6 @@ public struct CommunityProductSearchView: View {
                 library?.load()
                 library?.savedMeals?.load()
             }
-            requestAutoFocus()
         }
         // The Undo window ends with this screen, as it does on the Library screen. A focus request still
         // waiting when the screen goes away is dropped, and the screen takes no focus on a later return.
