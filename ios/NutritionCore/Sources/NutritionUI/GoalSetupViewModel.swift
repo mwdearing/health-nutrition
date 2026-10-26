@@ -24,7 +24,7 @@ public struct GoalPaceOption: Sendable, Equatable {
 public final class GoalSetupViewModel: ObservableObject, Identifiable {
     public nonisolated var id: ObjectIdentifier { ObjectIdentifier(self) }
 
-    public static let privacyNotice = "Your age, sex, height and current weight stay on this phone and are not saved. Your aim, pace and goal weight are saved on this phone with the targets you choose."
+    public static let privacyNotice = "Your age, sex, height and current weight stay on this device and are not saved. Your aim, pace and goal weight are saved on this device with the targets you choose."
     public static let estimateNotice = "These are estimates, not medical advice. If you are pregnant, have a medical condition or take medicines that affect weight or appetite, ask your doctor or dietitian."
     public static let replaceNotice = "This replaces your current targets for these nutrients."
     public static let adultNotice = "Goal estimates here are for adults. Ask a doctor or dietitian for advice on a target."

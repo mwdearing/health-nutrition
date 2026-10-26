@@ -25,7 +25,7 @@ public enum CommunityProductSearchState: Equatable { case idle, queryTooShort, l
     private var inspectionGeneration = UUID()
     public var canLoadAlternatives: Bool { alternativesCursor != nil && !loadingAlternatives && !inspectionNeedsRefresh }
     private let store: any CustomProductStore
-    /// Every product on this phone, as the latest `search` read them; `filterLocal` narrows this list.
+    /// Every product on this device, as the latest `search` read them; `filterLocal` narrows this list.
     private var localProducts: [CustomProductRevision] = []
     private let service: (any CommunityProductServicing)?
     private let isSignedIn: @MainActor () -> Bool
@@ -66,7 +66,7 @@ public enum CommunityProductSearchState: Equatable { case idle, queryTooShort, l
             state = !isSignedIn() ? .signInRequired : error as? ProductAPIError == .unsupportedBackend ? .unsupported : .unavailable
         }
     }
-    /// Filters the products on this phone while the person types, from the list the latest `search` read.
+    /// Filters the products on this device while the person types, from the list the latest `search` read.
     /// It reads no store and sends nothing anywhere: Open Food Facts and shared products are searched only
     /// when a search is submitted, never as the person types. Shared results, paging and the query that
     /// `retry` and `loadNextPage` use stay as the last submitted search left them.
