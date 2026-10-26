@@ -162,13 +162,10 @@ the check fails until the manifest and this table say why the reason applies.
 
 ## Inactive app screen
 
-When a scene is inactive or backgrounded, a scene-scoped opaque UIKit window covers its tabs and
-presented sheets. The app installs it on `UIScene.willDeactivateNotification`, before UIKit captures
-the app-switcher preview, and removes it only after SwiftUI reports that same scene active again.
-Each notification is matched to the scene that owns the window, so activity in another app window
-does not cover this one. The shield does not become key; authentication presentation remains owned
-by the system. The simulator UI test uses synthetic text and deactivates the scene with Notification
-Center; the simulator draws system UI over the app, so the test reads a counter of how often the
-shield was raised and checks the sheet is restored. The real app-switcher preview is checked on a
-physical device. Its synthetic authentication-return sheet checks that a modal remains available
-after return; it does not launch a live sign-in or CAPTCHA flow.
+The app does not cover its own content when it becomes inactive. The app-switcher privacy cover
+(an opaque window installed on `UIScene.willDeactivateNotification`) was removed in #879, which
+followed the original shield added in #284. The earlier shield text described code that is no
+longer on main. The synthetic authentication-return sheet check remains: it confirms that a modal
+stays available after return, and it does not launch a live sign-in or CAPTCHA flow.
+Whether the app-switcher snapshot shows content on a physical device has not been re-checked since
+#879 (open question for the device test).
