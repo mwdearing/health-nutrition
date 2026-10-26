@@ -382,7 +382,7 @@ public enum SaveToLibraryAccessibility {
     public static let hint: String? = nil
 }
 
-private extension View {
+extension View {
     /// Applies the hint only when there is one, so a nil hint leaves the element with no hint at all (#644).
     @ViewBuilder
     func accessibilityHintIfPresent(_ hint: String?) -> some View {
