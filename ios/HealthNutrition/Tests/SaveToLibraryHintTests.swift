@@ -21,18 +21,23 @@ final class SaveToLibraryHintTests: XCTestCase {
         window.makeKeyAndVisible()
         host.view.layoutIfNeeded()
 
-        guard let element = Self.findElement(labelled: SaveToLibraryAccessibility.label, in: host.view) else {
-            XCTFail("No accessibility element labelled \(SaveToLibraryAccessibility.label)")
+        let nodes = Self.accessibilityNodes(under: host.view)
+        guard let element = nodes.first(where: { $0.accessibilityLabel == SaveToLibraryAccessibility.label }) else {
+            XCTFail("No accessibility element labelled \(SaveToLibraryAccessibility.label); found \(nodes.count) nodes")
             return
         }
         XCTAssertNil(element.accessibilityHint)
     }
 
-    private static func findElement(labelled label: String, in view: UIView) -> UIView? {
-        if view.accessibilityLabel == label { return view }
-        for subview in view.subviews {
-            if let found = findElement(labelled: label, in: subview) { return found }
+    /// Walks subviews and accessibility elements, since SwiftUI exposes its nodes through either.
+    private static func accessibilityNodes(under object: NSObject) -> [NSObject] {
+        var nodes: [NSObject] = [object]
+        if let view = object as? UIView {
+            for subview in view.subviews { nodes += accessibilityNodes(under: subview) }
         }
-        return nil
+        for child in object.accessibilityElements ?? [] {
+            if let node = child as? NSObject { nodes += accessibilityNodes(under: node) }
+        }
+        return nodes
     }
 }
