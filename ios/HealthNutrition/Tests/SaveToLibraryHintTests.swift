@@ -14,7 +14,7 @@ final class SaveToLibraryHintTests: XCTestCase {
     @MainActor
     func testNilHintLeavesNoAccessibilityHintOnTheSwitch() {
         let toggle = Toggle(SaveToLibraryAccessibility.label, isOn: .constant(false))
-            .accessibilityHint(Text(SaveToLibraryAccessibility.hint ?? ""))
+            .accessibilityHintIfPresent(SaveToLibraryAccessibility.hint)
         let host = UIHostingController(rootView: toggle)
         let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 80))
         window.rootViewController = host
