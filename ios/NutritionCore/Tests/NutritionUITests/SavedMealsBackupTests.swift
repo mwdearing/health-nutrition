@@ -85,10 +85,10 @@ final class SavedMealsBackupTests: XCTestCase {
     func testTheSavedMealsRefusalSaysSavedMeals() {
         XCTAssertEqual(
             ConnectionsPrivacyViewModel.importFailureText(for: .savedMealsNotEmpty),
-            "This phone already has saved meals. An import that includes saved meals only works when there are none.")
+            "This device already has saved meals. An import that includes saved meals only works when there are none.")
         XCTAssertEqual(
             ConnectionsPrivacyViewModel.importFailureText(for: .notEmpty),
-            "This phone already has journal entries. An import only works on a journal that is empty.")
+            "This device already has journal entries. An import only works on a journal that is empty.")
         // Saved meals that could not be emptied again are reported as a partial restore, so its warning names them.
         XCTAssertEqual(
             ConnectionsPrivacyViewModel.importFailureText(for: .partialRestore(retainedIntakes: 0, retainedTombstones: 0)),
