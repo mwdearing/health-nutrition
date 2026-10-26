@@ -65,6 +65,7 @@ public struct TodayView: View {
                         .font(.largeTitle.weight(.bold))
                         .foregroundStyle(TokenColors.textPrimary)
                         .multilineTextAlignment(.center)
+                        .accessibilityHidden(true)
                 }
                 .frame(maxWidth: .infinity)
                 .accessibilityElement(children: .ignore)
