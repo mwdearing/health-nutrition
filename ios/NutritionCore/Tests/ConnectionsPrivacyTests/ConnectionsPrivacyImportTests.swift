@@ -946,7 +946,7 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
     func testASavedMealsRefusalShowsItsOwnMessage() {
         XCTAssertEqual(
             ConnectionsPrivacyViewModel.importFailureText(for: .savedMealsNotEmpty),
-            "This phone already has saved meals. An import that includes saved meals only works when there are none.")
+            "This device already has saved meals. An import that includes saved meals only works when there are none.")
         XCTAssertNotEqual(
             ConnectionsPrivacyViewModel.importFailureText(for: .savedMealsNotEmpty),
             ConnectionsPrivacyViewModel.importRolledBackMessage)

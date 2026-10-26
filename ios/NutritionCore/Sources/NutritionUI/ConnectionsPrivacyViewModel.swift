@@ -109,7 +109,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         + "linked to your signed-in account, but does not include your journal entries or photo. A product you create "
         + "and share is linked the same way. Searching shared products sends your search words to the project's server "
         + "with your account when you are signed in. After you connect Apple Health in Settings, the app writes "
-        + "nutrients from real logged food and water entries to HealthKit on this phone and reads back only its own samples, plus steps, activity and weight if you ask on Today; "
+        + "nutrients from real logged food and water entries to HealthKit on this device and reads back only its own samples, plus steps, activity and weight if you ask on Today; "
         + "a debug build's HealthKit screen can also write test samples. Erasing journal rows does not remove "
         + "HealthKit samples already written. "
         + "For email sign-in, hCaptcha can process browser/device signals and sends a verification result; a rare "
@@ -126,10 +126,10 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     public static let importUnsupportedVersionMessage =
         "That file was made by a newer version of the app, so this one cannot read it."
     public static let importNotEmptyMessage =
-        "This phone already has journal entries. An import only works on a journal that is empty."
+        "This device already has journal entries. An import only works on a journal that is empty."
     /// A version 4 backup carries the whole saved meals list, so it is not restored over saved meals the phone keeps.
     public static let importSavedMealsNotEmptyMessage =
-        "This phone already has saved meals. An import that includes saved meals only works when there are none."
+        "This device already has saved meals. An import that includes saved meals only works when there are none."
     /// An import asked for while an erase was running. It is refused rather than queued, because a restore
     /// that landed afterwards would put back what the person had just deleted.
     public static let importDuringEraseMessage =
@@ -144,7 +144,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         + "are switched off, along with any export file it wrote. This cannot be undone. A copy you already shared or saved elsewhere — in Files, "
         + "in mail, in cloud storage or in another app — is not erased: the app cannot reach it, so delete "
         + "it there yourself. Nutrition and water data this app wrote to Apple Health stays there: delete it in the Health app. "
-        + "Erasing also signs you out on this phone; your community account and any "
+        + "Erasing also signs you out on this device; your community account and any "
         + "shared labels remain on the server."
     public static let eraseConfirmationTitle = "Erase all data?"
     /// Sits under the erase button, so the cost of the action is read before it is tapped rather than
@@ -152,13 +152,13 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     public static let eraseFooterMessage =
         "Erases the journal, favorites, saved meals, recipes, your supplement list and daily goals this app stores on this device and switches off the daily, water and supplement "
         + "reminders, plus any export file it wrote. A copy you already shared or saved elsewhere — in Files, in mail, in cloud storage "
-        + "or in another app — is not erased: delete it there yourself. Data this app wrote to Apple Health stays there too: delete it in the Health app. Erasing signs you out on this phone; "
+        + "or in another app — is not erased: delete it there yourself. Data this app wrote to Apple Health stays there too: delete it in the Health app. Erasing signs you out on this device; "
         + "your community account and any shared labels remain on the server."
     /// Shown when the erase stopped before any store was touched, so nothing has been erased yet.
     public static let eraseNothingErasedMessage = "Nothing was erased. Tap Retry to try again."
     /// Names what is still on the phone after an erase, in the order the erase ran. `names` is never empty.
     public static func eraseLeftBehindMessage(_ names: [String]) -> String {
-        "Erase didn't finish. Still on this phone: \(naturalList(names)). Tap Retry to erase them."
+        "Erase didn't finish. Still on this device: \(naturalList(names)). Tap Retry to erase them."
     }
     private static func naturalList(_ names: [String]) -> String {
         guard names.count > 1, let last = names.last else { return names.joined() }
@@ -549,7 +549,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         [
             ConnectionsPrivacyConnection(
                 id: "apple-health", title: Self.appleHealthTitle,
-                detail: "Write entries to the Health app on this phone.", isAvailable: Self.appleHealthAvailable,
+                detail: "Write entries to the Health app on this device.", isAvailable: Self.appleHealthAvailable,
                 isEnabled: Self.appleHealthAvailable && appleHealthEnabled, arrivingNote: Self.arrivingNote),
             ConnectionsPrivacyConnection(
                 id: "health-relay", title: Self.healthRelayTitle,
