@@ -168,9 +168,8 @@ public struct GoalBar: View {
                     .foregroundStyle(valueColor)
                     .multilineTextAlignment(.trailing)
             }
-            if model.state != .noGoal {
-                track
-            }
+            // A nutrient with no goal keeps its empty track, so every row lines up with the goal rows.
+            track
             if let reason = model.reason {
                 Text(reason)
                     .font(.footnote)
