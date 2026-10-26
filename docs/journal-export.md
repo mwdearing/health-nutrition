@@ -69,6 +69,16 @@ let summary = try JournalImporter.importExport(data, into: store, favorites: fav
 ```
 
 `JournalImporter.importExport(_:into:favorites:)` reads the whole file, checks it, and only then writes.
+
+### Daily goals (version 8)
+
+Version 8 adds the daily goals at the root (`goals`: one nutrient key, target and unit each). A file
+from version 1 to 7 has no `goals` and restores with none, and an empty `goals` restores nothing.
+Goals are restored add-only (#734): a goal is written only for a nutrient that has no goal on this
+device, so a target the person set is never overwritten. Each write is recorded under a receipt
+before it happens, so an interrupted restore resumes without adding a goal twice, and undo removes
+only the goals that restore wrote. When the file carries goals and no goal store is given, the
+import is refused whole rather than restoring the journal without its goals.
 On success it returns a `JournalImportSummary` counting the intakes, revisions, tombstones, favorites and
 product snapshots it wrote. Most failures happen before a write or leave both stores unchanged through
 compensation. One typed error, `partialRestore`, means the journal write remains because a later favorites
