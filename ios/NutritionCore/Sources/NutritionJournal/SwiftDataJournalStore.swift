@@ -1847,7 +1847,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
 
     /// Deletes the store file with its write-ahead and shared-memory files, then opens an empty store at the same
     /// place. The write-ahead file is always checkpointed into the store file first; only the removal is conditional.
-    /// On success the checkpoint leaves the store file alone holding the erased state. If the checkpoint fails, nothing
+    /// On success the checkpoint leaves the main store file holding the erased state. If the checkpoint fails, nothing
     /// is removed, the deleted rows may still be in the store files (main or write-ahead) until Retry removes them, and
     /// the error is StoreFileError.checkpointFailed. The erase screen names the
     /// journal as still on the phone; a retry removes the files. The companion files go before the main file: once the checkpoint has emptied

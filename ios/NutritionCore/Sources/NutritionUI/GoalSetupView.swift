@@ -118,6 +118,17 @@ public struct GoalSetupView: View {
                     model.selectedPaceKilograms = option.kilogramsPerWeek
                 }
             }
+            heading("What is your goal weight?")
+            if model.unitSystem == .usCustomary {
+                measured("Goal weight in pounds", text: $model.goalWeightPoundsText, prompt: "For example, 165", decimal: true)
+            } else {
+                measured("Goal weight in kilograms", text: $model.goalWeightKilogramsText, prompt: "For example, 75", decimal: true)
+            }
+            if let notice = model.goalWeightNotice {
+                Text(notice)
+                    .font(.footnote)
+                    .foregroundStyle(TokenColors.textSecondary)
+            }
         }
     }
 

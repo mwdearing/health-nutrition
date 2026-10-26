@@ -22,6 +22,7 @@ final class AddIntakeSpokenNamesUITests: XCTestCase {
             attachment.lifetime = .keepAlways
             add(attachment)
             XCTFail("the Unit picker lost its own name. Element tree: \(dump)")
+            return
         }
         XCTAssertEqual(unitButtons.count, 1, "expected exactly one Unit picker button")
         let unit = unitButtons.firstMatch

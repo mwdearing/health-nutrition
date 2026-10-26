@@ -108,4 +108,11 @@ final class GoalStoreTests: XCTestCase {
         try store.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(90), unit: .g))
         XCTAssertEqual(try store.goal(for: "protein")?.target, Decimal(90))
     }
+
+    /// A receipt is recorded before its goals are written, so marking one done when it is not there means the store lost it.
+    /// Fails when a missing receipt is marked done without an error, which would hide the loss.
+    func testMarkingAMissingReceiptDoneThrows() throws {
+        let store = try makeStore()
+        XCTAssertThrowsError(try store.markGoalRestoreReceiptDone("never-recorded"))
+    }
 }

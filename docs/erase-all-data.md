@@ -18,7 +18,7 @@ The four SwiftData stores live under Application Support. The journal store dele
 | `journal.store` | `SwiftDataJournalStore` | Intake entries, revision history, product snapshots, projections and queued outbox operations, including deletion tombstones. |
 | `favorites.store` | `SwiftDataFavoritesStore` | Favorite templates. |
 | `recipes.store` | `SwiftDataRecipeStore` | Recipe versions and recipe tombstones. |
-| `goals.store` | `SwiftDataGoalStore` | Daily nutrient targets. |
+| `goals.store` | `SwiftDataGoalStore` | Daily nutrient targets and the weight plan. |
 
 Each store saves its own row deletion. If a store fails, erase reports a partial failure and still attempts the other local cleanup steps. The screen must not report full success when an eraser fails.
 
@@ -68,7 +68,7 @@ because a summary from an earlier day shows dashes.
 - **Apple Health.** After the person connects Apple Health in Settings and allows it, nutrients from real logged food and water entries are written to HealthKit; a debug build's HealthKit screen can also write separate test samples. Erasing local rows does not remove HealthKit samples already written. HealthKit has its own store.
 - **HealthRelay.** It is unavailable in this version, so there is no active relay destination for this erase to contact.
 
-On a successful erase, the journal's store files are removed after the rows are deleted, so the deleted bytes are not kept in those files; a partial erase leaves them until Retry. For the favorites, recipes and goals stores, erase deletes rows only and the store files remain. This documentation does not promise a forensic wipe, a particular file-protection class or that old database bytes cannot be recovered in those stores. Device-level protection and physical erase behavior have not been established by this change.
+On a successful erase, the journal's store files are removed after the rows are deleted, so the deleted rows are not kept in those files; a partial erase leaves them until Retry. For the favorites, recipes and goals stores, erase deletes rows only and the store files remain. This documentation does not promise a forensic wipe, a particular file-protection class or that old database bytes cannot be recovered in those stores. Device-level protection and physical erase behavior have not been established by this change.
 
 ## Checking it
 
