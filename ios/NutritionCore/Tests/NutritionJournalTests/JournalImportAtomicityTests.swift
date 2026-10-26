@@ -257,6 +257,8 @@ final class JournalImportAtomicityTests: JournalImportTestCase {
     /// A flag that cannot be removed fails the erase before any journal row is deleted, so the screen can
     /// report it and nothing a re-import could bring back is half-erased.
     func testAnEraseStopsBeforeDeletingWhenTheRestoreFlagCannotBeRemoved() throws {
+        // A root user can write into a read-only directory, so the flag would be removed and the test would fail for the wrong reason.
+        try XCTSkipIf(getuid() == 0, "a read-only directory does not stop root from removing the flag")
         let data = try exportData()
         let target = try directory()
         let journal = try store(target)
@@ -269,6 +271,8 @@ final class JournalImportAtomicityTests: JournalImportTestCase {
         addTeardownBlock { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: target.path) }
 
         XCTAssertThrowsError(try journal.eraseAll())
+        // The flag is still set after the throw, so the erase did not finish and a resume can still see it.
+        XCTAssertNotNil(try journal.restoreInProgressDigest())
         XCTAssertFalse(try journal.activeIntakes().isEmpty)
     }
 

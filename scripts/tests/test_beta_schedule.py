@@ -70,11 +70,13 @@ def test_state_refuses_a_malformed_version_or_commit() -> None:
     [
         ((2026, 10, 18, 4, 40), True),     # 23:40 CDT, on time
         ((2026, 10, 18, 5, 40), True),     # 00:40 CDT, a late start still builds
-        ((2026, 10, 18, 6, 10), False),    # 01:10 CDT, too late
+        ((2026, 10, 18, 6, 10), True),     # 01:10 CDT, a late midnight start
         ((2026, 10, 18, 16, 40), True),    # 11:40 CDT
         ((2026, 10, 18, 17, 40), True),    # 12:40 CDT, a late start
-        ((2026, 10, 18, 18, 10), False),   # 13:10 CDT
+        ((2026, 10, 18, 18, 10), True),    # 13:10 CDT, a late noon start
         ((2026, 10, 18, 3, 40), False),    # 22:40 CDT
+        ((2026, 10, 18, 19, 14), True),    # 14:14 CDT, the 2026-10-25 noon start that skipped
+        ((2026, 10, 18, 21, 10), False),   # 16:10 CDT, too late for noon
         ((2026, 11, 2, 5, 40), True),      # 23:40 CST
         ((2026, 11, 2, 4, 40), False),     # 22:40 CST
         ((2026, 11, 2, 17, 40), True),     # 11:40 CST
