@@ -106,7 +106,7 @@ public struct CustomProductEditorView: View {
             }
             Section {
                 Toggle("Open intake details after saving", isOn: $openDetails)
-                Button("Save product on this phone") {
+                Button("Save product on this device") {
                     do {
                         let saved = try model.save(now: Date())
                         onSaved(saved, openDetails)

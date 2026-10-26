@@ -46,8 +46,8 @@ public struct LibraryView: View {
             if onPick != nil {
                 pickSections
             } else {
-                LabeledField("Search on this phone") { focus in
-                    TextField("Search on this phone", text: $model.searchText).focused(focus)
+                LabeledField("Search on this device") { focus in
+                    TextField("Search on this device", text: $model.searchText).focused(focus)
                 }
                 if let onSearchProducts { Button("Search foods", action: onSearchProducts) }
                 if let onNewProduct { Button("Create product", action: onNewProduct) }

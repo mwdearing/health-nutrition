@@ -147,7 +147,7 @@ public final class BodyActivityViewModel: ObservableObject {
     public static let title = "Activity and weight"
     public static let connectTitle = "Show steps, activity and weight"
     public static let connectDetail =
-        "Reads today's steps, active energy and your weight from the Health app on this phone. "
+        "Reads today's steps, active energy and your weight from the Health app on this device. "
         + "Nothing is sent anywhere."
     /// Health hides whether read access was granted, so an empty card names both reasons.
     public static let emptyDetail =

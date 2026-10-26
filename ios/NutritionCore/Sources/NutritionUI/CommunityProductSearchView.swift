@@ -53,9 +53,9 @@ public struct CommunityProductSearchView: View {
                 }
                 Button("Search", action: search)
             } footer: {
-                Text("Your foods and products on this phone narrow as you type. Public food databases and shared products are searched only when you tap Search or press Return.")
+                Text("Your foods and products on this device narrow as you type. Public food databases and shared products are searched only when you tap Search or press Return.")
             }
-            if kind != .supplement { Section(header: Text("Food databases"), footer: Text("The words you search for are sent to public food databases (USDA FoodData Central and Open Food Facts). Nothing else from this phone is sent.")) {
+            if kind != .supplement { Section(header: Text("Food databases"), footer: Text("The words you search for are sent to public food databases (USDA FoodData Central and Open Food Facts). Nothing else from this device is sent.")) {
                 openFoodFactsStatus
                 ForEach(model.openFoodFactsResults, id: \.self) { product in
                     Button { onOpenFoodFacts(product, kind) } label: {
@@ -79,7 +79,7 @@ public struct CommunityProductSearchView: View {
                 SavedMealSections(model: savedMeals, query: query, showsMeals: kind == nil, onLog: { mealToLog = $0 })
             }
             if let library, let onPick { LibrarySearchSections(library: library, query: query, kind: kind, onPick: onPick) }
-            Section("On this phone") {
+            Section("On this device") {
                 if model.localError { Text("Could not read local products.") }
                 else if model.localResults.isEmpty { Text("No matching local products.") }
                 ForEach(model.localResults, id: \.localProductID) { product in
@@ -140,7 +140,7 @@ public struct CommunityProductSearchView: View {
                             if model.canLoadAlternatives { Button("Load more alternatives") { Task { await model.loadAlternatives() } } }
                             if let error = model.inspectionError { Text(error) }
                             if model.inspectionNeedsRefresh { Button("Refresh shared facts") { Task { await model.refreshInspection() } } }
-                            Button("Save representative on this phone") {
+                            Button("Save representative on this device") {
                                 select(product)
                                 // Only a saved product confirms; a legacy label opens an editor draft that is not saved yet.
                                 if selectionError == nil, case .custom = product.product { onSaved() }
@@ -191,7 +191,7 @@ public struct CommunityProductSearchView: View {
         } message: { saved in
             Text("Adds \(SavedMealsModel.itemsText(saved.items.count)) now, as new entries. Like any entry, they are written to Apple Health once it is connected.")
         }
-        // Typing narrows what is already on this phone. It never starts a search that leaves the phone.
+        // Typing narrows what is already on this device. It never starts a search that leaves the phone.
         .onChange(of: query) { _, text in model.filterLocal(query: text, kind: kind) }
         .onChange(of: kind) { _, selected in model.filterLocal(query: query, kind: selected) }
     }

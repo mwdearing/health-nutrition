@@ -14,7 +14,7 @@ final class LibrarySharedProductsUITests: XCTestCase {
         XCTAssertTrue(libraryTab.waitForExistence(timeout: 10), "no Library tab")
         libraryTab.tap()
 
-        let search = app.textFields["Search on this phone"]
+        let search = app.textFields["Search on this device"]
         XCTAssertTrue(search.waitForExistence(timeout: 10), "Library search field is not on screen")
         search.tap()
         search.typeText("zzqxnomatch")

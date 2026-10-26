@@ -325,7 +325,7 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
         XCTAssertEqual(goals.eraseCount, 1)
         XCTAssertEqual(
             model.errorMessage,
-            "Erase didn't finish. Still on this phone: saved meals, journal and goals. Tap Retry to erase them.")
+            "Erase didn't finish. Still on this device: saved meals, journal and goals. Tap Retry to erase them.")
     }
 
     /// A restore flag that cannot be cleared stops the erase before any store is touched, and says so.
