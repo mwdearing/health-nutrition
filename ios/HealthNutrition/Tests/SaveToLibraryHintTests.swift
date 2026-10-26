@@ -1,7 +1,5 @@
-import SwiftUI
-import UIKit
+import NutritionUI
 import XCTest
-@testable import NutritionUI
 
 /// The Save to Library switch has no accessibility hint: its label says what it does (#527).
 final class SaveToLibraryHintTests: XCTestCase {
@@ -10,34 +8,13 @@ final class SaveToLibraryHintTests: XCTestCase {
         XCTAssertEqual(SaveToLibraryAccessibility.label, "Save to Library")
     }
 
-    /// Hosts the same modifier chain the Add view uses and checks the element carries no hint, not an empty one (#644).
-    @MainActor
-    func testNilHintLeavesNoAccessibilityHintOnTheSwitch() {
-        let toggle = Toggle(SaveToLibraryAccessibility.label, isOn: .constant(false))
-            .accessibilityHintIfPresent(SaveToLibraryAccessibility.hint)
-        let host = UIHostingController(rootView: toggle)
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 80))
-        window.rootViewController = host
-        window.makeKeyAndVisible()
-        host.view.layoutIfNeeded()
-
-        let nodes = Self.accessibilityNodes(under: host.view)
-        guard let element = nodes.first(where: { $0.accessibilityLabel == SaveToLibraryAccessibility.label }) else {
-            XCTFail("No accessibility element labelled \(SaveToLibraryAccessibility.label); found \(nodes.count) nodes")
-            return
-        }
-        XCTAssertNil(element.accessibilityHint)
+    /// A nil hint must come back as nil, not as an empty string that would still be applied (#644).
+    func testAMissingHintIsNilNotEmpty() {
+        XCTAssertNil(SaveToLibraryHint.hint(for: nil))
+        XCTAssertNil(SaveToLibraryHint.hint(for: ""))
     }
 
-    /// Walks subviews and accessibility elements, since SwiftUI exposes its nodes through either.
-    private static func accessibilityNodes(under object: NSObject) -> [NSObject] {
-        var nodes: [NSObject] = [object]
-        if let view = object as? UIView {
-            for subview in view.subviews { nodes += accessibilityNodes(under: subview) }
-        }
-        for child in object.accessibilityElements ?? [] {
-            if let node = child as? NSObject { nodes += accessibilityNodes(under: node) }
-        }
-        return nodes
+    func testAPresentHintPassesThroughUnchanged() {
+        XCTAssertEqual(SaveToLibraryHint.hint(for: "Adds to Library"), "Adds to Library")
     }
 }

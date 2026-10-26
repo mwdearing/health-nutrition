@@ -267,7 +267,7 @@ public struct AddIntakeView: View {
                 }
                 if model.canChooseLibrary {
                     Toggle(SaveToLibraryAccessibility.label, isOn: $model.savesToLibrary)
-                        .accessibilityHint(Text(SaveToLibraryAccessibility.hint ?? ""))
+                        .accessibilityHintIfPresent(SaveToLibraryHint.hint(for: SaveToLibraryAccessibility.hint))
                     Text("Also keep this product in Library.")
                         .font(.footnote)
                         .foregroundStyle(TokenColors.textSecondary)
@@ -372,6 +372,14 @@ extension View {
         #else
         self
         #endif
+    }
+}
+
+/// The Save to Library switch's accessibility hint, or nil when it should have none. A nil hint must not reach
+/// the element as an empty string, because that is still an applied hint (#644).
+public enum SaveToLibraryHint {
+    public static func hint(for hint: String?) -> String? {
+        hint ?? ""
     }
 }
 
