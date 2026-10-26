@@ -4,7 +4,7 @@ These screens live in the SwiftPM library target `NutritionUI` (package `ios/Nut
 read live in `NutritionJournal`. The app target wires them together. Tests cover the view models only.
 
 ## Screens
-- **Today** (`TodayView`, `TodayViewModel`): the date, a calorie ring for energy, protein, carbohydrate and fat columns, a card of goal bars for any other tracked
+- **Today** (`TodayView`, `TodayViewModel`): the date, a calorie summary (calories remaining, with food and burned beneath) and protein, carbohydrate and fat columns, a card of goal bars for any other tracked
   nutrient (see "Goal bars" below) and an "Edit goals" link (`NourishTodayHeader`), a **Water** card with the total, the quick-add water
   capsule and its undo, an **Other amount** capsule that opens a typed field with an Add button, then the day's food and drink entries grouped by meal (Breakfast, Lunch, Dinner, Snack, then
   Other), and one footer line when entries state no nutrition values. Each entry row opens that entry in the entry
@@ -158,7 +158,7 @@ The US bound uses `AmountDisplay.smallestShown`, matching quick-water strings.
 The same bound is spoken for accessibility; an actual zero still displays as zero.
 Settings' quick-water equivalence and entry detail's converted line use `AmountDisplay` as well.
 
-Every other nutrient figure on Today (the calorie ring, the macro columns and the goal bars), the Journal's
+Every other nutrient figure on Today (the calorie summary, the macro columns and the goal bars), the Journal's
 day line and day energy, "This adds" while logging, an entry's adds and a scaled quick-add title use
 `AmountDisplay.nutrient`: energy in whole kcal, and every other nutrient as the vitamins and minerals screen
 shows it, one fraction digit or two below one, in the unit it is totaled in under either unit system. A
@@ -214,7 +214,7 @@ shorter list that looked complete, so a corrupt row read as "no goal set for thi
 that needs attention, and a caller had no way to tell the two apart. Repairing the row, or an erase, makes the store
 read again: the failure was the row, not the store.
 
-Energy, carbohydrate and fat are tracked by default so the calorie ring and the macro columns show for everyone from
+Energy, carbohydrate and fat are tracked by default so the calorie summary and the macro columns show for everyone from
 the first day, with a plain total until a goal is set; before, they appeared only once those nutrients had a goal.
 
 **Tracked nutrients** are the existing `defaultTrackedNutrients` (energy, protein, carbohydrate, fat, fiber, sodium,
