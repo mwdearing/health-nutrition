@@ -375,8 +375,6 @@ extension View {
     }
 }
 
-/// The Save to Library switch's spoken text. The label says what the switch does, so it has no hint: a hint
-/// would repeat or contradict the label (#527). Kept here, so a test can pin the hint without a UI tree.
 /// The Save to Library switch's accessibility hint, or nil when it should have none. A nil hint must not reach
 /// the element as an empty string, because that is still an applied hint (#644).
 public enum SaveToLibraryHint {
@@ -386,6 +384,8 @@ public enum SaveToLibraryHint {
     }
 }
 
+/// The Save to Library switch's spoken text. The label says what the switch does, so it has no hint: a hint
+/// would repeat or contradict the label (#527). Kept here, so a test can pin the hint without a UI tree.
 public enum SaveToLibraryAccessibility {
     public static let label = "Save to Library"
     public static let hint: String? = nil
