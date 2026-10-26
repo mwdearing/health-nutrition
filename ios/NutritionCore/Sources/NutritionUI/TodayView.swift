@@ -70,6 +70,8 @@ public struct TodayView: View {
                 .frame(maxWidth: .infinity)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("")
+                // Replaces the header's accessibility tree with an empty element, so the drawn title is not in it at all.
+                .accessibilityRepresentation { Color.clear }
                 .accessibilityIdentifier("todayHeader")
                 Text(model.dateSubtitle)
                     .font(.subheadline)
