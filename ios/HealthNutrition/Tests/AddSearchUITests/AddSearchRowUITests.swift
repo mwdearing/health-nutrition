@@ -51,6 +51,77 @@ final class AddSearchRowUITests: XCTestCase {
                        "the search field did not take focus after the row was tapped")
     }
 
+    /// Back from a pushed child must not raise the keyboard again (#944). The search screen focuses its field once,
+    /// on its first appearance; a return after a push takes no focus. A fresh install has no pushable row on the
+    /// search screen, so the test logs a typed entry first, which then shows under Recent with nothing sent anywhere.
+    func testReturningToSearchAfterAPushDoesNotRaiseTheKeyboard() throws {
+        let app = XCUIApplication()
+        app.launch()
+        addTeardownBlock { app.terminate() }
+
+        let getStarted = app.buttons["Get started"]
+        if getStarted.waitForExistence(timeout: 5) { getStarted.tap() }
+
+        // Log one typed entry so the search screen has a Recent row to push.
+        tapHittableAdd(app)
+        let typeIt = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Type it in")).firstMatch
+        XCTAssertTrue(typeIt.waitForExistence(timeout: 10), "the Type it in tile is not on Add. \(describeAddState(app))")
+        typeIt.tap()
+        XCTAssertTrue(app.navigationBars["Log entry"].waitForExistence(timeout: 20), "the details screen did not open")
+        let name = app.textFields["Name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 20), "the details form has no Name field")
+        name.tap()
+        name.typeText("Recent oats")
+        let amount = app.textFields["Amount"]
+        XCTAssertTrue(amount.waitForExistence(timeout: 10), "the details form has no Amount field")
+        amount.tap()
+        amount.typeText("2")
+        // The decimal keypad has no Return key; its Done button puts it away so Log is not covered.
+        let done = app.buttons["Done"]
+        if done.exists && done.isHittable { done.tap() }
+        let log = app.buttons["Log"]
+        XCTAssertTrue(log.waitForExistence(timeout: 10), "the details form has no Log button")
+        log.tap()
+        XCTAssertTrue(app.navigationBars["Log entry"].waitForNonExistence(timeout: 20), "the entry was not logged")
+
+        // Open search: the field takes focus once, on this first appearance.
+        tapHittableAdd(app)
+        let row = app.buttons["addSearchRow"]
+        XCTAssertTrue(row.waitForExistence(timeout: 10), "the search row is not on the Add screen. \(describeAddState(app))")
+        row.tap()
+        let field = app.textFields["sharedProductSearchField"]
+        XCTAssertTrue(field.waitForExistence(timeout: 10), "product search did not open")
+        let focused = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hasKeyboardFocus == true"), object: field)
+        XCTAssertEqual(XCTWaiter().wait(for: [focused], timeout: 15), .completed, "the search field did not take focus on first open")
+
+        // Push the Recent row, then come back.
+        let recent = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Recent oats")).firstMatch
+        XCTAssertTrue(recent.waitForExistence(timeout: 10), "the logged entry is not under Recent on the search screen")
+        recent.tap()
+        let detailsBar = app.navigationBars["Log entry"]
+        XCTAssertTrue(detailsBar.waitForExistence(timeout: 20), "tapping the Recent row did not open the details form")
+        let back = detailsBar.buttons["BackButton"].exists ? detailsBar.buttons["BackButton"] : detailsBar.buttons.firstMatch
+        back.tap()
+        XCTAssertTrue(field.waitForExistence(timeout: 10), "Back did not return to the search screen")
+
+        // The focus request waits 400 ms after an appearance; wait well past it, then the field must not hold focus.
+        RunLoop.current.run(until: Date().addingTimeInterval(2))
+        XCTAssertFalse(field.hasKeyboardFocus, "returning to the search screen after a push raised the keyboard")
+        XCTAssertFalse(app.keyboards.firstMatch.exists, "a keyboard is up after returning to the search screen")
+    }
+
+    /// Taps the hittable "Add food, drink, or supplement" button; two share the label and only one can be tapped.
+    private func tapHittableAdd(_ app: XCUIApplication) {
+        let candidates = app.buttons.matching(NSPredicate(format: "label == %@", "Add food, drink, or supplement"))
+        let deadline = Date().addingTimeInterval(15)
+        while Date() < deadline, !candidates.allElementsBoundByIndex.contains(where: { $0.exists && $0.isHittable }) {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        }
+        let add = candidates.allElementsBoundByIndex.first(where: { $0.exists && $0.isHittable })
+        XCTAssertNotNil(add, "no hittable Add button. \(describeAddState(app))")
+        add?.tap()
+    }
+
     /// The Add-related buttons, the tab bar and the sheet count, so a failure says what was on screen.
     private func describeAddState(_ app: XCUIApplication) -> String {
         let buttons = app.buttons.allElementsBoundByIndex
