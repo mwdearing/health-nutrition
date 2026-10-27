@@ -33,8 +33,8 @@ final class CalorieSummarySpokenTests: XCTestCase {
             "Food, 500 calories, Burned, 120 calories, 2 entries have no energy value")
     }
 
-    /// With the goal off and a known food total, the screen shows a dash for Remaining. VoiceOver speaks no
-    /// Remaining at all, and no dash: the line is Food alone when Health gave no burned reading.
+    /// With the goal off and a known food total, the summary shows no Remaining, so VoiceOver speaks none
+    /// either: the line is Food alone when Health gave no burned reading.
     func testSpokenSummaryWithTheGoalOffAndAKnownFoodSpeaksNoRemaining() throws {
         let calories = CalorieRemaining.make(
             goal: nil, food: 500, partial: false, missingCount: 0, burned: nil, energyLabel: "Energy")
