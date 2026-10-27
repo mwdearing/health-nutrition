@@ -29,7 +29,7 @@ public struct GoalBarModel: Equatable, Identifiable {
     public let accessibilityText: String
     /// The one line that explains a state that needs explaining, or nil.
     public let reason: String?
-    /// Whether the track is drawn. Always true, so a nutrient with no goal keeps an empty track and its row lines up.
+    /// Whether the track is drawn. Always true today, so a nutrient with no goal keeps an empty track and its row lines up.
     public let showsTrack: Bool
 
     public init(
