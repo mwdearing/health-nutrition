@@ -195,10 +195,16 @@ final class AppServices {
         let usda = usdaClient.map { USDAProductNameSearch(client: $0) }
         productNameSearch = FoodDatabaseSearch(openFoodFacts: openFoodFacts, usda: usda)
         let totals = JournalSnapshotTotals(store: journalStore)
+        // The flag the shortcuts and the widget read: true while Erase all data or a restore runs, so a
+        // delivery pass writes nothing to Health and records nothing for entries that may be gone.
+        let busyConnections = connections
         let healthKitDelivery = HealthKitDeliveryWorker(
             store: journalStore,
             writer: HealthKitSampleWriter(),
-            totals: { intakeID, revision in try await totals.totals(intakeID: intakeID, revision: revision) }
+            totals: { intakeID, revision in try await totals.totals(intakeID: intakeID, revision: revision) },
+            isBusy: { [weak busyConnections] in
+                await MainActor.run { busyConnections.map { !$0.canExport } ?? false }
+            }
         )
         self.healthKitDelivery = healthKitDelivery
         let healthKitDeliveryStatus = HealthKitDeliveryStatus(
