@@ -128,7 +128,7 @@ public final class UserDefaultsSavedMealStore: SavedMealStoring, JournalErasing,
     }
 
     public func journalSavedMeals() throws -> [JournalSavedMeal] {
-        try meals().map { JournalSavedMeal(id: $0.id, name: $0.name, meal: $0.meal, items: $0.items) }
+        try meals().map { JournalSavedMeal(id: $0.id, name: $0.name + (eraseEpoch() ?? ""), meal: $0.meal, items: $0.items) }
     }
 
     /// The list is written before its receipt, so a stop between the two leaves the file's meals with no
