@@ -15,6 +15,14 @@ final class CalorieRemainingTests: XCTestCase {
         XCTAssertEqual(value.burned, 240)
     }
 
+    /// A goal-less day with a Health burned figure and no logged food: Burned shows and Remaining stays hidden.
+    func testGoalLessDayWithBurnedAndNoFoodShowsBurnedNotRemaining() {
+        let value = CalorieRemaining.make(goal: nil, food: 0, partial: false, missingCount: 0, burned: 240, energyLabel: "Energy")
+        XCTAssertEqual(value.burned, 240)
+        XCTAssertNil(value.remaining)
+        XCTAssertFalse(value.showsRemaining)
+    }
+
     func testNoGoalMeansNoRemaining() {
         let value = CalorieRemaining.make(goal: nil, food: 1500, partial: false, missingCount: 0, burned: 240, energyLabel: "Energy")
         XCTAssertNil(value.remaining)
