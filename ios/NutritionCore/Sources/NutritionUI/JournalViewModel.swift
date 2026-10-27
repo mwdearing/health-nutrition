@@ -196,13 +196,20 @@ public final class JournalViewModel: ObservableObject {
 
     /// Reloads the Diary on each time-zone change, so its days follow the device zone without a relaunch (#648).
     /// The changes are injected so a test can send one without a system notification.
+    /// A subscription reloads once when it starts, so a zone change that landed before it was made is applied (#655).
+    /// A stream that throws is started again after a pause, so later zone changes still reload (#654).
     public func runZoneChangeReloads<Changes: AsyncSequence>(
-        _ changes: Changes, now: @escaping () -> Date
+        _ makeChanges: @escaping () -> Changes, now: @escaping () -> Date
     ) async where Changes.Element == Void {
-        do {
-            for try await _ in changes { load(now: now()) }
-        } catch {
-            return
+        while !Task.isCancelled {
+            var changes = makeChanges().makeAsyncIterator()
+            load(now: now())
+            do {
+                while try await changes.next() != nil { load(now: now()) }
+                return
+            } catch {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+            }
         }
     }
 
