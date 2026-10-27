@@ -23,7 +23,7 @@ final class CustomProductStatusTests: XCTestCase {
         let model = CustomProductSharingModel(store: store, coordinator: coordinator, service: service)
 
         XCTAssertEqual(model.status(original), .shared)
-        XCTAssertEqual(model.status(edited).rawValue, "Edited on this phone")
+        XCTAssertEqual(model.status(edited).rawValue, "Edited on this device")
         XCTAssertTrue(model.detail(edited).localizedCaseInsensitiveContains("not been shared"))
     }
 

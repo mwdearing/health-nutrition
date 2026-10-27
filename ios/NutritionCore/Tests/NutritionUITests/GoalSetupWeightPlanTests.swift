@@ -294,6 +294,6 @@ final class GoalSetupWeightPlanTests: XCTestCase {
     func testThePrivacyNoticeSaysWhatIsSaved() {
         XCTAssertEqual(
             GoalSetupViewModel.privacyNotice,
-            "Your age, sex, height and current weight stay on this phone and are not saved. Your aim, pace and goal weight are saved on this phone with the targets you choose.")
+            "Your age, sex, height and current weight stay on this device and are not saved. Your aim, pace and goal weight are saved on this device with the targets you choose.")
     }
 }

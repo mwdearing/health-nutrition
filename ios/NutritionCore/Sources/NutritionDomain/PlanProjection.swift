@@ -28,9 +28,10 @@ public struct PaceComparison: Sendable, Equatable {
 /// Arithmetic for the day a steady pace reaches a goal, and the planned pace in signed form.
 ///
 /// Pace is kilograms a week. The days to the goal are the distance divided by the pace, times seven,
-/// rounded to a whole day with halves away from zero.
+/// rounded up to a whole day, the same as the trend's projected day.
 public enum PlanProjection {
-    /// The day a steady pace reaches the goal, counted from `from`.
+    /// The day a steady pace reaches the goal, counted from `from`. The days are rounded up to a whole
+    /// day, the same as the trend's projected day.
     ///
     /// Nil when the pace is not above zero, when the current weight is already the goal, or when the day
     /// would fall after 9999-12-31.
@@ -47,7 +48,7 @@ public enum PlanProjection {
         var sixPlaces = Decimal()
         NSDecimalRound(&sixPlaces, &days, 6, .plain)
         var wholeDays = Decimal()
-        NSDecimalRound(&wholeDays, &sixPlaces, 0, .plain)
+        NSDecimalRound(&wholeDays, &sixPlaces, 0, .up)
 
         return from.adding(wholeDays: wholeDays)
     }

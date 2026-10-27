@@ -65,7 +65,7 @@ public final class AppSettingsViewModel: ObservableObject {
     public func commitQuickWater() -> Bool { connections.saveQuickWaterAmount() }
     public var quickWaterHelper: String { connections.quickWaterEquivalenceText }
     public var quickWaterError: String? { connections.quickWaterError }
-    public let privacyStatement = "Your journal stays on this phone. Lookups, sign-in and sharing send only what Privacy describes."
+    public let privacyStatement = "Your journal stays on this device. Lookups, sign-in and sharing send only what Privacy describes."
     public let openFoodFactsAttribution = "Open Food Facts — database available under the Open Database License (ODbL)."
     public let usdaAttribution = "USDA FoodData Central — public domain data from the U.S. Department of Agriculture."
 
