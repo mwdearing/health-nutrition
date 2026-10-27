@@ -1,6 +1,6 @@
 # Reading from Apple Health
 
-Status: current. The app reads three Health types for the activity card, and asks Health to read every nutrient type it writes (see below), only after the person asks.
+Status: current. The app reads three Health types for the activity card, and asks Health to read every nutrient type it writes (see below), only after the person asks. Nutrient samples written by other apps are read back as "outside" intake and added to Today's totals (#692); they are not shown on the activity card.
 
 | Type | Shown | Window |
 |---|---|---|
