@@ -57,10 +57,18 @@ final class AddSearchRowUITests: XCTestCase {
     func testReturningToSearchAfterAPushDoesNotRaiseTheKeyboard() throws {
         let app = XCUIApplication()
         app.launch()
+        // Teardown blocks run last-added first: the entry is deleted, then the app ends.
         addTeardownBlock { app.terminate() }
+        // UI tests share one store, so the name is unique to this run and the entry is deleted again through the UI.
+        let entryName = "Recent oats \(UUID().uuidString.prefix(6))"
+        addTeardownBlock { self.deleteEntry(named: entryName, in: app) }
 
         let getStarted = app.buttons["Get started"]
         if getStarted.waitForExistence(timeout: 5) { getStarted.tap() }
+
+        // Precondition: no entry with this name exists yet, so the Recent row below can only be the one logged here.
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", entryName)).firstMatch.exists,
+                       "an entry named \(entryName) already exists before the test logs it")
 
         // Log one typed entry so the search screen has a Recent row to push.
         tapHittableAdd(app)
@@ -71,7 +79,7 @@ final class AddSearchRowUITests: XCTestCase {
         let name = app.textFields["Name"]
         XCTAssertTrue(name.waitForExistence(timeout: 20), "the details form has no Name field")
         name.tap()
-        name.typeText("Recent oats")
+        name.typeText(entryName)
         let amount = app.textFields["Amount"]
         XCTAssertTrue(amount.waitForExistence(timeout: 10), "the details form has no Amount field")
         amount.tap()
@@ -95,7 +103,7 @@ final class AddSearchRowUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter().wait(for: [focused], timeout: 15), .completed, "the search field did not take focus on first open")
 
         // Push the Recent row, then come back.
-        let recent = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Recent oats")).firstMatch
+        let recent = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", entryName)).firstMatch
         XCTAssertTrue(recent.waitForExistence(timeout: 10), "the logged entry is not under Recent on the search screen")
         recent.tap()
         let detailsBar = app.navigationBars["Log entry"]
@@ -108,6 +116,30 @@ final class AddSearchRowUITests: XCTestCase {
         RunLoop.current.run(until: Date().addingTimeInterval(2))
         XCTAssertFalse(field.hasKeyboardFocus, "returning to the search screen after a push raised the keyboard")
         XCTAssertFalse(app.keyboards.firstMatch.exists, "a keyboard is up after returning to the search screen")
+    }
+
+    /// Deletes the entry this test logged, from Today, through the entry screen's Delete entry and its confirmation.
+    /// Relaunches first, so it starts from Today whatever screen the test ended on. Does nothing if the entry was never logged.
+    private func deleteEntry(named entryName: String, in app: XCUIApplication) {
+        app.terminate()
+        app.launch()
+        let getStarted = app.buttons["Get started"]
+        if getStarted.waitForExistence(timeout: 5) { getStarted.tap() }
+        let row = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", entryName)).firstMatch
+        guard row.waitForExistence(timeout: 10) else { return }
+        row.tap()
+        let delete = app.buttons["Delete entry"]
+        var swipes = 0
+        while !(delete.exists && delete.isHittable) && swipes < 5 {
+            app.swipeUp()
+            swipes += 1
+        }
+        XCTAssertTrue(delete.exists, "teardown: the entry screen has no Delete entry button")
+        delete.tap()
+        let confirm = app.buttons["Delete"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 10), "teardown: the delete confirmation did not appear")
+        confirm.tap()
+        XCTAssertTrue(row.waitForNonExistence(timeout: 10), "teardown: the logged entry is still on Today")
     }
 
     /// Taps the hittable "Add food, drink, or supplement" button; two share the label and only one can be tapped.
