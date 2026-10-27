@@ -129,6 +129,11 @@ public struct GoalSetupView: View {
                     .font(.footnote)
                     .foregroundStyle(TokenColors.textSecondary)
             }
+            if let dayText = model.paceGoalDayText {
+                Text(dayText)
+                    .font(.footnote)
+                    .foregroundStyle(TokenColors.textSecondary)
+            }
         }
     }
 
