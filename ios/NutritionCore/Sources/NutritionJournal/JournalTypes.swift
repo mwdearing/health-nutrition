@@ -585,11 +585,13 @@ public struct JournalRestorePlan: Sendable {
     public var keptOutOfLibrary: [String]
     /// The units restored entries were logged in, from version 6. Written in the same save as the entries.
     public var loggedUnits: [JournalLoggedUnit]
+    /// The daily goals, from version 8. Written only for a nutrient with no goal on the device, never over one.
+    public var goals: [NutrientGoal]
 
     public init(
         entries: [JournalRestoreEntry], tombstones: [Intake],
         products: [ProductDefinition], favorites: [FavoriteTemplate], savedMeals: [JournalSavedMeal] = [],
-        keptOutOfLibrary: [String] = [], loggedUnits: [JournalLoggedUnit] = []
+        keptOutOfLibrary: [String] = [], loggedUnits: [JournalLoggedUnit] = [], goals: [NutrientGoal] = []
     ) {
         self.entries = entries
         self.tombstones = tombstones
@@ -598,6 +600,7 @@ public struct JournalRestorePlan: Sendable {
         self.savedMeals = savedMeals
         self.keptOutOfLibrary = keptOutOfLibrary
         self.loggedUnits = loggedUnits
+        self.goals = goals
     }
 }
 

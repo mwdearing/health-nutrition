@@ -10,7 +10,7 @@ final class AppSettingsTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
-        return ConnectionsPrivacyViewModel(
+        return ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(),
             store: try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store")),
             preferences: preferences)
     }

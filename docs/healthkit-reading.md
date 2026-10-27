@@ -1,12 +1,14 @@
 # Reading from Apple Health
 
-Status: current. The app reads three Health types, only after the person asks.
+Status: current. The app reads three Health types for the activity card, and asks Health to read every nutrient type it writes (see below), only after the person asks.
 
 | Type | Shown | Window |
 |---|---|---|
 | Steps (`stepCount`) | Today's activity card | Sum since local midnight |
 | Active energy (`activeEnergyBurned`) | Today's activity card | Sum since local midnight |
-| Weight (`bodyMass`) | Today's activity card, with the change since an earlier sample, labelled with the actual number of days | Latest sample, and the newest one at least 30 days before it |
+| Weight (`bodyMass`) | Today's activity card: the latest weight, the weekly trend, and the saved plan lines (see `weight-trend.md`) | Latest sample, and every sample from the last 28 days (the day 27 days before today through now) |
+
+The read request also covers the nutrient types the app writes (`OutsideIntakeTotals.readQuantityTypeIdentifiers`, defined beside the write plan), so the outside-intake totals can be read back. The table is the card's three types only.
 
 - **When:** the card on Today shows a "Show steps, activity and weight" button until the read request has been shown once on this device (`healthKitReader.askedForReadAccess` in user defaults). Nothing is read before that.
 - **What Health says:** HealthKit never reports whether read access was granted. A refused type reads as no data, so an empty card names both reasons and points to the Health app's Sharing screen.

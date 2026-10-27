@@ -99,14 +99,14 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_705_313_700)
 
     private func makeModel(_ erasers: [JournalErasing]) -> ConnectionsPrivacyViewModel {
-        ConnectionsPrivacyViewModel(store: EraseStubStore(), favorites: EraseStubFavorites(), erasers: erasers)
+        ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(), store: EraseStubStore(), favorites: EraseStubFavorites(), erasers: erasers)
     }
 
     func testDeliveryGateClosesBeforeFirstEraserEvenWhenEraseFails() async {
         var closed = false
         let eraser = RecordingEraser(failure: EraseFailure())
         eraser.beforeErase = { XCTAssertTrue(closed) }
-        let model = ConnectionsPrivacyViewModel(store: EraseStubStore(), erasers: [eraser], beforeErase: { closed = true })
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(), store: EraseStubStore(), erasers: [eraser], beforeErase: { closed = true })
         let erased = await model.eraseAllData()
         XCTAssertFalse(erased)
         XCTAssertTrue(closed)
@@ -119,7 +119,7 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
             let first = RecordingEraser(), last = RecordingEraser(failure: fails ? EraseFailure() : nil)
             first.beforeErase = { XCTAssertTrue(closed); XCTAssertFalse(finished) }
             last.beforeErase = { XCTAssertTrue(closed); XCTAssertFalse(finished) }
-            let model = ConnectionsPrivacyViewModel(store: EraseStubStore(), erasers: [first, last], beforeErase: { closed = true }, afterSuccessfulErase: {
+            let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(), store: EraseStubStore(), erasers: [first, last], beforeErase: { closed = true }, afterSuccessfulErase: {
                 XCTAssertEqual(first.eraseCount, 1); XCTAssertEqual(last.eraseCount, 1); finished = true
             })
             let erased = await model.eraseAllData()
@@ -152,7 +152,7 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
     /// The exported copy holds the same history as the stores, so it is deleted rather than left in the
     /// temporary directory with nothing able to remove it.
     func testEraseAllDataRemovesTheExportFileAndResetsTheExportState() async throws {
-        let model = ConnectionsPrivacyViewModel(
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(),
             store: EraseStubStore(), favorites: EraseStubFavorites(), erasers: [RecordingEraser()])
         XCTAssertTrue(model.export(now: now))
         let url = try XCTUnwrap(model.exportFileURL)
@@ -174,7 +174,7 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
     /// repopulate the journal while the account cleanup is suspended.
     func testEraseMarksBusyBeforeAwaitingLocalAccountCleanup() async {
         let gate = AsyncEraseGate()
-        let model = ConnectionsPrivacyViewModel(
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(),
             store: EraseStubStore(), favorites: EraseStubFavorites(), erasers: [RecordingEraser()],
             eraseLocalAccount: { await gate.pause() })
         let erasing = Task { await model.eraseAllData() }
@@ -209,7 +209,7 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
 
     /// A reminder request still pending after the erase is reported as "reminders" still on the phone.
     func testARemainingReminderRequestIsReportedAsStillOnThePhone() async {
-        let model = ConnectionsPrivacyViewModel(
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(),
             store: EraseStubStore(), favorites: EraseStubFavorites(), erasers: [RecordingEraser()],
             remindersStillPending: { ["reminders"] })
 
@@ -221,7 +221,7 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
     /// A custom reminder request still pending after the erase is reported as "custom reminders" still on the phone.
     func testARemainingCustomReminderIsReportedAsStillOnThePhone() async {
         let center = FakePendingReminderCenter(["custom-reminder-\(UUID().uuidString)"])
-        let model = ConnectionsPrivacyViewModel(
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(),
             store: EraseStubStore(), favorites: EraseStubFavorites(), erasers: [RecordingEraser()],
             remindersStillPending: { await ReminderReadback.namesStillPending(in: center, pause: {}) })
 
@@ -301,7 +301,7 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
         let store = EraseStubStore()
         store.failClearRestoreForTesting = true
         var paused = false
-        let model = ConnectionsPrivacyViewModel(
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(),
             store: store, favorites: EraseStubFavorites(), erasers: [RecordingEraser()],
             beforeErase: { paused = true })
 
@@ -325,7 +325,7 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
         XCTAssertEqual(goals.eraseCount, 1)
         XCTAssertEqual(
             model.errorMessage,
-            "Erase didn't finish. Still on this phone: saved meals, journal and goals. Tap Retry to erase them.")
+            "Erase didn't finish. Still on this device: saved meals, journal and goals. Tap Retry to erase them.")
     }
 
     /// A restore flag that cannot be cleared stops the erase before any store is touched, and says so.
@@ -333,7 +333,7 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
         let store = EraseStubStore()
         store.failClearRestoreForTesting = true
         let journal = RecordingEraser(name: "journal")
-        let model = ConnectionsPrivacyViewModel(store: store, favorites: EraseStubFavorites(), erasers: [journal])
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(), store: store, favorites: EraseStubFavorites(), erasers: [journal])
 
         let erased = await model.eraseAllData()
         XCTAssertFalse(erased)
@@ -354,7 +354,7 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
     func testLocalAccountEraseFailureDoesNotStopOtherErasers() async {
         let journal = RecordingEraser()
         var accountEraseCount = 0
-        let model = ConnectionsPrivacyViewModel(
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(),
             store: EraseStubStore(), favorites: EraseStubFavorites(), erasers: [journal],
             eraseLocalAccount: {
                 accountEraseCount += 1
@@ -430,7 +430,7 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
         let stray = ConnectionsPrivacyViewModel.exportFileURL(for: now.addingTimeInterval(-86_400))
         try Data("{}".utf8).write(to: stray)
         addTeardownBlock { try? FileManager.default.removeItem(at: stray) }
-        let model = ConnectionsPrivacyViewModel(
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(),
             store: EraseStubStore(), favorites: EraseStubFavorites(), erasers: [RecordingEraser()],
             remover: { url in if url == stray { throw RemoveFailure() } })
 

@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import NutritionDomain
 import SwiftUI
 
 /// What Apple Health reports for today's activity and recent weight. Every value is optional: Health
@@ -9,9 +10,8 @@ public struct BodyActivityReadings: Equatable, Sendable {
     public var activeEnergyKcal: Decimal?
     public var latestWeightKg: Decimal?
     public var latestWeightDate: Date?
-    /// The newest weight at least 30 days older than `latestWeightDate`, for the trend line.
-    public var earlierWeightKg: Decimal?
-    public var earlierWeightDate: Date?
+    /// Every weigh-in of the last 28 days, each on its local day, for the trend.
+    public var weightSamples: [WeightSample]
     /// Today's nutrient totals from entries other apps wrote to Health, per canonical nutrient key, in
     /// each key's unit. Entries this app wrote are left out, so nothing is counted twice.
     public var outsideNutrients: [String: Decimal]
@@ -24,7 +24,7 @@ public struct BodyActivityReadings: Equatable, Sendable {
 
     public init(
         steps: Decimal? = nil, activeEnergyKcal: Decimal? = nil, latestWeightKg: Decimal? = nil,
-        latestWeightDate: Date? = nil, earlierWeightKg: Decimal? = nil, earlierWeightDate: Date? = nil,
+        latestWeightDate: Date? = nil, weightSamples: [WeightSample] = [],
         outsideNutrients: [String: Decimal] = [:], outsideReadFailed: Bool = false, outsideRead: Bool = false,
         outsideReadKeys: Set<String> = []
     ) {
@@ -36,8 +36,7 @@ public struct BodyActivityReadings: Equatable, Sendable {
         self.activeEnergyKcal = activeEnergyKcal
         self.latestWeightKg = latestWeightKg
         self.latestWeightDate = latestWeightDate
-        self.earlierWeightKg = earlierWeightKg
-        self.earlierWeightDate = earlierWeightDate
+        self.weightSamples = weightSamples
     }
 
     public static let empty = BodyActivityReadings()
@@ -57,7 +56,7 @@ public protocol BodyActivityReading: AnyObject {
     var hasAskedForReadAccess: Bool { get }
     /// Asks Health for read access to steps, active energy and weight.
     func requestReadAccess() async
-    /// Today's steps and active energy, and the latest weight with an earlier one for the trend.
+    /// Today's steps and active energy, the latest weight, and every weigh-in of the last 28 days for the trend.
     func read(now: Date) async -> BodyActivityReadings
 }
 
@@ -67,17 +66,28 @@ public final class BodyActivityViewModel: ObservableObject {
     @Published public private(set) var readings: BodyActivityReadings = .empty
     @Published public private(set) var isBusy = false
     @Published public private(set) var hasAsked: Bool
+    /// The planned pace beside the trend's pace and goal days, when the saved plan aims at a goal.
+    @Published public private(set) var paceComparison: PaceComparison?
+    private var trend: WeightTrendResult?
+    private var plan: WeightPlan?
     private let reader: any BodyActivityReading
     private let unitSystem: () -> UnitSystem
+    private let weightPlan: () -> WeightPlan?
+    private let calendar: Calendar
     /// Called with every fresh read, so Today can count active energy toward the calorie goal.
     public var onRead: ((BodyActivityReadings) -> Void)?
 
     /// Pounds per kilogram, exact to the definition of the pound.
     static let poundsPerKilogram = Decimal(string: "2.20462262185")!
 
-    public init(reader: any BodyActivityReading, unitSystem: @escaping () -> UnitSystem) {
+    public init(
+        reader: any BodyActivityReading, unitSystem: @escaping () -> UnitSystem,
+        weightPlan: @escaping () -> WeightPlan? = { nil }, calendar: Calendar = .current
+    ) {
         self.reader = reader
         self.unitSystem = unitSystem
+        self.weightPlan = weightPlan
+        self.calendar = calendar
         self.hasAsked = reader.hasAskedForReadAccess
     }
 
@@ -85,11 +95,44 @@ public final class BodyActivityViewModel: ObservableObject {
         hasAsked = reader.hasAskedForReadAccess
         guard hasAsked else {
             readings = .empty
+            applyWeightPlan(now: now)
             onRead?(readings)
             return
         }
         readings = await reader.read(now: now)
+        applyWeightPlan(now: now)
         onRead?(readings)
+    }
+
+    /// Reads the saved plan, then the trend through the local day of `now`, then the plan beside the trend.
+    /// The pace comparison needs a loss or gain plan with a goal and a pace, and a current weight from the
+    /// trend or else the latest weigh-in. The day is read as a Gregorian date in the calendar's time zone,
+    /// so a device set to another calendar gets the same day.
+    private func applyWeightPlan(now: Date) {
+        plan = weightPlan()
+        var gregorian = Calendar(identifier: .gregorian)
+        gregorian.timeZone = calendar.timeZone
+        let parts = gregorian.dateComponents([.year, .month, .day], from: now)
+        guard let through = CalendarDay(year: parts.year ?? 0, month: parts.month ?? 0, day: parts.day ?? 0)
+        else {
+            trend = nil
+            paceComparison = nil
+            return
+        }
+        let aimsAtGoal = plan?.aim == .lose || plan?.aim == .gain
+        let result = WeightTrend.compute(
+            samples: readings.weightSamples, through: through,
+            goalKilograms: aimsAtGoal ? plan?.goalKilograms : nil)
+        trend = result
+        guard aimsAtGoal, let plan, let goal = plan.goalKilograms, let pace = plan.weeklyPaceKilograms,
+              let current = result.trendKilograms ?? readings.latestWeightKg
+        else {
+            paceComparison = nil
+            return
+        }
+        paceComparison = PlanProjection.compare(
+            aim: plan.aim, weeklyPaceKilograms: pace, currentKilograms: current, goalKilograms: goal,
+            trend: result)
     }
 
     /// Shows Health's read request, then reads.
@@ -104,7 +147,7 @@ public final class BodyActivityViewModel: ObservableObject {
     public static let title = "Activity and weight"
     public static let connectTitle = "Show steps, activity and weight"
     public static let connectDetail =
-        "Reads today's steps, active energy and your weight from the Health app on this phone. "
+        "Reads today's steps, active energy and your weight from the Health app on this device. "
         + "Nothing is sent anywhere."
     /// Health hides whether read access was granted, so an empty card names both reasons.
     public static let emptyDetail =
@@ -152,27 +195,49 @@ public final class BodyActivityViewModel: ObservableObject {
     /// Milliliters per US fluid ounce, exact to the definition.
     static let millilitersPerFluidOunce = Decimal(string: "29.5735295625")!
 
-    /// "Down 2.1 lb over 34 days", "Up …", or "No change over 34 days", naming the actual interval
-    /// between the two samples; nil without both weights and dates.
+    /// "Trend: down 0.5 kg a week", "Trend: up 1.1 lb a week", or "Trend: no change" when the weekly change
+    /// rounds to zero at two places; nil without a trend.
     public var weightTrendText: String? {
-        guard let latest = readings.latestWeightKg, let earlier = readings.earlierWeightKg,
-              let latestDate = readings.latestWeightDate, let earlierDate = readings.earlierWeightDate
-        else { return nil }
-        let days = Calendar.current.dateComponents(
-            [.day], from: Calendar.current.startOfDay(for: earlierDate),
-            to: Calendar.current.startOfDay(for: latestDate)).day ?? 0
-        let interval = " over \(days) days"
-        let change = latest - earlier
-        if Self.roundedToTenth(converted(abs(change))) == 0 { return "No change" + interval }
-        return (change < 0 ? "Down " : "Up ") + weight(abs(change)) + interval
+        guard let weekly = trend?.weeklyChangeKilograms else { return nil }
+        if Self.rounded(converted(abs(weekly)), toPlaces: 2) == 0 { return "Trend: no change" }
+        return "Trend: " + (weekly < 0 ? "down " : "up ") + weeklyChange(abs(weekly))
     }
 
-    /// Rounded to one decimal place, compared as a number so the test does not depend on the locale's
+    /// "Plan: down 0.25 kg a week", or "Plan: up 1 lb a week" for a gain; nil unless the saved plan is a
+    /// loss or gain with a pace.
+    public var planPaceText: String? {
+        guard let plan, plan.aim == .lose || plan.aim == .gain, let pace = plan.weeklyPaceKilograms
+        else { return nil }
+        return "Plan: " + (plan.aim == .lose ? "down " : "up ") + weeklyChange(pace)
+    }
+
+    /// "Plan reaches 80 kg on Dec 23, 2026", from the planned pace.
+    public var planGoalDayText: String? {
+        guard let day = paceComparison?.plannedGoalDay, let goal = plan?.goalKilograms else { return nil }
+        return "Plan reaches \(weight(goal)) on \(Self.dayText(day))"
+    }
+
+    /// "Trend reaches 80 kg on Aug 19, 2026", from the trend's projected goal day.
+    public var trendGoalDayText: String? {
+        guard let day = paceComparison?.trendGoalDay, let goal = plan?.goalKilograms else { return nil }
+        return "Trend reaches \(weight(goal)) on \(Self.dayText(day))"
+    }
+
+    /// "Jan 5, 2027": English month names, no locale.
+    public static func dayText(_ day: CalendarDay) -> String {
+        "\(monthNames[day.month - 1]) \(day.day), \(day.year)"
+    }
+
+    private static let monthNames = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ]
+
+    /// Rounded to `places` decimal places, compared as a number so the test does not depend on the locale's
     /// digits.
-    static func roundedToTenth(_ value: Decimal) -> Decimal {
+    static func rounded(_ value: Decimal, toPlaces places: Int) -> Decimal {
         var input = value
         var result = Decimal()
-        NSDecimalRound(&result, &input, 1, .plain)
+        NSDecimalRound(&result, &input, places, .plain)
         return result
     }
 
@@ -184,12 +249,21 @@ public final class BodyActivityViewModel: ObservableObject {
         Self.oneDecimal(converted(kilograms)) + (unitSystem() == .usCustomary ? " lb" : " kg")
     }
 
+    /// A weekly change in the display unit, e.g. "0.5 kg a week".
+    private func weeklyChange(_ kilograms: Decimal) -> String {
+        Self.twoDecimals(converted(kilograms)) + (unitSystem() == .usCustomary ? " lb" : " kg") + " a week"
+    }
+
     static func whole(_ value: Decimal) -> String {
         value.formatted(.number.precision(.fractionLength(0)))
     }
 
     static func oneDecimal(_ value: Decimal) -> String {
         value.formatted(.number.precision(.fractionLength(0...1)))
+    }
+
+    static func twoDecimals(_ value: Decimal) -> String {
+        value.formatted(.number.precision(.fractionLength(0...2)))
     }
 }
 
@@ -240,12 +314,19 @@ public struct BodyActivityCard: View {
                 if let energy = model.activeEnergyText { Text(energy) }
             }
             if let weight = model.weightText {
-                HStack {
-                    Text("Weight \(weight)")
-                    if let trend = model.weightTrendText {
-                        Text(trend).font(.footnote).foregroundStyle(TokenColors.textSecondary)
-                    }
-                }
+                Text("Weight \(weight)")
+            }
+            if let trend = model.weightTrendText {
+                Text(trend).font(.footnote).foregroundStyle(TokenColors.textSecondary)
+            }
+            if let plan = model.planPaceText {
+                Text(plan).font(.footnote).foregroundStyle(TokenColors.textSecondary)
+            }
+            if let planDay = model.planGoalDayText {
+                Text(planDay).font(.footnote).foregroundStyle(TokenColors.textSecondary)
+            }
+            if let trendDay = model.trendGoalDayText {
+                Text(trendDay).font(.footnote).foregroundStyle(TokenColors.textSecondary)
             }
             if let outside = model.outsideText {
                 Text(outside).font(.footnote).foregroundStyle(TokenColors.textSecondary)
