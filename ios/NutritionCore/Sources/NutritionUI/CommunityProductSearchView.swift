@@ -25,8 +25,11 @@ public struct CommunityProductSearchView: View {
     /// The saved meal whose "Log to which meal" choice is up.
     @State private var mealToLog: SavedMeal?
     @FocusState private var searchFocused: Bool
-    /// Focus is taken once per screen. Going Back from a result must not raise the keyboard over it.
+    /// Focus is taken once per screen, and only once it has actually been set. A screen that closes before
+    /// its focus lands counts as having taken it, so returning to it never raises the keyboard unasked.
     @State private var didAutoFocus = false
+    /// The pending focus request. Cancelled only when the screen disappears.
+    @State private var focusTask: Task<Void, Never>?
     public init(model: CommunityProductSearchViewModel, onSelect: @escaping (CustomProductRevision) -> Void, onLegacy: @escaping (LegacyCustomProductDraft) -> Void, onSignIn: (() -> Void)?, onOpenFoodFacts: @escaping (LookedUpProduct, ProductKind?) -> Void = { _, _ in },
                 library: LibraryViewModel? = nil, onPick: ((RepeatTemplate) -> Void)? = nil,
                 focusSearchOnAppear: Bool = false, onSaved: @escaping () -> Void = {}) {
@@ -156,24 +159,23 @@ public struct CommunityProductSearchView: View {
         }
         .navigationTitle("Search foods")
         .task { if model.state == .idle { await model.search(query: query, kind: kind) } }
-        // Focus after the push animation. Setting focus during the transition can be dropped.
-        .task {
-            guard focusSearchOnAppear, !didAutoFocus else { return }
-            // Counted as this screen's one focus even if it closes during the delay, so a return
-            // never raises the keyboard unasked.
-            didAutoFocus = true
-            // A screen left before the delay ends must not raise the keyboard on its way out.
-            guard (try? await Task.sleep(nanoseconds: 400_000_000)) != nil else { return }
-            searchFocused = true
-        }
         .onAppear {
             if onPick != nil {
                 library?.load()
                 library?.savedMeals?.load()
             }
+            requestAutoFocus()
         }
-        // The Undo window ends with this screen, as it does on the Library screen.
-        .onDisappear { library?.savedMeals?.clearUndo() }
+        // The Undo window ends with this screen, as it does on the Library screen. A focus request still
+        // waiting when the screen goes away is dropped, and the screen takes no focus on a later return.
+        .onDisappear {
+            library?.savedMeals?.clearUndo()
+            if focusTask != nil {
+                focusTask?.cancel()
+                focusTask = nil
+                if focusSearchOnAppear { didAutoFocus = true }
+            }
+        }
         .safeAreaInset(edge: .bottom) {
             if let savedMeals = library?.savedMeals { SavedMealUndoBar(model: savedMeals) }
         }
@@ -234,6 +236,19 @@ public struct CommunityProductSearchView: View {
         case .unavailable:
             Text("Shared products are temporarily unavailable.")
             Button("Retry") { Task { await model.retry() } }
+        }
+    }
+    /// Focus after the push animation. Setting focus during the transition can be dropped, so the request
+    /// waits 400 ms. The screen's focus is marked taken once the request sets it; a request cancelled
+    /// before then is marked when the screen disappears.
+    private func requestAutoFocus() {
+        guard focusSearchOnAppear, !didAutoFocus, focusTask == nil else { return }
+        focusTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            guard !Task.isCancelled else { return }
+            searchFocused = true
+            didAutoFocus = true
+            focusTask = nil
         }
     }
     private func search() {
