@@ -135,6 +135,15 @@ public struct NutrientKeyChoice: Identifiable, Equatable {
     @Published public var servingUnit: MeasureUnit = .serving
     @Published public var servingText = ""
     @Published public var facts: [ProductFactInput] = []
+    /// What the form held when it was first shown. Anything else changed since is unsaved.
+    private var shownWith: String?
+    /// Whether the person changed the product since it was first shown. Leaving then asks first.
+    public var hasTypedInput: Bool { shownWith != nil && fingerprint != shownWith }
+    private var fingerprint: String {
+        let head = [name, brand, barcode, servingQuantity, servingText, servingUnit.symbol]
+        let rows = facts.flatMap { [$0.key, $0.displayName, $0.amount, $0.unit?.symbol ?? ""] }
+        return (head + rows).joined(separator: "\u{1F}")
+    }
     @Published public var errorMessage: String?
     @Published public private(set) var revision: CustomProductRevision?
     private let store: any CustomProductStore
@@ -154,6 +163,7 @@ public struct NutrientKeyChoice: Identifiable, Equatable {
             name = legacy.name; brand = legacy.brand ?? ""; barcode = legacy.barcode ?? ""; kind = legacy.kind; basis = legacy.basis
             facts = legacy.facts.map(ProductFactInput.init); fillServing(legacy.serving); servingText = legacy.rawServingText ?? servingText
         }
+        shownWith = fingerprint
     }
     private func fillServing(_ serving: ProductServing?) {
         guard let serving else { return }
@@ -249,8 +259,8 @@ public struct CustomProductSharePreview: Identifiable {
         return context.profileReady && context.backendSupported && context.freshPublicationSupported && context.sharingAllowed && context.consentVersion == 2 && coordinator.pauseReason == nil && !coordinator.storageFailed
     }
     public var eligibilityText: String {
-        guard let coordinator, let context = coordinator.accountContext else { return "Sign in in Settings to share. Products remain available on this phone." }
-        if !context.backendSupported || !context.freshPublicationSupported { return "Sharing is unavailable on this server. You can still edit products on this phone." }
+        guard let coordinator, let context = coordinator.accountContext else { return "Sign in in Settings to share. Products remain available on this device." }
+        if !context.backendSupported || !context.freshPublicationSupported { return "Sharing is unavailable on this server. You can still edit products on this device." }
         return "Enable product sharing and review the current sharing disclosure in Settings."
     }
     private func latest(_ item: CustomProductRevision) -> ProductShareOperation? {
@@ -277,7 +287,7 @@ public struct CustomProductSharePreview: Identifiable {
     }
     public func detail(_ item: CustomProductRevision) -> String {
         guard let operation = latest(item) else { return "No contribution from this account." }
-        if operation.clientRevisionID != item.revisionID { return "The edited facts are saved on this phone; this revision has not been shared." }
+        if operation.clientRevisionID != item.revisionID { return "The edited facts are saved on this device; this revision has not been shared." }
         if reviewBlocker(item) != nil { return "Review the current contribution before sharing again. Your local product is saved." }
         if let retry = operation.nextAttemptAt { return "Retry available after \(retry.formatted(date: .abbreviated, time: .shortened))." }
         if let state = operation.reviewedCurrentState ?? operation.currentState, let revision = operation.reviewedCurrentRevision ?? operation.currentRevision { return "Current contribution: \(state.rawValue), revision \(revision)." }
@@ -350,7 +360,7 @@ public struct CustomProductSharePreview: Identifiable {
             if blocker != nil && reconciliation == nil { throw ProductAPIError.operationConflict }
             preview = CustomProductSharePreview(revision: item, context: context, ownState: state, reconciliation: reconciliation, currentSharedProduct: sharedProduct)
         } catch {
-            if reviewGeneration == token { errorMessage = "Could not prepare sharing review. Retry when connected. If this account already contributed on another device, this phone cannot yet adopt that sharing history. Remove an unresolved pending contribution before reviewing again." }
+            if reviewGeneration == token { errorMessage = "Could not prepare sharing review. Retry when connected. If this account already contributed on another device, this device cannot yet adopt that sharing history. Remove an unresolved pending contribution before reviewing again." }
         }
     }
     public func cancelReview() { reviewGeneration = UUID(); preview = nil }

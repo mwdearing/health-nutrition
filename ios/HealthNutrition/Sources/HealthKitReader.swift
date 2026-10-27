@@ -62,11 +62,9 @@ final class HealthKitReader: BodyActivityReading {
         if let latest = await latestWeight(before: now) {
             readings.latestWeightKg = latest.kilograms
             readings.latestWeightDate = latest.date
-            let thirtyDaysEarlier = Calendar.current.date(byAdding: .day, value: -30, to: latest.date) ?? latest.date
-            let earlier = await latestWeight(before: thirtyDaysEarlier)
-            readings.earlierWeightKg = earlier?.kilograms
-            readings.earlierWeightDate = earlier?.date
         }
+        let weightWindowStart = Calendar.current.date(byAdding: .day, value: -27, to: startOfDay) ?? startOfDay
+        readings.weightSamples = await weightSamples(from: weightWindowStart, to: now)
         return readings
     }
 
@@ -166,5 +164,23 @@ final class HealthKitReader: BodyActivityReading {
             limit: 1)
         guard let sample = try? await descriptor.result(for: healthStore).first else { return nil }
         return (Decimal(sample.quantity.doubleValue(for: .gramUnit(with: .kilo))), sample.endDate)
+    }
+
+    /// Every weight sample that starts from `start` up to `end`, each with the local day it was taken, read as a
+    /// Gregorian date. A sample whose day cannot be formed is skipped.
+    private func weightSamples(from start: Date, to end: Date) async -> [WeightSample] {
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end, options: .strictStartDate)
+        let descriptor = HKSampleQueryDescriptor(
+            predicates: [.quantitySample(type: HKQuantityType(.bodyMass), predicate: predicate)],
+            sortDescriptors: [])
+        guard let samples = try? await descriptor.result(for: healthStore) else { return [] }
+        var gregorian = Calendar(identifier: .gregorian)
+        gregorian.timeZone = TimeZone.current
+        return samples.compactMap { sample in
+            let parts = gregorian.dateComponents([.year, .month, .day], from: sample.startDate)
+            guard let year = parts.year, let month = parts.month, let day = parts.day,
+                  let calendarDay = CalendarDay(year: year, month: month, day: day) else { return nil }
+            return WeightSample(day: calendarDay, kilograms: Decimal(sample.quantity.doubleValue(for: .gramUnit(with: .kilo))))
+        }
     }
 }

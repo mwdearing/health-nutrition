@@ -84,6 +84,11 @@ public final class QuickAddViewModel: ObservableObject, Identifiable {
         self.makeID = makeID
     }
 
+    /// Whether a name or an amount has been typed. Closing the sheet then asks before dropping it.
+    public var hasTypedInput: Bool {
+        !name.trimmingCharacters(in: .whitespaces).isEmpty || !hasNoAmountTyped
+    }
+
     /// True while no field carries an amount: each is blank or a typed zero, which is not above zero (#536).
     public var hasNoAmountTyped: Bool {
         Field.allCases.allSatisfy { field in

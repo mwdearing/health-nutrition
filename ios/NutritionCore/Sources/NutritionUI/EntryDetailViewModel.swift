@@ -266,7 +266,7 @@ public final class EntryDetailViewModel: ObservableObject {
                 snapshotID: current.productSnapshotID, snapshotKind: { _ in snapshot?.kind }, category: intake.category)
             waterSharePercent = current.components.compactMap(\.hydrationPercent).first
             loadedWaterSharePercent = waterSharePercent
-            loggedUnits = LoggedUnitIndex.load(from: store)[intakeID] ?? [:]
+            loggedUnits = try LoggedUnitIndex.loadOrThrow(from: store)[intakeID] ?? [:]
             allValues = Self.allValues(of: snapshot)
             adds = Self.adds(of: snapshot, logged: current.components)
             // The field reads at the digits a reading carries (354.9 mL, not 354.88235475 mL). Untouched, a
@@ -371,6 +371,9 @@ public final class EntryDetailViewModel: ObservableObject {
         return occurredAt != storedOccurredAt
     }
 
+    /// Whether Close must ask first: unsaved changes would be lost by closing the entry.
+    public var closeAsksFirst: Bool { isDirty }
+
     /// Whether two amount texts state the same amount. Both are trimmed; when both parse, the decimals
     /// decide, so "40.0" and " 40 " match a stored 40. Otherwise the trimmed text decides. The loaded text
     /// is stored text and takes a point only; the draft is typed, so the region's comma is read in it.
@@ -413,6 +416,11 @@ public final class EntryDetailViewModel: ObservableObject {
             return legacy.text
         }
         return AmountDisplay.display(amount, unit: row.unit, system: preferences.unitSystem, roundsStoredUnit: true).text
+    }
+
+    /// Whether the editor offers the water-share stepper: a drink, or an entry with no product record, with a volume amount (#462).
+    public var showsWaterShare: Bool {
+        (kind == .drink || productName == nil) && components.contains(where: { $0.unit.dimension == .volume })
     }
 
     /// Writes one new revision with exactly one `edit` call. Invalid amounts write nothing.

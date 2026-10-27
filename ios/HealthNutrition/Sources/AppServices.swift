@@ -154,8 +154,9 @@ final class AppServices {
                 widgets: widgetSnapshotEraser, savedMeals: savedMealStore, supplements: supplementSchedules,
                 dailyReminders: reminderEraser, customReminders: customReminderEraser,
                 journal: journalStore, favorites: favoritesStore, recipes: recipeStore, goals: goalStore))
-        connections = ConnectionsPrivacyViewModel(
-            store: journalStore, favorites: favoritesStore, savedMeals: savedMealStore, appVersion: Self.appVersion,
+        connections = ConnectionsPrivacyViewModel(goals: goalStore,
+            store: journalStore, favorites: favoritesStore, savedMeals: savedMealStore,
+            appVersion: Self.appVersion,
             erasers: erasers,
             preferences: displayPreferences,
             beforeErase: {
@@ -181,7 +182,7 @@ final class AppServices {
             remindersStillPending: { await ReminderReadback.namesStillPending(in: SystemPendingReminderCenter()) })
         let openFoodFacts = OpenFoodFactsProductLookup(
             client: OpenFoodFactsClient(appVersion: Self.appVersion))
-        barcodeLookup = Self.makeBarcodeLookup(primary: openFoodFacts, community: community, account: account)
+        barcodeLookup = Self.makeBarcodeLookup(community: community, account: account)
         // USDA FoodData Central joins name search when the build carries a key; without one, search is
         // Open Food Facts alone, as before.
         let usdaKey = (Bundle.main.object(forInfoDictionaryKey: "USDA_FDC_API_KEY") as? String)?
@@ -217,7 +218,8 @@ final class AppServices {
         firstDayChecklist = FirstDayChecklistModel(
             store: journalStore, goals: goalStore, preferences: displayPreferences, health: appleHealth)
         bodyActivity = BodyActivityViewModel(
-            reader: HealthKitReader(), unitSystem: { [displayPreferences] in displayPreferences.unitSystem })
+            reader: HealthKitReader(), unitSystem: { [displayPreferences] in displayPreferences.unitSystem },
+            weightPlan: { [goalStore] in try? goalStore.weightPlan() })
         // Set after every stored property, so the Library can link to the supplement list.
         library.supplementStack = supplementStack
         // The list follows the journal. Every reload of the app's screens, from any window, reloads the
@@ -275,12 +277,14 @@ final class AppServices {
 
     /// Open Food Facts first. A barcode it does not find is asked of the community catalog, for a person who is
     /// signed in. Without an account the lookup is Open Food Facts alone, as before accounts existed.
+    /// Barcodes resolve through the community catalog only (see CatalogOnlyBarcodeLookup).
     private static func makeBarcodeLookup(
-        primary: BarcodeProductLookup, community: CommunityClient?, account: AccountViewModel?
+        community: CommunityClient?, account: AccountViewModel?
     ) -> BarcodeProductLookup {
-        guard let community, let account else { return primary }
-        return CommunityFallbackLookup(
-            primary: primary, community: community, isSignedIn: { account.phase == .signedIn })
+        let signedIn: (@MainActor @Sendable () -> Bool)? = account.map { account in
+            { @MainActor @Sendable in account.phase == .signedIn }
+        }
+        return CatalogOnlyBarcodeLookup.make(community: community, isSignedIn: signedIn)
     }
 
     /// The human check for sign-in, or nil when the build has no site key. Without a provider the sign-in

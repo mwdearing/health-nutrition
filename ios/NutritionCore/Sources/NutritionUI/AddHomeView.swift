@@ -58,7 +58,7 @@ public struct AddHomeView: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel(Self.searchRowTitle)
                     .accessibilityIdentifier("addSearchRow")
-                    .accessibilityHint("Opens product search on this phone, public food databases and shared foods.")
+                    .accessibilityHint("Opens product search on this device, public food databases and shared foods.")
                 }
                 Picker(selection: $model.meal) {
                     Text("None").tag(MealLabel?.none)
@@ -129,18 +129,14 @@ public struct AddHomeView: View {
         .background(TokenColors.background)
         .navigationTitle("Add")
         .sheet(item: $quickAdd) { form in
-            NavigationStack {
-                QuickAddView(model: form) { token in
+            QuickAddSheet(
+                form: form,
+                onSaved: { token in
                     self.model.quickAdded(token)
                     self.quickAdd = nil
                     self.onChanged()
-                }
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") { self.quickAdd = nil }
-                    }
-                }
-            }
+                },
+                onClose: { self.quickAdd = nil })
         }
         .onAppear { self.model.load() }
         .safeAreaInset(edge: .bottom) {
@@ -220,6 +216,32 @@ public struct AddHomeView: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// The amounts-only sheet. It observes its own form, so the typed-input check that guards Cancel and
+/// swipe-down is re-evaluated as the person types.
+private struct QuickAddSheet: View {
+    @ObservedObject var form: QuickAddViewModel
+    let onSaved: (AddUndoToken) -> Void
+    let onClose: () -> Void
+    @State var confirmDiscard = false
+
+    var body: some View {
+        NavigationStack {
+            QuickAddView(model: form, onSaved: onSaved)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") {
+                            if form.hasTypedInput { confirmDiscard = true } else { onClose() }
+                        }
+                    }
+                }
+                .confirmationDialog("Discard this entry?", isPresented: $confirmDiscard, titleVisibility: .visible) {
+                    Button("Discard", role: .destructive) { onClose() }
+                }
+        }
+        .interactiveDismissDisabled(form.hasTypedInput)
     }
 }
 
