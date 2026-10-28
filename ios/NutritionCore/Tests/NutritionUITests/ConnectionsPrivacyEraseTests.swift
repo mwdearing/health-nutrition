@@ -121,6 +121,7 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
         await gate.enter() // a delivery pass is running
         let erase = Task { await model.eraseAllData() }
         try? await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertTrue(model.isErasing, "the erase has started, so the check below is not vacuous")
         XCTAssertEqual(eraser.eraseCount, 0, "no store is touched while the pass runs")
         await gate.leave()
         let erased = await erase.value
