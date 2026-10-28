@@ -1477,7 +1477,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     /// commit order. The app uses it for every delete, whatever screen made it, to start delivery once the Undo
     /// window ends and to drop an older Undo offer. Handlers add up: a second caller does not replace the first.
     public func addOnDeleteCommitted(_ handler: @escaping @Sendable (String, UInt64) -> Void) {
-        lock.withLock { deleteCommittedHandlers.append(handler) }
+        lock.withLock { deleteCommittedHandlers = [handler] }
     }
 
     public var deleteSequence: UInt64 {
