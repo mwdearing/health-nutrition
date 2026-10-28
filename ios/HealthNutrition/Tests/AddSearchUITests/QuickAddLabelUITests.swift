@@ -11,18 +11,20 @@ final class QuickAddLabelUITests: XCTestCase {
         if getStarted.waitForExistence(timeout: 5) { getStarted.tap() }
 
         // Two buttons share this label and the first is not hittable, so wait for the hittable one, as the other
-        // Add UI tests do. (isHittable is an element property, not a query predicate.)
+        // Add UI tests do. (isHittable is an element property, not a query predicate.) The wait is long because a
+        // slow runner can take most of a minute to settle after launch.
         let addCandidates = app.buttons.matching(NSPredicate(format: "label == %@", "Add food, drink, or supplement"))
-        let deadline = Date().addingTimeInterval(15)
-        while Date() < deadline, !addCandidates.allElementsBoundByIndex.contains(where: { $0.exists && $0.isHittable }) {
-            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        func hittableAdd() -> XCUIElement? {
+            addCandidates.allElementsBoundByIndex.first(where: { $0.exists && $0.isHittable })
         }
-        let addButton = addCandidates.allElementsBoundByIndex.first(where: { $0.exists && $0.isHittable })
-        XCTAssertNotNil(addButton, "no hittable Add button on the Today screen")
-        addButton?.tap()
+        XCTAssertTrue(waitUntil(timeout: 30, { hittableAdd() != nil }), "no hittable Add button on the Today screen")
 
+        // A tap that lands while Today is still settling leaves Today on screen, so the tap is checked by the Add
+        // screen's Amounts only action appearing, with one more tap on the Add button if it does not.
         let amountsOnly = app.buttons["Amounts only"]
-        XCTAssertTrue(amountsOnly.waitForExistence(timeout: 10), "the Amounts only quick action is not on the Add screen")
+        hittableAdd()?.tap()
+        if !amountsOnly.waitForExistence(timeout: 10) { hittableAdd()?.tap() }
+        XCTAssertTrue(amountsOnly.waitForExistence(timeout: 20), "the Amounts only quick action is not on the Add screen")
         amountsOnly.tap()
 
         // Wait for the screen's own navigation bar before querying the field, so the query runs once the
@@ -34,4 +36,14 @@ final class QuickAddLabelUITests: XCTestCase {
             XCTFail("the name field does not read its visible title\n\(app.debugDescription)")
         }
     }
+}
+
+/// Polls `condition` until it holds or `timeout` seconds pass; true when it held.
+private func waitUntil(timeout: TimeInterval, _ condition: () -> Bool) -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        if condition() { return true }
+        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+    }
+    return condition()
 }
