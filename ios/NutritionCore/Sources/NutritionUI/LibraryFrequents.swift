@@ -43,9 +43,8 @@ public struct FrequentItemsProvider {
         var newest: [String: (intake: Intake, revision: IntakeRevision)] = [:]
         for intake in intakes {
             // An entry with no amounts cannot be repeated, so it is not counted toward anything.
-            // A failed read throws, so the Library shows its load error rather than undercounting the item.
-            let revisions = try store.revisions(of: intake.id)
-            guard let current = revisions.first(where: { $0.number == intake.currentRevision }),
+            guard let revisions = try? store.revisions(of: intake.id),
+                let current = revisions.first(where: { $0.number == intake.currentRevision }),
                 !current.components.isEmpty
             else { continue }
             let key = RecentItemsProvider.key(category: intake.category, revision: current, meal: intake.meal)

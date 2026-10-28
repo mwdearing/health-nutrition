@@ -49,9 +49,9 @@ public struct RecentItemsProvider {
         let intakes = try store.activeIntakes().filter { $0.lifecycle == .active }.sorted { $0.occurredAt > $1.occurredAt }
         for intake in intakes {
             guard result.count < limit else { break }
-            // A failed read throws: one unreadable entry is a failed load, not a row that quietly goes missing.
-            let revisions = try store.revisions(of: intake.id)
-            guard let current = revisions.first(where: { $0.number == intake.currentRevision }) else { continue }
+            guard let revisions = try? store.revisions(of: intake.id),
+                let current = revisions.first(where: { $0.number == intake.currentRevision })
+            else { continue }
             let key = Self.key(category: intake.category, revision: current, meal: intake.meal)
             guard seen.insert(key).inserted else { continue }
             result.append(RecentItem(id: key, template: template(intake: intake, revision: current), lastUsedAt: intake.occurredAt))
@@ -94,8 +94,8 @@ public struct RecentItemsProvider {
         // Each snapshot is read once, however many entries used it: a product logged hundreds of times is one query.
         var productsBySnapshot: [String: ProductDefinition?] = [:]
         for intake in intakes where !keptOutOfLibrary.contains(intake.id) {
-            let revisions = try store.revisions(of: intake.id)
-            guard let current = revisions.first(where: { $0.number == intake.currentRevision }),
+            guard let revisions = try? store.revisions(of: intake.id),
+                let current = revisions.first(where: { $0.number == intake.currentRevision }),
                 let snapshotID = current.productSnapshotID
             else { continue }
             let loaded: ProductDefinition?
