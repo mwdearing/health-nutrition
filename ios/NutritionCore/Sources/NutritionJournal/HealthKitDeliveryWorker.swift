@@ -514,7 +514,7 @@ private func deliver(_ operation: OutboxOperation, now: Date) async -> HealthKit
         }
         // An erase that began after this pass read the queue may have removed this entry, so nothing is
         // written to Health or recorded for it (#841).
-, the ledger is widened to everything this pass may leave in
+        // Before anything is written, the ledger is widened to everything this pass may leave in
         // Health, so a crash or a failed record after the save never hides a sample that is there.
         if !writable.isEmpty {
             do {
@@ -635,7 +635,8 @@ private func deliver(_ operation: OutboxOperation, now: Date) async -> HealthKit
         // A type that is neither writable nor denied was never asked (`.notDetermined`), so nothing
         // can exist for it and it is silently skipped: no delete is attempted for it.
         let removable = identifiers.filter { allowed[Self.typeIdentifier(for: $0)] == true }
- = removable.isEmpty ? 0 : try await writer.deleteSamples(syncIdentifiers: removable)
+        do {
+            let deleted = removable.isEmpty ? 0 : try await writer.deleteSamples(syncIdentifiers: removable)
             if let paused = await pausedForErase(operation, now: now) { return paused }
             // What stays in Health is exactly the denied types' samples. A failure to record it keeps the
             // operation retryable rather than parking it over a ledger that names deleted samples.
