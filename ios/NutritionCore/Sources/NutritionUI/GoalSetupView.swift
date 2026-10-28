@@ -190,7 +190,10 @@ public struct GoalSetupView: View {
     /// and sex as they are, or the same values to edit.
     @ViewBuilder
     private var vitaminsSection: some View {
-        heading("Vitamins and minerals")
+        // With every covered vitamin and mineral already set, there is nothing to offer, so nothing shows.
+        if model.referenceGroup == nil || model.vitaminPrefillNotice != nil {
+            heading("Vitamins and minerals")
+        }
         if let notice = model.vitaminPrefillNotice {
             choice(GoalSetupViewModel.vitaminRecommendedTitle, selected: model.vitaminChoice == .recommended) {
                 model.chooseVitamins(.recommended)
@@ -209,7 +212,7 @@ public struct GoalSetupView: View {
             Text(GoalSetupViewModel.vitaminSourceNotice)
                 .font(.footnote)
                 .foregroundStyle(TokenColors.textSecondary)
-        } else {
+        } else if model.referenceGroup == nil {
             Text(GoalSetupViewModel.vitaminNoGroupNotice)
                 .font(.footnote)
                 .foregroundStyle(TokenColors.textSecondary)

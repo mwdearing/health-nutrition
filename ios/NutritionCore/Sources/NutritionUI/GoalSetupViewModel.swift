@@ -199,9 +199,10 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
         }
     }
 
-    /// "Prefilled for men 31 to 50. You can change any of them.", or nil without a group.
+    /// "Prefilled for men 31 to 50. You can change any of them.", or nil without a group or with nothing left
+    /// to prefill (every covered vitamin and mineral already has a goal).
     public var vitaminPrefillNotice: String? {
-        guard let label = referenceGroup?.label else { return nil }
+        guard let label = referenceGroup?.label, !vitaminPrefill.isEmpty else { return nil }
         return "Prefilled for \(label.prefix(1).lowercased() + label.dropFirst()). You can change any of them."
     }
 

@@ -62,6 +62,17 @@ final class GoalSetupVitaminsTests: XCTestCase {
             "From the Dietary Reference Intakes (NIH). Vitamins A, D and E are yours to set, since labels often list them in IU.")
     }
 
+    /// With every covered vitamin and mineral already set there is nothing to prefill, so no notice is given.
+    func testNothingToPrefillGivesNoNotice() {
+        let men35 = ReferenceGroup(sex: .male, ageBand: .years31To50)
+        let all = ReferenceGoalPrefill.goals(for: men35, existingGoalKeys: [])
+        let (model, _) = makeModel(goals: all)
+        model.sex = .male
+        model.ageText = "35"
+        XCTAssertEqual(model.vitaminPrefill, [])
+        XCTAssertNil(model.vitaminPrefillNotice)
+    }
+
     /// Without a choice, saving writes the big three and nothing for vitamins or minerals.
     func testWithoutAChoiceNoVitaminGoalIsSaved() throws {
         let (model, store) = makeModel()
