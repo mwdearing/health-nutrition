@@ -157,7 +157,7 @@ public enum UpperLimitScope: String, Sendable, Hashable, Codable {
     case preformedVitaminA
 }
 
-/// One nutrient's published adult reference values for one group, in the unit the app counts that
+/// One nutrient's published reference values for one group, in the unit the app counts that
 /// nutrient in.
 ///
 /// These are population reference values, not advice for a person: they are what a screen may show
@@ -191,9 +191,9 @@ public struct ReferenceIntake: Sendable, Hashable {
     }
 }
 
-/// The adult Dietary Reference Intakes for the vitamins and minerals the app tracks.
+/// The Dietary Reference Intakes, ages 14 and over, for the vitamins and minerals the app tracks.
 ///
-/// Values are the Food and Nutrition Board's adult RDAs, AIs and ULs as the NIH Office of Dietary
+/// Values are the Food and Nutrition Board's RDAs, AIs and ULs as the NIH Office of Dietary
 /// Supplements health-professional fact sheets state them; `docs/reference-intakes.md` lists each
 /// source. Units are the app's own for each key: vitamin A is mcg RAE, niacin mg NE, folate mcg DFE
 /// and vitamin E mg alpha-tocopherol, which is how labels state them in those units. Copper is the one

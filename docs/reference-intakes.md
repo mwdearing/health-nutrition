@@ -1,9 +1,9 @@
-# Reference intakes: adult RDAs, AIs and upper limits
+# Reference intakes: RDAs, AIs and upper limits, 14 and over
 
-`ReferenceIntakes` (`ios/NutritionCore/Sources/NutritionDomain/ReferenceIntakes.swift`) holds the published adult
-Dietary Reference Intakes for the vitamins and minerals the app tracks. It is a table, not advice: a screen may show
-these values beside a day's total so the number has something to be read against, and say which figure it is (RDA, AI
-or UL). Nothing in it is personalised beyond the published row a person picks.
+`ReferenceIntakes` (`ios/NutritionCore/Sources/NutritionDomain/ReferenceIntakes.swift`) holds the published Dietary
+Reference Intakes, for ages 14 and over, for the vitamins and minerals the app tracks. It is a table, not advice: a
+screen may show these values beside a day's total so the number has something to be read against, and say which figure
+it is (RDA, AI or UL). Nothing in it is personalised beyond the published row a person picks.
 
 ## What it covers
 
