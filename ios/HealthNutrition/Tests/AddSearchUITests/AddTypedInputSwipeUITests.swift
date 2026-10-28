@@ -9,7 +9,7 @@ final class AddTypedInputSwipeUITests: XCTestCase {
     /// covers the same behavior. Remove this override to run them again.
     override func setUpWithError() throws {
         try super.setUpWithError()
-        throw XCTSkip("Edge-swipe UI tests are quarantined as flaky on CI (#930).")
+        // DIAG-930: skip removed on this diagnostic branch only.
     }
 
     /// Ends the app after each test so a leftover app cannot carry its typed state into the next run.
@@ -74,6 +74,15 @@ final class AddTypedInputSwipeUITests: XCTestCase {
                       "the edge swipe popped the details form and lost the typed name without asking")
     }
 
+    /// DIAG-930: runs the clean-form test five more times in one job, to catch the intermittent double pop.
+    func testDiagCleanFormRepeated() throws {
+        for attempt in 1...5 {
+            print("DIAG-930 attempt \(attempt)")
+            try testEdgeSwipeBackStillWorksOnACleanDetailsForm()
+            XCUIApplication().terminate()
+        }
+    }
+
     /// The gate must switch off only while there is typed input: on a clean details form the edge drag
     /// still pops back to Add, so the gesture is known to work again once the form is clean.
     func testEdgeSwipeBackStillWorksOnACleanDetailsForm() throws {
@@ -103,9 +112,21 @@ final class AddTypedInputSwipeUITests: XCTestCase {
             RunLoop.current.run(until: Date().addingTimeInterval(0.2))
         }
         RunLoop.current.run(until: Date().addingTimeInterval(0.8))
+        func diag(_ label: String) {
+            let bars = app.navigationBars.allElementsBoundByIndex.map { $0.identifier }
+            let typeItShown = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Type it in")).firstMatch.exists
+            let sheets = app.sheets.count
+            print("DIAG-930 \(label) t=\(Date().timeIntervalSince1970) bars=\(bars) typeIt=\(typeItShown) sheets=\(sheets)")
+        }
+        diag("before-drag")
         let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5))
         let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5))
         start.press(forDuration: 0.1, thenDragTo: end, withVelocity: .fast, thenHoldForDuration: 0)
+        diag("after-drag-0s")
+        RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        diag("after-drag-0.5s")
+        RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+        diag("after-drag-2s")
 
         // The pop itself: back on Add, the Type it in tile is on screen again.
         let typeItAgain = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Type it in")).firstMatch
