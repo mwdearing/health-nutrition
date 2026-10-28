@@ -7,13 +7,15 @@ or UL). Nothing in it is personalised beyond the published row a person picks.
 
 ## What it covers
 
-- **Adults only** in the code (the 14 to 18 rows and the FDA Daily Values are documented below as data), in twelve published rows: women or men aged 19 to 30, 31 to 50, 51 to 70, or 71 and over, plus
+- **Adults only**, in twelve published rows: women or men aged 19 to 30, 31 to 50, 51 to 70, or 71 and over, plus
   pregnancy and breastfeeding (lactation) for ages 19 to 30 and 31 to 50 ("Pregnancy 19 to 30", "Breastfeeding 31 to
   50"). Pregnancy and breastfeeding use the Pregnancy and Lactation columns of the same fact sheet tables; their upper
   limits are the adult ones for the band, except phosphorus in pregnancy (3,500 mg instead of 4,000), the one limit
   those tables set differently. Anyone under 19 has rows of their own that the table does not carry, and there is no
   merged row for someone who does not give a sex, because the sources publish none. `ReferenceGroup(lifeStage:ageBand:)`
   returns nil for a band the tables do not publish (pregnancy over 50), and a decoded group is held to the same rule.
+- **Documented as data only**: the published 14 to 18 rows and the FDA Daily Values, in the sections below. The
+  code does not carry them yet.
 - **25 nutrients**: vitamins A, B6, B12, C, D, E and K, thiamin, riboflavin, niacin, folate, biotin, pantothenic acid,
   calcium, iron, magnesium, phosphorus, potassium, zinc, chromium, copper, iodine, manganese, molybdenum and selenium.
   The keys are the journal's own (`HealthKitWritePlanner.micronutrientKeys`), and a test pins that every key and unit
