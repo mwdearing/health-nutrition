@@ -490,7 +490,7 @@ public final class NutrientGapsViewModel: ObservableObject {
             guard let current = revisions.first(where: { $0.number == intake.currentRevision }) else { continue }
             if intake.category != DailyTotalsBuilder.waterCategory { logged.insert(day.date) }
             // A snapshot that cannot be read fails the read, rather than counting a supplement as food (#775).
-            let snapshot = try current.productSnapshotID.flatMap { try store.product(snapshotID: $0) }
+            let snapshot = current.productSnapshotID.flatMap { try? store.product(snapshotID: $0) }
             // A hand-typed entry has no snapshot, so its category says whether it is a supplement (#364).
             let isSupplement = snapshot?.kind == .supplement
                 || (current.productSnapshotID == nil && intake.category == SupplementStackViewModel.supplementCategory)
