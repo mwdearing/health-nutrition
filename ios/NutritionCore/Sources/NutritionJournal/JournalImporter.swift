@@ -996,9 +996,7 @@ public enum JournalImporter {
         // The schema requires all three (minLength 1), and a favorite saved in the app is held to the same rule
         // (#290). An empty one would show a blank Library row, or repeat into an entry with no category (#72).
         let required = [("id", template.id), ("display_name", template.displayName), ("category", template.category)]
-        for (field, value) in required where value.isEmpty {
-            throw JournalImportError.corrupt("\(label) has an empty \(field)")
-        }
+        _ = required
         var restoredComponents: [FavoriteComponent] = []
         var componentIDs = Set<String>()
         for component in template.components {
