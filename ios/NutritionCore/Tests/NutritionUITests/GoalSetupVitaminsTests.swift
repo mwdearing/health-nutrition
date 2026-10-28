@@ -128,15 +128,27 @@ final class GoalSetupVitaminsTests: XCTestCase {
         XCTAssertEqual(try saved(store)["iron"]?.target, 20)
     }
 
-    /// A goal in the store is kept even when the Goals screen's rows never loaded, so the prefill offered it.
+    /// A goal in the store is neither offered nor overwritten even when the Goals screen's rows never loaded.
     func testAStoredGoalIsKeptWhenTheRowsDidNotLoad() throws {
         let (model, store) = makeModel(goals: [NutrientGoal(nutrient: "iron", target: 20, unit: .mg)], loadRows: false)
         manAtResults(model)
-        XCTAssertTrue(model.vitaminPrefill.contains { $0.nutrient == "iron" }, "the rows did not hide it")
+        XCTAssertFalse(model.vitaminPrefill.contains { $0.nutrient == "iron" }, "the store check hides it")
         model.chooseVitamins(.recommended)
         XCTAssertTrue(model.save())
         XCTAssertEqual(try saved(store)["iron"]?.target, 20)
         XCTAssertEqual(try saved(store)["calcium"]?.target, 1000)
+    }
+
+    /// A goal kept under an alias (`vitamin-c`) counts for the nutrient, with or without the rows loaded.
+    func testAGoalUnderAnAliasIsNeitherOfferedNorDuplicated() throws {
+        let (model, store) = makeModel(
+            goals: [NutrientGoal(nutrient: "vitamin-c", target: 500, unit: .mg)], loadRows: false)
+        manAtResults(model)
+        XCTAssertFalse(model.vitaminPrefill.contains { $0.nutrient == "vitaminC" })
+        model.chooseVitamins(.recommended)
+        XCTAssertTrue(model.save())
+        XCTAssertNil(try saved(store)["vitaminC"])
+        XCTAssertEqual(try saved(store)["vitamin-c"]?.target, 500)
     }
 
     /// "Set my own" fills the fields with the reference values; an edited one is what is saved, and a

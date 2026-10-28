@@ -212,10 +212,25 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
         sex == nil || ageYears() == nil
     }
 
-    /// The reference values the step offers: one per covered vitamin or mineral without a goal already.
+    /// The reference values the step offers: one per covered vitamin or mineral without a goal already, read
+    /// from the Goals screen's rows and from the store itself, so a goal is skipped even when the rows did not load.
     public var vitaminPrefill: [NutrientGoal] {
         let existing = Set(goals.rows.compactMap { $0.targetText == nil ? nil : $0.nutrient })
         return ReferenceGoalPrefill.goals(for: referenceGroup, existingGoalKeys: existing)
+            .filter { !storeHoldsGoal(for: $0.nutrient) }
+    }
+
+    /// Whether the store holds a goal for this nutrient under its own key or an alias (`vitamin-c`). A store
+    /// that cannot be read counts as holding one, so nothing is offered or written over a goal that may exist.
+    private func storeHoldsGoal(for nutrient: String) -> Bool {
+        for key in HealthKitWritePlanner.acceptedKeys(for: nutrient) {
+            do {
+                if try goals.storedGoal(for: key) != nil { return true }
+            } catch {
+                return true
+            }
+        }
+        return false
     }
 
     /// Picks how vitamins and minerals are saved. "Set my own" fills the fields with the reference values
@@ -335,11 +350,9 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
             if let value = AmountParser.parseTyped(text), value > 0 { continue }
             fieldErrors[key] = Self.invalidFieldNotice
         }
-        // A goal the store holds is never overwritten, even when the Goals screen's rows did not load and so did
-        // not hide it from the prefill. A store that cannot be read fails the save below, when the goals are captured.
-        let vitamins = vitaminGoalsToSave().filter { entry in
-            ((try? goals.storedGoal(for: entry.nutrient)) ?? nil) == nil
-        }
+        // A goal the store holds, under the key or an alias, is never overwritten; checked again here because the
+        // store may have changed since the step was shown.
+        let vitamins = vitaminGoalsToSave().filter { !storeHoldsGoal(for: $0.nutrient) }
         for entry in vitamins {
             if let value = AmountParser.parseTyped(entry.text), value > 0 { continue }
             fieldErrors[entry.nutrient] = Self.invalidFieldNotice
