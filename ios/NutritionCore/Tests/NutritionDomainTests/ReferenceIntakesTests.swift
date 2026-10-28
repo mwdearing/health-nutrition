@@ -178,8 +178,9 @@ final class ReferenceIntakesTests: XCTestCase {
     }
 
     func testTheNewGroupsReadAsWordsAndComeLastInThePicker() {
-        XCTAssertEqual(ReferenceGroup.all.suffix(4).map(\.label), [
-            "Pregnancy 19 to 30", "Pregnancy 31 to 50", "Breastfeeding 19 to 30", "Breastfeeding 31 to 50",
+        XCTAssertEqual(ReferenceGroup.all.suffix(6).map(\.label), [
+            "Pregnancy 14 to 18", "Pregnancy 19 to 30", "Pregnancy 31 to 50",
+            "Breastfeeding 14 to 18", "Breastfeeding 19 to 30", "Breastfeeding 31 to 50",
         ])
         XCTAssertEqual(Set(ReferenceGroup.all).count, ReferenceGroup.all.count)
     }
