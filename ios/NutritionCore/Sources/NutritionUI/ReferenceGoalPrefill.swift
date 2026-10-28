@@ -21,9 +21,8 @@ public enum ReferenceGoalPrefill {
         guard let group else { return [] }
         let taken = Set(existingGoalKeys.map { HealthKitWritePlanner.canonicalKey(for: $0) })
         return ReferenceIntakes.intakes(for: group).compactMap { intake in
-            guard !GoalsViewModel.referenceGoalExcludedKeys.contains(intake.nutrient),
-                !taken.contains(intake.nutrient)
-            else { return nil }
+            guard !GoalsViewModel.referenceGoalExcludedKeys.contains(intake.nutrient) else { return nil }
+            _ = taken
             return NutrientGoal(nutrient: intake.nutrient, target: intake.amount, unit: intake.unit)
         }
     }
