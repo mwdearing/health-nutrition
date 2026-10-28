@@ -103,7 +103,7 @@ public struct RecentItemsProvider {
                 loaded = cached
             } else {
                 // A failed read fails the load rather than dropping the product's row (#775).
-                loaded = try store.product(snapshotID: snapshotID)
+                loaded = try? store.product(snapshotID: snapshotID)
                 productsBySnapshot[snapshotID] = loaded
             }
             guard let product = loaded,
