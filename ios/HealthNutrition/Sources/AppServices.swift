@@ -154,6 +154,9 @@ final class AppServices {
                 widgets: widgetSnapshotEraser, savedMeals: savedMealStore, supplements: supplementSchedules,
                 dailyReminders: reminderEraser, customReminders: customReminderEraser,
                 journal: journalStore, favorites: favoritesStore, recipes: recipeStore, goals: goalStore))
+        // One gate for the Health delivery worker and Erase all data: the erase holds it while it runs, so no
+        // delivery pass is between its busy check and its Health write while the stores are emptied (#841).
+        let healthKitDeliveryGate = DeliveryRunGate()
         connections = ConnectionsPrivacyViewModel(goals: goalStore,
             store: journalStore, favorites: favoritesStore, savedMeals: savedMealStore,
             appVersion: Self.appVersion,
@@ -179,7 +182,8 @@ final class AppServices {
                 guard let account else { return }
                 try await account.discardLocalSession()
             },
-            remindersStillPending: { await ReminderReadback.namesStillPending(in: SystemPendingReminderCenter()) })
+            remindersStillPending: { await ReminderReadback.namesStillPending(in: SystemPendingReminderCenter()) },
+            deliveryGate: healthKitDeliveryGate)
         let openFoodFacts = OpenFoodFactsProductLookup(
             client: OpenFoodFactsClient(appVersion: Self.appVersion))
         barcodeLookup = Self.makeBarcodeLookup(community: community, account: account)
@@ -203,7 +207,8 @@ final class AppServices {
             store: journalStore,
             writer: HealthKitSampleWriter(),
             totals: { intakeID, revision in try await totals.totals(intakeID: intakeID, revision: revision) },
-            isBusy: { await MainActor.run { !busyConnections.canExport } }
+            isBusy: { await MainActor.run { !busyConnections.canExport } },
+            gate: healthKitDeliveryGate
         )
         self.healthKitDelivery = healthKitDelivery
         let healthKitDeliveryStatus = HealthKitDeliveryStatus(

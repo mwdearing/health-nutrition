@@ -301,6 +301,11 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     private let remindersStillPending: () async -> [String]
     /// How long an erase waits for a running import; a test shortens it so the timeout path runs quickly.
     private let importWaitSeconds: TimeInterval
+    /// The Health delivery worker's run gate. An erase holds it while it runs, so no delivery pass is between its
+    /// busy check and its Health write while the stores are emptied (#841). Nil only where no worker runs.
+    private let deliveryGate: DeliveryRunGate?
+    /// How long an erase waits for a delivery pass that holds the gate; a test shortens it.
+    private let deliveryWaitSeconds: TimeInterval
 
     /// Changes whenever this screen creates, clears, or forgets an export. An import may remove only the
     /// copy that was already current when that import began; a later export may contain restored rows.
@@ -360,9 +365,13 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         eraseLocalAccount: @escaping () async throws -> Void = {},
         remindersStillPending: @escaping () async -> [String] = { [] },
         importWaitSeconds: TimeInterval = ConnectionsPrivacyViewModel.eraseWaitsForImportSeconds,
-        importGate: ImportGate = ImportGate()
+        importGate: ImportGate = ImportGate(),
+        deliveryGate: DeliveryRunGate? = nil,
+        deliveryWaitSeconds: TimeInterval = ConnectionsPrivacyViewModel.eraseWaitsForImportSeconds
     ) {
         self.importGate = importGate
+        self.deliveryGate = deliveryGate
+        self.deliveryWaitSeconds = deliveryWaitSeconds
         self.store = store
         self.favorites = favorites
         self.savedMeals = savedMeals
@@ -638,6 +647,26 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             resolveDeferredImportEffectsAfterErase(journalEraseSucceeded: false)
             return false
         }
+        // Then take the Health delivery gate, so no pass is between its busy check and its Health write while the
+        // stores are emptied (#841). A pass still running after the wait is not cancelled: the erase touches
+        // nothing and offers Retry, as it does for an import.
+        let erased: Bool
+        if await deliveryGate?.pause(upTo: deliveryWaitSeconds) ?? true {
+            erased = await eraseHoldingDelivery()
+        } else {
+            errorMessage = Self.eraseNothingErasedMessage
+            eraseRetryAvailable = true
+            resolveDeferredImportEffectsAfterErase(journalEraseSucceeded: false)
+            erased = false
+        }
+        // On every exit, the timeout included. After a pause that timed out the gate holds nothing for this erase,
+        // so this does nothing then.
+        await deliveryGate?.resumeAfterPause()
+        return erased
+    }
+
+    /// The erase itself, run while it holds the Health delivery gate. Returns whether every store erased itself.
+    private func eraseHoldingDelivery() async -> Bool {
         // With the import gone, no import can run again until this erase finishes. A restore flag left behind would
         // let the next import of that file put back favorites the person is erasing, so it goes before any store is
         // touched. A flag that cannot be removed stops the erase with nothing erased, and the screen offers Retry.

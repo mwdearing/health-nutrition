@@ -303,8 +303,9 @@ public struct HealthKitDeliveryWorker: Sendable {
     private let store: any JournalDeliverySuspension
     private let writer: any HealthSampleWriter
     private let totals: NutrientTotalsProvider
-    /// Shared by every copy of this worker, so two calls to `runOnce` never overlap.
-    private let gate = DeliveryRunGate()
+    /// Shared by every copy of this worker, so two calls to `runOnce` never overlap. The app passes the same gate
+    /// to Erase all data, which holds it while it runs (#841).
+    private let gate: DeliveryRunGate
     /// True while Erase all data or a restore runs. The entries a pass read may be gone then, so the pass
     /// writes nothing to Health and records nothing in the store (#777, #841).
     private let isBusy: @Sendable () async -> Bool
@@ -312,12 +313,14 @@ public struct HealthKitDeliveryWorker: Sendable {
     public init(
         store: any JournalDeliverySuspension, writer: any HealthSampleWriter,
         totals: @escaping NutrientTotalsProvider,
-        isBusy: @escaping @Sendable () async -> Bool = { false }
+        isBusy: @escaping @Sendable () async -> Bool = { false },
+        gate: DeliveryRunGate = DeliveryRunGate()
     ) {
         self.store = store
         self.writer = writer
         self.totals = totals
         self.isBusy = isBusy
+        self.gate = gate
     }
 
     /// The outcome for an operation that waits for an erase or a restore to finish: not attempted now, and
