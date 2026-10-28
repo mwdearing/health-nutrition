@@ -21,8 +21,9 @@ or UL). Nothing in it is personalised beyond the published row a person picks.
   The keys are the journal's own (`HealthKitWritePlanner.micronutrientKeys`), and a test pins that every key and unit
   matches the nutrient mapping.
 - **Left out of `ReferenceIntakes`** (the journal still records these keys, and the FDA Daily Values below cover
-  chloride, sodium and the macronutrients): chloride (its DRI was not verified against a primary source; see "Not verified"), sodium (its 2,300 mg is a chronic-disease risk reduction
-  level, not an upper limit), and water, energy and the macronutrients, which are goals a person sets.
+  chloride, sodium and the macronutrients): chloride (its DRI was not verified against a primary source; see "Not
+  verified"), sodium (its 2,300 mg is a chronic-disease risk reduction level, not an upper limit), and water, energy
+  and the macronutrients, which are goals a person sets.
 
 ## Units
 
