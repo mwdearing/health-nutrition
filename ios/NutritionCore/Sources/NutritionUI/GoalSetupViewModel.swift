@@ -71,9 +71,13 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
     @Published public private(set) var adjustmentNote: String?
 
     private let goals: GoalsViewModel
+    private let now: () -> Date
+    private let calendar: Calendar
 
-    public init(goals: GoalsViewModel) {
+    public init(goals: GoalsViewModel, now: @escaping () -> Date = { Date() }, calendar: Calendar = .current) {
         self.goals = goals
+        self.now = now
+        self.calendar = calendar
     }
 
     /// The unit system the answers are asked in.
@@ -433,6 +437,26 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
     private static func inchesOrNone(_ text: String) -> Decimal? {
         if text.trimmingCharacters(in: .whitespaces).isEmpty { return 0 }
         return wholeOrZero(text)
+    }
+
+    /// "Plan reaches 75 kg on Jun 24, 2026" for the pace step: the day the chosen pace reaches the goal
+    /// weight, counted from today in the calendar's time zone. Nil until a loss or gain has a pace, a valid
+    /// goal weight and a day that can be reached.
+    public var paceGoalDayText: String? {
+        guard aim == .lose || aim == .gain, let pace = selectedPaceKilograms,
+              let current = weightKilograms(), let goal = goalWeightKilograms(), goalWeightNotice == nil
+        else { return nil }
+        var gregorian = Calendar(identifier: .gregorian)
+        gregorian.timeZone = calendar.timeZone
+        let parts = gregorian.dateComponents([.year, .month, .day], from: now())
+        guard let today = CalendarDay(year: parts.year ?? 0, month: parts.month ?? 0, day: parts.day ?? 0),
+              let day = PlanProjection.goalDay(
+                currentKilograms: current, goalKilograms: goal, weeklyPaceKilograms: pace, from: today)
+        else { return nil }
+        let typed = unitSystem == .usCustomary ? goalWeightPoundsText : goalWeightKilogramsText
+        guard let amount = AmountParser.parseTyped(typed) else { return nil }
+        let goalText = BodyActivityViewModel.oneDecimal(amount) + (unitSystem == .usCustomary ? " lb" : " kg")
+        return "Plan reaches \(goalText) on \(BodyActivityViewModel.dayText(day))"
     }
 
     private func weightKilograms() -> Decimal? {
