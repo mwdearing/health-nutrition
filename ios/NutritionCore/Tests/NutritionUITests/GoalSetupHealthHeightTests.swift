@@ -63,6 +63,21 @@ final class GoalSetupHealthHeightTests: XCTestCase {
         XCTAssertEqual(model.heightCentimetersText, "175")
     }
 
+    func testAHeightThePersonClearedIsNotFilledAgainOnTheBodyStep() {
+        let model = makeModel(healthHeight: 175)
+        XCTAssertEqual(model.heightCentimetersText, "175")
+        model.aim = .maintain
+        model.next()
+        model.sex = .male
+        model.ageText = "30"
+        model.next()
+        model.heightCentimetersText = ""
+        model.back()
+        model.next()
+        XCTAssertEqual(model.step, .body)
+        XCTAssertEqual(model.heightCentimetersText, "", "a height the person cleared stays cleared")
+    }
+
     func testATypedHeightIsNotReplaced() {
         let model = makeModel(healthHeight: 175)
         model.heightCentimetersText = "168"

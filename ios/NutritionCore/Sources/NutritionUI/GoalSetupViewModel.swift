@@ -71,6 +71,8 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
     @Published public private(set) var adjustmentNote: String?
 
     private let goals: GoalsViewModel
+    /// Set once Health's height has been put in the field, so a height the person then clears stays cleared.
+    private var filledHeightFromHealth = false
     private let now: () -> Date
     private let calendar: Calendar
 
@@ -85,7 +87,8 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
     /// type it. Runs when the sheet opens and again on the body step, in case Today's read arrived since. A
     /// height that, once rounded for the field, is outside the range the estimate accepts is left out.
     func fillHeightFromHealth() {
-        guard heightCentimetersText.isEmpty, heightFeetText.isEmpty, heightInchesText.isEmpty,
+        guard !filledHeightFromHealth,
+              heightCentimetersText.isEmpty, heightFeetText.isEmpty, heightInchesText.isEmpty,
               let centimeters = goals.latestHeightCentimeters()
         else { return }
         if unitSystem == .usCustomary {
@@ -96,10 +99,12 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
             let feet = Self.rounded(totalInches / 12, scale: 0, .down)
             heightFeetText = DecimalFormatting.text(feet)
             heightInchesText = DecimalFormatting.text(totalInches - feet * 12)
+            filledHeightFromHealth = true
         } else {
             let whole = Self.rounded(centimeters, scale: 0, .plain)
             guard whole >= 120, whole <= 230 else { return }
             heightCentimetersText = DecimalFormatting.text(whole)
+            filledHeightFromHealth = true
         }
     }
 
@@ -366,6 +371,8 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
         resultError = nil
         fieldErrors = [:]
         adjustmentNote = nil
+        // A cleared sheet is a fresh start, so Health's height may fill it again.
+        filledHeightFromHealth = false
         fillHeightFromHealth()
     }
 
