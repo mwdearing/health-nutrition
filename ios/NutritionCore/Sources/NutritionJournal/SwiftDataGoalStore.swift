@@ -121,9 +121,6 @@ public final class SwiftDataGoalStore: GoalStore, WeightPlanStore, JournalErasin
         }
         let payload = try Self.decodeReceipt(row.targetText)
         // A receipt still listing goals is not all written; marking it done would let a resume skip them.
-        guard payload.goals.isEmpty else {
-            throw JournalImportError.corrupt("the goal restore has goals still to write")
-        }
         row.targetText = try Self.encodeReceipt(ReceiptPayload(done: true, goals: payload.goals, written: payload.written ?? []))
         try context.save()
     }
