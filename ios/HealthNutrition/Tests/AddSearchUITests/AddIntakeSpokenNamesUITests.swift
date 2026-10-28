@@ -48,16 +48,36 @@ final class AddIntakeSpokenNamesUITests: XCTestCase {
         XCTAssertTrue(lookUp.waitForExistence(timeout: 10), "the Look up button lost its name")
     }
 
-    /// Opens Add and then "Type it in", the path to the form with the amount field.
+    /// Opens Add and then "Type it in", the path to the form with the amount field. Each tap waits for its target
+    /// to be hittable, and the form's own "Log entry" bar confirms it opened, with one more tap if the first was
+    /// dropped during Add's presentation; a tap that lands mid-animation otherwise leaves no form to query.
     private func openTypedInEntryForm(_ app: XCUIApplication) throws {
         let getStarted = app.buttons["Get started"]
         if getStarted.waitForExistence(timeout: 5) { getStarted.tap() }
-        let addButton = app.buttons.matching(NSPredicate(format: "label == %@", "Add food, drink, or supplement"))
-            .allElementsBoundByIndex.first(where: { $0.exists && $0.isHittable })
-        let add = try XCTUnwrap(addButton, "no hittable Add button on Today")
-        add.tap()
+        let addCandidates = app.buttons.matching(NSPredicate(format: "label == %@", "Add food, drink, or supplement"))
+        var add: XCUIElement?
+        _ = waitUntil(timeout: 20) {
+            add = addCandidates.allElementsBoundByIndex.first(where: { $0.exists && $0.isHittable })
+            return add != nil
+        }
+        try XCTUnwrap(add, "no hittable Add button on Today").tap()
+
         let typeIt = app.buttons["Type it in"]
-        XCTAssertTrue(typeIt.waitForExistence(timeout: 10), "Type it in is not on the Add screen")
+        let typeItReady = waitUntil(timeout: 20) { typeIt.exists && typeIt.isHittable }
+        XCTAssertTrue(typeItReady, "Type it in is not tappable on Add")
         typeIt.tap()
+        let form = app.navigationBars["Log entry"]
+        if !form.waitForExistence(timeout: 10), typeIt.exists, typeIt.isHittable { typeIt.tap() }
+        XCTAssertTrue(form.waitForExistence(timeout: 20), "the typed-in entry form did not open")
+    }
+
+    /// Polls `condition` until it holds or `timeout` seconds pass; true when it held.
+    private func waitUntil(timeout: TimeInterval, _ condition: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() { return true }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        }
+        return condition()
     }
 }
