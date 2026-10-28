@@ -185,7 +185,10 @@ final class JournalImportSavedMealsTests: JournalImportTestCase {
         for field in ["id", "display_name", "category"] {
             var root = base
             var meals = try XCTUnwrap(root["saved_meals"] as? [[String: Any]], field)
-            var items = try XCTUnwrap(meals[1]["items"] as? [[String: Any]], field)
+            // The fixture's second meal has items; guard the indexes so a changed fixture fails, not crashes.
+            guard meals.count > 1, var items = meals[1]["items"] as? [[String: Any]], !items.isEmpty else {
+                return XCTFail("the fixture needs a second saved meal with an item")
+            }
             items[0][field] = ""
             meals[1]["items"] = items
             root["saved_meals"] = meals
