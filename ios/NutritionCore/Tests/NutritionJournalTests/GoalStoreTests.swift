@@ -109,8 +109,6 @@ final class GoalStoreTests: XCTestCase {
         XCTAssertEqual(try store.goal(for: "protein")?.target, Decimal(90))
     }
 
-    /// A receipt is recorded before its goals are written, so marking one done when it is not there means the store lost it.
-    /// Fails when a missing receipt is marked done without an error, which would hide the loss.
     /// A receipt that still lists a goal is not all written, so marking it done is refused and leaves it pending.
     func testMarkingAReceiptWithPendingGoalsDoneThrows() throws {
         let store = try makeStore()
@@ -119,6 +117,8 @@ final class GoalStoreTests: XCTestCase {
         XCTAssertEqual(try store.goalRestoreReceiptDone("pending-receipt"), false)
     }
 
+    /// A receipt is recorded before its goals are written, so marking one done when it is not there means the store lost it.
+    /// Fails when a missing receipt is marked done without an error, which would hide the loss.
     func testMarkingAMissingReceiptDoneThrows() throws {
         let store = try makeStore()
         XCTAssertThrowsError(try store.markGoalRestoreReceiptDone("never-recorded"))
