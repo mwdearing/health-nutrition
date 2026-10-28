@@ -283,7 +283,7 @@ public enum ReferenceIntakes {
             var limit = teen.upperLimit
             switch group.lifeStage {
             case .standard:
-                amount = group.sex == .female ? teen.female : teen.male
+                amount = group.sex == .female ? teen.male : teen.female
             case .pregnancy:
                 amount = teen.pregnancy
                 if let published = teen.pregnancyUpperLimit { limit = published }
