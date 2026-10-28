@@ -941,7 +941,6 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             // between its busy check and its Health write while the journal is filled. A pass still running after
             // the wait is not cancelled: nothing is imported, and the screen says so.
             let hold = await deliveryGate?.pause(upTo: deliveryWaitSeconds)
-            if deliveryGate != nil, hold == nil { return .failed(.healthDeliveryBusy) }
             let outcome: ImportOutcome
             do {
                 outcome = .imported(
