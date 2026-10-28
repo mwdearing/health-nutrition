@@ -1392,6 +1392,40 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
         intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
         now: Date, occurredAt: Date?, timeZoneIdentifier: String?, unitRemovals: [String]
     ) throws -> IntakeRevision {
+        try writeEdit(
+            intakeID: intakeID, components: components, product: product, changeReason: changeReason, now: now,
+            occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier, unitRemovals: unitRemovals,
+            expectedRevision: nil)
+    }
+
+    @discardableResult
+    public func edit(
+        intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
+        now: Date, occurredAt: Date?, timeZoneIdentifier: String?, expectedRevision: Int
+    ) throws -> IntakeRevision {
+        try writeEdit(
+            intakeID: intakeID, components: components, product: product, changeReason: changeReason, now: now,
+            occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier, unitRemovals: [],
+            expectedRevision: expectedRevision)
+    }
+
+    @discardableResult
+    public func editRemovingUnits(
+        intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
+        now: Date, occurredAt: Date?, timeZoneIdentifier: String?, unitRemovals: [String], expectedRevision: Int
+    ) throws -> IntakeRevision {
+        try writeEdit(
+            intakeID: intakeID, components: components, product: product, changeReason: changeReason, now: now,
+            occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier, unitRemovals: unitRemovals,
+            expectedRevision: expectedRevision)
+    }
+
+    /// The one edit write. With an expected revision, the entry's current revision is checked inside the same
+    /// commit that writes the next one, so nothing can land between the check and the write.
+    private func writeEdit(
+        intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
+        now: Date, occurredAt: Date?, timeZoneIdentifier: String?, unitRemovals: [String], expectedRevision: Int?
+    ) throws -> IntakeRevision {
         guard !components.isEmpty else { throw JournalError.noComponents(intakeID) }
         let json = try Self.encode(components)
         return try commit { context in
@@ -1400,6 +1434,9 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             }
             guard record.lifecycleRaw == IntakeLifecycle.active.rawValue else {
                 throw JournalError.intakeDeleted(intakeID)
+            }
+            if let expectedRevision, record.currentRevision != expectedRevision {
+                throw JournalError.staleRevision(intakeID)
             }
             let number = record.currentRevision + 1
             record.currentRevision = number
