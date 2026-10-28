@@ -1435,9 +1435,6 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             guard record.lifecycleRaw == IntakeLifecycle.active.rawValue else {
                 throw JournalError.intakeDeleted(intakeID)
             }
-            if let expectedRevision, record.currentRevision != expectedRevision {
-                throw JournalError.staleRevision(intakeID)
-            }
             let number = record.currentRevision + 1
             record.currentRevision = number
             // The corrected time moves the entry's own row, in the same save as the revision that
