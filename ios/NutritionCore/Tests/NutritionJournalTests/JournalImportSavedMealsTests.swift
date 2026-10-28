@@ -178,6 +178,41 @@ final class JournalImportSavedMealsTests: JournalImportTestCase {
         }
     }
 
+    /// A saved meal's item is a favorite template, so an empty id, display name or category is refused as malformed
+    /// by shape validation, naming the field, and nothing is written (#72).
+    func testASavedMealItemWithAnEmptyRequiredFieldIsRefusedAndNothingIsWritten() throws {
+        let base = try fields(try savedMealsExport())
+        for field in ["id", "display_name", "category"] {
+            var root = base
+            var meals = try XCTUnwrap(root["saved_meals"] as? [[String: Any]], field)
+            // The fixture's second meal has items; guard the indexes so a changed fixture fails, not crashes.
+            guard meals.count > 1, var items = meals[1]["items"] as? [[String: Any]], !items.isEmpty else {
+                return XCTFail("the fixture needs a second saved meal with an item")
+            }
+            items[0][field] = ""
+            meals[1]["items"] = items
+            root["saved_meals"] = meals
+            let target = try directory()
+            let journal = try store(target)
+            let favoritesStore = try favorites(target)
+            let savedMeals = MemorySavedMeals()
+            XCTAssertThrowsError(
+                try JournalImporter.importExport(
+                    try JSONSerialization.data(withJSONObject: root), into: journal, favorites: favoritesStore,
+                    savedMeals: savedMeals),
+                field
+            ) { error in
+                guard case .malformed(let reason) = error as? JournalImportError else {
+                    return XCTFail("expected a malformed file for an empty \(field), got \(error)")
+                }
+                XCTAssertTrue(reason.contains("$.saved_meals[1].items[0].\(field) is empty"), reason)
+            }
+            XCTAssertEqual(try journal.activeIntakes(), [], field)
+            XCTAssertTrue(try favoritesStore.list().isEmpty, field)
+            XCTAssertEqual(savedMeals.meals, [], field)
+        }
+    }
+
     /// Saved meals, their items and the items' components count toward the import's element ceiling, as
     /// favorites and their components do.
     func testSavedMealsCountTowardTheImportCeiling() throws {

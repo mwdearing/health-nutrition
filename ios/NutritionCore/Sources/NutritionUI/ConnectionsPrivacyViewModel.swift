@@ -134,6 +134,10 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// that landed afterwards would put back what the person had just deleted.
     public static let importDuringEraseMessage =
         "Data was being erased, so nothing was imported. Try again once that is finished."
+    /// A restore that could not take the Health delivery gate, because a pass was still writing to Apple Health
+    /// after the wait (#982). Nothing was imported. Wording approved by Mike on 2026-10-28.
+    public static let importDuringHealthDeliveryMessage =
+        "Apple Health was still being updated, so nothing was imported. Try again in a moment."
     public static let partialRestoreWarningMessage =
         "The restore was incomplete; journal entries or saved meals may already be present. Check your journal and saved meals before importing this file again."
 
@@ -301,6 +305,11 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     private let remindersStillPending: () async -> [String]
     /// How long an erase waits for a running import; a test shortens it so the timeout path runs quickly.
     private let importWaitSeconds: TimeInterval
+    /// The Health delivery worker's run gate. An erase holds it while it runs, so no delivery pass is between its
+    /// busy check and its Health write while the stores are emptied (#841). Nil only where no worker runs.
+    private let deliveryGate: DeliveryRunGate?
+    /// How long an erase waits for a delivery pass that holds the gate; a test shortens it.
+    private let deliveryWaitSeconds: TimeInterval
 
     /// Changes whenever this screen creates, clears, or forgets an export. An import may remove only the
     /// copy that was already current when that import began; a later export may contain restored rows.
@@ -360,9 +369,13 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         eraseLocalAccount: @escaping () async throws -> Void = {},
         remindersStillPending: @escaping () async -> [String] = { [] },
         importWaitSeconds: TimeInterval = ConnectionsPrivacyViewModel.eraseWaitsForImportSeconds,
-        importGate: ImportGate = ImportGate()
+        importGate: ImportGate = ImportGate(),
+        deliveryGate: DeliveryRunGate? = nil,
+        deliveryWaitSeconds: TimeInterval = ConnectionsPrivacyViewModel.eraseWaitsForImportSeconds
     ) {
         self.importGate = importGate
+        self.deliveryGate = deliveryGate
+        self.deliveryWaitSeconds = deliveryWaitSeconds
         self.store = store
         self.favorites = favorites
         self.savedMeals = savedMeals
@@ -638,6 +651,27 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             resolveDeferredImportEffectsAfterErase(journalEraseSucceeded: false)
             return false
         }
+        // Then take the Health delivery gate, so no pass is between its busy check and its Health write while the
+        // stores are emptied (#841). A pass still running after the wait is not cancelled: the erase touches
+        // nothing and offers Retry, as it does for an import.
+        let erased: Bool
+        let hold = await deliveryGate?.pause(upTo: deliveryWaitSeconds)
+        if deliveryGate == nil || hold != nil {
+            erased = await eraseHoldingDelivery()
+        } else {
+            errorMessage = Self.eraseNothingErasedMessage
+            eraseRetryAvailable = true
+            resolveDeferredImportEffectsAfterErase(journalEraseSucceeded: false)
+            erased = false
+        }
+        // On every exit, the timeout included. A pause that timed out has no hold, so this releases nothing then,
+        // and it can only ever release this erase's own hold.
+        await deliveryGate?.resume(hold)
+        return erased
+    }
+
+    /// The erase itself, run while it holds the Health delivery gate. Returns whether every store erased itself.
+    private func eraseHoldingDelivery() async -> Bool {
         // With the import gone, no import can run again until this erase finishes. A restore flag left behind would
         // let the next import of that file put back favorites the person is erasing, so it goes before any store is
         // touched. A flag that cannot be removed stops the erase with nothing erased, and the screen offers Retry.
@@ -850,6 +884,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         case other
         /// An erase was running, so the import was refused before it started.
         case erasing
+        /// A Health delivery pass was still writing after the wait, so nothing was imported (#982).
+        case healthDeliveryBusy
     }
 
     /// Reads a file the person chose and restores it. Nothing is sent anywhere: the file was already on
@@ -895,19 +931,30 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         // wait on a signal nothing was ever going to send. A detached task needs no actor to begin, and its
         // `defer` opens the gate from a background thread as soon as the store writes are done.
         let goals = self.goals
+        let deliveryGate = self.deliveryGate
+        let deliveryWaitSeconds = self.deliveryWaitSeconds
         let restore = Task.detached(priority: .userInitiated) { () -> ImportOutcome in
             // The gate is opened from the background, and not from the task below: the erase waits on it from
             // the main actor, so it has to be signalled by the work it is waiting for.
             defer { gate.end() }
+            // The restore holds the Health delivery gate while it writes, as the erase does (#982), so no pass is
+            // between its busy check and its Health write while the journal is filled. A pass still running after
+            // the wait is not cancelled: nothing is imported, and the screen says so.
+            let hold = await deliveryGate?.pause(upTo: deliveryWaitSeconds)
+            if deliveryGate != nil, hold == nil { return .failed(.healthDeliveryBusy) }
+            let outcome: ImportOutcome
             do {
-                return .imported(
+                outcome = .imported(
                     try JournalImporter.importExport(
                         data, into: store, favorites: favorites, savedMeals: savedMeals, goals: goals))
             } catch let error as JournalImportError {
-                return .failed(.refused(error))
+                outcome = .failed(.refused(error))
             } catch {
-                return .failed(.other)
+                outcome = .failed(.other)
             }
+            // On every path past the wait; only this restore's own hold is released.
+            await deliveryGate?.resume(hold)
+            return outcome
         }
         Task { [weak self] in
             let outcome = await restore.value
@@ -1042,6 +1089,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             return importFailedMessage
         case .erasing:
             return importDuringEraseMessage
+        case .healthDeliveryBusy:
+            return importDuringHealthDeliveryMessage
         }
     }
 
