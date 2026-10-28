@@ -117,11 +117,11 @@ matches the fact sheet table below.
 
 ## Ages 14 to 18 (reference data only, not in the code)
 
-Goal setup accepts ages 18 to 100 (`GoalEstimator.minimumAge` is 18, `GoalEstimator.maximumAge` is 100), so an 18-year-old can set goals, but
-`ReferenceAgeBand(ageYears:)` returns nil under 19 and the app shows no reference value for them. These are the published
-14 to 18 rows, read on 2026-10-27 from the same fact sheet tables, for when the code gains the band. Ages 14 to 17 can't
-reach goal setup today. The UL scopes are the adult ones (magnesium counts supplements only, and so on); the
-upper-limit column applies to all four columns unless it says otherwise.
+Goal setup accepts ages 18 to 100 (`GoalEstimator.minimumAge` is 18, `GoalEstimator.maximumAge` is 100), so an
+18-year-old can set goals, but `ReferenceAgeBand(ageYears:)` returns nil under 19 and the app shows no reference value
+for them. These are the published 14 to 18 rows, read on 2026-10-27 from the same fact sheet tables, for when the code
+gains the band. Ages 14 to 17 can't reach goal setup today. The UL scopes are the adult ones (magnesium counts
+supplements only, and so on); the upper-limit column applies to all four columns unless it says otherwise.
 
 | Nutrient | Kind | Male | Female | Pregnancy | Lactation | UL (all four) | Fact sheet tables |
 |---|---|---|---|---|---|---|---|
@@ -159,8 +159,8 @@ The Daily Values are the label reference amounts behind "% Daily Value". They ar
 covers adults and children 4 years and older, and a separate column covers pregnancy and lactation. They are useful as
 the "use FDA recommendations" default for someone who doesn't give an age or sex; the DRIs above are the age and sex
 specific values. Read on 2026-10-27 from the eCFR,
-`https://www.ecfr.gov/current/title-21/chapter-I/subchapter-B/part-101/subpart-A/section-101.9`, which states "up to date
-as of 10/26/2026" and "last amended 10/21/2026".
+`https://www.ecfr.gov/current/title-21/chapter-I/subchapter-B/part-101/subpart-A/section-101.9`, which states "up to
+date as of 10/26/2026" and "last amended 10/21/2026".
 
 ### Vitamins and minerals: Reference Daily Intakes, 21 CFR 101.9(c)(8)(iv)
 
@@ -211,12 +211,12 @@ folate = 0.6 mcg folic acid); 1 mg alpha-tocopherol = 2 mg all-rac-alpha-tocophe
 | Protein | `protein` | 50 g | 71 g | 2,000 Calories; pregnancy and lactation from (c)(7)(iii) |
 | Added sugars | `addedSugars` | 50 g | 50 g | 2,000 Calories |
 
-The keys are the product panel's (`CustomProductValidation.standardDimensions`); the journal and the Apple Health writer
-name two of them differently, `carbohydrate` and `sugar`. Saturated fat, cholesterol and added sugars are stored on
-products but not written to Apple Health. The "2,000 Calories" rows are set for a reference intake of 2,000 Calories
-(the table's footnote 1). There is no Daily Value for energy itself, total sugars (`sugars`), trans fat (`transFat`),
-water or caffeine: those keys have no FDA default. The protein DRV of 50 g is what a label's %DV uses for adults; the 71 g figure is the RDI the section sets for
-pregnancy and lactation.
+The keys are the product panel's (`CustomProductValidation.standardDimensions`); the journal and the Apple Health
+writer name two of them differently, `carbohydrate` and `sugar`. Saturated fat, cholesterol and added sugars are
+stored on products but not written to Apple Health. The "2,000 Calories" rows are set for a reference intake of 2,000
+Calories (the table's footnote 1). There is no Daily Value for energy itself, total sugars (`sugars`), trans fat
+(`transFat`), water or caffeine: those keys have no FDA default. The protein DRV of 50 g is what a label's %DV uses
+for adults; the 71 g figure is the RDI the section sets for pregnancy and lactation.
 
 ## Not verified
 
