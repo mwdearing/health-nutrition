@@ -106,8 +106,8 @@ public final class BodyActivityViewModel: ObservableObject {
 
     /// Reads the saved plan, then the trend through the local day of `now`, then the plan beside the trend.
     /// The pace comparison needs a loss or gain plan with a goal and a pace, and a current weight from the
-    /// trend or else the latest weigh-in. The day is read as a Gregorian date in the calendar's time zone,
-    /// so a device set to another calendar gets the same day.
+    /// trend or else a latest weigh-in inside the trend's window. The day is read as a Gregorian date in the
+    /// calendar's time zone, so a device set to another calendar gets the same day.
     private func applyWeightPlan(now: Date) {
         plan = weightPlan()
         var gregorian = Calendar(identifier: .gregorian)
