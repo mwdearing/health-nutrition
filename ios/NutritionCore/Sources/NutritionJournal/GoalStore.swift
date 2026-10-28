@@ -80,10 +80,11 @@ public protocol GoalStore: AnyObject, Sendable {
     func removeGoalRestoreReceipt(_ receipt: String) throws
     /// Whether the restore's goals were all written, or nil when there is no receipt.
     func goalRestoreReceiptDone(_ receipt: String) throws -> Bool?
-    /// Marks the receipt's goals as all written, so a resume does not add them again.
+    /// Marks the receipt's goals as all written, so a resume does not add them again. Refused while the receipt still
+    /// lists a goal to write.
     func markGoalRestoreReceiptDone(_ receipt: String) throws
     /// Writes one restored goal and drops it from the receipt in the same save. Returns false, writing nothing, when a goal
-    /// already holds the key, so a restore never overwrites the person's own target.
+    /// already holds the key, so a restore never overwrites the person's own target; the goal leaves the receipt either way.
     func writeRestoredGoal(_ goal: NutrientGoal, receipt: String) throws -> Bool
     /// Every goal the restore under this receipt wrote, from any run, so an undo removes exactly those.
     func goalRestoreWrittenGoals(_ receipt: String) throws -> [NutrientGoal]
