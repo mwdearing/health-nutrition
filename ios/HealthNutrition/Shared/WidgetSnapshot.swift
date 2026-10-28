@@ -136,7 +136,8 @@ enum WidgetFigure {
 
     /// A whole number grouped as Today groups it ("2,494"), so widget figures match the app (#816).
     static func wholeNumber(_ value: Double?) -> String? {
-        groupedWholeNumber(value)
+        guard let value, value.isFinite, abs(value) <= largest else { return nil }
+        return String(Int(value.rounded()))
     }
 
 }
