@@ -1103,8 +1103,9 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     @unchecked Sendable
 {
     private let lock = NSLock()
-    private var deleteCommittedHandler: (@Sendable (String, UInt64) -> Void)?
-    /// Counts committed deletes in commit order. Only read or changed under writeLock.
+    /// Every handler added with `addOnDeleteCommitted`, called in the order they were added.
+    private var deleteCommittedHandlers: [@Sendable (String, UInt64) -> Void] = []
+    /// Counts committed deletes and water quick-adds in commit order. Only read or changed under writeLock.
     private var deleteCounter: UInt64 = 0
     /// Serializes whole writes so two edits never read the same current revision. Separate from `lock`.
     private let writeLock = NSLock()
@@ -1509,10 +1510,11 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
         }
     }
 
-    /// Called after a delete commits, with the intake it removed. The app uses it for every delete, whatever
-    /// screen made it, to start delivery once the Undo window ends and to drop an older Undo offer.
-    public func setOnDeleteCommitted(_ handler: @escaping @Sendable (String, UInt64) -> Void) {
-        lock.withLock { deleteCommittedHandler = handler }
+    /// Adds a handler called after a delete commits, with the intake it removed and the delete's place in the
+    /// commit order. The app uses it for every delete, whatever screen made it, to start delivery once the Undo
+    /// window ends and to drop an older Undo offer. Handlers add up: a second caller does not replace the first.
+    public func addOnDeleteCommitted(_ handler: @escaping @Sendable (String, UInt64) -> Void) {
+        lock.withLock { deleteCommittedHandlers.append(handler) }
     }
 
     public var deleteSequence: UInt64 {
@@ -1544,8 +1546,8 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             staged = deleteCounter + 1
         }
         let sequence = staged
-        let handler = lock.withLock { deleteCommittedHandler }
-        handler?(intakeID, sequence)
+        let handlers = lock.withLock { deleteCommittedHandlers }
+        for handler in handlers { handler(intakeID, sequence) }
         return sequence
     }
 
