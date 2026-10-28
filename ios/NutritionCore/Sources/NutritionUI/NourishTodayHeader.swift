@@ -68,7 +68,7 @@ public struct NourishTodayHeader: View {
     /// The goal footnote the summary reads out: only while Remaining shows, because without a goal there is no
     /// Remaining for "of N goal" to qualify.
     static func summaryFootnote(_ calories: CalorieRemaining, ringFootnote: String?) -> String? {
-        calories.showsRemaining ? ringFootnote : nil
+        ringFootnote
     }
 
     /// The one spoken line for the summary: remaining, food and burned as labels, then the partial note and the goal
