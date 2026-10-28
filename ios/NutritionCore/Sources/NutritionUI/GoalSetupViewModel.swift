@@ -220,15 +220,17 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
             .filter { !storeHoldsGoal(for: $0.nutrient) }
     }
 
-    /// Whether the store holds a goal for this nutrient under its own key or an alias (`vitamin-c`). A store
-    /// that cannot be read counts as holding one, so nothing is offered or written over a goal that may exist.
+    /// Whether the store holds a goal for this nutrient under its own key or an alias (`vitamin-c`). For what
+    /// the step shows, a store that cannot be read counts as holding one, so nothing is offered over a goal that
+    /// may exist; the save reads again with `storedGoalExists(for:)` and fails instead.
     private func storeHoldsGoal(for nutrient: String) -> Bool {
-        for key in HealthKitWritePlanner.acceptedKeys(for: nutrient) {
-            do {
-                if try goals.storedGoal(for: key) != nil { return true }
-            } catch {
-                return true
-            }
+        (try? storedGoalExists(for: nutrient)) ?? true
+    }
+
+    /// The same check, throwing when the store cannot be read.
+    private func storedGoalExists(for nutrient: String) throws -> Bool {
+        for key in HealthKitWritePlanner.acceptedKeys(for: nutrient) where try goals.storedGoal(for: key) != nil {
+            return true
         }
         return false
     }
@@ -351,8 +353,14 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
             fieldErrors[key] = Self.invalidFieldNotice
         }
         // A goal the store holds, under the key or an alias, is never overwritten; checked again here because the
-        // store may have changed since the step was shown.
-        let vitamins = vitaminGoalsToSave().filter { !storeHoldsGoal(for: $0.nutrient) }
+        // store may have changed since the step was shown. A store that cannot be read fails the whole save.
+        let vitamins: [(nutrient: String, text: String, unit: MeasureUnit)]
+        do {
+            vitamins = try vitaminGoalsToSave().filter { try !storedGoalExists(for: $0.nutrient) }
+        } catch {
+            resultError = Self.saveFailedNotice
+            return false
+        }
         for entry in vitamins {
             if let value = AmountParser.parseTyped(entry.text), value > 0 { continue }
             fieldErrors[entry.nutrient] = Self.invalidFieldNotice
