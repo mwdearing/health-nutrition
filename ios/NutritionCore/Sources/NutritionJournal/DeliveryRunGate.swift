@@ -31,13 +31,7 @@ public actor DeliveryRunGate {
     /// timeout cannot trap the conversion. Negative values, negative infinity included, wait not at all; NaN and
     /// positive infinity wait the full hour.
     static func boundedNanoseconds(_ seconds: TimeInterval) -> UInt64 {
-        let bounded: TimeInterval
-        if seconds.isNaN || seconds == .infinity {
-            bounded = 3600
-        } else {
-            bounded = min(max(seconds, 0), 3600)
-        }
-        return UInt64(bounded * 1_000_000_000)
+        return UInt64(max(seconds, 0) * 1_000_000_000)
     }
 
     /// Returns once no other run holds the gate. Every `enter()` is followed by exactly one `leave()`.
