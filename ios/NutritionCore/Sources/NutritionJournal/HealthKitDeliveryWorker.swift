@@ -343,7 +343,6 @@ public struct HealthKitDeliveryWorker: Sendable {
 
     private func runPass(now: Date) async -> [HealthKitDeliveryOutcome] {
         // An erase or a restore is emptying or filling the store, so the queue is not read at all.
-        if await isBusy() { return [] }
         let operations: [OutboxOperation]
         let suspended: Set<String>
         do {
