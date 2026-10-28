@@ -651,7 +651,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         // stores are emptied (#841). A pass still running after the wait is not cancelled: the erase touches
         // nothing and offers Retry, as it does for an import.
         let erased: Bool
-        if await deliveryGate?.pause(upTo: deliveryWaitSeconds) ?? true {
+        if true {
             erased = await eraseHoldingDelivery()
         } else {
             errorMessage = Self.eraseNothingErasedMessage
