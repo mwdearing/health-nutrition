@@ -305,14 +305,25 @@ public struct HealthKitDeliveryWorker: Sendable {
     private let totals: NutrientTotalsProvider
     /// Shared by every copy of this worker, so two calls to `runOnce` never overlap.
     private let gate = DeliveryRunGate()
+    /// True while Erase all data or a restore runs. The entries a pass read may be gone then, so the pass
+    /// writes nothing to Health and records nothing in the store (#777, #841).
+    private let isBusy: @Sendable () async -> Bool
 
     public init(
         store: any JournalDeliverySuspension, writer: any HealthSampleWriter,
-        totals: @escaping NutrientTotalsProvider
+        totals: @escaping NutrientTotalsProvider,
+        isBusy: @escaping @Sendable () async -> Bool = { false }
     ) {
         self.store = store
         self.writer = writer
         self.totals = totals
+        self.isBusy = isBusy
+    }
+
+    /// The outcome for an operation that waits for an erase or a restore to finish: not attempted now, and
+    /// nothing written to Health or the store, so it stays pending for the next pass. Nil when nothing runs.
+    private func pausedForErase(_ operation: OutboxOperation, now: Date) async -> HealthKitDeliveryOutcome? {
+        await isBusy() ? .notDue(operationID: operation.operationID, nextAttemptAt: now) : nil
     }
 
     /// Processes every due `.healthKit` operation once and reports what each one did.
@@ -331,6 +342,8 @@ public struct HealthKitDeliveryWorker: Sendable {
     }
 
     private func runPass(now: Date) async -> [HealthKitDeliveryOutcome] {
+        // An erase or a restore is emptying or filling the store, so the queue is not read at all.
+        if await isBusy() { return [] }
         let operations: [OutboxOperation]
         let suspended: Set<String>
         do {
@@ -499,6 +512,9 @@ private func deliver(_ operation: OutboxOperation, now: Date) async -> HealthKit
                 }
             }
         }
+        // An erase that began after this pass read the queue may have removed this entry, so nothing is
+        // written to Health or recorded for it (#841).
+        if let paused = await pausedForErase(operation, now: now) { return paused }
         // Before anything is written, the ledger is widened to everything this pass may leave in
         // Health, so a crash or a failed record after the save never hides a sample that is there.
         if !writable.isEmpty {
@@ -530,6 +546,8 @@ private func deliver(_ operation: OutboxOperation, now: Date) async -> HealthKit
         // sample it could not remove, or an earlier revision's sample it could not replace. Recorded
         // before the outcome, so a later edit or delete reads what is actually there; a failure to
         // record retries the delivery, which rewrites the same samples at the same version.
+        // An erase that began during the save has removed the rows these records would point at (#777).
+        if let paused = await pausedForErase(operation, now: now) { return paused }
         do {
             // A refused key only still holds a sample when one was there before this pass: a nutrient
             // this revision states for the first time under a denied type was never written.
@@ -618,8 +636,10 @@ private func deliver(_ operation: OutboxOperation, now: Date) async -> HealthKit
         // A type that is neither writable nor denied was never asked (`.notDetermined`), so nothing
         // can exist for it and it is silently skipped: no delete is attempted for it.
         let removable = identifiers.filter { allowed[Self.typeIdentifier(for: $0)] == true }
+        if let paused = await pausedForErase(operation, now: now) { return paused }
         do {
             let deleted = removable.isEmpty ? 0 : try await writer.deleteSamples(syncIdentifiers: removable)
+            if let paused = await pausedForErase(operation, now: now) { return paused }
             // What stays in Health is exactly the denied types' samples. A failure to record it keeps the
             // operation retryable rather than parking it over a ledger that names deleted samples.
             do {
