@@ -196,15 +196,14 @@ final class AppServices {
         productNameSearch = FoodDatabaseSearch(openFoodFacts: openFoodFacts, usda: usda)
         let totals = JournalSnapshotTotals(store: journalStore)
         // The flag the shortcuts and the widget read: true while Erase all data or a restore runs, so a
-        // delivery pass writes nothing to Health and records nothing for entries that may be gone.
+        // delivery pass writes nothing to Health and records nothing for entries that may be gone. Held strongly:
+        // the view model lives as long as these services and holds nothing back, so there is no cycle.
         let busyConnections = connections
         let healthKitDelivery = HealthKitDeliveryWorker(
             store: journalStore,
             writer: HealthKitSampleWriter(),
             totals: { intakeID, revision in try await totals.totals(intakeID: intakeID, revision: revision) },
-            isBusy: { [weak busyConnections] in
-                await MainActor.run { busyConnections.map { !$0.canExport } ?? false }
-            }
+            isBusy: { await MainActor.run { !busyConnections.canExport } }
         )
         self.healthKitDelivery = healthKitDelivery
         let healthKitDeliveryStatus = HealthKitDeliveryStatus(
