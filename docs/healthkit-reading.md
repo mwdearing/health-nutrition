@@ -7,7 +7,7 @@ Status: current. The app reads three Health types for the activity card and heig
 | Steps (`stepCount`) | Today's activity card | Sum since local midnight |
 | Active energy (`activeEnergyBurned`) | Today's activity card | Sum since local midnight |
 | Weight (`bodyMass`) | Today's activity card: the latest weight, the weekly trend, and the saved plan lines (see `weight-trend.md`) | Latest sample, and every sample from the last 28 days (the day 27 days before today through now) |
-| Height (`height`) | Goal setup: fills an empty height field (120 to 230 cm only); never stored | Latest sample |
+| Height (`height`) | Goal setup: fills an empty height field when the sheet opens or reaches the body step (120 to 230 cm only); never stored | Latest sample, read with the card's read |
 
 The read request also covers the nutrient types the app writes (`OutsideIntakeTotals.readQuantityTypeIdentifiers`, defined beside the write plan), so the outside-intake totals can be read back. The table lists the types read for the card and goal setup. Alcohol is not read (#508).
 

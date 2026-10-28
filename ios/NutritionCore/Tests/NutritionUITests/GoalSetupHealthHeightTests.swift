@@ -37,6 +37,32 @@ final class GoalSetupHealthHeightTests: XCTestCase {
         XCTAssertEqual(makeModel(healthHeight: 240).heightCentimetersText, "")
     }
 
+    func testAUSHeightThatRoundsOutsideTheRangeIsNotFilledIn() {
+        // 120.5 cm is 47.4 in, which rounds to 47 in, below the 48 in the estimate accepts.
+        let low = makeModel(system: .usCustomary, healthHeight: Decimal(string: "120.5")!)
+        XCTAssertEqual(low.heightFeetText, "")
+        // 229.9 cm is 90.5 in, which rounds to 91 in, above the 90 in the estimate accepts.
+        let high = makeModel(system: .usCustomary, healthHeight: Decimal(string: "229.9")!)
+        XCTAssertEqual(high.heightFeetText, "")
+    }
+
+    func testAHeightReadAfterTheSheetOpenedFillsOnTheBodyStep() {
+        var health: Decimal?
+        let goals = GoalsViewModel(
+            store: InMemoryGoalStore(goals: []), preferences: InMemoryDisplayPreferences(unitSystem: .metric))
+        goals.latestHeightCentimeters = { health }
+        let model = GoalSetupViewModel(goals: goals)
+        XCTAssertEqual(model.heightCentimetersText, "")
+        health = 175
+        model.aim = .maintain
+        model.next()
+        model.sex = .male
+        model.ageText = "30"
+        model.next()
+        XCTAssertEqual(model.step, .body)
+        XCTAssertEqual(model.heightCentimetersText, "175")
+    }
+
     func testATypedHeightIsNotReplaced() {
         let model = makeModel(healthHeight: 175)
         model.heightCentimetersText = "168"

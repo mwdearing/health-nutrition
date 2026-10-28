@@ -82,18 +82,24 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
     }
 
     /// Fills the height field from Apple Health when it is empty, so a person who connected Health need not
-    /// type it. A height outside the range the estimate accepts is left out; the field stays editable.
+    /// type it. Runs when the sheet opens and again on the body step, in case Today's read arrived since. A
+    /// height that, once rounded for the field, is outside the range the estimate accepts is left out.
     func fillHeightFromHealth() {
         guard heightCentimetersText.isEmpty, heightFeetText.isEmpty, heightInchesText.isEmpty,
-              let centimeters = goals.latestHeightCentimeters(), centimeters >= 120, centimeters <= 230
+              let centimeters = goals.latestHeightCentimeters()
         else { return }
         if unitSystem == .usCustomary {
             let totalInches = Self.rounded(centimeters / Self.centimetersPerInch, scale: 0, .plain)
+            let least = Self.rounded(Decimal(120) / Self.centimetersPerInch, scale: 0, .up)
+            let most = Self.rounded(Decimal(230) / Self.centimetersPerInch, scale: 0, .down)
+            guard totalInches >= least, totalInches <= most else { return }
             let feet = Self.rounded(totalInches / 12, scale: 0, .down)
             heightFeetText = DecimalFormatting.text(feet)
             heightInchesText = DecimalFormatting.text(totalInches - feet * 12)
         } else {
-            heightCentimetersText = DecimalFormatting.text(Self.rounded(centimeters, scale: 0, .plain))
+            let whole = Self.rounded(centimeters, scale: 0, .plain)
+            guard whole >= 120, whole <= 230 else { return }
+            heightCentimetersText = DecimalFormatting.text(whole)
         }
     }
 
@@ -166,6 +172,7 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
         let list = steps
         guard let index = list.firstIndex(of: step), index + 1 < list.count else { return }
         step = list[index + 1]
+        if step == .body { fillHeightFromHealth() }
         if step == .results { calculate() }
     }
 
