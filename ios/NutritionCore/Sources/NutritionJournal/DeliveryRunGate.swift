@@ -54,7 +54,9 @@ public actor DeliveryRunGate {
             entered = await withCheckedContinuation { continuation in
                 waiting.append((id, continuation))
                 Task { [weak self] in
-                    try? await Task.sleep(nanoseconds: UInt64(max(seconds, 0) * 1_000_000_000))
+                    // Clamped to an hour, so an infinite, NaN or huge wait cannot trap the conversion.
+                    let bounded = seconds.isFinite ? min(max(seconds, 0), 3600) : 3600
+                    try? await Task.sleep(nanoseconds: UInt64(bounded * 1_000_000_000))
                     await self?.expire(id)
                 }
             }
