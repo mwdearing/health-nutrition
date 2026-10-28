@@ -25,7 +25,6 @@ final class HealthKitReader: BodyActivityReading {
     static var readTypes: Set<HKObjectType> {
         var types: Set<HKObjectType> = [
             HKQuantityType(.stepCount), HKQuantityType(.activeEnergyBurned), HKQuantityType(.bodyMass),
-            HKQuantityType(.height),
         ]
         for identifier in OutsideIntakeTotals.readQuantityTypeIdentifiers {
             if let type = HKObjectType.quantityType(forIdentifier: HKQuantityTypeIdentifier(rawValue: identifier)) {

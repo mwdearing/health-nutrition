@@ -78,7 +78,6 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
         self.goals = goals
         self.now = now
         self.calendar = calendar
-        fillHeightFromHealth()
     }
 
     /// Fills the height field from Apple Health when it is empty, so a person who connected Health need not
