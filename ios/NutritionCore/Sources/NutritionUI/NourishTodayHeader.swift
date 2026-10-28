@@ -65,14 +65,14 @@ public struct NourishTodayHeader: View {
         model.nutrientCard
     }
 
-    /// The one spoken line for the summary: remaining, food and burned as labels, then the partial note and the goal
-    /// footnote.
     /// The goal footnote the summary reads out: only while Remaining shows, because without a goal there is no
     /// Remaining for "of N goal" to qualify.
     static func summaryFootnote(_ calories: CalorieRemaining, ringFootnote: String?) -> String? {
         calories.showsRemaining ? ringFootnote : nil
     }
 
+    /// The one spoken line for the summary: remaining, food and burned as labels, then the partial note and the goal
+    /// footnote.
     static func spokenSummary(_ calories: CalorieRemaining, partial: String?, footnote: String?) -> String {
         [
             calories.remaining.map { "\(BodyActivityViewModel.whole($0)) calories remaining" },
