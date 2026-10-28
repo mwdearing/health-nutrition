@@ -651,7 +651,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         // stores are emptied (#841). A pass still running after the wait is not cancelled: the erase touches
         // nothing and offers Retry, as it does for an import.
         let erased: Bool
-        if await deliveryGate?.pause(upTo: deliveryWaitSeconds) ?? true {
+        let hold = await deliveryGate?.pause(upTo: deliveryWaitSeconds)
+        if deliveryGate == nil || hold != nil {
             erased = await eraseHoldingDelivery()
         } else {
             errorMessage = Self.eraseNothingErasedMessage
@@ -659,9 +660,9 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             resolveDeferredImportEffectsAfterErase(journalEraseSucceeded: false)
             erased = false
         }
-        // On every exit, the timeout included. After a pause that timed out the gate holds nothing for this erase,
-        // so this does nothing then.
-        await deliveryGate?.resumeAfterPause()
+        // On every exit, the timeout included. A pause that timed out has no hold, so this releases nothing then,
+        // and it can only ever release this erase's own hold.
+        await deliveryGate?.resume(hold)
         return erased
     }
 

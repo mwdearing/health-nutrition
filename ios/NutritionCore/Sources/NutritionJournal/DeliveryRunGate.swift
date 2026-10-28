@@ -14,12 +14,31 @@ import Foundation
 /// and a pass that arrives during the erase waits behind it, so no pass is between its busy check and its
 /// Health write while the stores are emptied.
 public actor DeliveryRunGate {
+    /// A hold on the gate taken by `pause(upTo:)`. Only the hold that currently has the gate can release it, so a
+    /// caller whose wait timed out, or that releases twice, can never let go of someone else's hold (#984).
+    public struct PauseHold: Sendable, Equatable {
+        fileprivate let id: UUID
+    }
+
     private var isRunning = false
     private var waiting: [(id: UUID, continuation: CheckedContinuation<Bool, Never>)] = []
-    /// True while an erase holds the gate through `pause(upTo:)`, so `resumeAfterPause()` releases only a hold it has.
-    private var heldByPause = false
+    /// The pause that holds the gate right now, or nil when a delivery run holds it or nothing does.
+    private var currentPause: PauseHold?
 
     public init() {}
+
+    /// The timer's wait for `seconds`, in nanoseconds: clamped to 0 through an hour, so an infinite, NaN or huge
+    /// timeout cannot trap the conversion. Negative values, negative infinity included, wait not at all; NaN and
+    /// positive infinity wait the full hour.
+    static func boundedNanoseconds(_ seconds: TimeInterval) -> UInt64 {
+        let bounded: TimeInterval
+        if seconds.isNaN || seconds == .infinity {
+            bounded = 3600
+        } else {
+            bounded = min(max(seconds, 0), 3600)
+        }
+        return UInt64(bounded * 1_000_000_000)
+    }
 
     /// Returns once no other run holds the gate. Every `enter()` is followed by exactly one `leave()`.
     func enter() async {
@@ -41,10 +60,10 @@ public actor DeliveryRunGate {
         }
     }
 
-    /// Takes the gate for an erase, waiting at most `seconds` for a run that holds it. Returns false, holding
+    /// Takes the gate for an erase, waiting at most `seconds` for a run that holds it. Returns nil, holding
     /// nothing, when the run is still going then: the erase touches nothing and the run is not cancelled, because
     /// a HealthKit write stopped halfway would leave the ledger out of step with Health.
-    public func pause(upTo seconds: TimeInterval) async -> Bool {
+    public func pause(upTo seconds: TimeInterval) async -> PauseHold? {
         let entered: Bool
         if !isRunning {
             isRunning = true
@@ -54,21 +73,22 @@ public actor DeliveryRunGate {
             entered = await withCheckedContinuation { continuation in
                 waiting.append((id, continuation))
                 Task { [weak self] in
-                    // Clamped to an hour, so an infinite, NaN or huge wait cannot trap the conversion.
-                    let bounded = seconds.isFinite ? min(max(seconds, 0), 3600) : 3600
-                    try? await Task.sleep(nanoseconds: UInt64(bounded * 1_000_000_000))
+                    try? await Task.sleep(nanoseconds: Self.boundedNanoseconds(seconds))
                     await self?.expire(id)
                 }
             }
         }
-        if entered { heldByPause = true }
-        return entered
+        guard entered else { return nil }
+        let hold = PauseHold(id: UUID())
+        currentPause = hold
+        return hold
     }
 
-    /// Releases the erase's hold. Safe to call on every exit: after a pause that timed out it does nothing.
-    public func resumeAfterPause() {
-        guard heldByPause else { return }
-        heldByPause = false
+    /// Releases `hold` when it is the hold that has the gate. Safe to call on every exit: nil (a pause that timed
+    /// out), a hold already released, or any other caller's hold does nothing.
+    public func resume(_ hold: PauseHold?) {
+        guard let hold, hold == currentPause else { return }
+        currentPause = nil
         leave()
     }
 
