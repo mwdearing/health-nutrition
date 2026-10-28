@@ -43,6 +43,14 @@ final class DeliveryRunGateTests: XCTestCase {
         await gate.resume(free)
     }
 
+    /// A pause on a gate that should be free. A free gate answers without scheduling a timeout; if this pause has to
+    /// wait instead, its timeout is fired so it answers nil and the caller's assertion fails rather than hanging.
+    private func pauseOnAFreeGate(_ gate: DeliveryRunGate, _ timer: ManualTimer) async -> DeliveryRunGate.PauseHold? {
+        let attempt = Task { await gate.pause(upTo: 1) }
+        if await timer.untilArmed(within: 1) { await timer.fire() }
+        return await attempt.value
+    }
+
     /// A pause handed the gate before its timeout fires keeps the gate, and the late timeout changes nothing: the
     /// waiter was removed at the handoff, so it is never answered twice (#1001). A manual timer sets the order.
     func testATimeoutThatFiresAfterTheHandoffChangesNothing() async {
@@ -50,19 +58,19 @@ final class DeliveryRunGateTests: XCTestCase {
         let gate = DeliveryRunGate(schedule: timer.schedule)
         await gate.enter() // a delivery pass is running
         let pauser = Task { await gate.pause(upTo: 1) }
-        await timer.untilArmed()
+        guard await timer.untilArmed() else { return XCTFail("the pause did not start waiting") }
         await gate.leave() // the pass ends and hands the gate to the waiting pause
         let hold = await pauser.value
         XCTAssertNotNil(hold, "the pause got the gate at the handoff")
         await timer.fire() // the timeout runs late, after the handoff
         // A second pause now has to wait, because the handed-off pause still has the gate; its own timeout answers nil.
         let probe = Task { await gate.pause(upTo: 1) }
-        await timer.untilArmed()
+        guard await timer.untilArmed() else { return XCTFail("the pause did not start waiting") }
         await timer.fire()
         let probeHold = await probe.value
         XCTAssertNil(probeHold, "the handed-off pause still has the gate")
         await gate.resume(hold)
-        let free = await gate.pause(upTo: 0)
+        let free = await pauseOnAFreeGate(gate, timer)
         XCTAssertNotNil(free, "the gate is free once that pause lets go")
         await gate.resume(free)
     }
@@ -74,36 +82,38 @@ final class DeliveryRunGateTests: XCTestCase {
         let gate = DeliveryRunGate(schedule: timer.schedule)
         await gate.enter()
         let pauser = Task { await gate.pause(upTo: 1) }
-        await timer.untilArmed()
+        guard await timer.untilArmed() else { return XCTFail("the pause did not start waiting") }
         await timer.fire()
         let hold = await pauser.value
         XCTAssertNil(hold, "the pause timed out")
         await gate.leave()
-        let free = await gate.pause(upTo: 0)
+        let free = await pauseOnAFreeGate(gate, timer)
         XCTAssertNotNil(free, "the gate opened, not handed to the dropped pause")
         await gate.resume(free)
     }
 }
 
-/// A timer the test fires by hand. `untilArmed` returns once a pause has scheduled its timeout, and `fire` runs that
-/// timeout to the end before it returns, so the order of a timeout and a handoff is exact.
+/// A timer the test fires by hand. `untilArmed` reports once a pause has scheduled its timeout, and `fire` runs that
+/// timeout to the end before it returns, so the order of a timeout and a handoff is exact. Every wait is bounded, so a
+/// broken gate fails the test instead of hanging the run.
 private actor ManualTimer {
     private var action: (@Sendable () async -> Void)?
-    private var armedWaiters: [CheckedContinuation<Void, Never>] = []
 
     nonisolated var schedule: DeliveryRunGate.Schedule {
         { _, action in Task { await self.arm(action) } }
     }
 
-    private func arm(_ action: @escaping @Sendable () async -> Void) {
-        self.action = action
-        for waiter in armedWaiters { waiter.resume() }
-        armedWaiters = []
-    }
+    private func arm(_ action: @escaping @Sendable () async -> Void) { self.action = action }
 
-    func untilArmed() async {
-        if action != nil { return }
-        await withCheckedContinuation { armedWaiters.append($0) }
+    var isArmed: Bool { action != nil }
+
+    /// True once a timeout is scheduled, polling for at most `seconds`.
+    func untilArmed(within seconds: TimeInterval = 5) async -> Bool {
+        let deadline = Date().addingTimeInterval(seconds)
+        while action == nil, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        return action != nil
     }
 
     func fire() async {
