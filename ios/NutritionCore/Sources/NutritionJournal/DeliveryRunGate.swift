@@ -25,7 +25,23 @@ public actor DeliveryRunGate {
     /// The pause that holds the gate right now, or nil when a delivery run holds it or nothing does.
     private var currentPause: PauseHold?
 
-    public init() {}
+    /// Runs `action` once `nanoseconds` have passed: the pause's timeout. Tests pass their own, to fire a timeout at an
+    /// exact point instead of racing a real clock.
+    typealias Schedule = @Sendable (_ nanoseconds: UInt64, _ action: @escaping @Sendable () async -> Void) -> Void
+    private let schedule: Schedule
+
+    public init() {
+        self.init(schedule: { nanoseconds, action in
+            Task {
+                try? await Task.sleep(nanoseconds: nanoseconds)
+                await action()
+            }
+        })
+    }
+
+    init(schedule: @escaping Schedule) {
+        self.schedule = schedule
+    }
 
     /// The timer's wait for `seconds`, in nanoseconds: clamped to 0 through an hour, so an infinite, NaN or huge
     /// timeout cannot trap the conversion. Negative values, negative infinity included, wait not at all; NaN and
@@ -72,10 +88,7 @@ public actor DeliveryRunGate {
             let id = UUID()
             entered = await withCheckedContinuation { continuation in
                 waiting.append((id, continuation))
-                Task { [weak self] in
-                    try? await Task.sleep(nanoseconds: Self.boundedNanoseconds(seconds))
-                    await self?.expire(id)
-                }
+                schedule(Self.boundedNanoseconds(seconds)) { [weak self] in await self?.expire(id) }
             }
         }
         guard entered else { return nil }
