@@ -11,7 +11,6 @@ public enum ReferenceSex: String, Sendable, Hashable, Codable, CaseIterable {
 public enum ReferenceAgeBand: String, Sendable, Hashable, Codable, CaseIterable {
     case years14To18, years19To30, years31To50, years51To70, years71Plus
 
-
     /// The band an age falls in, or nil under 14, which the table does not cover.
     public init?(ageYears: Int) {
         switch ageYears {
