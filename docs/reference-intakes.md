@@ -77,9 +77,10 @@ potassium):
 | Chromium, copper, iodine, manganese, molybdenum, selenium | `Chromium`, `Copper`, `Iodine`, `Manganese`, `Molybdenum`, `Selenium` pages |
 
 Each page is `https://ods.od.nih.gov/factsheets/<Name>-HealthProfessional/`. The values are in the RDA or AI table
-(Table 1, or Table 2 for vitamin D) and the UL table (Table 3, or Table 4 for vitamin D) of each sheet. The scope of each limit comes from the
-sheet's own text beside its UL table. `ReferenceIntakesTests` asserts the break points by hand (magnesium at 31; B6,
-chromium, calcium and women's iron at 51; vitamin D and the phosphorus limit at 71), so a typo fails a test.
+(Table 1, or Table 2 for vitamin D) and the UL table (Table 3, or Table 4 for vitamin D) of each sheet. The scope of
+each limit comes from the sheet's own text beside its UL table. `ReferenceIntakesTests` asserts the break points by
+hand (magnesium at 31; B6, chromium, calcium and women's iron at 51; vitamin D and the phosphorus limit at 71), so a
+typo fails a test.
 
 ### Table per nutrient
 
