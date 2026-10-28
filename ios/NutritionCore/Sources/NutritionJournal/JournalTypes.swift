@@ -488,7 +488,8 @@ public protocol JournalStore: AnyObject, Sendable {
     func createSequenced(
         _ intake: Intake, components: [IntakeComponent], product: ProductDefinition?, now: Date
     ) throws -> (IntakeRevision, UInt64)
-    /// The place of the latest delete in the store's commit order.
+    /// The place of the latest delete or water quick-add in the store's commit order. Both advance it, so a
+    /// water offer and a delete offer can be compared to tell which came last.
     var deleteSequence: UInt64 { get }
     /// Takes back a delete inside the Undo window: withdraws its queued delete operations and restores the
     /// intake and its projections as they were. Refused once a delete has reached a destination.
