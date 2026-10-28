@@ -104,7 +104,7 @@ public struct ReferenceGroup: Sendable, Hashable, Codable {
     /// Every group, the list a picker shows: women, then men, youngest band first, then pregnancy and
     /// breastfeeding, youngest band first.
     public static let all: [ReferenceGroup] = ReferenceSex.allCases.flatMap { sex in
-        ReferenceAgeBand.allCases.map { ReferenceGroup(sex: sex, ageBand: $0) }
+        ReferenceAgeBand.allCases.filter { $0 != .years14To18 }.map { ReferenceGroup(sex: sex, ageBand: $0) }
     } + [ReferenceLifeStage.pregnancy, .lactation].flatMap { stage in
         stage.ageBands.compactMap { ReferenceGroup(lifeStage: stage, ageBand: $0) }
     }
