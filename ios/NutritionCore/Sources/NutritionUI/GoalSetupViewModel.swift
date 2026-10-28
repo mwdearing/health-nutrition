@@ -78,6 +78,23 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
         self.goals = goals
         self.now = now
         self.calendar = calendar
+        fillHeightFromHealth()
+    }
+
+    /// Fills the height field from Apple Health when it is empty, so a person who connected Health need not
+    /// type it. A height outside the range the estimate accepts is left out; the field stays editable.
+    func fillHeightFromHealth() {
+        guard heightCentimetersText.isEmpty, heightFeetText.isEmpty, heightInchesText.isEmpty,
+              let centimeters = goals.latestHeightCentimeters(), centimeters >= 120, centimeters <= 230
+        else { return }
+        if unitSystem == .usCustomary {
+            let totalInches = Self.rounded(centimeters / Self.centimetersPerInch, scale: 0, .plain)
+            let feet = Self.rounded(totalInches / 12, scale: 0, .down)
+            heightFeetText = DecimalFormatting.text(feet)
+            heightInchesText = DecimalFormatting.text(totalInches - feet * 12)
+        } else {
+            heightCentimetersText = DecimalFormatting.text(Self.rounded(centimeters, scale: 0, .plain))
+        }
     }
 
     /// The unit system the answers are asked in.
@@ -342,6 +359,7 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
         resultError = nil
         fieldErrors = [:]
         adjustmentNote = nil
+        fillHeightFromHealth()
     }
 
     /// Estimates the results from the answers, filling the drafts the person may then edit.

@@ -255,6 +255,10 @@ public final class GoalsViewModel: ObservableObject {
         "Raises today's calorie goal by the active energy Apple Health reports so far. Needs Show steps, "
         + "activity and weight on Today. Your saved goal does not change."
 
+    /// The newest height Apple Health reports, in centimeters, or nil when none was read. Goal setup uses it
+    /// only to fill an empty height field; it is never saved.
+    public var latestHeightCentimeters: () -> Decimal? = { nil }
+
     /// The unit system the screen shows amounts in, read from the same preferences as the rest of the app.
     public var unitSystem: UnitSystem { preferences.unitSystem }
 
