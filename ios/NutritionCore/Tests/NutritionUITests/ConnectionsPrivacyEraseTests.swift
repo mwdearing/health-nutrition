@@ -263,14 +263,23 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
             store: EraseStubStore(), favorites: EraseStubFavorites(), erasers: [RecordingEraser()],
             eraseLocalAccount: { await gate.pause() })
         let erasing = Task { await model.eraseAllData() }
-        while !(await gate.entered()) { await Task.yield() }
+        // Bounded, so an erase that never reaches the account cleanup fails here instead of hanging the run.
+        var entered = await gate.entered()
+        let deadline = Date().addingTimeInterval(5)
+        while !entered, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 10_000_000)
+            entered = await gate.entered()
+        }
+        XCTAssertTrue(entered, "the erase reached the account cleanup")
 
         model.importJournal(data: Data("[]".utf8))
 
         XCTAssertEqual(model.importState, .failed)
         XCTAssertEqual(model.importMessage, ConnectionsPrivacyViewModel.importDuringEraseMessage)
         await gate.open()
-        let erased = await erasing.value
+        guard let erased = await finished(erasing) else {
+            return XCTFail("the erase never finished after the account cleanup was let go")
+        }
         XCTAssertTrue(erased)
     }
 
