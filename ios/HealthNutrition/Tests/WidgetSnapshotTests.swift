@@ -73,7 +73,9 @@ final class WidgetSnapshotTests: XCTestCase {
         snapshot.energyKcal = 800
         snapshot.remainingKcal = 1_200
         snapshot.burnedKcal = 250
-        let grouped = { (value: Double) in value.formatted(.number.precision(.fractionLength(0))) }
+        let grouped = { (value: Double) in
+            value.formatted(.number.precision(.fractionLength(0)).locale(Locale(identifier: "en_US")))
+        }
         XCTAssertEqual(snapshot.remainingText, grouped(1_200))
         XCTAssertEqual(snapshot.foodText, "800")
         XCTAssertEqual(snapshot.burnedText, "250")
@@ -89,6 +91,7 @@ final class WidgetSnapshotTests: XCTestCase {
         snapshot.remainingKcal = nil
         snapshot.burnedKcal = nil
         XCTAssertEqual(WidgetFigure.groupedWholeNumber(-0.4), grouped(0), "never \"-0\"")
+        XCTAssertEqual(WidgetFigure.groupedWholeNumber(-1_500), "-1,500", "grouped in en_US whatever the device locale")
         XCTAssertNil(WidgetFigure.groupedWholeNumber(.infinity))
         XCTAssertNil(WidgetFigure.groupedWholeNumber(nil))
         XCTAssertNil(snapshot.remainingText)
@@ -97,7 +100,9 @@ final class WidgetSnapshotTests: XCTestCase {
     }
 
     func testAPartialDayMarksFoodAndRemainingAsApproved() throws {
-        let grouped = { (value: Double) in value.formatted(.number.precision(.fractionLength(0))) }
+        let grouped = { (value: Double) in
+            value.formatted(.number.precision(.fractionLength(0)).locale(Locale(identifier: "en_US")))
+        }
         var snapshot = WidgetSnapshot.empty(at: Date(timeIntervalSince1970: 1_700_000_000))
         snapshot.energyKcal = 800
         snapshot.remainingKcal = 1_200
