@@ -248,9 +248,12 @@ final class JournalImportGoalsTests: XCTestCase {
             NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g),
             NutrientGoal(nutrient: "energy", target: Decimal(2000), unit: .kcal),
         ])
+        // The restore writes both goals, which empties the receipt, and then marks it done.
+        _ = try base.writeRestoredGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g), receipt: digest)
+        _ = try base.writeRestoredGoal(NutrientGoal(nutrient: "energy", target: Decimal(2000), unit: .kcal), receipt: digest)
         try base.markGoalRestoreReceiptDone(digest)
-        try base.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
         // The person deletes energy after the goals were written.
+        try base.removeGoal(nutrient: "energy")
 
         XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: nil, goals: base))
         XCTAssertNil(try base.goal(for: "energy"), "a goal the person deleted must not come back")
