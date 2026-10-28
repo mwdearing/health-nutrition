@@ -20,10 +20,12 @@ final class QuickAddLabelUITests: XCTestCase {
         XCTAssertTrue(waitUntil(timeout: 30, { hittableAdd() != nil }), "no hittable Add button on the Today screen")
 
         // A tap that lands while Today is still settling leaves Today on screen, so the tap is checked by the Add
-        // screen's Amounts only action appearing, with one more tap on the Add button if it does not.
+        // screen's Amounts only action appearing, with one more tap on the Add button if it does not. The retry
+        // runs only while Today's Add button is still hittable and Amounts only is still absent, so an Add screen
+        // that opened late is not opened a second time.
         let amountsOnly = app.buttons["Amounts only"]
         hittableAdd()?.tap()
-        if !amountsOnly.waitForExistence(timeout: 10) { hittableAdd()?.tap() }
+        if !amountsOnly.waitForExistence(timeout: 10), !amountsOnly.exists, let add = hittableAdd() { add.tap() }
         XCTAssertTrue(amountsOnly.waitForExistence(timeout: 20), "the Amounts only quick action is not on the Add screen")
         amountsOnly.tap()
 
