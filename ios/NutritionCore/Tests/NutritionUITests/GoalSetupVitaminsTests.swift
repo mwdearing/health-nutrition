@@ -8,10 +8,10 @@ import XCTest
 /// person's age and sex, and "Set my own" offers the same values prefilled to edit.
 @MainActor
 final class GoalSetupVitaminsTests: XCTestCase {
-    private func makeModel(goals: [NutrientGoal] = []) -> (GoalSetupViewModel, InMemoryGoalStore) {
+    private func makeModel(goals: [NutrientGoal] = [], loadRows: Bool = true) -> (GoalSetupViewModel, InMemoryGoalStore) {
         let store = InMemoryGoalStore(goals: goals)
         let goalsModel = GoalsViewModel(store: store, preferences: InMemoryDisplayPreferences(unitSystem: .metric))
-        goalsModel.load()
+        if loadRows { goalsModel.load() }
         return (GoalSetupViewModel(goals: goalsModel), store)
     }
 
@@ -112,6 +112,17 @@ final class GoalSetupVitaminsTests: XCTestCase {
         model.chooseVitamins(.recommended)
         XCTAssertTrue(model.save())
         XCTAssertEqual(try saved(store)["iron"]?.target, 20)
+    }
+
+    /// A goal in the store is kept even when the Goals screen's rows never loaded, so the prefill offered it.
+    func testAStoredGoalIsKeptWhenTheRowsDidNotLoad() throws {
+        let (model, store) = makeModel(goals: [NutrientGoal(nutrient: "iron", target: 20, unit: .mg)], loadRows: false)
+        manAtResults(model)
+        XCTAssertTrue(model.vitaminPrefill.contains { $0.nutrient == "iron" }, "the rows did not hide it")
+        model.chooseVitamins(.recommended)
+        XCTAssertTrue(model.save())
+        XCTAssertEqual(try saved(store)["iron"]?.target, 20)
+        XCTAssertEqual(try saved(store)["calcium"]?.target, 1000)
     }
 
     /// "Set my own" fills the fields with the reference values; an edited one is what is saved, and a

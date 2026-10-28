@@ -329,7 +329,7 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
             if let value = AmountParser.parseTyped(text), value > 0 { continue }
             fieldErrors[key] = Self.invalidFieldNotice
         }
-        let vitamins = vitaminGoalsToSave()
+        var vitamins = vitaminGoalsToSave()
         for entry in vitamins {
             if let value = AmountParser.parseTyped(entry.text), value > 0 { continue }
             fieldErrors[entry.nutrient] = Self.invalidFieldNotice
@@ -363,6 +363,9 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
         }
         var before: [(nutrient: String, goal: NutrientGoal?)] = []
         do {
+            // A goal the store holds is never overwritten, even when the Goals screen's rows did not load and
+            // so did not hide it from the prefill.
+            vitamins = try vitamins.filter { try goals.storedGoal(for: $0.nutrient) == nil }
             for key in Self.targetKeys + vitamins.map(\.nutrient) {
                 let original = try goals.storedGoal(for: key)
                 before.append((nutrient: key, goal: original))
