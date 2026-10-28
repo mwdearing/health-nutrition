@@ -237,9 +237,12 @@ struct SupplementStackPicker: View {
 
     var body: some View {
         List {
+            // A refused add says why, and the picker's own read failure still shows beside it, so a partial list
+            // never reads as complete. The screen-wide read error is the same text, so it is shown once.
             if let message = model.errorMessage {
                 InlineNotice(message, tone: .failed)
-            } else if model.pickerReadFailed {
+            }
+            if model.pickerReadFailed, model.errorMessage != SupplementStackViewModel.readFailedMessage {
                 InlineNotice(SupplementStackViewModel.readFailedMessage, tone: .failed)
             }
             // A picker that could not be read is not an empty one either.
