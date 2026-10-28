@@ -25,8 +25,7 @@ final class JournalImportFavoriteFieldsTests: JournalImportTestCase {
                 guard case .corrupt(let reason) = error as? JournalImportError else {
                     return XCTFail("expected a corrupt file for an empty \(field), got \(error)")
                 }
-                // An empty id may also trip an earlier id check; the name and category reach only this one.
-                if field != "id" { XCTAssertTrue(reason.contains("empty \(field)"), reason) }
+                XCTAssertTrue(reason.contains("empty \(field)"), reason)
             }
             XCTAssertTrue(try journal.activeIntakes().isEmpty, field)
             XCTAssertTrue(try favoritesStore.list().isEmpty, field)

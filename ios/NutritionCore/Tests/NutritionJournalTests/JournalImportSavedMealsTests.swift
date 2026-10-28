@@ -153,6 +153,28 @@ final class JournalImportSavedMealsTests: JournalImportTestCase {
                 meal["items"] = items
                 return meal
             }),
+            // An item is a favorite template, held to the same required fields (#72).
+            ("an item with an empty id", { meal in
+                var meal = meal
+                var items = meal["items"] as? [[String: Any]] ?? []
+                items[0]["id"] = ""
+                meal["items"] = items
+                return meal
+            }),
+            ("an item with an empty display name", { meal in
+                var meal = meal
+                var items = meal["items"] as? [[String: Any]] ?? []
+                items[0]["display_name"] = ""
+                meal["items"] = items
+                return meal
+            }),
+            ("an item with an empty category", { meal in
+                var meal = meal
+                var items = meal["items"] as? [[String: Any]] ?? []
+                items[0]["category"] = ""
+                meal["items"] = items
+                return meal
+            }),
             ("an item with its own meal", { meal in
                 var meal = meal
                 var items = meal["items"] as? [[String: Any]] ?? []
