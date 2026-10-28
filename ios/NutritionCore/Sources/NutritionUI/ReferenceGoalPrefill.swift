@@ -9,7 +9,10 @@ import NutritionJournal
 /// may state in IU. Keys outside the reference table get nothing: chloride and the macronutrients have no
 /// verified values by age and sex (docs/reference-intakes.md, "Not verified").
 ///
-/// It returns goals and stores nothing; the caller writes them as ordinary goals the person can change.
+/// It returns goals and stores nothing; the caller writes them as ordinary goals the person can change. Each
+/// goal is in the reference's own unit, as the hint's Use writes it, so there is no unit check here: the
+/// hint's dimension check guards a row counted in IU, and those are vitamins A, D and E, which are left out.
+/// Which rows a screen shows is the caller's choice; a caller that shows fewer rows filters the result.
 public enum ReferenceGoalPrefill {
     /// One goal per covered vitamin or mineral without a goal, in the reference table's order. Empty without
     /// a group, since the table has no row for someone who gives no age or sex.
