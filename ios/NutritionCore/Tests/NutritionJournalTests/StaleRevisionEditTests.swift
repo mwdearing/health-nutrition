@@ -55,6 +55,22 @@ final class StaleRevisionEditTests: XCTestCase {
         XCTAssertEqual(try store.revisions(of: id).last?.components.first?.amount, 9)
     }
 
+    /// Called through the protocol, as the entry editor calls it, the store's own check runs: a stale edit is refused
+    /// and the entry keeps its revision.
+    func testThroughTheProtocolAStaleEditIsRefused() throws {
+        let store = try makeStore()
+        try entryAtRevisionTwo(store)
+        let journal: any JournalStore = store
+
+        XCTAssertThrowsError(try journal.editRemovingUnits(
+            intakeID: id, components: fiber(9), product: nil, changeReason: "Amount changed", now: when,
+            occurredAt: nil, timeZoneIdentifier: nil, unitRemovals: [], expectedRevision: 1)
+        ) { error in
+            XCTAssertEqual(error as? JournalError, .staleRevision(self.id))
+        }
+        XCTAssertEqual(try store.revisions(of: id).map(\.number), [1, 2])
+    }
+
     /// The unit removal goes with the edit, so a refused edit forgets no unit either.
     func testAnEditRemovingUnitsAgainstAnOlderRevisionIsRefusedAndKeepsTheUnits() throws {
         let store = try makeStore()
