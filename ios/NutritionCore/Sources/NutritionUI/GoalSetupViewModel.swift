@@ -329,7 +329,11 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
             if let value = AmountParser.parseTyped(text), value > 0 { continue }
             fieldErrors[key] = Self.invalidFieldNotice
         }
-        var vitamins = vitaminGoalsToSave()
+        // A goal the store holds is never overwritten, even when the Goals screen's rows did not load and so did
+        // not hide it from the prefill. A store that cannot be read fails the save below, when the goals are captured.
+        let vitamins = vitaminGoalsToSave().filter { entry in
+            ((try? goals.storedGoal(for: entry.nutrient)) ?? nil) == nil
+        }
         for entry in vitamins {
             if let value = AmountParser.parseTyped(entry.text), value > 0 { continue }
             fieldErrors[entry.nutrient] = Self.invalidFieldNotice
@@ -363,10 +367,7 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
         }
         var before: [(nutrient: String, goal: NutrientGoal?)] = []
         do {
-            // A goal the store holds is never overwritten, even when the Goals screen's rows did not load and
-            // so did not hide it from the prefill.
-            vitamins = try vitamins.filter { try goals.storedGoal(for: $0.nutrient) == nil }
-            for key in Self.targetKeys + vitamins.map(\.nutrient) {
+            for key in Self.targetKeys + vitamins.map({ $0.nutrient }) {
                 let original = try goals.storedGoal(for: key)
                 before.append((nutrient: key, goal: original))
             }
