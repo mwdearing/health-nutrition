@@ -1,6 +1,6 @@
 import Foundation
 import NutritionDomain
-import NutritionJournal
+@testable import NutritionJournal
 import XCTest
 @testable import NutritionUI
 
@@ -100,6 +100,85 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
 
     private func makeModel(_ erasers: [JournalErasing]) -> ConnectionsPrivacyViewModel {
         ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(), store: EraseStubStore(), favorites: EraseStubFavorites(), erasers: erasers)
+    }
+
+    // MARK: - The Health delivery gate (#841)
+
+    private func makeModel(
+        _ eraser: RecordingEraser, gate: DeliveryRunGate, waitSeconds: TimeInterval = 5,
+        eraseLocalAccount: @escaping () async throws -> Void = {}
+    ) -> ConnectionsPrivacyViewModel {
+        ConnectionsPrivacyViewModel(
+            goals: InMemoryGoalStore(), store: EraseStubStore(), favorites: EraseStubFavorites(), erasers: [eraser],
+            eraseLocalAccount: eraseLocalAccount, deliveryGate: gate, deliveryWaitSeconds: waitSeconds)
+    }
+
+    /// An erase that finds a Health pass running waits for it before it touches any store.
+    func testEraseWaitsForARunningHealthPassBeforeTouchingAStore() async {
+        let gate = DeliveryRunGate()
+        let eraser = RecordingEraser()
+        let model = makeModel(eraser, gate: gate)
+        await gate.enter() // a delivery pass is running
+        let erase = Task { await model.eraseAllData() }
+        // Polled rather than slept for a fixed time, so a slow runner cannot fail this before the erase starts.
+        let deadline = Date().addingTimeInterval(5)
+        while !model.isErasing, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertTrue(model.isErasing, "the erase has started, so the check below is not vacuous")
+        try? await Task.sleep(nanoseconds: 100_000_000) // time for an erase that skipped the gate to reach a store
+        XCTAssertEqual(eraser.eraseCount, 0, "no store is touched while the pass runs")
+        await gate.leave()
+        let erased = await erase.value
+        XCTAssertTrue(erased)
+        XCTAssertEqual(eraser.eraseCount, 1)
+    }
+
+    /// A pass that is still running after the wait leaves everything in place: nothing erased, and Retry offered.
+    func testEraseGivesUpAfterTheWaitWithNothingErasedAndOffersRetry() async {
+        let gate = DeliveryRunGate()
+        let eraser = RecordingEraser()
+        let model = makeModel(eraser, gate: gate, waitSeconds: 0.05)
+        await gate.enter()
+        let erased = await model.eraseAllData()
+        XCTAssertFalse(erased)
+        XCTAssertEqual(eraser.eraseCount, 0, "nothing is erased")
+        XCTAssertEqual(model.errorMessage, ConnectionsPrivacyViewModel.eraseNothingErasedMessage)
+        XCTAssertTrue(model.eraseRetryAvailable)
+        await gate.leave()
+    }
+
+    /// A pass that arrives while the erase runs cannot start until the erase is done.
+    func testAPassCannotStartWhileTheEraseHoldsTheGate() async {
+        let gate = DeliveryRunGate()
+        var passCouldStart: Bool?
+        let model = makeModel(RecordingEraser(), gate: gate, eraseLocalAccount: {
+            passCouldStart = await gate.pause(upTo: 0.05) != nil
+        })
+        _ = await model.eraseAllData()
+        XCTAssertEqual(passCouldStart, false, "the erase holds the delivery gate while it runs")
+    }
+
+    /// The erase lets go of the gate on every exit: after a success, a failed store, and a timed-out wait.
+    func testEraseReleasesTheGateOnEveryExit() async {
+        for failing in [false, true] {
+            let gate = DeliveryRunGate()
+            let model = makeModel(RecordingEraser(failure: failing ? EraseFailure() : nil), gate: gate)
+            _ = await model.eraseAllData()
+            let free = await gate.pause(upTo: 0.5)
+            XCTAssertNotNil(free, "the gate is free after an erase that \(failing ? "failed" : "succeeded")")
+            await gate.resume(free)
+        }
+        // Timed out: the erase never held the gate, so it releases nothing the pass still holds.
+        let gate = DeliveryRunGate()
+        let model = makeModel(RecordingEraser(), gate: gate, waitSeconds: 0.05)
+        await gate.enter()
+        _ = await model.eraseAllData()
+        let stillHeld = await gate.pause(upTo: 0.05)
+        XCTAssertNil(stillHeld, "a timed-out erase does not release the running pass's hold")
+        await gate.leave()
+        let freeAfterPass = await gate.pause(upTo: 0.5)
+        XCTAssertNotNil(freeAfterPass, "the gate is free once the pass ends")
     }
 
     func testDeliveryGateClosesBeforeFirstEraserEvenWhenEraseFails() async {
