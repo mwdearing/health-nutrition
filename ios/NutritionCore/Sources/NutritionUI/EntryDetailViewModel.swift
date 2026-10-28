@@ -260,7 +260,7 @@ public final class EntryDetailViewModel: ObservableObject {
                     amountText: $0.amount.isNaN ? "unknown" : DecimalFormatting.text($0.amount), unit: $0.unit)
             }
             // A snapshot that cannot be read is a failed read, not an entry without a product (#775).
-            let snapshot = try current.productSnapshotID.flatMap { try store.product(snapshotID: $0) }
+            let snapshot = current.productSnapshotID.flatMap { try? store.product(snapshotID: $0) }
             additionalNutrients = Self.additionalNutrients(of: snapshot)
             sourceLine = Self.sourceLine(for: snapshot)
             sourceDetailRows = Self.sourceDetails(for: snapshot)
