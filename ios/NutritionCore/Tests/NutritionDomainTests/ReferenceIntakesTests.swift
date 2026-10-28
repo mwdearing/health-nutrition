@@ -122,7 +122,8 @@ final class ReferenceIntakesTests: XCTestCase {
     }
 
     func testAgeBandsBreakAtThirtyOneFiftyOneAndSeventyOneAndStartAtNineteen() {
-        XCTAssertNil(ReferenceAgeBand(ageYears: 18))
+        XCTAssertEqual(ReferenceAgeBand(ageYears: 18), .years14To18)
+        XCTAssertNil(ReferenceAgeBand(ageYears: 13))
         XCTAssertEqual(ReferenceAgeBand(ageYears: 19), .years19To30)
         XCTAssertEqual(ReferenceAgeBand(ageYears: 30), .years19To30)
         XCTAssertEqual(ReferenceAgeBand(ageYears: 31), .years31To50)
