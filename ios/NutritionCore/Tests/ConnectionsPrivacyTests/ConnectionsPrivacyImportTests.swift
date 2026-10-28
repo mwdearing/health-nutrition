@@ -1012,6 +1012,10 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         await waitForImportToSettle(model)
         XCTAssertEqual(model.importState, .failed)
         XCTAssertEqual(model.importMessage, ConnectionsPrivacyViewModel.importDuringHealthDeliveryMessage)
+        // The approved wording (Mike, 2026-10-28), pinned as a literal so a change to it is a visible test change.
+        XCTAssertEqual(
+            ConnectionsPrivacyViewModel.importDuringHealthDeliveryMessage,
+            "Apple Health was still being updated, so nothing was imported. Try again in a moment.")
         XCTAssertEqual(journal.restoredPlans.count, 0, "nothing is imported")
         await gate.leave()
     }

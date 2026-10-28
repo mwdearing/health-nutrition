@@ -135,7 +135,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     public static let importDuringEraseMessage =
         "Data was being erased, so nothing was imported. Try again once that is finished."
     /// A restore that could not take the Health delivery gate, because a pass was still writing to Apple Health
-    /// after the wait (#982). Nothing was imported. Placeholder copy, pending Mike's approval on the #982 card.
+    /// after the wait (#982). Nothing was imported. Wording approved by Mike on 2026-10-28.
     public static let importDuringHealthDeliveryMessage =
         "Apple Health was still being updated, so nothing was imported. Try again in a moment."
     public static let partialRestoreWarningMessage =
