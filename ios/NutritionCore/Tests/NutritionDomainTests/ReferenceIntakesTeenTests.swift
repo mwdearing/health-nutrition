@@ -74,10 +74,11 @@ final class ReferenceIntakesTeenTests: XCTestCase {
         }
     }
 
-    /// The picker lists the adult groups only until the 14 to 18 wording is approved; the band is reached by
-    /// age.
-    func testThePickerListStaysAdultOnly() {
-        XCTAssertEqual(ReferenceGroup.all.count, 12)
-        XCTAssertFalse(ReferenceGroup.all.contains { $0.ageBand == .years14To18 })
+    /// The picker lists the 14 to 18 groups too, worded like the adult ones (approved 2026-10-27).
+    func testThePickerListsTheTeenGroups() throws {
+        XCTAssertEqual(ReferenceGroup.all.count, 16)
+        let teen = ReferenceGroup.all.filter { $0.ageBand == .years14To18 }.map(\.label)
+        XCTAssertEqual(teen, ["Women 14 to 18", "Men 14 to 18", "Pregnancy 14 to 18", "Breastfeeding 14 to 18"])
+        XCTAssertEqual(ReferenceGroup.all.first, women)
     }
 }

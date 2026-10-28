@@ -14,6 +14,12 @@ public struct GoalPaceOption: Sendable, Equatable {
     public let kilogramsPerWeek: Decimal
 }
 
+/// The vitamins and minerals choice on the results step: the reference values as they are, or the same
+/// values prefilled for the person to edit.
+public enum VitaminGoalChoice: Sendable, Equatable {
+    case recommended, own
+}
+
 /// Backs the guided goal setup: the answers, the steps through them, the estimate and the save.
 ///
 /// The answers live here only while the sheet is open. `clearAnswers()` empties them when it closes. Of
@@ -62,6 +68,10 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
     @Published public var selectedPaceKilograms: Decimal?
     /// The results as the person may edit them, one text per key in `targetKeys`.
     @Published public var draftTargets: [String: String] = [:]
+    /// Nil until the person picks one; then the vitamins and minerals the save writes come from it.
+    @Published public private(set) var vitaminChoice: VitaminGoalChoice?
+    /// The editable vitamin and mineral values for "Set my own", prefilled from the reference values.
+    @Published public var vitaminDrafts: [String: String] = [:]
     /// Set when the answers cannot be estimated, in plain words for the results screen.
     @Published public private(set) var resultError: String?
     /// The message for each result field that cannot be saved, keyed by nutrient. The fields stay on
@@ -71,6 +81,8 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
     @Published public private(set) var adjustmentNote: String?
 
     private let goals: GoalsViewModel
+    /// Set once Health's height has been put in the field, so a height the person then clears stays cleared.
+    private var filledHeightFromHealth = false
     private let now: () -> Date
     private let calendar: Calendar
 
@@ -78,6 +90,32 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
         self.goals = goals
         self.now = now
         self.calendar = calendar
+        fillHeightFromHealth()
+    }
+
+    /// Fills the height field from Apple Health when it is empty, so a person who connected Health need not
+    /// type it. Runs when the sheet opens and again on the body step, in case Today's read arrived since. A
+    /// height that, once rounded for the field, is outside the range the estimate accepts is left out.
+    func fillHeightFromHealth() {
+        guard !filledHeightFromHealth,
+              heightCentimetersText.isEmpty, heightFeetText.isEmpty, heightInchesText.isEmpty,
+              let centimeters = goals.latestHeightCentimeters()
+        else { return }
+        if unitSystem == .usCustomary {
+            let totalInches = Self.rounded(centimeters / Self.centimetersPerInch, scale: 0, .plain)
+            let least = Self.rounded(Decimal(120) / Self.centimetersPerInch, scale: 0, .up)
+            let most = Self.rounded(Decimal(230) / Self.centimetersPerInch, scale: 0, .down)
+            guard totalInches >= least, totalInches <= most else { return }
+            let feet = Self.rounded(totalInches / 12, scale: 0, .down)
+            heightFeetText = DecimalFormatting.text(feet)
+            heightInchesText = DecimalFormatting.text(totalInches - feet * 12)
+            filledHeightFromHealth = true
+        } else {
+            let whole = Self.rounded(centimeters, scale: 0, .plain)
+            guard whole >= 120, whole <= 230 else { return }
+            heightCentimetersText = DecimalFormatting.text(whole)
+            filledHeightFromHealth = true
+        }
     }
 
     /// The unit system the answers are asked in.
@@ -144,11 +182,96 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
         return nil
     }
 
+    public static let vitaminRecommendedTitle = "Use recommended amounts"
+    public static let vitaminOwnTitle = "Set my own"
+    public static let vitaminSourceNotice =
+        "From the Dietary Reference Intakes (NIH). Vitamins A, D and E are yours to set, since labels often list them in IU."
+    public static let vitaminNoGroupNotice = "Add your age and sex to prefill these."
+
+    /// The published reference group for the answers given, or nil without a sex (or with "unspecified") or
+    /// an age the tables cover.
+    public var referenceGroup: ReferenceGroup? {
+        guard let age = ageYears(), let band = ReferenceAgeBand(ageYears: age) else { return nil }
+        switch sex {
+        case .female: return ReferenceGroup(sex: .female, ageBand: band)
+        case .male: return ReferenceGroup(sex: .male, ageBand: band)
+        case .unspecified, nil: return nil
+        }
+    }
+
+    /// "Prefilled for men 31 to 50. You can change any of them.", or nil without a group or with nothing left
+    /// to prefill (every covered vitamin and mineral already has a goal).
+    public var vitaminPrefillNotice: String? {
+        guard let label = referenceGroup?.label, !vitaminPrefill.isEmpty else { return nil }
+        return "Prefilled for \(label.prefix(1).lowercased() + label.dropFirst()). You can change any of them."
+    }
+
+    /// Whether to ask for the answers the prefill needs: only when age or sex is missing. Someone who answered
+    /// "unspecified" did answer, and the tables publish no row for them, so nothing is asked and no section shows.
+    public var vitaminShowsNoGroupNotice: Bool {
+        sex == nil || ageYears() == nil
+    }
+
+    /// The reference values the step offers: one per covered vitamin or mineral without a goal already, read
+    /// from the Goals screen's rows and from the store itself, so a goal is skipped even when the rows did not load.
+    public var vitaminPrefill: [NutrientGoal] {
+        let existing = Set(goals.rows.compactMap { $0.targetText == nil ? nil : $0.nutrient })
+        return ReferenceGoalPrefill.goals(for: referenceGroup, existingGoalKeys: existing)
+            .filter { !storeHoldsGoal(for: $0.nutrient) }
+    }
+
+    /// Whether the store holds a goal for this nutrient under its own key or an alias (`vitamin-c`). For what
+    /// the step shows, a store that cannot be read counts as holding one, so nothing is offered over a goal that
+    /// may exist; the save reads again with `storedGoalExists(for:)` and fails instead.
+    private func storeHoldsGoal(for nutrient: String) -> Bool {
+        (try? storedGoalExists(for: nutrient)) ?? true
+    }
+
+    /// The same check, throwing when the store cannot be read.
+    private func storedGoalExists(for nutrient: String) throws -> Bool {
+        for key in HealthKitWritePlanner.acceptedKeys(for: nutrient) {
+            if try goals.storedGoal(for: key) != nil { return true }
+        }
+        return false
+    }
+
+    /// Picks how vitamins and minerals are saved. "Set my own" fills the fields with the reference values
+    /// the first time, and keeps any edits after that.
+    public func chooseVitamins(_ choice: VitaminGoalChoice) {
+        vitaminChoice = choice
+        if choice == .own, vitaminDrafts.isEmpty {
+            vitaminDrafts = Dictionary(
+                uniqueKeysWithValues: vitaminPrefill.map { ($0.nutrient, DecimalFormatting.text($0.target)) })
+        }
+    }
+
+    /// The vitamin and mineral goals a save writes: the reference values, or the person's own text with a
+    /// cleared field left out. Nothing without a choice.
+    private func vitaminGoalsToSave() -> [(nutrient: String, text: String, unit: MeasureUnit)] {
+        guard let choice = vitaminChoice else { return [] }
+        return vitaminPrefill.compactMap { goal -> (nutrient: String, text: String, unit: MeasureUnit)? in
+            switch choice {
+            case .recommended:
+                return (goal.nutrient, DecimalFormatting.text(goal.target), goal.unit)
+            case .own:
+                let text = (vitaminDrafts[goal.nutrient] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                return text.isEmpty ? nil : (goal.nutrient, text, goal.unit)
+            }
+        }
+    }
+
+    /// Forgets the vitamins and minerals choice and its fields, for answers that may have changed the group.
+    private func clearVitaminChoice() {
+        vitaminChoice = nil
+        vitaminDrafts = [:]
+    }
+
     public func next() {
         guard canGoNext else { return }
         let list = steps
         guard let index = list.firstIndex(of: step), index + 1 < list.count else { return }
         step = list[index + 1]
+        if step == .body { fillHeightFromHealth() }
         if step == .results { calculate() }
     }
 
@@ -156,6 +279,7 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
         let list = steps
         guard let index = list.firstIndex(of: step), index > 0 else { return }
         if step == .results {
+            clearVitaminChoice()
             draftTargets = [:]
             resultError = nil
             fieldErrors = [:]
@@ -228,6 +352,19 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
             if let value = AmountParser.parseTyped(text), value > 0 { continue }
             fieldErrors[key] = Self.invalidFieldNotice
         }
+        // A goal the store holds, under the key or an alias, is never overwritten; checked again here because the
+        // store may have changed since the step was shown. A store that cannot be read fails the whole save.
+        let vitamins: [(nutrient: String, text: String, unit: MeasureUnit)]
+        do {
+            vitamins = try vitaminGoalsToSave().filter { try !storedGoalExists(for: $0.nutrient) }
+        } catch {
+            resultError = Self.saveFailedNotice
+            return false
+        }
+        for entry in vitamins {
+            if let value = AmountParser.parseTyped(entry.text), value > 0 { continue }
+            fieldErrors[entry.nutrient] = Self.invalidFieldNotice
+        }
         guard fieldErrors.isEmpty else {
             resultError = "Enter a number above zero."
             return false
@@ -257,7 +394,7 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
         }
         var before: [(nutrient: String, goal: NutrientGoal?)] = []
         do {
-            for key in Self.targetKeys {
+            for key in Self.targetKeys + vitamins.map({ $0.nutrient }) {
                 let original = try goals.storedGoal(for: key)
                 before.append((nutrient: key, goal: original))
             }
@@ -277,6 +414,18 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
                 // The write that failed changed nothing, so only the ones before it are put back.
                 for entry in attempted.dropLast().reversed() {
                     if !goals.restoreGoal(entry.goal, for: entry.nutrient) { restored = false }
+                }
+                resultError = restored ? Self.saveFailedNotice : Self.saveRestoreFailedNotice
+                return false
+            }
+        }
+        for (offset, entry) in vitamins.enumerated() {
+            attempted.append(before[Self.targetKeys.count + offset])
+            guard goals.setTarget(entry.text, for: entry.nutrient, unit: entry.unit) else {
+                var restored = true
+                // The write that failed changed nothing, so only the ones before it are put back.
+                for earlier in attempted.dropLast().reversed() {
+                    if !goals.restoreGoal(earlier.goal, for: earlier.nutrient) { restored = false }
                 }
                 resultError = restored ? Self.saveFailedNotice : Self.saveRestoreFailedNotice
                 return false
@@ -304,6 +453,11 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
             if !text.isEmpty { goals.selectedUnits[key] = goals.unit(for: key) }
             // An error the row showed for earlier text no longer describes what is stored.
             goals.clearRowError(for: key)
+        }
+        for entry in vitamins {
+            goals.draftText[entry.nutrient] = DecimalFormatting.text(AmountParser.parseTyped(entry.text) ?? 0)
+            goals.selectedUnits[entry.nutrient] = entry.unit
+            goals.clearRowError(for: entry.nutrient)
         }
         return true
     }
@@ -338,10 +492,14 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
         goalWeightPoundsText = ""
         activity = nil
         selectedPaceKilograms = nil
+        clearVitaminChoice()
         draftTargets = [:]
         resultError = nil
         fieldErrors = [:]
         adjustmentNote = nil
+        // A cleared sheet is a fresh start, so Health's height may fill it again.
+        filledHeightFromHealth = false
+        fillHeightFromHealth()
     }
 
     /// Estimates the results from the answers, filling the drafts the person may then edit.

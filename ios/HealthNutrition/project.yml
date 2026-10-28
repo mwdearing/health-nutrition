@@ -94,9 +94,9 @@ targets:
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
         # The app requests write access and read access to the nutrient types it writes. Read access totals what
         # other apps logged for the day and finds the samples the app wrote, to update or remove them; the steps,
-        # active energy and weight reads are for Today, as the string says. In Debug builds only (#if DEBUG), the
+        # active energy and weight reads are for Today and the height read fills goal setup, as the string says. In Debug builds only (#if DEBUG), the
         # HealthKit spike also reads back the water and protein samples it wrote, which the same wording covers.
-        INFOPLIST_KEY_NSHealthShareUsageDescription: "If you tap Show steps, activity and weight on Today, HealthNutrition reads your steps, active energy and weight to show them there. When you connect Apple Health, it also reads the nutrients and water other apps logged to Health, so your totals match Health. Nothing else is read except the nutrient samples other apps logged and the samples it wrote, which it looks up to update or remove them when you edit or delete an entry."
+        INFOPLIST_KEY_NSHealthShareUsageDescription: "If you tap Show steps, activity and weight on Today, HealthNutrition reads your steps, active energy and weight to show them there, and your height to fill it in when you set goals. When you connect Apple Health, it also reads the nutrients and water other apps logged to Health, so your totals match Health. Nothing else is read except the nutrient samples other apps logged and the samples it wrote, which it looks up to update or remove them when you edit or delete an entry."
         # Write access is asked for when you tap Connect Apple Health in Settings. The delivery driver then
         # writes the nutrients of the entries you log, and removes them again when you delete an entry.
         INFOPLIST_KEY_NSHealthUpdateUsageDescription: "When you connect Apple Health, HealthNutrition writes the nutrients and water of the entries you log to Health, and removes them again when you delete an entry."

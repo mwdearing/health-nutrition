@@ -10,6 +10,8 @@ public struct BodyActivityReadings: Equatable, Sendable {
     public var activeEnergyKcal: Decimal?
     public var latestWeightKg: Decimal?
     public var latestWeightDate: Date?
+    /// The newest height in Health, in centimeters, used only to prefill goal setup. Never stored.
+    public var latestHeightCm: Decimal?
     /// Every weigh-in of the last 28 days, each on its local day, for the trend.
     public var weightSamples: [WeightSample]
     /// Today's nutrient totals from entries other apps wrote to Health, per canonical nutrient key, in
