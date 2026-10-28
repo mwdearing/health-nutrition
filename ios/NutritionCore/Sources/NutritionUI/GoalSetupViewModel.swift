@@ -229,7 +229,7 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
         return vitaminPrefill.compactMap { goal -> (nutrient: String, text: String, unit: MeasureUnit)? in
             switch choice {
             case .recommended:
-                return (goal.nutrient, DecimalFormatting.text(goal.target), goal.unit)
+                return nil
             case .own:
                 let text = (vitaminDrafts[goal.nutrient] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                 return text.isEmpty ? nil : (goal.nutrient, text, goal.unit)
