@@ -162,11 +162,11 @@ public struct AddHomeView: View {
     /// The four quick actions in one compact row; a row too narrow for four wraps them into two columns.
     private var quickActions: [QuickAction] {
         [
-            QuickAction(id: "barcode", title: "Barcode", icon: "barcode.viewfinder",
+            QuickAction(id: "barcode", title: "Scan barcode", icon: "barcode.viewfinder",
                 help: "Read the code on the package.",
                 available: model.scannerAvailability.barcode,
                 explanation: model.scannerAvailability.barcodeExplanation, action: onBarcode),
-            QuickAction(id: "label", title: "Label", icon: "text.viewfinder",
+            QuickAction(id: "label", title: "Scan label", icon: "text.viewfinder",
                 help: "Read and check the nutrition values.",
                 available: model.scannerAvailability.label,
                 explanation: model.scannerAvailability.labelExplanation, action: onLabel),
