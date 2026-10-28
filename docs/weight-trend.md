@@ -82,8 +82,9 @@ The "Activity and weight" card on Today shows the weight and up to four lines un
 - **Planned goal day.** Shown only for a saved loss or gain plan whose goal has not been reached. Example: `Plan reaches 80 kg on Dec 23, 2026`.
 - **Trend goal day.** Shown when the trend projects a goal day. Example: `Trend reaches 80 kg on Aug 19, 2026`.
 
-The planned day counts from today, starting from the trend weight, or from the latest weigh-in when there
-is no trend. The card reads the saved plan each time it loads, so a plan saved in goal setup appears the
+The planned day counts from today, starting from the trend weight, or, when there is no trend, from the
+latest weigh-in if it falls within the same 28 days. An older weigh-in still shows as the weight, but no
+planned day is shown. The card reads the saved plan each time it loads, so a plan saved in goal setup appears the
 next time Today loads. Days are Gregorian dates in the device's time zone, also on a device set to another
 calendar. Nothing on the card grades the figures.
 
