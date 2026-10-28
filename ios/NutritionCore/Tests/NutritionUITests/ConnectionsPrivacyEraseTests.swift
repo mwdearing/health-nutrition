@@ -133,7 +133,9 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
         XCTAssertTrue(waiting, "the erase waits on the gate while the pass runs")
         XCTAssertEqual(eraser.eraseCount, 0, "no store is touched while the pass runs")
         await gate.leave()
-        let erased = await erase.value
+        guard let erased = await finished(erase) else {
+            return XCTFail("the erase never finished after the pass ended")
+        }
         XCTAssertTrue(erased)
         XCTAssertEqual(eraser.eraseCount, 1)
     }
@@ -650,4 +652,30 @@ private actor GateWaitWatcher {
     }
 
     private func markStarted() { started = true }
+}
+
+/// The value of `task`, or nil when it has not finished within `seconds`, so a broken gate fails the waiting assertion
+/// instead of hanging the run. A task that never finishes is left behind; the test has already failed by then.
+private func finished<T: Sendable>(_ task: Task<T, Never>, within seconds: TimeInterval = 5) async -> T? {
+    let once = ResumeOnce<T?>()
+    return await withCheckedContinuation { continuation in
+        Task { once.resume(continuation, with: await task.value) }
+        Task {
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            once.resume(continuation, with: nil)
+        }
+    }
+}
+
+/// Resumes a continuation at most once, for whichever of two racing tasks gets there first.
+private final class ResumeOnce<T>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var done = false
+    func resume(_ continuation: CheckedContinuation<T, Never>, with value: T) {
+        let first = lock.withLock { () -> Bool in
+            defer { done = true }
+            return !done
+        }
+        if first { continuation.resume(returning: value) }
+    }
 }

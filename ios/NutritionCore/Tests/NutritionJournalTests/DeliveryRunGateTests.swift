@@ -48,7 +48,11 @@ final class DeliveryRunGateTests: XCTestCase {
     private func pauseOnAFreeGate(_ gate: DeliveryRunGate, _ timer: ManualTimer) async -> DeliveryRunGate.PauseHold? {
         let attempt = Task { await gate.pause(upTo: 1) }
         if await timer.untilArmed(within: 1) { await timer.fire() }
-        return await attempt.value
+        guard let outcome = await finished(attempt) else {
+            XCTFail("a pause on a free gate did not answer")
+            return nil
+        }
+        return outcome
     }
 
     /// A pause handed the gate before its timeout fires keeps the gate, and the late timeout changes nothing: the
@@ -60,14 +64,16 @@ final class DeliveryRunGateTests: XCTestCase {
         let pauser = Task { await gate.pause(upTo: 1) }
         guard await timer.untilArmed() else { return XCTFail("the pause did not start waiting") }
         await gate.leave() // the pass ends and hands the gate to the waiting pause
-        let hold = await pauser.value
+        guard let outcome = await finished(pauser) else { return XCTFail("the pause never answered") }
+        let hold = outcome
         XCTAssertNotNil(hold, "the pause got the gate at the handoff")
         await timer.fire() // the timeout runs late, after the handoff
         // A second pause now has to wait, because the handed-off pause still has the gate; its own timeout answers nil.
         let probe = Task { await gate.pause(upTo: 1) }
         guard await timer.untilArmed() else { return XCTFail("the pause did not start waiting") }
         await timer.fire()
-        let probeHold = await probe.value
+        guard let probeOutcome = await finished(probe) else { return XCTFail("the probe pause never answered") }
+        let probeHold = probeOutcome
         XCTAssertNil(probeHold, "the handed-off pause still has the gate")
         await gate.resume(hold)
         let free = await pauseOnAFreeGate(gate, timer)
@@ -84,7 +90,8 @@ final class DeliveryRunGateTests: XCTestCase {
         let pauser = Task { await gate.pause(upTo: 1) }
         guard await timer.untilArmed() else { return XCTFail("the pause did not start waiting") }
         await timer.fire()
-        let hold = await pauser.value
+        guard let outcome = await finished(pauser) else { return XCTFail("the pause never answered") }
+        let hold = outcome
         XCTAssertNil(hold, "the pause timed out")
         await gate.leave()
         let free = await pauseOnAFreeGate(gate, timer)
@@ -120,5 +127,31 @@ private actor ManualTimer {
         let pending = action
         action = nil
         await pending?()
+    }
+}
+
+/// The value of `task`, or nil when it has not finished within `seconds`, so a broken gate fails the waiting assertion
+/// instead of hanging the run. A task that never finishes is left behind; the test has already failed by then.
+private func finished<T: Sendable>(_ task: Task<T, Never>, within seconds: TimeInterval = 5) async -> T? {
+    let once = ResumeOnce<T?>()
+    return await withCheckedContinuation { continuation in
+        Task { once.resume(continuation, with: await task.value) }
+        Task {
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            once.resume(continuation, with: nil)
+        }
+    }
+}
+
+/// Resumes a continuation at most once, for whichever of two racing tasks gets there first.
+private final class ResumeOnce<T>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var done = false
+    func resume(_ continuation: CheckedContinuation<T, Never>, with value: T) {
+        let first = lock.withLock { () -> Bool in
+            defer { done = true }
+            return !done
+        }
+        if first { continuation.resume(returning: value) }
     }
 }
