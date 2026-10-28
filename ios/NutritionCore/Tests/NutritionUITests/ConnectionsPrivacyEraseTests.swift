@@ -113,23 +113,29 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
             eraseLocalAccount: eraseLocalAccount, deliveryGate: gate, deliveryWaitSeconds: waitSeconds)
     }
 
-    /// An erase that finds a Health pass running waits for it before it touches any store.
+    /// An erase that finds a Health pass running waits for it before it touches any store. Checked by order, not by
+    /// a time window (#1001): the erase's wait on the gate is seen to start, and while it waits no store is touched.
     func testEraseWaitsForARunningHealthPassBeforeTouchingAStore() async {
-        let gate = DeliveryRunGate()
+        let waits = GateWaitWatcher()
+        let gate = DeliveryRunGate(schedule: waits.schedule)
         let eraser = RecordingEraser()
         let model = makeModel(eraser, gate: gate)
         await gate.enter() // a delivery pass is running
         let erase = Task { await model.eraseAllData() }
-        // Polled rather than slept for a fixed time, so a slow runner cannot fail this before the erase starts.
+        // The erase is now queued on the gate: it scheduled its timeout, which only a waiting pause does. An erase
+        // that skipped the gate would never get here, and this bounded poll would fail instead of hanging.
         let deadline = Date().addingTimeInterval(5)
-        while !model.isErasing, Date() < deadline {
+        var waiting = await waits.started
+        while !waiting, Date() < deadline {
             try? await Task.sleep(nanoseconds: 10_000_000)
+            waiting = await waits.started
         }
-        XCTAssertTrue(model.isErasing, "the erase has started, so the check below is not vacuous")
-        try? await Task.sleep(nanoseconds: 100_000_000) // time for an erase that skipped the gate to reach a store
+        XCTAssertTrue(waiting, "the erase waits on the gate while the pass runs")
         XCTAssertEqual(eraser.eraseCount, 0, "no store is touched while the pass runs")
         await gate.leave()
-        let erased = await erase.value
+        guard let erased = await finished(erase) else {
+            return XCTFail("the erase never finished after the pass ended")
+        }
         XCTAssertTrue(erased)
         XCTAssertEqual(eraser.eraseCount, 1)
     }
@@ -634,4 +640,42 @@ struct FakePendingReminderCenter: PendingReminderCenter {
     let identifiers: [String]
     init(_ identifiers: [String]) { self.identifiers = identifiers }
     func pendingRequestIdentifiers() async -> [String] { identifiers }
+}
+
+/// Records that a pause on the delivery gate started waiting, by its scheduling a timeout that never fires. The erase
+/// test uses it to know the erase is queued on the gate (#1001).
+private actor GateWaitWatcher {
+    private(set) var started = false
+
+    nonisolated var schedule: DeliveryRunGate.Schedule {
+        { _, _ in Task { await self.markStarted() } }
+    }
+
+    private func markStarted() { started = true }
+}
+
+/// The value of `task`, or nil when it has not finished within `seconds`, so a broken gate fails the waiting assertion
+/// instead of hanging the run. A task that never finishes is left behind; the test has already failed by then.
+private func finished<T: Sendable>(_ task: Task<T, Never>, within seconds: TimeInterval = 5) async -> T? {
+    let once = ResumeOnce<T?>()
+    return await withCheckedContinuation { continuation in
+        Task { once.resume(continuation, with: await task.value) }
+        Task {
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            once.resume(continuation, with: nil)
+        }
+    }
+}
+
+/// Resumes a continuation at most once, for whichever of two racing tasks gets there first.
+private final class ResumeOnce<T>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var done = false
+    func resume(_ continuation: CheckedContinuation<T, Never>, with value: T) {
+        let first = lock.withLock { () -> Bool in
+            defer { done = true }
+            return !done
+        }
+        if first { continuation.resume(returning: value) }
+    }
 }
