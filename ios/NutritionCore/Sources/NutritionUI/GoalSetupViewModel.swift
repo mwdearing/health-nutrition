@@ -14,6 +14,12 @@ public struct GoalPaceOption: Sendable, Equatable {
     public let kilogramsPerWeek: Decimal
 }
 
+/// The vitamins and minerals choice on the results step: the reference values as they are, or the same
+/// values prefilled for the person to edit.
+public enum VitaminGoalChoice: Sendable, Equatable {
+    case recommended, own
+}
+
 /// Backs the guided goal setup: the answers, the steps through them, the estimate and the save.
 ///
 /// The answers live here only while the sheet is open. `clearAnswers()` empties them when it closes. Of
@@ -62,6 +68,10 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
     @Published public var selectedPaceKilograms: Decimal?
     /// The results as the person may edit them, one text per key in `targetKeys`.
     @Published public var draftTargets: [String: String] = [:]
+    /// Nil until the person picks one; then the vitamins and minerals the save writes come from it.
+    @Published public private(set) var vitaminChoice: VitaminGoalChoice?
+    /// The editable vitamin and mineral values for "Set my own", prefilled from the reference values.
+    @Published public var vitaminDrafts: [String: String] = [:]
     /// Set when the answers cannot be estimated, in plain words for the results screen.
     @Published public private(set) var resultError: String?
     /// The message for each result field that cannot be saved, keyed by nutrient. The fields stay on
@@ -172,6 +182,66 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
         return nil
     }
 
+    public static let vitaminRecommendedTitle = "Use recommended amounts"
+    public static let vitaminOwnTitle = "Set my own"
+    public static let vitaminSourceNotice =
+        "From the Dietary Reference Intakes (NIH). Vitamins A, D and E are yours to set, since labels often list them in IU."
+    public static let vitaminNoGroupNotice = "Add your age and sex to prefill these."
+
+    /// The published reference group for the answers given, or nil without a sex (or with "unspecified") or
+    /// an age the tables cover.
+    public var referenceGroup: ReferenceGroup? {
+        guard let age = ageYears(), let band = ReferenceAgeBand(ageYears: age) else { return nil }
+        switch sex {
+        case .female: return ReferenceGroup(sex: .female, ageBand: band)
+        case .male: return ReferenceGroup(sex: .male, ageBand: band)
+        case .unspecified, nil: return nil
+        }
+    }
+
+    /// "Prefilled for men 31 to 50. You can change any of them.", or nil without a group.
+    public var vitaminPrefillNotice: String? {
+        guard let label = referenceGroup?.label else { return nil }
+        return "Prefilled for \(label.prefix(1).lowercased() + label.dropFirst()). You can change any of them."
+    }
+
+    /// The reference values the step offers: one per covered vitamin or mineral without a goal already.
+    public var vitaminPrefill: [NutrientGoal] {
+        let existing = Set(goals.rows.compactMap { $0.targetText == nil ? nil : $0.nutrient })
+        return ReferenceGoalPrefill.goals(for: referenceGroup, existingGoalKeys: existing)
+    }
+
+    /// Picks how vitamins and minerals are saved. "Set my own" fills the fields with the reference values
+    /// the first time, and keeps any edits after that.
+    public func chooseVitamins(_ choice: VitaminGoalChoice) {
+        vitaminChoice = choice
+        if choice == .own, vitaminDrafts.isEmpty {
+            vitaminDrafts = Dictionary(
+                uniqueKeysWithValues: vitaminPrefill.map { ($0.nutrient, DecimalFormatting.text($0.target)) })
+        }
+    }
+
+    /// The vitamin and mineral goals a save writes: the reference values, or the person's own text with a
+    /// cleared field left out. Nothing without a choice.
+    private func vitaminGoalsToSave() -> [(nutrient: String, text: String, unit: MeasureUnit)] {
+        guard let choice = vitaminChoice else { return [] }
+        return vitaminPrefill.compactMap { goal -> (nutrient: String, text: String, unit: MeasureUnit)? in
+            switch choice {
+            case .recommended:
+                return (goal.nutrient, DecimalFormatting.text(goal.target), goal.unit)
+            case .own:
+                let text = (vitaminDrafts[goal.nutrient] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                return text.isEmpty ? nil : (goal.nutrient, text, goal.unit)
+            }
+        }
+    }
+
+    /// Forgets the vitamins and minerals choice and its fields, for answers that may have changed the group.
+    private func clearVitaminChoice() {
+        vitaminChoice = nil
+        vitaminDrafts = [:]
+    }
+
     public func next() {
         guard canGoNext else { return }
         let list = steps
@@ -185,6 +255,7 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
         let list = steps
         guard let index = list.firstIndex(of: step), index > 0 else { return }
         if step == .results {
+            clearVitaminChoice()
             draftTargets = [:]
             resultError = nil
             fieldErrors = [:]
@@ -257,6 +328,11 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
             if let value = AmountParser.parseTyped(text), value > 0 { continue }
             fieldErrors[key] = Self.invalidFieldNotice
         }
+        let vitamins = vitaminGoalsToSave()
+        for entry in vitamins {
+            if let value = AmountParser.parseTyped(entry.text), value > 0 { continue }
+            fieldErrors[entry.nutrient] = Self.invalidFieldNotice
+        }
         guard fieldErrors.isEmpty else {
             resultError = "Enter a number above zero."
             return false
@@ -286,7 +362,7 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
         }
         var before: [(nutrient: String, goal: NutrientGoal?)] = []
         do {
-            for key in Self.targetKeys {
+            for key in Self.targetKeys + vitamins.map(\.nutrient) {
                 let original = try goals.storedGoal(for: key)
                 before.append((nutrient: key, goal: original))
             }
@@ -306,6 +382,18 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
                 // The write that failed changed nothing, so only the ones before it are put back.
                 for entry in attempted.dropLast().reversed() {
                     if !goals.restoreGoal(entry.goal, for: entry.nutrient) { restored = false }
+                }
+                resultError = restored ? Self.saveFailedNotice : Self.saveRestoreFailedNotice
+                return false
+            }
+        }
+        for (offset, entry) in vitamins.enumerated() {
+            attempted.append(before[Self.targetKeys.count + offset])
+            guard goals.setTarget(entry.text, for: entry.nutrient, unit: entry.unit) else {
+                var restored = true
+                // The write that failed changed nothing, so only the ones before it are put back.
+                for earlier in attempted.dropLast().reversed() {
+                    if !goals.restoreGoal(earlier.goal, for: earlier.nutrient) { restored = false }
                 }
                 resultError = restored ? Self.saveFailedNotice : Self.saveRestoreFailedNotice
                 return false
@@ -333,6 +421,11 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
             if !text.isEmpty { goals.selectedUnits[key] = goals.unit(for: key) }
             // An error the row showed for earlier text no longer describes what is stored.
             goals.clearRowError(for: key)
+        }
+        for entry in vitamins {
+            goals.draftText[entry.nutrient] = DecimalFormatting.text(AmountParser.parseTyped(entry.text) ?? 0)
+            goals.selectedUnits[entry.nutrient] = entry.unit
+            goals.clearRowError(for: entry.nutrient)
         }
         return true
     }
@@ -367,6 +460,7 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
         goalWeightPoundsText = ""
         activity = nil
         selectedPaceKilograms = nil
+        clearVitaminChoice()
         draftTargets = [:]
         resultError = nil
         fieldErrors = [:]
