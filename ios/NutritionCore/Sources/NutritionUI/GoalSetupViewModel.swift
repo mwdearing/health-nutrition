@@ -223,7 +223,7 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
     /// Whether the store holds a goal for this nutrient under its own key or an alias (`vitamin-c`). A store
     /// that cannot be read counts as holding one, so nothing is offered or written over a goal that may exist.
     private func storeHoldsGoal(for nutrient: String) -> Bool {
-        for key in HealthKitWritePlanner.acceptedKeys(for: nutrient) {
+        for key in [nutrient] {
             do {
                 if try goals.storedGoal(for: key) != nil { return true }
             } catch {
