@@ -661,7 +661,6 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         }
         // On every exit, the timeout included. After a pause that timed out the gate holds nothing for this erase,
         // so this does nothing then.
-        await deliveryGate?.resumeAfterPause()
         return erased
     }
 
