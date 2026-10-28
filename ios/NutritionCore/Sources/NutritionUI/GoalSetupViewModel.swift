@@ -229,8 +229,8 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
 
     /// The same check, throwing when the store cannot be read.
     private func storedGoalExists(for nutrient: String) throws -> Bool {
-        for key in HealthKitWritePlanner.acceptedKeys(for: nutrient) where try goals.storedGoal(for: key) != nil {
-            return true
+        for key in HealthKitWritePlanner.acceptedKeys(for: nutrient) {
+            if try goals.storedGoal(for: key) != nil { return true }
         }
         return false
     }
