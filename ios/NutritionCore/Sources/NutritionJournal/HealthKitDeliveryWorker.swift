@@ -547,7 +547,6 @@ private func deliver(_ operation: OutboxOperation, now: Date) async -> HealthKit
         // before the outcome, so a later edit or delete reads what is actually there; a failure to
         // record retries the delivery, which rewrites the same samples at the same version.
         // An erase that began during the save has removed the rows these records would point at (#777).
-        if let paused = await pausedForErase(operation, now: now) { return paused }
         do {
             // A refused key only still holds a sample when one was there before this pass: a nutrient
             // this revision states for the first time under a denied type was never written.
@@ -639,7 +638,6 @@ private func deliver(_ operation: OutboxOperation, now: Date) async -> HealthKit
         if let paused = await pausedForErase(operation, now: now) { return paused }
         do {
             let deleted = removable.isEmpty ? 0 : try await writer.deleteSamples(syncIdentifiers: removable)
-            if let paused = await pausedForErase(operation, now: now) { return paused }
             // What stays in Health is exactly the denied types' samples. A failure to record it keeps the
             // operation retryable rather than parking it over a ledger that names deleted samples.
             do {
