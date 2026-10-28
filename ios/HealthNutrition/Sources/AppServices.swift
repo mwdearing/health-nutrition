@@ -154,8 +154,12 @@ final class AppServices {
                 widgets: widgetSnapshotEraser, savedMeals: savedMealStore, supplements: supplementSchedules,
                 dailyReminders: reminderEraser, customReminders: customReminderEraser,
                 journal: journalStore, favorites: favoritesStore, recipes: recipeStore, goals: goalStore))
-        connections = ConnectionsPrivacyViewModel(
-            store: journalStore, favorites: favoritesStore, savedMeals: savedMealStore, appVersion: Self.appVersion,
+        // One gate for the Health delivery worker and Erase all data: the erase holds it while it runs, so no
+        // delivery pass is between its busy check and its Health write while the stores are emptied (#841).
+        let healthKitDeliveryGate = DeliveryRunGate()
+        connections = ConnectionsPrivacyViewModel(goals: goalStore,
+            store: journalStore, favorites: favoritesStore, savedMeals: savedMealStore,
+            appVersion: Self.appVersion,
             erasers: erasers,
             preferences: displayPreferences,
             beforeErase: {
@@ -178,7 +182,8 @@ final class AppServices {
                 guard let account else { return }
                 try await account.discardLocalSession()
             },
-            remindersStillPending: { await ReminderReadback.namesStillPending(in: SystemPendingReminderCenter()) })
+            remindersStillPending: { await ReminderReadback.namesStillPending(in: SystemPendingReminderCenter()) },
+            deliveryGate: healthKitDeliveryGate)
         let openFoodFacts = OpenFoodFactsProductLookup(
             client: OpenFoodFactsClient(appVersion: Self.appVersion))
         barcodeLookup = Self.makeBarcodeLookup(community: community, account: account)
@@ -194,10 +199,16 @@ final class AppServices {
         let usda = usdaClient.map { USDAProductNameSearch(client: $0) }
         productNameSearch = FoodDatabaseSearch(openFoodFacts: openFoodFacts, usda: usda)
         let totals = JournalSnapshotTotals(store: journalStore)
+        // The flag the shortcuts and the widget read: true while Erase all data or a restore runs, so a
+        // delivery pass writes nothing to Health and records nothing for entries that may be gone. Held strongly:
+        // the view model lives as long as these services and holds nothing back, so there is no cycle.
+        let busyConnections = connections
         let healthKitDelivery = HealthKitDeliveryWorker(
             store: journalStore,
             writer: HealthKitSampleWriter(),
-            totals: { intakeID, revision in try await totals.totals(intakeID: intakeID, revision: revision) }
+            totals: { intakeID, revision in try await totals.totals(intakeID: intakeID, revision: revision) },
+            isBusy: { await MainActor.run { !busyConnections.canExport } },
+            gate: healthKitDeliveryGate
         )
         self.healthKitDelivery = healthKitDelivery
         let healthKitDeliveryStatus = HealthKitDeliveryStatus(
@@ -206,7 +217,7 @@ final class AppServices {
         // A delete is held for the Undo window; once it ends, run the same pass a write triggers, so the
         // delete reaches Health without waiting for the next foreground.
         let todayModel = today
-        journalStore.setOnDeleteCommitted { [weak healthKitDeliveryStatus] _, sequence in
+        journalStore.addOnDeleteCommitted { [weak healthKitDeliveryStatus] _, sequence in
             Task { @MainActor in todayModel.deleteCommitted(sequence: sequence) }
             Task {
                 try? await Task.sleep(for: .seconds(JournalUndo.deleteWindow + 0.5))
@@ -217,7 +228,9 @@ final class AppServices {
         firstDayChecklist = FirstDayChecklistModel(
             store: journalStore, goals: goalStore, preferences: displayPreferences, health: appleHealth)
         bodyActivity = BodyActivityViewModel(
-            reader: HealthKitReader(), unitSystem: { [displayPreferences] in displayPreferences.unitSystem })
+            reader: HealthKitReader(), unitSystem: { [displayPreferences] in displayPreferences.unitSystem },
+            weightPlan: { [goalStore] in try? goalStore.weightPlan() })
+        goals.latestHeightCentimeters = { [bodyActivity] in bodyActivity.readings.latestHeightCm }
         // Set after every stored property, so the Library can link to the supplement list.
         library.supplementStack = supplementStack
         // The list follows the journal. Every reload of the app's screens, from any window, reloads the

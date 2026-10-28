@@ -71,6 +71,41 @@ public protocol GoalStore: AnyObject, Sendable {
     func removeGoal(nutrient: String) throws
     /// Releases the store; a new instance can reopen the same file.
     func close()
+    /// Records the goals a restore is about to write, under its receipt, before any of them is written. The
+    /// record and the goals share one store, so a stop between them leaves the record that undo and resume read.
+    func recordGoalRestoreReceipt(_ receipt: String, goals: [NutrientGoal]) throws
+    /// The goals a restore recorded under this receipt, or nil when it recorded none.
+    func goalRestoreReceipt(_ receipt: String) throws -> [NutrientGoal]?
+    /// Forgets the receipt once nothing needs it. A receipt that is not there is not an error.
+    func removeGoalRestoreReceipt(_ receipt: String) throws
+    /// Whether the restore's goals were all written, or nil when there is no receipt.
+    func goalRestoreReceiptDone(_ receipt: String) throws -> Bool?
+    /// Marks the receipt's goals as all written, so a resume does not add them again. Refused while the receipt still
+    /// lists a goal to write.
+    func markGoalRestoreReceiptDone(_ receipt: String) throws
+    /// Writes one restored goal and drops it from the receipt in the same save. Returns false, writing nothing, when a goal
+    /// already holds the key, so a restore never overwrites the person's own target; the goal leaves the receipt either way.
+    func writeRestoredGoal(_ goal: NutrientGoal, receipt: String) throws -> Bool
+    /// Every goal the restore under this receipt wrote, from any run, so an undo removes exactly those.
+    func goalRestoreWrittenGoals(_ receipt: String) throws -> [NutrientGoal]
+}
+
+/// A store that keeps no receipts refuses a goal restore, so a goal is never written without the record that
+/// undo would need. Stores that do keep receipts override these.
+extension GoalStore {
+    public func recordGoalRestoreReceipt(_ receipt: String, goals: [NutrientGoal]) throws {
+        throw JournalImportError.corrupt("this goal store keeps no restore receipt")
+    }
+    public func goalRestoreReceipt(_ receipt: String) throws -> [NutrientGoal]? { nil }
+    public func removeGoalRestoreReceipt(_ receipt: String) throws {}
+    public func goalRestoreReceiptDone(_ receipt: String) throws -> Bool? { nil }
+    public func markGoalRestoreReceiptDone(_ receipt: String) throws {
+        throw JournalImportError.corrupt("this goal store keeps no restore receipt")
+    }
+    public func writeRestoredGoal(_ goal: NutrientGoal, receipt: String) throws -> Bool {
+        throw JournalImportError.corrupt("this goal store keeps no restore receipt")
+    }
+    public func goalRestoreWrittenGoals(_ receipt: String) throws -> [NutrientGoal] { [] }
 }
 
 /// A goal store held in memory, for tests and for a caller that has nowhere to persist to.

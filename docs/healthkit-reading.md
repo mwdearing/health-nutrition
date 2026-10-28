@@ -1,16 +1,17 @@
 # Reading from Apple Health
 
-Status: current. The app reads three Health types for the activity card, and asks Health to read every nutrient type it writes (see below), only after the person asks.
+Status: current. The app reads three Health types for the activity card and height for goal setup, and asks Health to read every nutrient type it writes (see below), only after the person asks.
 
 | Type | Shown | Window |
 |---|---|---|
 | Steps (`stepCount`) | Today's activity card | Sum since local midnight |
 | Active energy (`activeEnergyBurned`) | Today's activity card | Sum since local midnight |
-| Weight (`bodyMass`) | Today's activity card, with the change since an earlier sample, labelled with the actual number of days | Latest sample, and the newest one at least 30 days before it |
+| Weight (`bodyMass`) | Today's activity card: the latest weight, the weekly trend, and the saved plan lines (see `weight-trend.md`) | Latest sample, and every sample from the last 28 days (the day 27 days before today through now) |
+| Height (`height`) | Goal setup: fills an empty height field when the sheet opens or reaches the body step (120 to 230 cm only); never stored | Latest sample, read with the card's read |
 
-The read request also covers the nutrient types the app writes (`OutsideIntakeTotals.readQuantityTypeIdentifiers`, defined beside the write plan), so the outside-intake totals can be read back. The table is the card's three types only.
+The read request also covers the nutrient types the app writes (`OutsideIntakeTotals.readQuantityTypeIdentifiers`, defined beside the write plan), so the outside-intake totals can be read back. The table lists the types read for the card and goal setup. Alcohol is not read (#508).
 
-- **When:** the card on Today shows a "Show steps, activity and weight" button until the read request has been shown once on this device (`healthKitReader.askedForReadAccess` in user defaults). Nothing is read before that.
+- **When:** the card on Today shows a "Show steps, activity and weight" button until the read request has been shown once on this device (`healthKitReader.askedForReadAccess.height` in user defaults; the key is versioned with the read set, so a person asked under an older set is asked once more for the new types). Nothing is read before that.
 - **What Health says:** HealthKit never reports whether read access was granted. A refused type reads as no data, so an empty card names both reasons and points to the Health app's Sharing screen.
 - **Erase all data** clears the flag, so the card returns to its button.
 - **Units:** weight follows the app's unit system (pounds for US, kilograms for metric); values are converted only for display.

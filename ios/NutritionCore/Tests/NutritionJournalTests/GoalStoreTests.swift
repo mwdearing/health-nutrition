@@ -108,4 +108,31 @@ final class GoalStoreTests: XCTestCase {
         try store.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(90), unit: .g))
         XCTAssertEqual(try store.goal(for: "protein")?.target, Decimal(90))
     }
+
+    /// A receipt that still lists a goal is not all written, so marking it done is refused and leaves it pending.
+    func testMarkingAReceiptWithPendingGoalsDoneThrows() throws {
+        let store = try makeStore()
+        try store.recordGoalRestoreReceipt("pending-receipt", goals: [NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g)])
+        XCTAssertThrowsError(try store.markGoalRestoreReceiptDone("pending-receipt"))
+        XCTAssertEqual(try store.goalRestoreReceiptDone("pending-receipt"), false)
+    }
+
+    /// A goal the person already holds is skipped, not written, and still leaves the pending list, so a restore that
+    /// skipped it can be marked done. Fails if a skipped goal stays pending, which the pending-goals guard would refuse.
+    func testASkippedGoalLeavesTheReceiptSoItCanBeMarkedDone() throws {
+        let store = try makeStore()
+        try store.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(90), unit: .g))
+        try store.recordGoalRestoreReceipt("skip-receipt", goals: [NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g)])
+        XCTAssertFalse(try store.writeRestoredGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g), receipt: "skip-receipt"))
+        try store.markGoalRestoreReceiptDone("skip-receipt")
+        XCTAssertEqual(try store.goalRestoreReceiptDone("skip-receipt"), true)
+        XCTAssertEqual(try store.goal(for: "protein")?.target, Decimal(90), "the person's own goal is kept")
+    }
+
+    /// A receipt is recorded before its goals are written, so marking one done when it is not there means the store lost it.
+    /// Fails when a missing receipt is marked done without an error, which would hide the loss.
+    func testMarkingAMissingReceiptDoneThrows() throws {
+        let store = try makeStore()
+        XCTAssertThrowsError(try store.markGoalRestoreReceiptDone("never-recorded"))
+    }
 }

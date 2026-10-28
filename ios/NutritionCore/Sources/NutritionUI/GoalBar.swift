@@ -144,7 +144,6 @@ public struct GoalBarModel: Equatable, Identifiable {
         }
         return MissingValueWording.partialNote(name: name, healthGap: line.healthGap, count: missingCount)
     }
-
 }
 
 /// A labeled bar: the nutrient and its figure above a capsule track. One accessibility element, so
@@ -168,9 +167,8 @@ public struct GoalBar: View {
                     .foregroundStyle(valueColor)
                     .multilineTextAlignment(.trailing)
             }
-            if model.state != .noGoal {
-                track
-            }
+            // Every bar keeps its track, so a nutrient with no goal stays empty and its row lines up with the others.
+            track
             if let reason = model.reason {
                 Text(reason)
                     .font(.footnote)
