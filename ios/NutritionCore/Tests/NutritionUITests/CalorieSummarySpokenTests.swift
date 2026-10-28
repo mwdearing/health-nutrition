@@ -40,7 +40,7 @@ final class CalorieSummarySpokenTests: XCTestCase {
             goal: nil, food: 500, partial: false, missingCount: 0, burned: nil, energyLabel: "Energy")
         let spoken = NourishTodayHeader.spokenSummary(calories, partial: calories.partialNote, footnote: nil)
         XCTAssertEqual(spoken, "Food, \(BodyActivityViewModel.whole(500)) calories")
-        XCTAssertFalse(spoken.contains("remaining"))
+        XCTAssertFalse(spoken.localizedCaseInsensitiveContains("remaining"))
     }
 
     /// A partial day with no missing entry (a below-threshold amount) still speaks the fallback note.
