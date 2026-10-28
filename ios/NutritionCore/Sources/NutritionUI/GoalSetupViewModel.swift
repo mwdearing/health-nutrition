@@ -71,6 +71,8 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
     @Published public private(set) var adjustmentNote: String?
 
     private let goals: GoalsViewModel
+    /// Set once Health's height has been put in the field, so a height the person then clears stays cleared.
+    private var filledHeightFromHealth = false
     private let now: () -> Date
     private let calendar: Calendar
 
@@ -78,6 +80,32 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
         self.goals = goals
         self.now = now
         self.calendar = calendar
+        fillHeightFromHealth()
+    }
+
+    /// Fills the height field from Apple Health when it is empty, so a person who connected Health need not
+    /// type it. Runs when the sheet opens and again on the body step, in case Today's read arrived since. A
+    /// height that, once rounded for the field, is outside the range the estimate accepts is left out.
+    func fillHeightFromHealth() {
+        guard !filledHeightFromHealth,
+              heightCentimetersText.isEmpty, heightFeetText.isEmpty, heightInchesText.isEmpty,
+              let centimeters = goals.latestHeightCentimeters()
+        else { return }
+        if unitSystem == .usCustomary {
+            let totalInches = Self.rounded(centimeters / Self.centimetersPerInch, scale: 0, .plain)
+            let least = Self.rounded(Decimal(120) / Self.centimetersPerInch, scale: 0, .up)
+            let most = Self.rounded(Decimal(230) / Self.centimetersPerInch, scale: 0, .down)
+            guard totalInches >= least, totalInches <= most else { return }
+            let feet = Self.rounded(totalInches / 12, scale: 0, .down)
+            heightFeetText = DecimalFormatting.text(feet)
+            heightInchesText = DecimalFormatting.text(totalInches - feet * 12)
+            filledHeightFromHealth = true
+        } else {
+            let whole = Self.rounded(centimeters, scale: 0, .plain)
+            guard whole >= 120, whole <= 230 else { return }
+            heightCentimetersText = DecimalFormatting.text(whole)
+            filledHeightFromHealth = true
+        }
     }
 
     /// The unit system the answers are asked in.
@@ -149,6 +177,7 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
         let list = steps
         guard let index = list.firstIndex(of: step), index + 1 < list.count else { return }
         step = list[index + 1]
+        if step == .body { fillHeightFromHealth() }
         if step == .results { calculate() }
     }
 
@@ -342,6 +371,9 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
         resultError = nil
         fieldErrors = [:]
         adjustmentNote = nil
+        // A cleared sheet is a fresh start, so Health's height may fill it again.
+        filledHeightFromHealth = false
+        fillHeightFromHealth()
     }
 
     /// Estimates the results from the answers, filling the drafts the person may then edit.
