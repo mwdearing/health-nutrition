@@ -213,12 +213,12 @@ public enum ReferenceIntakes {
 
     /// The reference values for one nutrient and group, or nil for a key the table does not cover.
     public static func intake(for nutrient: String, group: ReferenceGroup) -> ReferenceIntake? {
-        rows.first { $0.nutrient == nutrient }.map { $0.intake(for: group) }
+        rows.first { $0.nutrient == nutrient }.flatMap { $0.intake(for: group) }
     }
 
     /// Every nutrient's reference values for one group, in table order.
     public static func intakes(for group: ReferenceGroup) -> [ReferenceIntake] {
-        rows.map { $0.intake(for: group) }
+        rows.compactMap { $0.intake(for: group) }
     }
 
     /// One nutrient's published values. `female` and `male` are indexed by `ReferenceAgeBand`: 19 to
@@ -254,7 +254,9 @@ public enum ReferenceIntakes {
             self.upperLimitScope = scope
         }
 
-        func intake(for group: ReferenceGroup) -> ReferenceIntake {
+        /// The values for one group, or nil only for a 14 to 18 group whose nutrient has no teen row, which a
+        /// test rules out (the nutrient is then left out rather than crashing).
+        func intake(for group: ReferenceGroup) -> ReferenceIntake? {
             guard let column = group.ageBand.adultIndex else { return teenIntake(for: group) }
             let amount: Decimal
             var limit = upperLimit?[column]
@@ -277,8 +279,8 @@ public enum ReferenceIntakes {
         }
 
         /// The 14 to 18 values, from the teen table. Every row has one; a test pins that.
-        func teenIntake(for group: ReferenceGroup) -> ReferenceIntake {
-            let teen = ReferenceIntakes.teenRows[nutrient]!
+        func teenIntake(for group: ReferenceGroup) -> ReferenceIntake? {
+            guard let teen = ReferenceIntakes.teenRows[nutrient] else { return nil }
             let amount: Decimal
             var limit = teen.upperLimit
             switch group.lifeStage {
