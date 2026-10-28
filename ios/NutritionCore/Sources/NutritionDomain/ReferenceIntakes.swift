@@ -11,8 +11,6 @@ public enum ReferenceSex: String, Sendable, Hashable, Codable, CaseIterable {
 public enum ReferenceAgeBand: String, Sendable, Hashable, Codable, CaseIterable {
     case years14To18, years19To30, years31To50, years51To70, years71Plus
 
-    /// The adult bands, the ones a picker lists. 14 to 18 is reached by age only, until its wording is approved.
-    public static let adultBands: [ReferenceAgeBand] = [.years19To30, .years31To50, .years51To70, .years71Plus]
 
     /// The band an age falls in, or nil under 14, which the table does not cover.
     public init?(ageYears: Int) {
@@ -104,13 +102,12 @@ public struct ReferenceGroup: Sendable, Hashable, Codable {
         }
     }
 
-    /// Every adult group, the list a picker shows: women, then men, youngest band first, then pregnancy and
-    /// breastfeeding. The 14 to 18 groups are left off until their wording is approved; they are reached by age.
+    /// Every group, the list a picker shows: women, then men, youngest band first, then pregnancy and
+    /// breastfeeding, youngest band first.
     public static let all: [ReferenceGroup] = ReferenceSex.allCases.flatMap { sex in
-        ReferenceAgeBand.adultBands.map { ReferenceGroup(sex: sex, ageBand: $0) }
+        ReferenceAgeBand.allCases.map { ReferenceGroup(sex: sex, ageBand: $0) }
     } + [ReferenceLifeStage.pregnancy, .lactation].flatMap { stage in
-        stage.ageBands.filter { ReferenceAgeBand.adultBands.contains($0) }
-            .compactMap { ReferenceGroup(lifeStage: stage, ageBand: $0) }
+        stage.ageBands.compactMap { ReferenceGroup(lifeStage: stage, ageBand: $0) }
     }
 
     /// "Women 19 to 30", "Pregnancy 19 to 30" or "Breastfeeding 19 to 30", the words a picker shows.

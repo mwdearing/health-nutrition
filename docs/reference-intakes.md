@@ -7,14 +7,13 @@ or UL). Nothing in it is personalised beyond the published row a person picks.
 
 ## What it covers
 
-- **Adults in the picker**, in twelve published rows: women or men aged 19 to 30, 31 to 50, 51 to 70, or 71 and over,
-  plus pregnancy and breastfeeding (lactation) for ages 19 to 30 and 31 to 50 ("Pregnancy 19 to 30", "Breastfeeding 31
-  to 50"). Pregnancy and breastfeeding use the Pregnancy and Lactation columns of the same fact sheet tables; their
-  upper limits are the adult ones for the band, except phosphorus in pregnancy (3,500 mg instead of 4,000), the one
-  limit those tables set differently. The 14 to 18 rows are carried too (below) but left off the picker; there is no
-  merged row for someone who does not give a sex, because the sources publish none.
-  `ReferenceGroup(lifeStage:ageBand:)` returns nil for a band the tables do not publish (pregnancy over 50), and a
-  decoded group is held to the same rule.
+- **Adults**, in twelve published rows: women or men aged 19 to 30, 31 to 50, 51 to 70, or 71 and over, plus pregnancy
+  and breastfeeding (lactation) for ages 19 to 30 and 31 to 50 ("Pregnancy 19 to 30", "Breastfeeding 31 to 50").
+  Pregnancy and breastfeeding use the Pregnancy and Lactation columns of the same fact sheet tables; their upper
+  limits are the adult ones for the band, except phosphorus in pregnancy (3,500 mg instead of 4,000), the one limit
+  those tables set differently. The 14 to 18 rows are carried too (below) and listed in the picker; there is no merged
+  row for someone who does not give a sex, because the sources publish none. `ReferenceGroup(lifeStage:ageBand:)`
+  returns nil for a band the tables do not publish (pregnancy over 50), and a decoded group is held to the same rule.
 - **14 to 18 by age**: `ReferenceAgeBand(ageYears:)` puts 14 to 18 in `.years14To18`, with rows of its own (below),
   so an 18-year-old from goal setup has reference values. Under 14 is not covered. The FDA Daily Values below are
   documented as data only; the code does not carry them yet.
@@ -123,9 +122,10 @@ matches the fact sheet table below.
 Goal setup accepts ages 18 to 100 (`GoalEstimator.minimumAge` is 18, `GoalEstimator.maximumAge` is 100), so an
 18-year-old can set goals. `ReferenceAgeBand(ageYears:)` puts ages 14 to 18 in `.years14To18`, and `ReferenceIntakes`
 carries these published 14 to 18 rows, read on 2026-10-27 from the same fact sheet tables. The 14 to 18 groups are
-left off `ReferenceGroup.all`, the list the picker shows, until their wording is approved. Ages 14 to 17 can't reach
-goal setup today. The UL scopes are the adult ones (magnesium counts
-supplements only, and so on); the upper-limit column applies to all four columns unless it says otherwise.
+listed in `ReferenceGroup.all`, the list the picker shows, as "Women 14 to 18", "Men 14 to 18", "Pregnancy 14 to 18"
+and "Breastfeeding 14 to 18" (wording approved 2026-10-27). Ages 14 to 17 can't reach goal setup today. The UL scopes
+are the adult ones (magnesium counts supplements only, and so on); the upper-limit column applies to all four columns
+unless it says otherwise.
 
 | Nutrient | Kind | Male | Female | Pregnancy | Lactation | UL (all four) | Fact sheet tables |
 |---|---|---|---|---|---|---|---|

@@ -97,7 +97,7 @@ final class ReferenceIntakesTests: XCTestCase {
         let keys = ReferenceIntakes.nutrients
         XCTAssertEqual(Set(keys).count, keys.count, "a nutrient is listed twice")
         XCTAssertEqual(keys.count, 25)
-        XCTAssertEqual(ReferenceGroup.all.count, 12)
+        XCTAssertEqual(ReferenceGroup.all.count, 16)
         for group in ReferenceGroup.all {
             let intakes = ReferenceIntakes.intakes(for: group)
             XCTAssertEqual(intakes.map(\.nutrient), keys)
