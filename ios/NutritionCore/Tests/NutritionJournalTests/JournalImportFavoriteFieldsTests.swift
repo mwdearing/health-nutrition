@@ -3,8 +3,8 @@ import NutritionDomain
 import XCTest
 @testable import NutritionJournal
 
-/// A favorite whose id, display name or category is empty is refused before anything is written (#72): the
-/// schema requires all three, and the app holds a favorite it saves to the same rule (#290).
+/// A favorite whose id, display name or category is empty is refused before anything is written (#72). The
+/// schema requires all three (minLength 1); shape validation refuses the file as malformed, naming the field.
 final class JournalImportFavoriteFieldsTests: JournalImportTestCase {
     func testAFavoriteWithAnEmptyRequiredFieldIsRefusedAndNothingIsWritten() throws {
         for field in ["id", "display_name", "category"] {
@@ -22,10 +22,10 @@ final class JournalImportFavoriteFieldsTests: JournalImportTestCase {
                     try JSONSerialization.data(withJSONObject: root), into: journal, favorites: favoritesStore),
                 field
             ) { error in
-                guard case .corrupt(let reason) = error as? JournalImportError else {
-                    return XCTFail("expected a corrupt file for an empty \(field), got \(error)")
+                guard case .malformed(let reason) = error as? JournalImportError else {
+                    return XCTFail("expected a malformed file for an empty \(field), got \(error)")
                 }
-                XCTAssertTrue(reason.contains("empty \(field)"), reason)
+                XCTAssertTrue(reason.contains("$.favorites[0].\(field) is empty"), reason)
             }
             XCTAssertTrue(try journal.activeIntakes().isEmpty, field)
             XCTAssertTrue(try favoritesStore.list().isEmpty, field)

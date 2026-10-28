@@ -153,28 +153,6 @@ final class JournalImportSavedMealsTests: JournalImportTestCase {
                 meal["items"] = items
                 return meal
             }),
-            // An item is a favorite template, held to the same required fields (#72).
-            ("an item with an empty id", { meal in
-                var meal = meal
-                var items = meal["items"] as? [[String: Any]] ?? []
-                items[0]["id"] = ""
-                meal["items"] = items
-                return meal
-            }),
-            ("an item with an empty display name", { meal in
-                var meal = meal
-                var items = meal["items"] as? [[String: Any]] ?? []
-                items[0]["display_name"] = ""
-                meal["items"] = items
-                return meal
-            }),
-            ("an item with an empty category", { meal in
-                var meal = meal
-                var items = meal["items"] as? [[String: Any]] ?? []
-                items[0]["category"] = ""
-                meal["items"] = items
-                return meal
-            }),
             ("an item with its own meal", { meal in
                 var meal = meal
                 var items = meal["items"] as? [[String: Any]] ?? []
@@ -197,6 +175,38 @@ final class JournalImportSavedMealsTests: JournalImportTestCase {
                 label)
             XCTAssertEqual(try journal.activeIntakes(), [], label)
             XCTAssertEqual(savedMeals.meals, [], label)
+        }
+    }
+
+    /// A saved meal's item is a favorite template, so an empty id, display name or category is refused as malformed
+    /// by shape validation, naming the field, and nothing is written (#72).
+    func testASavedMealItemWithAnEmptyRequiredFieldIsRefusedAndNothingIsWritten() throws {
+        let base = try fields(try savedMealsExport())
+        for field in ["id", "display_name", "category"] {
+            var root = base
+            var meals = try XCTUnwrap(root["saved_meals"] as? [[String: Any]], field)
+            var items = try XCTUnwrap(meals[1]["items"] as? [[String: Any]], field)
+            items[0][field] = ""
+            meals[1]["items"] = items
+            root["saved_meals"] = meals
+            let target = try directory()
+            let journal = try store(target)
+            let favoritesStore = try favorites(target)
+            let savedMeals = MemorySavedMeals()
+            XCTAssertThrowsError(
+                try JournalImporter.importExport(
+                    try JSONSerialization.data(withJSONObject: root), into: journal, favorites: favoritesStore,
+                    savedMeals: savedMeals),
+                field
+            ) { error in
+                guard case .malformed(let reason) = error as? JournalImportError else {
+                    return XCTFail("expected a malformed file for an empty \(field), got \(error)")
+                }
+                XCTAssertTrue(reason.contains("$.saved_meals[1].items[0].\(field) is empty"), reason)
+            }
+            XCTAssertEqual(try journal.activeIntakes(), [], field)
+            XCTAssertTrue(try favoritesStore.list().isEmpty, field)
+            XCTAssertEqual(savedMeals.meals, [], field)
         }
     }
 
