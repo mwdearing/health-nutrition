@@ -239,9 +239,11 @@ struct SupplementStackPicker: View {
         List {
             if let message = model.errorMessage {
                 InlineNotice(message, tone: .failed)
+            } else if model.pickerReadFailed {
+                InlineNotice(SupplementStackViewModel.readFailedMessage, tone: .failed)
             }
             // A picker that could not be read is not an empty one either.
-            if model.candidates.isEmpty, !model.readFailed {
+            if model.candidates.isEmpty, !model.readFailed, !model.pickerReadFailed {
                 EmptyState(
                     title: "Nothing to add yet",
                     message: "Log a supplement, or star something in the Library, and it shows up here.",

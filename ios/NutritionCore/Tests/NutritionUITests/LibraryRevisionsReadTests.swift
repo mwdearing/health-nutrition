@@ -63,6 +63,36 @@ final class LibraryRevisionsReadTests: XCTestCase {
         XCTAssertTrue(model.sections.isEmpty)
     }
 
+    /// A reload that fails clears the rows the earlier load showed, rather than keeping them under the error.
+    func testAFailedReloadClearsTheEarlierRows() throws {
+        let store = try makeStore()
+        let id = try logOatsTwice(store)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let favorites = try SwiftDataFavoritesStore(url: directory.appendingPathComponent("favorites.store"))
+        let model = LibraryViewModel(store: store, favorites: favorites, timeZoneIdentifier: "UTC")
+        model.load()
+        XCTAssertFalse(model.sections.isEmpty)
+        store.failsRevisionsReadFor = id
+        model.load()
+        XCTAssertEqual(model.errorMessage, "Could not read the library.")
+        XCTAssertTrue(model.sections.isEmpty)
+    }
+
+    /// Add's recents show their existing read error, and drop the earlier rows, when an entry cannot be read.
+    func testAddRecentsShowTheirReadErrorWhenAnEntryCannotBeRead() throws {
+        let store = try makeStore()
+        let id = try logOatsTwice(store)
+        let home = AddHomeViewModel(store: store, now: { self.now })
+        home.load()
+        XCTAssertEqual(home.recents.map(\.template.displayName), ["Oats"])
+        store.failsRevisionsReadFor = id
+        home.load()
+        XCTAssertEqual(home.errorMessage, "Could not read recent items.")
+        XCTAssertTrue(home.recents.isEmpty)
+    }
+
     /// With every read working, the same entries show as before.
     func testReadableEntriesStillShow() throws {
         let store = try makeStore()

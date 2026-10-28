@@ -392,6 +392,8 @@ public final class LibraryViewModel: ObservableObject {
             ]
             errorMessage = nil
         } catch {
+            // Rows from an earlier load are not kept under the error: they may be what failed to read.
+            sections = []
             errorMessage = "Could not read the library."
         }
     }

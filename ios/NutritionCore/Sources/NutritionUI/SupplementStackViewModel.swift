@@ -65,6 +65,11 @@ public final class SupplementStackViewModel: ObservableObject {
     /// True when the last read failed, so the screen shows the error and not an empty list. Separate from
     /// `errorMessage`, which also says why an add or a Taken was refused while the list itself is fine.
     @Published public private(set) var readFailed = false
+    /// True when only the picker's list could not be read (one of the recent entries it is built from was
+    /// unreadable). Today's rows still show; the picker shows the read error instead of an empty list (#775).
+    @Published public private(set) var pickerReadFailed = false
+    /// The read error for the screen and, when only its list failed, for the picker.
+    public static let readFailedMessage = "Could not read your supplements."
     @Published public private(set) var undoToken: LibraryUndoToken?
     /// Today's entries whose current revision could not be read. Each may be an item on the list, so the
     /// screen says a time may read "Not logged" when it was taken rather than showing a count it cannot back.
@@ -204,7 +209,14 @@ public final class SupplementStackViewModel: ObservableObject {
             hasReferenceGroup = limits.hasGroup
             limitCheckFailed = limits.failed
             rows = makeRows(clock: clock)
-            candidates = try makeCandidates(favorites: stored, planned: Set(planned.keys), kind: kind)
+            do {
+                candidates = try makeCandidates(favorites: stored, planned: Set(planned.keys), kind: kind)
+                pickerReadFailed = false
+            } catch {
+                // A failed picker read leaves today's rows in place; the picker says it could not be read.
+                candidates = []
+                pickerReadFailed = true
+            }
             errorMessage = nil
             readFailed = false
         } catch {
@@ -213,7 +225,8 @@ public final class SupplementStackViewModel: ObservableObject {
             forget()
             rows = []
             candidates = []
-            errorMessage = "Could not read your supplements."
+            pickerReadFailed = false
+            errorMessage = Self.readFailedMessage
             readFailed = true
         }
     }
@@ -649,6 +662,7 @@ public final class SupplementStackViewModel: ObservableObject {
             forget()
             rows = []
             candidates = []
+            pickerReadFailed = false
             errorMessage = nil
             readFailed = false
         }

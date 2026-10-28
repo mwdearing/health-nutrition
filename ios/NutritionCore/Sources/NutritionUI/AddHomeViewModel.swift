@@ -65,7 +65,11 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
         do {
             recents = try RecentItemsProvider(store: store).recents(limit: 5)
             errorMessage = nil
-        } catch { errorMessage = "Could not read recent items." }
+        } catch {
+            // Recents from an earlier load are not kept under the error.
+            recents = []
+            errorMessage = "Could not read recent items."
+        }
     }
 
     public func makeDetails(now: Date) -> AddIntakeViewModel {

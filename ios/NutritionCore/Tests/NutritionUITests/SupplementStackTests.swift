@@ -321,7 +321,8 @@ final class SupplementStackTests: XCTestCase {
     }
 
     /// The supplement load reads the logged units 3 times when nothing fails. This test fails call 2, the read in
-    /// `makeCandidates`, so call 1 succeeds and the load stops at 2 reads (#415).
+    /// `makeCandidates`, so call 1 succeeds and the load stops at 2 reads (#415). Only the picker failed, so it
+    /// says so and today's rows stay (#775).
     func testSupplementCandidatesShowNothingWhenTheirOwnUnitReadFails() throws {
         let store = UnitReadCountingStore(inner: try makeStore())
         store.failsOnUnitReadCall = 2
@@ -331,8 +332,29 @@ final class SupplementStackTests: XCTestCase {
         let model = makeModel(store: store, favorites: favorites, schedules: schedules)
         model.load(now: now)
         XCTAssertEqual(store.unitReadCalls, 2)
-        XCTAssertNotNil(model.errorMessage)
+        XCTAssertTrue(model.pickerReadFailed)
+        XCTAssertFalse(model.readFailed)
         XCTAssertTrue(model.candidates.isEmpty)
+    }
+
+    /// One recent entry whose revisions cannot be read fails the picker's list, not the screen: today's rows stay,
+    /// and the picker shows the read error rather than "Nothing to add yet" (#775).
+    func testAnUnreadableRecentEntryFailsOnlyThePicker() throws {
+        let store = UnitReadCountingStore(inner: try makeStore())
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        try saveFavorite(favorites)
+        try schedules.save(["fav-magnesium": try XCTUnwrap(SupplementSchedule(times: [eight]))])
+        // Two days ago, so only the picker's recents read it, not today's count.
+        store.failsRevisionsReadFor = try log(store, name: "Example zinc", at: now.addingTimeInterval(-2 * 86_400))
+        let model = makeModel(store: store, favorites: favorites, schedules: schedules)
+        model.load(now: now)
+        XCTAssertEqual(model.rows.map(\.title), ["Example magnesium"])
+        XCTAssertNil(model.errorMessage)
+        XCTAssertFalse(model.readFailed)
+        XCTAssertTrue(model.pickerReadFailed)
+        XCTAssertTrue(model.candidates.isEmpty)
+        XCTAssertEqual(SupplementStackViewModel.readFailedMessage, "Could not read your supplements.")
     }
 
     func testTakenLogsTheFavoriteWithItsLabelSnapshotAndUndoUnmarksIt() throws {
