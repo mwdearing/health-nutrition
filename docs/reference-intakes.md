@@ -79,7 +79,7 @@ chromium, calcium and women's iron at 51; vitamin D and the phosphorus limit at 
 
 ### Table per nutrient
 
-The table each adult value comes from. Re-checked on 2026-10-28: every adult value in `ReferenceIntakes.swift` (the
+The table each adult value comes from. Re-checked on 2026-10-27: every adult value in `ReferenceIntakes.swift` (the
 RDA or AI for women and men in each band, pregnancy and lactation for 19 to 50, and the UL for each band, 368 values)
 matches the fact sheet table below.
 
@@ -114,8 +114,8 @@ matches the fact sheet table below.
 ## Ages 14 to 18 (reference data only, not in the code)
 
 Goal setup accepts ages 18 to 100 (`GoalEstimator.minimumAge` is 18), so an 18-year-old can set goals, but
-`ReferenceAgeBand(age:)` returns nil under 19 and the app shows no reference value for them. These are the published
-14 to 18 rows, read on 2026-10-28 from the same fact sheet tables, for when the code gains the band. Ages 14 to 17 can't
+`ReferenceAgeBand(ageYears:)` returns nil under 19 and the app shows no reference value for them. These are the published
+14 to 18 rows, read on 2026-10-27 from the same fact sheet tables, for when the code gains the band. Ages 14 to 17 can't
 reach goal setup today. The UL scopes are the adult ones (magnesium counts supplements only, and so on); the
 upper-limit column applies to all four columns unless it says otherwise.
 
@@ -154,7 +154,7 @@ Copper is listed in mcg as the sheets give it; the app would hold 0.89 mg, 1.0 m
 The Daily Values are the label reference amounts behind "% Daily Value". They are not age or sex specific: one column
 covers adults and children 4 years and older, and a separate column covers pregnancy and lactation. They are useful as
 the "use FDA recommendations" default for someone who doesn't give an age or sex; the DRIs above are the age and sex
-specific values. Read on 2026-10-28 from the eCFR,
+specific values. Read on 2026-10-27 from the eCFR,
 `https://www.ecfr.gov/current/title-21/chapter-I/subchapter-B/part-101/subpart-A/section-101.9`, which states "up to date
 as of 10/26/2026" and "last amended 10/21/2026".
 
@@ -219,7 +219,7 @@ pregnancy and lactation.
 These values were not checked against a primary source and are not in the tables above:
 
 - **Chloride by age and sex (DRI).** There is no ODS fact sheet for chloride, and the National Academies summary tables
-  on NCBI Bookshelf (`NBK545442`, `NBK56068`) answered with a bot check when fetched on 2026-10-28. The FDA Daily Value
+  on NCBI Bookshelf (`NBK545442`, `NBK56068`) answered with a bot check when fetched on 2026-10-27. The FDA Daily Value
   for chloride (2,300 mg) is verified above.
 - **Sodium, fiber, protein, carbohydrate, fat and water by age and sex (DRIs and AMDRs).** Same source, same block. The
   FDA Daily Values for these are verified above.
