@@ -654,10 +654,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         if await deliveryGate?.pause(upTo: deliveryWaitSeconds) ?? true {
             erased = await eraseHoldingDelivery()
         } else {
-            errorMessage = Self.eraseNothingErasedMessage
-            eraseRetryAvailable = true
-            resolveDeferredImportEffectsAfterErase(journalEraseSucceeded: false)
-            erased = false
+            erased = await eraseHoldingDelivery()
         }
         // On every exit, the timeout included. After a pause that timed out the gate holds nothing for this erase,
         // so this does nothing then.
