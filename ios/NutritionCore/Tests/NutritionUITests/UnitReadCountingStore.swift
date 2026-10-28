@@ -13,6 +13,8 @@ final class UnitReadCountingStore: JournalStore, JournalLoggedUnits, @unchecked 
 
     /// Throws only on this call to loggedUnits(), counted from 1 for this store. Nil means no call fails.
     var failsOnUnitReadCall: Int?
+    /// The entry whose revisions read throws, as a failed journal read would. Nil means none fails.
+    var failsRevisionsReadFor: String?
     /// How many times loggedUnits() has been called on this store.
     private(set) var unitReadCalls = 0
 
@@ -47,6 +49,7 @@ final class UnitReadCountingStore: JournalStore, JournalLoggedUnits, @unchecked 
         return try inner.activeIntakes()
     }
     func revisions(of intakeID: String) throws -> [IntakeRevision] {
+        if failsRevisionsReadFor == intakeID { throw UnitsUnreadable() }
         return try inner.revisions(of: intakeID)
     }
     func projections(of intakeID: String) throws -> [DestinationProjection] { try inner.projections(of: intakeID) }

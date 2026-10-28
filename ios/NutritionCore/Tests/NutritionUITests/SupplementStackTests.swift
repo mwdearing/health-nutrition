@@ -321,8 +321,9 @@ final class SupplementStackTests: XCTestCase {
     }
 
     /// The supplement load reads the logged units 3 times when nothing fails. This test fails call 2, the read in
-    /// `makeCandidates`, so call 1 succeeds and the load stops at 2 reads (#415).
-    func testSupplementCandidatesShowNothingWhenTheirOwnUnitReadFails() throws {
+    /// `makeCandidates`, so call 1 succeeds and the load stops at 2 reads (#415). Only the picker failed, so it
+    /// says so and today's rows stay (#775).
+    func testSupplementPickerShowsTheReadErrorWhenItsOwnUnitReadFails() throws {
         let store = UnitReadCountingStore(inner: try makeStore())
         store.failsOnUnitReadCall = 2
         let favorites = try makeFavorites()
@@ -331,8 +332,30 @@ final class SupplementStackTests: XCTestCase {
         let model = makeModel(store: store, favorites: favorites, schedules: schedules)
         model.load(now: now)
         XCTAssertEqual(store.unitReadCalls, 2)
-        XCTAssertNotNil(model.errorMessage)
+        XCTAssertTrue(model.pickerReadFailed)
+        XCTAssertFalse(model.readFailed)
         XCTAssertTrue(model.candidates.isEmpty)
+    }
+
+    /// One recent entry whose revisions cannot be read fails the picker's recents, not the screen: today's rows
+    /// stay, a favorite not on the list is still offered, and the picker shows the read error (#775).
+    func testAnUnreadableRecentEntryFailsOnlyThePicker() throws {
+        let store = UnitReadCountingStore(inner: try makeStore())
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        try saveFavorite(favorites)
+        try saveFavorite(favorites, id: "fav-zinc", snapshot: nil)
+        try schedules.save(["fav-magnesium": try XCTUnwrap(SupplementSchedule(times: [eight]))])
+        // Two days ago, so only the picker's recents read it, not today's count.
+        store.failsRevisionsReadFor = try log(store, name: "Example zinc", at: now.addingTimeInterval(-2 * 86_400))
+        let model = makeModel(store: store, favorites: favorites, schedules: schedules)
+        model.load(now: now)
+        XCTAssertEqual(model.rows.map(\.title), ["Example magnesium"])
+        XCTAssertNil(model.errorMessage)
+        XCTAssertFalse(model.readFailed)
+        XCTAssertTrue(model.pickerReadFailed)
+        XCTAssertEqual(model.candidates.count, 1, "the favorite not on the list is still offered")
+        XCTAssertEqual(SupplementStackViewModel.readFailedMessage, "Could not read your supplements.")
     }
 
     func testTakenLogsTheFavoriteWithItsLabelSnapshotAndUndoUnmarksIt() throws {
