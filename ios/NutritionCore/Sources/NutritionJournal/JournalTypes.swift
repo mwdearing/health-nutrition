@@ -497,6 +497,7 @@ public protocol JournalStore: AnyObject, Sendable {
         now: Date, occurredAt: Date?, timeZoneIdentifier: String?, unitRemovals: [String], expectedRevision: Int
     ) throws -> IntakeRevision
     /// Marks the intake deleted and queues delete operations at the current revision, in one save.
+    func delete(intakeID: String, now: Date) throws
     /// As `delete`, and returns the delete's place in the store's commit order.
     func deleteSequenced(intakeID: String, now: Date) throws -> UInt64
     /// As `create`, and returns the write's place in the store's commit order.
