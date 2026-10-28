@@ -144,7 +144,6 @@ public struct GoalBarModel: Equatable, Identifiable {
         }
         return MissingValueWording.partialNote(name: name, healthGap: line.healthGap, count: missingCount)
     }
-
 }
 
 /// A labeled bar: the nutrient and its figure above a capsule track. One accessibility element, so
