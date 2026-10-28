@@ -603,8 +603,6 @@ public enum JournalImporter {
             let path = "$.favorites[\(index)]"
             let favorite = try object(item, path: path)
             try checkObject(favorite, keys: JournalImportV1Keys.favorite, path: path, version: version)
-            try checkMinimumLengthOne(
-                favorite, keys: ["id", "display_name", "category"], path: path, version: version)
             try checkComponents(favorite["components"], path: "\(path).components", version: version)
         }
         if version >= 8 {
@@ -636,8 +634,6 @@ public enum JournalImporter {
                     let itemPath = "\(path).items[\(itemIndex)]"
                     let template = try object(mealItem, path: itemPath)
                     try checkObject(template, keys: JournalImportV4Keys.favorite, path: itemPath, version: version)
-                    try checkMinimumLengthOne(
-                        template, keys: ["id", "display_name", "category"], path: itemPath, version: version)
                     try checkComponents(template["components"], path: "\(itemPath).components", version: version)
                 }
             }
