@@ -206,6 +206,12 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
         return "Prefilled for \(label.prefix(1).lowercased() + label.dropFirst()). You can change any of them."
     }
 
+    /// Whether to ask for the answers the prefill needs: only when age or sex is missing. Someone who answered
+    /// "unspecified" did answer, and the tables publish no row for them, so nothing is asked and no section shows.
+    public var vitaminShowsNoGroupNotice: Bool {
+        sex == nil || ageYears() == nil
+    }
+
     /// The reference values the step offers: one per covered vitamin or mineral without a goal already.
     public var vitaminPrefill: [NutrientGoal] {
         let existing = Set(goals.rows.compactMap { $0.targetText == nil ? nil : $0.nutrient })

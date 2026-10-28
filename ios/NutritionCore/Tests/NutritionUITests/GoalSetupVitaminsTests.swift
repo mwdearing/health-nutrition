@@ -62,6 +62,20 @@ final class GoalSetupVitaminsTests: XCTestCase {
             "From the Dietary Reference Intakes (NIH). Vitamins A, D and E are yours to set, since labels often list them in IU.")
     }
 
+    /// The request for age and sex shows only when one is missing; "unspecified" is an answer, so it shows nothing.
+    func testTheNoGroupNoticeShowsOnlyWhenAnAnswerIsMissing() {
+        let (model, _) = makeModel()
+        XCTAssertTrue(model.vitaminShowsNoGroupNotice)
+        model.sex = .unspecified
+        model.ageText = "35"
+        XCTAssertFalse(model.vitaminShowsNoGroupNotice)
+        XCTAssertNil(model.vitaminPrefillNotice)
+        model.sex = .male
+        XCTAssertFalse(model.vitaminShowsNoGroupNotice)
+        model.ageText = ""
+        XCTAssertTrue(model.vitaminShowsNoGroupNotice)
+    }
+
     /// With every covered vitamin and mineral already set there is nothing to prefill, so no notice is given.
     func testNothingToPrefillGivesNoNotice() {
         let men35 = ReferenceGroup(sex: .male, ageBand: .years31To50)

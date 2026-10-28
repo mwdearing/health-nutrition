@@ -191,7 +191,7 @@ public struct GoalSetupView: View {
     @ViewBuilder
     private var vitaminsSection: some View {
         // With every covered vitamin and mineral already set, there is nothing to offer, so nothing shows.
-        if model.referenceGroup == nil || model.vitaminPrefillNotice != nil {
+        if model.vitaminShowsNoGroupNotice || model.vitaminPrefillNotice != nil {
             heading("Vitamins and minerals")
         }
         if let notice = model.vitaminPrefillNotice {
@@ -212,7 +212,7 @@ public struct GoalSetupView: View {
             Text(GoalSetupViewModel.vitaminSourceNotice)
                 .font(.footnote)
                 .foregroundStyle(TokenColors.textSecondary)
-        } else if model.referenceGroup == nil {
+        } else if model.vitaminShowsNoGroupNotice {
             Text(GoalSetupViewModel.vitaminNoGroupNotice)
                 .font(.footnote)
                 .foregroundStyle(TokenColors.textSecondary)
