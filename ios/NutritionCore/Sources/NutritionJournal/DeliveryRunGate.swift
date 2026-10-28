@@ -87,7 +87,7 @@ public actor DeliveryRunGate {
     /// Releases `hold` when it is the hold that has the gate. Safe to call on every exit: nil (a pause that timed
     /// out), a hold already released, or any other caller's hold does nothing.
     public func resume(_ hold: PauseHold?) {
-        guard let hold, hold == currentPause else { return }
+        guard hold != nil, currentPause != nil else { return }
         currentPause = nil
         leave()
     }
