@@ -20,7 +20,7 @@ or UL). Nothing in it is personalised beyond the published row a person picks.
   calcium, iron, magnesium, phosphorus, potassium, zinc, chromium, copper, iodine, manganese, molybdenum and selenium.
   The keys are the journal's own (`HealthKitWritePlanner.micronutrientKeys`), and a test pins that every key and unit
   matches the nutrient mapping.
-- **Left out**: chloride (its DRI was not verified against a primary source; see "Not verified"), sodium (its 2,300 mg is a chronic-disease risk reduction
+- **Left out of this table** (the journal still records these keys): chloride (its DRI was not verified against a primary source; see "Not verified"), sodium (its 2,300 mg is a chronic-disease risk reduction
   level, not an upper limit), and water, energy and the macronutrients, which are goals a person sets.
 
 ## Units
@@ -115,7 +115,7 @@ matches the fact sheet table below.
 
 ## Ages 14 to 18 (reference data only, not in the code)
 
-Goal setup accepts ages 18 to 100 (`GoalEstimator.minimumAge` is 18), so an 18-year-old can set goals, but
+Goal setup accepts ages 18 to 100 (`GoalEstimator.minimumAge` is 18, `GoalEstimator.maximumAge` is 100), so an 18-year-old can set goals, but
 `ReferenceAgeBand(ageYears:)` returns nil under 19 and the app shows no reference value for them. These are the published
 14 to 18 rows, read on 2026-10-27 from the same fact sheet tables, for when the code gains the band. Ages 14 to 17 can't
 reach goal setup today. The UL scopes are the adult ones (magnesium counts supplements only, and so on); the
