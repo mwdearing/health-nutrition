@@ -53,6 +53,14 @@ final class SnapshotReadFailureTests: XCTestCase {
         try logWithProduct(store, at: now)
         store.failsProductReads = true
         XCTAssertThrowsError(try RecentItemsProvider(store: store).foods())
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let favorites = try SwiftDataFavoritesStore(url: directory.appendingPathComponent("favorites.store"))
+        let model = LibraryViewModel(store: store, favorites: favorites, timeZoneIdentifier: "UTC")
+        model.load()
+        XCTAssertEqual(model.errorMessage, "Could not read the library.")
+        XCTAssertTrue(model.sections.isEmpty)
     }
 
     /// With the reads working, the same entries read as before.
