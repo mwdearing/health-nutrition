@@ -159,6 +159,7 @@ public final class SupplementStackViewModel: ObservableObject {
                 forget()
                 rows = []
                 candidates = []
+                pickerReadFailed = false
                 errorMessage = "Your time zone could not be read, so today's list cannot be shown."
                 readFailed = true
                 return
@@ -210,8 +211,9 @@ public final class SupplementStackViewModel: ObservableObject {
             limitCheckFailed = limits.failed
             rows = makeRows(clock: clock)
             do {
-                candidates = try makeCandidates(favorites: stored, planned: Set(planned.keys), kind: kind)
-                pickerReadFailed = false
+                let built = try makeCandidates(favorites: stored, planned: Set(planned.keys), kind: kind)
+                candidates = built.candidates
+                pickerReadFailed = built.recentsReadFailed
             } catch {
                 // A failed picker read leaves today's rows in place; the picker says it could not be read.
                 candidates = []
@@ -379,7 +381,8 @@ public final class SupplementStackViewModel: ObservableObject {
     private func makeCandidates(
         favorites stored: [FavoriteTemplate], planned: Set<String>,
         kind: (String?, String) -> ProductKind
-    ) throws -> [SupplementStackCandidate] {
+    ) throws -> (candidates: [SupplementStackCandidate], recentsReadFailed: Bool) {
+        var recentsReadFailed = false
         let loggedUnitIndex = try LoggedUnitIndex.loadOrThrow(from: store)
         let onList = Set(stored.filter { planned.contains($0.id) }.map { Self.matchKey($0) })
         let favoriteCandidates = stored
@@ -403,7 +406,16 @@ public final class SupplementStackViewModel: ObservableObject {
         // one to add, and a second favorite of it would only count the same entries twice.
         var seen = Set(stored.map { Self.matchKey($0) })
         var recentCandidates: [SupplementStackCandidate] = []
-        for recent in try RecentItemsProvider(store: store).recents() {
+        // Recents that cannot be read fail only their part of the picker: the favorites above still show, and
+        // the picker says the rest could not be read rather than reading as complete (#775).
+        let recents: [RecentItem]
+        do {
+            recents = try RecentItemsProvider(store: store).recents()
+        } catch {
+            recents = []
+            recentsReadFailed = true
+        }
+        for recent in recents {
             let template = recent.template
             guard !template.components.isEmpty,
                   kind(template.productSnapshotID, template.category) == .supplement
@@ -414,7 +426,7 @@ public final class SupplementStackViewModel: ObservableObject {
                 id: "recent:\(recent.id)", title: template.displayName,
                 detail: LibraryViewModel.detail(template, unitSystem: preferences.unitSystem, isSupplement: true), kind: .supplement, source: .recent(template)))
         }
-        return supplementsFirst + recentCandidates
+        return (supplementsFirst + recentCandidates, recentsReadFailed)
     }
 
     // MARK: Changing the list
