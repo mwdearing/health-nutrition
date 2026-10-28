@@ -952,8 +952,6 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             } catch {
                 outcome = .failed(.other)
             }
-            // On every path past the wait; only this restore's own hold is released.
-            await deliveryGate?.resume(hold)
             return outcome
         }
         Task { [weak self] in
