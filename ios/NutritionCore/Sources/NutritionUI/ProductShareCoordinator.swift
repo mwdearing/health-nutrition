@@ -172,6 +172,9 @@ public enum ProductShareStatus: String, Sendable {
 
     public func runDueOperations(now: Date) async {
         if let running { rerunRequested = true; await running.value; return }
+        // A pause from a failed read is retried here too, so delivery resumes once reads work without waiting
+        // for a screen to read first (#775).
+        if operationsReadFailed, let context = accountContext { _ = operations(ownerID: context.ownerID) }
         guard let context = accountContext, pauseReason == nil, !lifecycleBlocked, !sharingBlocked,
               context.profileReady, context.backendSupported else { return }
         let token = generation

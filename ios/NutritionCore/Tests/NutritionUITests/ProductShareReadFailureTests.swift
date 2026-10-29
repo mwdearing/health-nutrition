@@ -84,6 +84,20 @@ final class ProductShareReadFailureTests: XCTestCase {
         XCTAssertThrowsError(try coordinator.requestWithdrawal(operation, expectedStoreEpoch: epoch))
         XCTAssertEqual(store.withdrawalCalls, 0, "refused before the store is asked to withdraw")
     }
+
+    /// Delivery retries the read itself, so a pause from a failed read lifts without a screen reading first.
+    @MainActor func testDeliveryRetriesTheReadAndLiftsThePause() async {
+        let owner = UUID(), epoch = UUID(), store = FailableReadStorePort(), service = ProductSearchServicePort()
+        let coordinator = ProductShareCoordinator(store: store, service: service)
+        coordinator.updateAccountContext(.init(ownerID: owner, profileReady: true, sharingAllowed: true,
+            consentVersion: 2, serverGeneration: "1", localSessionEpoch: epoch, backendSupported: true))
+        store.failReads = true
+        XCTAssertNil(coordinator.operations(ownerID: owner))
+        XCTAssertTrue(coordinator.sharingBlocked)
+        store.failReads = false
+        await coordinator.runDueOperations(now: Date())
+        XCTAssertFalse(coordinator.sharingBlocked)
+    }
 }
 
 // A store double whose operation reads can be made to throw. Establishes no persistence guarantees.
