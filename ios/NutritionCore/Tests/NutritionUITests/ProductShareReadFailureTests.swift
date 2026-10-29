@@ -124,6 +124,25 @@ final class ProductShareReadFailureTests: XCTestCase {
         XCTAssertEqual(store.operations[1].status, .pending)
         XCTAssertTrue(coordinator.operationsReadFailed)
     }
+
+    /// The status is worked out from one read: a read that fails and then works within the same status call
+    /// still reads as paused, not as a status guessed from the later read (a product with unshared local
+    /// changes must never read as shared).
+    @MainActor func testOneFailedReadInAStatusCallIsPausedEvenIfTheNextReadWorks() {
+        let owner = UUID(), epoch = UUID(), store = FailableReadStorePort(), service = ProductSearchServicePort()
+        let item = CustomProductRevision(localProductID: UUID(), revisionID: UUID(), content: CustomProductContent(name: "Synthetic read", kind: .food, basis: .perServing))
+        store.products = [item]
+        store.operations = [ProductShareOperation(ownerID: owner, localProductID: item.localProductID, operationID: UUID(),
+            clientRevisionID: UUID(), kind: .publish, content: item.content, epoch: epoch)]
+        let coordinator = ProductShareCoordinator(store: store, service: service)
+        coordinator.updateAccountContext(.init(ownerID: owner, profileReady: true, sharingAllowed: true,
+            consentVersion: 2, serverGeneration: "1", localSessionEpoch: epoch, backendSupported: true))
+        let model = CustomProductSharingModel(store: store, coordinator: coordinator, service: service)
+        XCTAssertEqual(model.status(item), .localChanges)
+
+        store.failOnlyReadCall = store.readCalls + 1
+        XCTAssertEqual(model.status(item), .paused)
+    }
 }
 
 // A store double whose operation reads can be made to throw. Establishes no persistence guarantees.
@@ -135,8 +154,12 @@ private final class FailableReadStorePort: CustomProductStore, @unchecked Sendab
     func enqueueProductOperation(_ operation: ProductShareOperation) throws { operations.append(operation) }
     func customProducts() throws -> [CustomProductRevision] { products }
     func productAccountEpoch(ownerID: UUID) throws -> UUID? { operations.last(where: { $0.ownerID == ownerID })?.epoch }
+    /// Only this call to productOperations (counted from 1) throws, when set.
+    var failOnlyReadCall: Int?
+    private(set) var readCalls = 0
     func productOperations(ownerID: UUID) throws -> [ProductShareOperation] {
-        if failReads { throw CustomProductStoreError.invalidOperation }
+        readCalls += 1
+        if failReads || failOnlyReadCall == readCalls { throw CustomProductStoreError.invalidOperation }
         return operations.filter { $0.ownerID == ownerID }
     }
     func dueProductOperations(ownerID: UUID, now: Date) throws -> [ProductShareOperation] {

@@ -275,9 +275,15 @@ public struct CustomProductSharePreview: Identifiable {
     }
     public func status(_ item: CustomProductRevision) -> ProductShareStatus {
         if coordinator?.sharingBlocked == true { return .paused }
-        if let last = latest(item), last.clientRevisionID != item.revisionID { return .localChanges }
-        if reviewBlocker(item) != nil { return .failed }
-        if let last = latest(item), last.reviewSettlementID != nil {
+        // One read for the whole status, so a read that fails part-way can't mix with a later one (#775).
+        var mine: [ProductShareOperation] = []
+        if let owner = coordinator?.accountContext?.ownerID {
+            guard let read = coordinator?.operations(ownerID: owner) else { return .paused }
+            mine = read.filter { $0.localProductID == item.localProductID }
+        }
+        if let last = mine.last, last.clientRevisionID != item.revisionID { return .localChanges }
+        if mine.contains(where: { !isSettled($0) && [.failed, .needsReview].contains($0.status) }) { return .failed }
+        if let last = mine.last, last.reviewSettlementID != nil {
             switch last.reviewedCurrentState {
             case .active: return .shared
             case .some(.withdrawn), .some(.none): return .removed
