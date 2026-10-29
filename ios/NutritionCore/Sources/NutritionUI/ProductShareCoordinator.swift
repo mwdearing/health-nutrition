@@ -211,8 +211,20 @@ public enum ProductShareStatus: String, Sendable {
               [.pending, .sending].contains(saved.status) else { throw CancellationError() }
         return saved
     }
+    /// A `.sending` row is a leftover when this delivery run starts: `runDueOperations` starts a run only when
+    /// no send is in flight in this process, and a send's reply records before the run ends. Its reply never
+    /// recorded (#1041), so it is marked failed, shown as "Couldn't share", and never re-sent or re-queued here.
+    /// A killed app's leftovers are handled by the same first run. No manual retry of `.failed` exists yet (#1041).
+    private func failLeftoverSends(context: ProductShareAccountContext, token: UUID) {
+        guard valid(context, token), let saved = operations(ownerID: context.ownerID) else { return }
+        for operation in saved where operation.epoch == context.localSessionEpoch && operation.status == .sending {
+            do { try record(operation, status: .failed, reason: .network) }
+            catch { return }
+        }
+    }
     private func deliver(context: ProductShareAccountContext, token: UUID, now: Date) async {
         do {
+            failLeftoverSends(context: context, token: token)
             let capabilities = try await service.capabilities()
             guard valid(context, token), capabilities.supportedVersion == 2 else { return }
             if !capabilities.sharingPermission { try store.cancelProductPublications(ownerID: context.ownerID) }
