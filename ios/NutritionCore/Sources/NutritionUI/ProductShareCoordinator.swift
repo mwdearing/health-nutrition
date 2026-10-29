@@ -33,7 +33,12 @@ public enum ProductShareStatus: String, Sendable {
     public private(set) var pauseReason: ProductSharePauseReason?
     public private(set) var storageFailed = false
     /// True while the last share-operations read failed. Sharing is paused until a read works again (#775).
-    public private(set) var operationsReadFailed = false
+    public private(set) var operationsReadFailed = false {
+        didSet { if operationsReadFailed != oldValue { readPauseChanges += 1 } }
+    }
+    /// Counts each time the read-failure pause is raised or lifted, so a screen can tell it changed even when a
+    /// different reader lifted it (#775).
+    public private(set) var readPauseChanges = 0
     /// Sharing is blocked by a failed write (`storageFailed`) or by the last operations read failing.
     public var sharingBlocked: Bool { storageFailed || operationsReadFailed }
     private let store: any CustomProductStore

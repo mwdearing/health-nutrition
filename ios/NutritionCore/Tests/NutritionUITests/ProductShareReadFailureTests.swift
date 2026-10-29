@@ -181,6 +181,24 @@ final class ProductShareReadFailureTests: XCTestCase {
         XCTAssertTrue(model.refreshFromStore(), "the lifted pause redraws the view")
         XCTAssertNotEqual(model.status(item), .paused)
     }
+
+    /// A pause raised during a render and lifted by another reader before the next refresh still redraws.
+    @MainActor func testAPauseLiftedByAnotherReaderStillRedraws() {
+        let owner = UUID(), epoch = UUID(), store = FailableReadStorePort(), service = ProductSearchServicePort()
+        let item = CustomProductRevision(localProductID: UUID(), revisionID: UUID(), content: CustomProductContent(name: "Synthetic read", kind: .food, basis: .perServing))
+        store.products = [item]
+        let coordinator = ProductShareCoordinator(store: store, service: service)
+        coordinator.updateAccountContext(.init(ownerID: owner, profileReady: true, sharingAllowed: true,
+            consentVersion: 2, serverGeneration: "1", localSessionEpoch: epoch, backendSupported: true))
+        let model = CustomProductSharingModel(store: store, coordinator: coordinator, service: service)
+        _ = model.refreshFromStore()
+
+        store.failReads = true
+        XCTAssertEqual(model.status(item), .paused)
+        store.failReads = false
+        XCTAssertNotNil(coordinator.operations(ownerID: owner), "another reader lifts the pause first")
+        XCTAssertTrue(model.refreshFromStore(), "the view still redraws")
+    }
 }
 
 // A store double whose operation reads can be made to throw. Establishes no persistence guarantees.

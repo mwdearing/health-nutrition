@@ -251,6 +251,7 @@ public struct CustomProductSharePreview: Identifiable {
     private var observedOperations: [ProductShareOperation]?
     private var observedContext: ProductShareAccountContext?
     private var observedPause: ProductSharePauseReason?
+    private var observedPauseChanges = 0
     public init(store: any CustomProductStore, coordinator: ProductShareCoordinator?, service: (any CommunityProductServicing)?) {
         self.store = store; self.coordinator = coordinator; self.service = service
     }
@@ -408,14 +409,13 @@ public struct CustomProductSharePreview: Identifiable {
     /// Views observe durable changes even when delivery came from a foreground/connectivity trigger.
     @discardableResult public func refreshFromStore() -> Bool {
         let context = coordinator?.accountContext
-        // A pause raised by a read during a render, and lifted by this read, changes what the view shows even
-        // when the operations themselves didn't change (#775).
-        let wasPaused = coordinator?.operationsReadFailed == true
         let operations = context.flatMap { coordinator?.operations(ownerID: $0.ownerID) }
         let pause = coordinator?.pauseReason
-        let pauseFlipped = wasPaused != (coordinator?.operationsReadFailed == true)
-        guard pauseFlipped || operations != observedOperations || context != observedContext || pause != observedPause else { return false }
-        observedOperations = operations; observedContext = context; observedPause = pause
+        // A read-failure pause raised or lifted by any reader since the last refresh (a render, delivery or this
+        // read) changes what the view shows even when the operations didn't change (#775).
+        let pauseChanges = coordinator?.readPauseChanges ?? 0
+        guard pauseChanges != observedPauseChanges || operations != observedOperations || context != observedContext || pause != observedPause else { return false }
+        observedOperations = operations; observedContext = context; observedPause = pause; observedPauseChanges = pauseChanges
         refreshID = UUID(); return true
     }
     public func observeStatus() async {
