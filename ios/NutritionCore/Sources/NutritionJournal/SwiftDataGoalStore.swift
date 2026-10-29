@@ -252,6 +252,8 @@ public final class SwiftDataGoalStore: GoalStore, WeightPlanStore, JournalErasin
     }
 
     public func removeGoal(nutrient: String) throws {
+        // A receipt-prefixed key would delete a live restore receipt, so it is refused like setGoal refuses it.
+        guard !nutrient.hasPrefix(Self.receiptPrefix) else { throw GoalStoreError.unknownNutrient }
         let key = nutrient
         writeLock.lock()
         defer { writeLock.unlock() }
@@ -328,7 +330,8 @@ public final class SwiftDataGoalStore: GoalStore, WeightPlanStore, JournalErasin
     }
 
     /// Reads the stored plan back. Any field that cannot be read, or a plan that fails `validate()`, is a
-    /// corrupt row: none of it is returned as a partial plan.
+    /// corrupt row: none of it is returned as a partial plan. A change that narrows the accepted goal weight or pace
+    /// range must migrate stored plans in the same change, because a plan saved under the wider range reads as corrupt.
     private static func decode(_ row: WeightPlanRecord) throws -> WeightPlan {
         guard let aim = GoalAim(storageText: row.aimText) else {
             throw GoalStoreError.corruptRecord("weight plan")

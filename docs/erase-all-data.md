@@ -18,7 +18,7 @@ The four SwiftData stores live under Application Support. The journal store dele
 | `journal.store` | `SwiftDataJournalStore` | Intake entries, revision history, product snapshots, projections and queued outbox operations, including deletion tombstones. |
 | `favorites.store` | `SwiftDataFavoritesStore` | Favorite templates. |
 | `recipes.store` | `SwiftDataRecipeStore` | Recipe versions and recipe tombstones. |
-| `goals.store` | `SwiftDataGoalStore` | Daily nutrient targets and the weight plan. |
+| `goals.store` | `SwiftDataGoalStore` | Daily nutrient targets, the weight plan and goal restore receipts. |
 
 Each store saves its own row deletion. If a store fails, erase reports a partial failure and still attempts the other local cleanup steps. The screen must not report full success when an eraser fails.
 

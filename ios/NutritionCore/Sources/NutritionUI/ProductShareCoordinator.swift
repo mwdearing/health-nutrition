@@ -146,7 +146,13 @@ public enum ProductShareStatus: String, Sendable {
     public func status(localProductID: UUID) -> ProductShareStatus {
         guard let context = accountContext else { return .onThisPhone }
         guard let saved = operations(ownerID: context.ownerID) else { return .paused }
-        guard let operation = saved.last(where: { $0.localProductID == localProductID }) else { return .onThisPhone }
+        return status(localProductID: localProductID, in: saved)
+    }
+
+    /// The status from operations already read, without reading the store again. Callers pass one snapshot.
+    public func status(localProductID: UUID, in operations: [ProductShareOperation]) -> ProductShareStatus {
+        guard accountContext != nil else { return .onThisPhone }
+        guard let operation = operations.last(where: { $0.localProductID == localProductID }) else { return .onThisPhone }
         if operation.status == .failed || operation.status == .needsReview { return .failed }
         if operation.kind == .withdraw && ![.acknowledged, .satisfied].contains(operation.status) { return .removalPending }
         if operation.status == .acknowledged || operation.status == .satisfied {
