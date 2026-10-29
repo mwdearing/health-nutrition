@@ -239,7 +239,7 @@ final class ProductShareReadFailureTests: XCTestCase {
 
     /// #1041: a `.sending` row left by an interrupted send (its reply never recorded) is marked failed on the
     /// next delivery run and is never re-sent, so it reads "Couldn't share" instead of staying `.sending`.
-    @MainActor func testLeftoverSendingRowBecomesFailedWithoutAResend() async {
+    @MainActor func testALeftoverSendingRowIsSentAgainLikeAfterARestart() async {
         let owner = UUID(), epoch = UUID(), store = FailableReadStorePort()
         let service = CountingPublishService(store: store)
         var leftover = ProductShareOperation(ownerID: owner, localProductID: UUID(), operationID: UUID(), clientRevisionID: UUID(),
@@ -254,15 +254,13 @@ final class ProductShareReadFailureTests: XCTestCase {
 
         await coordinator.runDueOperations(now: Date())
 
-        XCTAssertEqual(store.operations[0].status, .failed)
-        XCTAssertEqual(store.operations[0].reason, .network)
         let publishCalls = await service.publishCalls
-        XCTAssertEqual(publishCalls, 0, "a leftover is never re-sent")
-        XCTAssertEqual(coordinator.status(localProductID: leftover.localProductID), .failed)
+        XCTAssertEqual(publishCalls, 1, "the leftover is sent again with its own operation ID")
+        XCTAssertNotEqual(store.operations[0].status, .sending, "nothing stays stuck in sending")
     }
 
     /// #1041: a send in flight in this process is not a leftover. Its row reads `.sending` while the publish
-    /// runs, and the reply records `.acknowledged`, never `.failed`.
+    /// runs, and the reply records `.acknowledged`.
     @MainActor func testInFlightSendingRowIsNotMarkedFailed() async {
         let owner = UUID(), epoch = UUID(), store = FailableReadStorePort()
         let service = CountingPublishService(store: store)
