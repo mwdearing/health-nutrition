@@ -256,7 +256,7 @@ public struct CustomProductSharePreview: Identifiable {
     }
     public var canShare: Bool {
         guard let coordinator, let context = coordinator.accountContext else { return false }
-        return context.profileReady && context.backendSupported && context.freshPublicationSupported && context.sharingAllowed && context.consentVersion == 2 && coordinator.pauseReason == nil && !coordinator.storageFailed
+        return context.profileReady && context.backendSupported && context.freshPublicationSupported && context.sharingAllowed && context.consentVersion == 2 && coordinator.pauseReason == nil && !coordinator.sharingBlocked
     }
     public var eligibilityText: String {
         guard let coordinator, let context = coordinator.accountContext else { return "Sign in in Settings to share. Products remain available on this device." }
@@ -274,7 +274,7 @@ public struct CustomProductSharePreview: Identifiable {
         }
     }
     public func status(_ item: CustomProductRevision) -> ProductShareStatus {
-        if coordinator?.storageFailed == true { return .paused }
+        if coordinator?.sharingBlocked == true { return .paused }
         if let last = latest(item), last.clientRevisionID != item.revisionID { return .localChanges }
         if reviewBlocker(item) != nil { return .failed }
         if let last = latest(item), last.reviewSettlementID != nil {
@@ -287,23 +287,24 @@ public struct CustomProductSharePreview: Identifiable {
         return coordinator?.status(localProductID: item.localProductID) ?? .onThisPhone
     }
     public func detail(_ item: CustomProductRevision) -> String {
-        guard let operation = latest(item) else { return coordinator?.storageFailed == true ? ProductShareStatus.paused.rawValue : "No contribution from this account." }
+        guard let operation = latest(item) else { return coordinator?.sharingBlocked == true ? ProductShareStatus.paused.rawValue : "No contribution from this account." }
         if operation.clientRevisionID != item.revisionID { return "The edited facts are saved on this device; this revision has not been shared." }
         if reviewBlocker(item) != nil { return "Review the current contribution before sharing again. Your local product is saved." }
         if let retry = operation.nextAttemptAt { return "Retry available after \(retry.formatted(date: .abbreviated, time: .shortened))." }
         if let state = operation.reviewedCurrentState ?? operation.currentState, let revision = operation.reviewedCurrentRevision ?? operation.currentRevision { return "Current contribution: \(state.rawValue), revision \(revision)." }
         return status(item).rawValue
     }
-    public func canRetry(_ item: CustomProductRevision) -> Bool { latest(item)?.clientRevisionID == item.revisionID && latest(item)?.status == .pending && reviewBlocker(item) == nil }
+    public func canRetry(_ item: CustomProductRevision) -> Bool { coordinator?.sharingBlocked != true && latest(item)?.clientRevisionID == item.revisionID && latest(item)?.status == .pending && reviewBlocker(item) == nil }
     public func canWithdraw(_ item: CustomProductRevision) -> Bool {
         guard let context = coordinator?.accountContext, context.profileReady, context.backendSupported,
-              coordinator?.pauseReason == nil, let operation = latest(item), operation.storeEpoch != nil else { return false }
+              coordinator?.pauseReason == nil, let operation = latest(item), !coordinator!.sharingBlocked,
+              operation.storeEpoch != nil else { return false }
         return status(item) != .removed && status(item) != .removalPending
     }
     public func canReview(_ item: CustomProductRevision) -> Bool {
         if canShare { return true }
         guard let context = coordinator?.accountContext, context.profileReady, context.backendSupported,
-              coordinator?.pauseReason == nil, coordinator?.storageFailed == false,
+              coordinator?.pauseReason == nil, coordinator?.sharingBlocked == false,
               let operation = latest(item), operation.storeEpoch != nil else { return false }
         return operation.serverProductID != nil || operation.acknowledgedProductID != nil || canWithdraw(item)
     }

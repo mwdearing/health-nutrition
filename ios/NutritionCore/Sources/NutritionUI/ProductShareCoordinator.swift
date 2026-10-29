@@ -32,6 +32,10 @@ public enum ProductShareStatus: String, Sendable {
     public private(set) var accountContext: ProductShareAccountContext?
     public private(set) var pauseReason: ProductSharePauseReason?
     public private(set) var storageFailed = false
+    /// True while the last share-operations read failed. Sharing is paused until a read works again (#775).
+    public private(set) var operationsReadFailed = false
+    /// Sharing is blocked by a failed write (`storageFailed`) or by the last operations read failing.
+    public var sharingBlocked: Bool { storageFailed || operationsReadFailed }
     private let store: any CustomProductStore
     private let service: any CommunityProductServicing
     private let clock: () -> Date
@@ -124,9 +128,14 @@ public enum ProductShareStatus: String, Sendable {
         if lifecycleOwnerID == ownerID { lifecycleBlocked = false; lifecycleOwnerID = nil }
     }
 
-    /// A failed read pauses sharing rather than guessing from stale or missing state (#775).
+    /// A failed read pauses sharing rather than guessing from stale or missing state, and the next read that
+    /// works lifts that pause again (#775).
     public func operations(ownerID: UUID) -> [ProductShareOperation]? {
-        do { return try store.productOperations(ownerID: ownerID) } catch { storageFailed = true; return nil }
+        do {
+            let operations = try store.productOperations(ownerID: ownerID)
+            operationsReadFailed = false
+            return operations
+        } catch { operationsReadFailed = true; return nil }
     }
 
     public func status(localProductID: UUID) -> ProductShareStatus {
@@ -146,7 +155,7 @@ public enum ProductShareStatus: String, Sendable {
 
     @discardableResult public func requestWithdrawal(_ operation: ProductShareOperation, expectedStoreEpoch: UUID) throws -> ProductShareOperation {
         guard let context = accountContext, operation.ownerID == context.ownerID,
-              operation.epoch == context.localSessionEpoch, !lifecycleBlocked else { throw CustomProductStoreError.obsoleteOperation }
+              operation.epoch == context.localSessionEpoch, !lifecycleBlocked, !sharingBlocked else { throw CustomProductStoreError.obsoleteOperation }
         // The atomic store mutation cancels only this product's publications. Its persisted status
         // rejects their late replies; unrelated transport retains its admission token and exact envelope.
         // A failed enqueue leaves the worker and every operation unchanged.
@@ -163,7 +172,7 @@ public enum ProductShareStatus: String, Sendable {
 
     public func runDueOperations(now: Date) async {
         if let running { rerunRequested = true; await running.value; return }
-        guard let context = accountContext, pauseReason == nil, !lifecycleBlocked, !storageFailed,
+        guard let context = accountContext, pauseReason == nil, !lifecycleBlocked, !sharingBlocked,
               context.profileReady, context.backendSupported else { return }
         let token = generation
         let task = Task<Void, Never> { [weak self] in await self?.deliver(context: context, token: token, now: now) }
@@ -177,7 +186,7 @@ public enum ProductShareStatus: String, Sendable {
     }
 
     private func valid(_ context: ProductShareAccountContext, _ token: UUID) -> Bool {
-        !Task.isCancelled && generation == token && accountContext == context && pauseReason == nil && !lifecycleBlocked && !storageFailed
+        !Task.isCancelled && generation == token && accountContext == context && pauseReason == nil && !lifecycleBlocked && !sharingBlocked
     }
     private func current(_ operation: ProductShareOperation, context: ProductShareAccountContext, token: UUID) throws -> ProductShareOperation {
         guard valid(context, token), let saved = try store.productOperations(ownerID: context.ownerID).first(where: { $0.operationID == operation.operationID }),
