@@ -155,7 +155,7 @@ public enum ProductShareStatus: String, Sendable {
 
     @discardableResult public func requestWithdrawal(_ operation: ProductShareOperation, expectedStoreEpoch: UUID) throws -> ProductShareOperation {
         guard let context = accountContext, operation.ownerID == context.ownerID,
-              operation.epoch == context.localSessionEpoch, !lifecycleBlocked, !sharingBlocked else { throw CustomProductStoreError.obsoleteOperation }
+              operation.epoch == context.localSessionEpoch, !lifecycleBlocked, !operationsReadFailed else { throw CustomProductStoreError.obsoleteOperation }
         // The atomic store mutation cancels only this product's publications. Its persisted status
         // rejects their late replies; unrelated transport retains its admission token and exact envelope.
         // A failed enqueue leaves the worker and every operation unchanged.
@@ -212,8 +212,9 @@ public enum ProductShareStatus: String, Sendable {
             var processed = Set<UUID>()
             // A read-failure pause raised mid-run stops new sends; a send already under way still records (#775).
             while valid(context, token), !operationsReadFailed {
-                let operations = try store.productOperations(ownerID: context.ownerID)
-                guard let candidate = operations.first(where: {
+                // Through the pausing read, so a failure here shows as paused rather than a silent stop (#775).
+                guard let saved = operations(ownerID: context.ownerID) else { break }
+                guard let candidate = saved.first(where: {
                     $0.epoch == context.localSessionEpoch && $0.status == .pending && !processed.contains($0.operationID) &&
                     ($0.nextAttemptAt == nil || $0.nextAttemptAt! <= now) &&
                     ($0.kind == .withdraw || (($0.attempts > 0 && $0.envelope != nil || publicationEligible) && $0.predecessorOperationID == nil))

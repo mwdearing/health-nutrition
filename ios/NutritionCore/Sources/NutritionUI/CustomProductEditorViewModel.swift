@@ -302,10 +302,12 @@ public struct CustomProductSharePreview: Identifiable {
         return last.clientRevisionID == item.revisionID && last.status == .pending && reviewBlocker(in: mine) == nil
     }
     public func canWithdraw(_ item: CustomProductRevision) -> Bool {
-        guard coordinator?.sharingBlocked != true, let context = coordinator?.accountContext, context.profileReady,
+        // Withdrawal stops only on a failed read, as approved (#775); a write failure doesn't block removal.
+        guard coordinator?.operationsReadFailed != true, let context = coordinator?.accountContext, context.profileReady,
               context.backendSupported, coordinator?.pauseReason == nil, let operation = latest(item),
               operation.storeEpoch != nil else { return false }
-        return status(item) != .removed && status(item) != .removalPending
+        let current = status(item)
+        return current != .removed && current != .removalPending
     }
     public func canReview(_ item: CustomProductRevision) -> Bool {
         if canShare { return true }
