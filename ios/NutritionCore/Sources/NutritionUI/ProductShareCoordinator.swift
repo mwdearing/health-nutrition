@@ -135,12 +135,12 @@ public enum ProductShareStatus: String, Sendable {
             let operations = try store.productOperations(ownerID: ownerID)
             operationsReadFailed = false
             return operations
-        } catch { operationsReadFailed = true; return nil }
+        } catch { return nil }
     }
 
     public func status(localProductID: UUID) -> ProductShareStatus {
         guard let context = accountContext else { return .onThisPhone }
-        guard let saved = operations(ownerID: context.ownerID) else { return .paused }
+        guard let saved = operations(ownerID: context.ownerID) else { return .onThisPhone }
         guard let operation = saved.last(where: { $0.localProductID == localProductID }) else { return .onThisPhone }
         if operation.status == .failed || operation.status == .needsReview { return .failed }
         if operation.kind == .withdraw && ![.acknowledged, .satisfied].contains(operation.status) { return .removalPending }
