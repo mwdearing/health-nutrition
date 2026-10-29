@@ -10,23 +10,10 @@ final class QuickAddLabelUITests: XCTestCase {
         let getStarted = app.buttons["Get started"]
         if getStarted.waitForExistence(timeout: 5) { getStarted.tap() }
 
-        // Two buttons share this label and the first is not hittable, so wait for the hittable one, as the other
-        // Add UI tests do. (isHittable is an element property, not a query predicate.) The wait is long because a
-        // slow runner can take most of a minute to settle after launch.
-        let addCandidates = app.buttons.matching(NSPredicate(format: "label == %@", "Add food, drink, or supplement"))
-        func hittableAdd() -> XCUIElement? {
-            addCandidates.allElementsBoundByIndex.first(where: { $0.exists && $0.isHittable })
-        }
-        XCTAssertTrue(waitUntil(timeout: 30, { hittableAdd() != nil }), "no hittable Add button on the Today screen")
-
-        // A tap that lands while Today is still settling leaves Today on screen, so the tap is checked by the Add
-        // screen's Amounts only action appearing, with one more tap on the Add button if it does not. The retry
-        // runs only while Today's Add button is still hittable and Amounts only is still absent, so an Add screen
-        // that opened late is not opened a second time.
+        // The shared opener waits for a hittable Add button and retries a tap that landed while Today settled.
         let amountsOnly = app.buttons["Amounts only"]
-        hittableAdd()?.tap()
-        if !amountsOnly.waitForExistence(timeout: 10), !amountsOnly.exists, let add = hittableAdd() { add.tap() }
-        XCTAssertTrue(amountsOnly.waitForExistence(timeout: 20), "the Amounts only quick action is not on the Add screen")
+        XCTAssertTrue(
+            openAddScreen(in: app, until: amountsOnly), "the Amounts only quick action is not on the Add screen")
         amountsOnly.tap()
 
         // Wait for the screen's own navigation bar before querying the field, so the query runs once the
@@ -40,12 +27,3 @@ final class QuickAddLabelUITests: XCTestCase {
     }
 }
 
-/// Polls `condition` until it holds or `timeout` seconds pass; true when it held.
-private func waitUntil(timeout: TimeInterval, _ condition: () -> Bool) -> Bool {
-    let deadline = Date().addingTimeInterval(timeout)
-    while Date() < deadline {
-        if condition() { return true }
-        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
-    }
-    return condition()
-}
