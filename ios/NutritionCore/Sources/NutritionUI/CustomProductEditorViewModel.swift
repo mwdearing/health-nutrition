@@ -46,6 +46,7 @@ public struct NutrientKeyChoice: Identifiable, Equatable {
 
 @MainActor public extension CustomProductEditorViewModel {
     static let ingredientPrefix = "ingredient:"
+    static let unnamedIngredientNote = "Add a name for this ingredient."
     static let otherIngredientTag = "other-ingredient"
     static let savedTagPrefix = "saved:"
     static let nutrientChoices: [NutrientKeyChoice] = [
@@ -122,6 +123,16 @@ public struct NutrientKeyChoice: Identifiable, Equatable {
         guard let index = facts.firstIndex(where: { $0.id == id }) else { return }
         facts[index].key = CustomProductEditorViewModel.ingredientPrefix + name
     }
+
+    /// The note for an "Other ingredient" row whose name is empty or only whitespace; nil once it has a name.
+    func unnamedIngredientNote(for id: UUID) -> String? {
+        guard let fact = facts.first(where: { $0.id == id }), fact.key.hasPrefix(CustomProductEditorViewModel.ingredientPrefix) else { return nil }
+        let name = ingredientName(for: id).trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? CustomProductEditorViewModel.unnamedIngredientNote : nil
+    }
+
+    /// Save stays off while any "Other ingredient" row has no name.
+    var canSave: Bool { !facts.contains { unnamedIngredientNote(for: $0.id) != nil } }
 }
 
 @MainActor public final class CustomProductEditorViewModel: ObservableObject, Identifiable {
@@ -186,6 +197,8 @@ public struct NutrientKeyChoice: Identifiable, Equatable {
         return value
     }
     @discardableResult public func save(now: Date) throws -> CustomProductRevision {
+        // Refused before validation: the unnamed row already shows its note.
+        guard canSave else { throw CustomProductFieldError(field: "ingredient", code: .required) }
         do {
             if let original = revision, original.source != nil,
                (kind != original.content.kind || Self.optional(barcode) != original.content.barcode) {
