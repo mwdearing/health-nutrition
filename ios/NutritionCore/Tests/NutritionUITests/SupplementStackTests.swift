@@ -957,6 +957,27 @@ final class SupplementStackTests: XCTestCase {
         return (model, preferences)
     }
 
+    /// A snapshot that cannot be read fails the upper-limit check, which says so, rather than counting a
+    /// supplement as food; today's rows stay (#775).
+    func testAnUnreadableSnapshotFailsTheLimitCheckAndKeepsTheRows() throws {
+        let store = UnitReadCountingStore(inner: try makeStore())
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        let magnesium = labelled(
+            "s-magnesium-400", name: "Example magnesium", kind: .supplement, nutrients: ["magnesium": .known(400, .mg)])
+        try log(store, at: now.addingTimeInterval(-3_600), amount: 100, unit: .g, product: magnesium)
+        try saveFavorite(favorites, snapshot: "s-magnesium-400")
+        try schedules.save(["fav-magnesium": .standard])
+        store.failsProductReads = true
+        let (model, _) = makeLimitModel(store: store, favorites: favorites, schedules: schedules, group: men31)
+        model.load(now: now)
+
+        XCTAssertTrue(model.limitCheckFailed)
+        XCTAssertEqual(model.limitRows, [])
+        XCTAssertFalse(model.readFailed)
+        XCTAssertEqual(model.rows.count, 1)
+    }
+
     func testASupplementAboveASupplementOnlyLimitIsListedAndMarkedLikeTheVitaminsScreen() throws {
         let store = try makeStore()
         let favorites = try makeFavorites()
