@@ -82,6 +82,7 @@ final class ProductShareReadFailureTests: XCTestCase {
         store.failReads = true
         XCTAssertNil(coordinator.operations(ownerID: owner))
         XCTAssertThrowsError(try coordinator.requestWithdrawal(operation, expectedStoreEpoch: epoch))
+        XCTAssertEqual(store.withdrawalCalls, 0, "refused before the store is asked to withdraw")
     }
 }
 
@@ -107,6 +108,10 @@ private final class FailableReadStorePort: CustomProductStore, @unchecked Sendab
     func resumeProductOperations(ownerID: UUID, fromEpoch: UUID, toEpoch: UUID) throws {}
     func cancelProductPublications(ownerID: UUID) throws {}
     func removeProductAccountState(ownerID: UUID) throws {}
-    func enqueueProductWithdrawal(_ operation: ProductShareOperation, expectedStoreEpoch: UUID) throws -> ProductShareOperation { throw CustomProductStoreError.invalidOperation }
+    private(set) var withdrawalCalls = 0
+    func enqueueProductWithdrawal(_ operation: ProductShareOperation, expectedStoreEpoch: UUID) throws -> ProductShareOperation {
+        withdrawalCalls += 1
+        throw CustomProductStoreError.invalidOperation
+    }
     func recordProductWithdrawalPreparation(_ update: ProductWithdrawalPreparationUpdate) throws -> ProductShareOperation { throw CustomProductStoreError.invalidOperation }
 }

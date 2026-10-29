@@ -296,8 +296,8 @@ public struct CustomProductSharePreview: Identifiable {
     }
     public func canRetry(_ item: CustomProductRevision) -> Bool { coordinator?.sharingBlocked != true && latest(item)?.clientRevisionID == item.revisionID && latest(item)?.status == .pending && reviewBlocker(item) == nil }
     public func canWithdraw(_ item: CustomProductRevision) -> Bool {
-        guard let context = coordinator?.accountContext, context.profileReady, context.backendSupported,
-              coordinator?.pauseReason == nil, let operation = latest(item), !coordinator!.sharingBlocked,
+        guard coordinator?.sharingBlocked != true, let context = coordinator?.accountContext, context.profileReady,
+              context.backendSupported, coordinator?.pauseReason == nil, let operation = latest(item),
               operation.storeEpoch != nil else { return false }
         return status(item) != .removed && status(item) != .removalPending
     }
