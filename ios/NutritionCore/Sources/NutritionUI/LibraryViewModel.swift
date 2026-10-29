@@ -343,7 +343,8 @@ public final class LibraryViewModel: ObservableObject {
                     .compactMap(\.productSnapshotID))
             var kinds: [String: ProductKind] = [:]
             for snapshotID in snapshotIDs {
-                kinds[snapshotID] = (try? store.product(snapshotID: snapshotID))?.kind ?? .food
+                // A read that fails leaves no kind, so the template's own category decides (#775).
+                kinds[snapshotID] = (try? store.product(snapshotID: snapshotID))?.kind
             }
             func kind(of template: RepeatTemplate) -> ProductKind {
                 ProductKindResolution.kind(
