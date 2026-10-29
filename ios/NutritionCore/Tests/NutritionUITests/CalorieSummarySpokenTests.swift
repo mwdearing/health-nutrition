@@ -25,7 +25,7 @@ final class CalorieSummarySpokenTests: XCTestCase {
         let remaining = BodyActivityViewModel.whole(1500), food = BodyActivityViewModel.whole(500)
         XCTAssertEqual(
             NourishTodayHeader.spokenSummary(calories, partial: calories.partialNote, footnote: nil),
-            "\(remaining) calories remaining, Food, \(food) calories, 1 entry has no energy value")
+            "\(remaining) calories remaining, Food, \(food) calories, 1 entry has no calories")
     }
 
     /// With the goal off there is no Remaining, so the line is Food and Burned, then the same partial note.
@@ -34,7 +34,7 @@ final class CalorieSummarySpokenTests: XCTestCase {
             goal: nil, food: 500, partial: true, missingCount: 2, burned: 120, energyLabel: "Energy")
         XCTAssertEqual(
             NourishTodayHeader.spokenSummary(calories, partial: calories.partialNote, footnote: nil),
-            "Food, 500 calories, Burned, 120 calories, 2 entries have no energy value")
+            "Food, 500 calories, Burned, 120 calories, 2 entries have no calories")
     }
 
     /// With the goal off and a known food total, the summary shows no Remaining, so VoiceOver speaks none
