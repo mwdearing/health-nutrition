@@ -408,9 +408,13 @@ public struct CustomProductSharePreview: Identifiable {
     /// Views observe durable changes even when delivery came from a foreground/connectivity trigger.
     @discardableResult public func refreshFromStore() -> Bool {
         let context = coordinator?.accountContext
+        // A pause raised by a read during a render, and lifted by this read, changes what the view shows even
+        // when the operations themselves didn't change (#775).
+        let wasPaused = coordinator?.operationsReadFailed == true
         let operations = context.flatMap { coordinator?.operations(ownerID: $0.ownerID) }
         let pause = coordinator?.pauseReason
-        guard operations != observedOperations || context != observedContext || pause != observedPause else { return false }
+        let pauseFlipped = wasPaused != (coordinator?.operationsReadFailed == true)
+        guard pauseFlipped || operations != observedOperations || context != observedContext || pause != observedPause else { return false }
         observedOperations = operations; observedContext = context; observedPause = pause
         refreshID = UUID(); return true
     }
