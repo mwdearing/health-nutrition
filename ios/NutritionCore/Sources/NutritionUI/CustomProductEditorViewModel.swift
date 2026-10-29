@@ -289,7 +289,7 @@ public struct CustomProductSharePreview: Identifiable {
             default: return .failed
             }
         }
-        return coordinator?.status(localProductID: item.localProductID, in: mine) ?? .onThisPhone
+        return coordinator?.status(localProductID: item.localProductID) ?? .onThisPhone
     }
     public func detail(_ item: CustomProductRevision) -> String {
         guard let mine = snapshot(item) else { return ProductShareStatus.paused.rawValue }
