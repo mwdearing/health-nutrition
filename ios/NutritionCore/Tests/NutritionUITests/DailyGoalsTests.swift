@@ -1383,7 +1383,7 @@ extension DailyGoalsTests {
         model.load(now: when)
 
         XCTAssertTrue(model.calorieRemaining.isPartial)
-        XCTAssertEqual(model.calorieRemaining.partialNote, "1 entry has no energy value")
+        XCTAssertEqual(model.calorieRemaining.partialNote, "1 entry has no calories")
     }
 
     /// No energy goal: there is no Remaining, but Food is still shown.
