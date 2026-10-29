@@ -13,7 +13,7 @@ public struct CalorieRemaining: Equatable, Sendable {
     public let goal: Decimal?
     public let food: Decimal?
     public let isPartial: Bool
-    /// The note for a partial day, as the goal rows word it, or nil when every entry has a value.
+    /// The note for a partial day in the summary's own calories wording, or nil when every entry has a value.
     public let partialNote: String?
     public let burned: Decimal?
     public let remaining: Decimal?
@@ -52,11 +52,10 @@ public struct CalorieRemaining: Equatable, Sendable {
     }
 
     /// The partial note in the goal rows' own wording, from the one shared source.
-    /// The summary says "calories" (#486), so "1 entry has no calories", whatever the energy row is named on
-    /// other screens; a partial day with no missing entry keeps the goal rows' fallback.
+    /// The summary's own count wording ("1 entry has no calories", #486) from the shared wording source; a
+    /// partial day with no missing entry keeps the goal rows' fallback.
     static func missingNote(missingCount: Int, label: String) -> String {
-        if missingCount == 1 { return "1 entry has no calories" }
-        if missingCount > 1 { return "\(missingCount) entries have no calories" }
-        return MissingValueWording.fallback(name: MissingValueWording.inSentence(label))
+        MissingValueWording.caloriesNote(count: missingCount)
+            ?? MissingValueWording.fallback(name: MissingValueWording.inSentence(label))
     }
 }

@@ -249,6 +249,14 @@ enum MissingValueWording {
         return fallback(name: name)
     }
 
+    /// The calorie summary's count note (#486): it says "calories", whatever the energy row is named on other
+    /// screens. Nil when no entry is missing, so the caller keeps the fallback.
+    static func caloriesNote(count: Int) -> String? {
+        if count == 1 { return "1 entry has no calories" }
+        if count > 1 { return "\(count) entries have no calories" }
+        return nil
+    }
+
     /// The wording for a partial line with no missing entry (a below-threshold amount).
     static func fallback(name: String) -> String {
         "Some entries can't be added up for \(name)"
