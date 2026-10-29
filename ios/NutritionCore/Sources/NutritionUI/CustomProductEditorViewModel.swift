@@ -276,6 +276,7 @@ public struct CustomProductSharePreview: Identifiable {
         mine.last { !isSettled($0) && [.failed, .needsReview].contains($0.status) }
     }
     public func status(_ item: CustomProductRevision) -> ProductShareStatus {
+        if coordinator?.operationsReadFailed == true { return .paused }
         guard let mine = snapshot(item) else { return .paused }
         return status(item, in: mine)
     }
