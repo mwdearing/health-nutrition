@@ -124,9 +124,15 @@ public enum ProductShareStatus: String, Sendable {
         if lifecycleOwnerID == ownerID { lifecycleBlocked = false; lifecycleOwnerID = nil }
     }
 
+    /// A failed read pauses sharing rather than guessing from stale or missing state (#775).
+    public func operations(ownerID: UUID) -> [ProductShareOperation]? {
+        do { return try store.productOperations(ownerID: ownerID) } catch { storageFailed = true; return nil }
+    }
+
     public func status(localProductID: UUID) -> ProductShareStatus {
-        guard let context = accountContext,
-              let operation = try? store.productOperations(ownerID: context.ownerID).last(where: { $0.localProductID == localProductID }) else { return .onThisPhone }
+        guard let context = accountContext else { return .onThisPhone }
+        guard let saved = operations(ownerID: context.ownerID) else { return .paused }
+        guard let operation = saved.last(where: { $0.localProductID == localProductID }) else { return .onThisPhone }
         if operation.status == .failed || operation.status == .needsReview { return .failed }
         if operation.kind == .withdraw && ![.acknowledged, .satisfied].contains(operation.status) { return .removalPending }
         if operation.status == .acknowledged || operation.status == .satisfied {
@@ -149,7 +155,7 @@ public enum ProductShareStatus: String, Sendable {
 
     public func retry(operationID: UUID) async {
         guard let context = accountContext,
-              let operation = try? store.productOperations(ownerID: context.ownerID).first(where: { $0.operationID == operationID }),
+              let operation = operations(ownerID: context.ownerID)?.first(where: { $0.operationID == operationID }),
               operation.status == .pending else { return }
         // A manual retry still honors server Retry-After and never revives permanent or canceled work.
         await runDueOperations(now: clock())
