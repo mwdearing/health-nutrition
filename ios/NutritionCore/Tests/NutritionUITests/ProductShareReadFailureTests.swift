@@ -68,6 +68,43 @@ final class ProductShareReadFailureTests: XCTestCase {
         XCTAssertFalse(coordinator.sharingBlocked)
     }
 
+    /// A flag left set by an earlier failed read doesn't hold the pause: status tries its own read, which works.
+    @MainActor func testAStaleReadFlagDoesNotHoldPausedWhenTheReadWorks() {
+        let owner = UUID(), epoch = UUID(), store = FailableReadStorePort(), service = ProductSearchServicePort()
+        let item = CustomProductRevision(localProductID: UUID(), revisionID: UUID(), content: CustomProductContent(name: "Synthetic read", kind: .food, basis: .perServing))
+        store.products = [item]
+        store.operations = [ProductShareOperation(ownerID: owner, localProductID: item.localProductID, operationID: UUID(),
+            clientRevisionID: item.revisionID, kind: .publish, content: item.content, epoch: epoch)]
+        let coordinator = ProductShareCoordinator(store: store, service: service)
+        coordinator.updateAccountContext(.init(ownerID: owner, profileReady: true, sharingAllowed: true,
+            consentVersion: 2, serverGeneration: "1", localSessionEpoch: epoch, backendSupported: true))
+        let model = CustomProductSharingModel(store: store, coordinator: coordinator, service: service)
+
+        store.failReads = true
+        XCTAssertNil(coordinator.operations(ownerID: owner))
+        XCTAssertTrue(coordinator.operationsReadFailed)
+        store.failReads = false
+        XCTAssertNotEqual(model.status(item), .paused)
+        XCTAssertFalse(coordinator.operationsReadFailed, "the read that worked lifted the flag")
+    }
+
+    /// Status is worked out from one store read: a product with one pending matching operation reads the store once.
+    @MainActor func testStatusReadsTheStoreOnce() {
+        let owner = UUID(), epoch = UUID(), store = FailableReadStorePort(), service = ProductSearchServicePort()
+        let item = CustomProductRevision(localProductID: UUID(), revisionID: UUID(), content: CustomProductContent(name: "Synthetic read", kind: .food, basis: .perServing))
+        store.products = [item]
+        store.operations = [ProductShareOperation(ownerID: owner, localProductID: item.localProductID, operationID: UUID(),
+            clientRevisionID: item.revisionID, kind: .publish, content: item.content, epoch: epoch)]
+        let coordinator = ProductShareCoordinator(store: store, service: service)
+        coordinator.updateAccountContext(.init(ownerID: owner, profileReady: true, sharingAllowed: true,
+            consentVersion: 2, serverGeneration: "1", localSessionEpoch: epoch, backendSupported: true))
+        let model = CustomProductSharingModel(store: store, coordinator: coordinator, service: service)
+
+        let before = store.readCalls
+        _ = model.status(item)
+        XCTAssertEqual(store.readCalls - before, 1, "one snapshot read, with no second read in the coordinator fallthrough")
+    }
+
     /// While the pause holds, a withdrawal is refused even though the operation in hand looks valid.
     @MainActor func testAWithdrawalIsRefusedWhileTheReadFailed() {
         let owner = UUID(), epoch = UUID(), store = FailableReadStorePort(), service = ProductSearchServicePort()

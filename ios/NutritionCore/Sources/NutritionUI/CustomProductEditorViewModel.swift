@@ -276,7 +276,6 @@ public struct CustomProductSharePreview: Identifiable {
         mine.last { !isSettled($0) && [.failed, .needsReview].contains($0.status) }
     }
     public func status(_ item: CustomProductRevision) -> ProductShareStatus {
-        if coordinator?.operationsReadFailed == true { return .paused }
         guard let mine = snapshot(item) else { return .paused }
         return status(item, in: mine)
     }
@@ -290,10 +289,10 @@ public struct CustomProductSharePreview: Identifiable {
             default: return .failed
             }
         }
-        return coordinator?.status(localProductID: item.localProductID) ?? .onThisPhone
+        return coordinator?.status(localProductID: item.localProductID, in: mine) ?? .onThisPhone
     }
     public func detail(_ item: CustomProductRevision) -> String {
-        guard coordinator?.operationsReadFailed != true, let mine = snapshot(item) else { return ProductShareStatus.paused.rawValue }
+        guard let mine = snapshot(item) else { return ProductShareStatus.paused.rawValue }
         guard let operation = mine.last else { return "No contribution from this account." }
         if operation.clientRevisionID != item.revisionID { return "The edited facts are saved on this device; this revision has not been shared." }
         if reviewBlocker(in: mine) != nil { return "Review the current contribution before sharing again. Your local product is saved." }
@@ -302,7 +301,7 @@ public struct CustomProductSharePreview: Identifiable {
         return status(item).rawValue
     }
     public func canRetry(_ item: CustomProductRevision) -> Bool {
-        guard coordinator?.operationsReadFailed != true, let mine = snapshot(item), let last = mine.last else { return false }
+        guard let mine = snapshot(item), let last = mine.last else { return false }
         return last.clientRevisionID == item.revisionID && last.status == .pending && reviewBlocker(in: mine) == nil
     }
     public func canWithdraw(_ item: CustomProductRevision) -> Bool {
