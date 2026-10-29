@@ -11,11 +11,9 @@ public enum ProductKindResolution {
     /// none. A typed entry therefore stays in food totals and counts as logged, as it always has (#364, #416).
     public static func totalsKind(snapshotKind: ProductKind?) -> ProductKind { snapshotKind ?? .food }
 
-    /// The snapshot's own kind when it can be read; otherwise the entry's category decides, whether there is no
-    /// snapshot or its kind cannot be read, so a supplement is never shown as food on a failed read (#775).
+    /// `snapshotID` nil means no product snapshot: the category decides. A snapshot whose kind cannot be read is food.
     public static func kind(snapshotID: String?, snapshotKind: (String) -> ProductKind?, category: String) -> ProductKind {
-        let byCategory: ProductKind = category == supplementCategory ? .supplement : .food
-        guard let snapshotID else { return byCategory }
-        return snapshotKind(snapshotID) ?? byCategory
+        guard let snapshotID else { return category == supplementCategory ? .supplement : .food }
+        return snapshotKind(snapshotID) ?? .food
     }
 }
