@@ -188,9 +188,9 @@ public enum ProductShareStatus: String, Sendable {
         }
     }
 
-    /// A failed read elsewhere (`operationsReadFailed`) does not reject a send already under way: its reply is
-    /// still recorded, so the operation never sticks in `.sending`. New delivery is stopped at the start of
-    /// `runDueOperations`, and the loop's own reads fail closed by throwing (#775).
+    /// The read-failure pause (`operationsReadFailed`) alone does not reject a send already under way, so its
+    /// reply is still recorded once the store can be read. New sends stop at `runDueOperations` and in the loop;
+    /// a store read that really fails mid-send still stops it, as before this change (#775).
     private func valid(_ context: ProductShareAccountContext, _ token: UUID) -> Bool {
         !Task.isCancelled && generation == token && accountContext == context && pauseReason == nil && !lifecycleBlocked && !storageFailed
     }
@@ -230,6 +230,8 @@ public enum ProductShareStatus: String, Sendable {
                     operation = prepared
                     if operation.status != .pending || operation.predecessorOperationID != nil { continue }
                 }
+                // The pause can be raised during an await above, such as prepare; #775.
+                if operationsReadFailed { break }
                 await send(operation, context: context, token: token)
             }
         } catch is CancellationError { }
