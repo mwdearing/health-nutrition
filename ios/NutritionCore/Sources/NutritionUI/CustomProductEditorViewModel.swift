@@ -128,7 +128,7 @@ public struct NutrientKeyChoice: Identifiable, Equatable {
     func unnamedIngredientNote(for id: UUID) -> String? {
         guard let fact = facts.first(where: { $0.id == id }), fact.key.hasPrefix(CustomProductEditorViewModel.ingredientPrefix) else { return nil }
         let name = ingredientName(for: id).trimmingCharacters(in: .whitespacesAndNewlines)
-        return name.isEmpty ? CustomProductEditorViewModel.unnamedIngredientNote : nil
+        return nil
     }
 
     /// Save stays off while any "Other ingredient" row has no name.
