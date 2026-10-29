@@ -236,6 +236,79 @@ final class ProductShareReadFailureTests: XCTestCase {
         XCTAssertNotNil(coordinator.operations(ownerID: owner), "another reader lifts the pause first")
         XCTAssertTrue(model.refreshFromStore(), "the view still redraws")
     }
+
+    /// #1041: a `.sending` row left by an interrupted send (its reply never recorded) is marked failed on the
+    /// next delivery run and is never re-sent, so it reads "Couldn't share" instead of staying `.sending`.
+    @MainActor func testLeftoverSendingRowBecomesFailedWithoutAResend() async {
+        let owner = UUID(), epoch = UUID(), store = FailableReadStorePort()
+        let service = CountingPublishService(store: store)
+        var leftover = ProductShareOperation(ownerID: owner, localProductID: UUID(), operationID: UUID(), clientRevisionID: UUID(),
+            kind: .publish, content: CustomProductContent(name: "Synthetic leftover", kind: .food, basis: .per100g), consentGeneration: "1", epoch: epoch)
+        leftover.storeEpoch = UUID()
+        leftover.attempts = 1
+        leftover.status = .sending
+        store.operations = [leftover]
+        let coordinator = ProductShareCoordinator(store: store, service: service)
+        coordinator.updateAccountContext(.init(ownerID: owner, profileReady: true, sharingAllowed: true,
+            consentVersion: 2, serverGeneration: "1", localSessionEpoch: epoch, backendSupported: true))
+
+        await coordinator.runDueOperations(now: Date())
+
+        XCTAssertEqual(store.operations[0].status, .failed)
+        XCTAssertEqual(store.operations[0].reason, .network)
+        let publishCalls = await service.publishCalls
+        XCTAssertEqual(publishCalls, 0, "a leftover is never re-sent")
+        XCTAssertEqual(coordinator.status(localProductID: leftover.localProductID), .failed)
+    }
+
+    /// #1041: a send in flight in this process is not a leftover. Its row reads `.sending` while the publish
+    /// runs, and the reply records `.acknowledged`, never `.failed`.
+    @MainActor func testInFlightSendingRowIsNotMarkedFailed() async {
+        let owner = UUID(), epoch = UUID(), store = FailableReadStorePort()
+        let service = CountingPublishService(store: store)
+        var first = ProductShareOperation(ownerID: owner, localProductID: UUID(), operationID: UUID(), clientRevisionID: UUID(),
+            kind: .publish, content: CustomProductContent(name: "Synthetic in flight", kind: .food, basis: .per100g), consentGeneration: "1", epoch: epoch)
+        first.storeEpoch = UUID()
+        store.operations = [first]
+        let coordinator = ProductShareCoordinator(store: store, service: service)
+        coordinator.updateAccountContext(.init(ownerID: owner, profileReady: true, sharingAllowed: true,
+            consentVersion: 2, serverGeneration: "1", localSessionEpoch: epoch, backendSupported: true))
+
+        await coordinator.runDueOperations(now: Date())
+
+        let statusAtPublish = await service.statusAtPublish
+        XCTAssertEqual(statusAtPublish, .sending, "the row is in flight while the publish runs")
+        XCTAssertEqual(store.operations[0].status, .acknowledged)
+        XCTAssertNotEqual(store.operations[0].status, .failed)
+    }
+}
+
+/// Counts publish calls and records the first operation's status as each publish begins. Establishes no
+/// persistence guarantees.
+private actor CountingPublishService: CommunityProductServicing {
+    private let store: FailableReadStorePort
+    private(set) var publishCalls = 0
+    private(set) var statusAtPublish: ProductOperationStatus?
+    init(store: FailableReadStorePort) { self.store = store }
+    func publish(_ request: ProductPublishRequest, expectedOwnerID: UUID) async throws -> ProductDeliveryReceipt {
+        publishCalls += 1
+        statusAtPublish = store.operations.first?.status
+        guard let operationID = UUID(uuidString: request.operationID) else { throw ProductAPIError.invalidRequest(field: nil) }
+        return ProductDeliveryReceipt(operationID: operationID, productID: UUID(),
+            acknowledgedRevision: "1", currentRevision: "1", currentState: .active, replayed: false)
+    }
+    func resolvePublishForWithdrawal(_ request: ProductPublishRequest, expectedOwnerID: UUID) async throws -> ProductPublishResolution { throw ProductAPIError.unavailable }
+    func withdraw(_ request: ProductWithdrawRequest, expectedOwnerID: UUID) async throws -> ProductDeliveryReceipt { throw ProductAPIError.unavailable }
+    func searchProducts(query: String, kind: ProductKind?, cursor: String?) async throws -> CommunityProductPage { throw ProductAPIError.unavailable }
+    func product(id: UUID) async throws -> CommunityProduct { throw ProductAPIError.unavailable }
+    func capabilities() async throws -> ProductCatalogCapabilities {
+        ProductCatalogCapabilities(supportedVersion: 2, enabled: true,
+            limits: ProductCatalogLimits(maxEnvelopeBytes: 16384, maxFacts: 64, maxSearchLimit: 20), currentConsentVersion: 2,
+            callerAcknowledgment: ProductConsentAcknowledgment(version: 2, generation: "1"), consentGeneration: "1",
+            sharingPermission: true, publishResolutionVersion: 1, boundedPublicationVersion: 1)
+    }
+    func acknowledgeConsent(version: Int, expectedOwnerID: UUID) async throws -> ProductConsentState { throw ProductAPIError.unavailable }
+    func contribution(productID: UUID, expectedOwnerID: UUID) async throws -> ProductContributionState { throw ProductAPIError.unavailable }
 }
 
 // A store double whose operation reads can be made to throw. Establishes no persistence guarantees.
