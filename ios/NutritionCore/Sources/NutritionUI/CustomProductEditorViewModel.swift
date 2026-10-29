@@ -265,16 +265,15 @@ public struct CustomProductSharePreview: Identifiable {
     }
     private func latest(_ item: CustomProductRevision) -> ProductShareOperation? {
         guard let owner = coordinator?.accountContext?.ownerID else { return nil }
-        return coordinator?.operations(ownerID: owner)?.last(where: { $0.localProductID == item.localProductID })
+        return try? store.productOperations(ownerID: owner).last(where: { $0.localProductID == item.localProductID })
     }
     private func reviewBlocker(_ item: CustomProductRevision) -> ProductShareOperation? {
         guard let owner = coordinator?.accountContext?.ownerID else { return nil }
-        return coordinator?.operations(ownerID: owner)?.last {
+        return try? store.productOperations(ownerID: owner).last {
             $0.localProductID == item.localProductID && !isSettled($0) && [.failed, .needsReview].contains($0.status)
         }
     }
     public func status(_ item: CustomProductRevision) -> ProductShareStatus {
-        if coordinator?.storageFailed == true { return .paused }
         if let last = latest(item), last.clientRevisionID != item.revisionID { return .localChanges }
         if reviewBlocker(item) != nil { return .failed }
         if let last = latest(item), last.reviewSettlementID != nil {
@@ -287,7 +286,7 @@ public struct CustomProductSharePreview: Identifiable {
         return coordinator?.status(localProductID: item.localProductID) ?? .onThisPhone
     }
     public func detail(_ item: CustomProductRevision) -> String {
-        guard let operation = latest(item) else { return coordinator?.storageFailed == true ? ProductShareStatus.paused.rawValue : "No contribution from this account." }
+        guard let operation = latest(item) else { return "No contribution from this account." }
         if operation.clientRevisionID != item.revisionID { return "The edited facts are saved on this device; this revision has not been shared." }
         if reviewBlocker(item) != nil { return "Review the current contribution before sharing again. Your local product is saved." }
         if let retry = operation.nextAttemptAt { return "Retry available after \(retry.formatted(date: .abbreviated, time: .shortened))." }
@@ -396,7 +395,7 @@ public struct CustomProductSharePreview: Identifiable {
     /// Views observe durable changes even when delivery came from a foreground/connectivity trigger.
     @discardableResult public func refreshFromStore() -> Bool {
         let context = coordinator?.accountContext
-        let operations = context.flatMap { coordinator?.operations(ownerID: $0.ownerID) }
+        let operations = context.flatMap { try? store.productOperations(ownerID: $0.ownerID) }
         let pause = coordinator?.pauseReason
         guard operations != observedOperations || context != observedContext || pause != observedPause else { return false }
         observedOperations = operations; observedContext = context; observedPause = pause
