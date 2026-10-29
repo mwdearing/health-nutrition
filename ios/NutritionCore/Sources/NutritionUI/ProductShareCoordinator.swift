@@ -188,8 +188,11 @@ public enum ProductShareStatus: String, Sendable {
         }
     }
 
+    /// A failed read elsewhere (`operationsReadFailed`) does not reject a send already under way: its reply is
+    /// still recorded, so the operation never sticks in `.sending`. New delivery is stopped at the start of
+    /// `runDueOperations`, and the loop's own reads fail closed by throwing (#775).
     private func valid(_ context: ProductShareAccountContext, _ token: UUID) -> Bool {
-        !Task.isCancelled && generation == token && accountContext == context && pauseReason == nil && !lifecycleBlocked && !sharingBlocked
+        !Task.isCancelled && generation == token && accountContext == context && pauseReason == nil && !lifecycleBlocked && !storageFailed
     }
     private func current(_ operation: ProductShareOperation, context: ProductShareAccountContext, token: UUID) throws -> ProductShareOperation {
         guard valid(context, token), let saved = try store.productOperations(ownerID: context.ownerID).first(where: { $0.operationID == operation.operationID }),
