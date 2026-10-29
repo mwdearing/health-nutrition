@@ -210,7 +210,8 @@ public enum ProductShareStatus: String, Sendable {
                 capabilities.consentGeneration == context.serverGeneration &&
                 capabilities.callerAcknowledgment?.generation == capabilities.consentGeneration && capabilities.callerAcknowledgment?.version == 2
             var processed = Set<UUID>()
-            while valid(context, token) {
+            // A read-failure pause raised mid-run stops new sends; a send already under way still records (#775).
+            while valid(context, token), !operationsReadFailed {
                 let operations = try store.productOperations(ownerID: context.ownerID)
                 guard let candidate = operations.first(where: {
                     $0.epoch == context.localSessionEpoch && $0.status == .pending && !processed.contains($0.operationID) &&
