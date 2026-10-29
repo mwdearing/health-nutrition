@@ -35,6 +35,7 @@ final class CustomProductUnnamedIngredientTests: XCTestCase {
         let store = ProductEditorStorePort()
         let model = CustomProductEditorViewModel(store: store)
         model.name = "Synthetic ingredient"; model.kind = .supplement
+        model.servingQuantity = "1"; model.servingUnit = .gummy
         model.facts = [ProductFactInput(key: "ingredient:", displayName: "Activity", state: .known, amount: "5", unit: .g)]
         let rowID = model.facts[0].id
         XCTAssertEqual(model.unnamedIngredientNote(for: rowID), "Add a name for this ingredient.")
