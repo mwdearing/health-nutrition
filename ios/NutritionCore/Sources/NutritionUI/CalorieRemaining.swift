@@ -51,7 +51,6 @@ public struct CalorieRemaining: Equatable, Sendable {
             goal: goal, food: food, isPartial: partial, partialNote: note, burned: burned, remaining: remaining)
     }
 
-    /// The partial note in the goal rows' own wording, from the one shared source.
     /// The summary's own count wording ("1 entry has no calories", #486) from the shared wording source; a
     /// partial day with no missing entry keeps the goal rows' fallback.
     static func missingNote(missingCount: Int, label: String) -> String {
