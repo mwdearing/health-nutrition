@@ -275,8 +275,11 @@ public struct CustomProductSharePreview: Identifiable {
         mine.last { !isSettled($0) && [.failed, .needsReview].contains($0.status) }
     }
     public func status(_ item: CustomProductRevision) -> ProductShareStatus {
-        if coordinator?.sharingBlocked == true { return .paused }
+        if coordinator?.operationsReadFailed == true { return .paused }
         guard let mine = snapshot(item) else { return .paused }
+        return status(item, in: mine)
+    }
+    private func status(_ item: CustomProductRevision, in mine: [ProductShareOperation]) -> ProductShareStatus {
         if let last = mine.last, last.clientRevisionID != item.revisionID { return .localChanges }
         if reviewBlocker(in: mine) != nil { return .failed }
         if let last = mine.last, last.reviewSettlementID != nil {
@@ -289,7 +292,7 @@ public struct CustomProductSharePreview: Identifiable {
         return coordinator?.status(localProductID: item.localProductID) ?? .onThisPhone
     }
     public func detail(_ item: CustomProductRevision) -> String {
-        guard coordinator?.sharingBlocked != true, let mine = snapshot(item) else { return ProductShareStatus.paused.rawValue }
+        guard coordinator?.operationsReadFailed != true, let mine = snapshot(item) else { return ProductShareStatus.paused.rawValue }
         guard let operation = mine.last else { return "No contribution from this account." }
         if operation.clientRevisionID != item.revisionID { return "The edited facts are saved on this device; this revision has not been shared." }
         if reviewBlocker(in: mine) != nil { return "Review the current contribution before sharing again. Your local product is saved." }
@@ -298,15 +301,15 @@ public struct CustomProductSharePreview: Identifiable {
         return status(item).rawValue
     }
     public func canRetry(_ item: CustomProductRevision) -> Bool {
-        guard coordinator?.sharingBlocked != true, let mine = snapshot(item), let last = mine.last else { return false }
+        guard coordinator?.operationsReadFailed != true, let mine = snapshot(item), let last = mine.last else { return false }
         return last.clientRevisionID == item.revisionID && last.status == .pending && reviewBlocker(in: mine) == nil
     }
     public func canWithdraw(_ item: CustomProductRevision) -> Bool {
         // Withdrawal stops only on a failed read, as approved (#775); a write failure doesn't block removal.
         guard coordinator?.operationsReadFailed != true, let context = coordinator?.accountContext, context.profileReady,
-              context.backendSupported, coordinator?.pauseReason == nil, let operation = latest(item),
-              operation.storeEpoch != nil else { return false }
-        let current = status(item)
+              context.backendSupported, coordinator?.pauseReason == nil, let mine = snapshot(item),
+              let operation = mine.last, operation.storeEpoch != nil else { return false }
+        let current = status(item, in: mine)
         return current != .removed && current != .removalPending
     }
     public func canReview(_ item: CustomProductRevision) -> Bool {

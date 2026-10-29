@@ -7,7 +7,7 @@ import NutritionProviders
 
 /// #775: a failed product-operation read must never present as a guess; sharing pauses instead.
 final class ProductShareReadFailureTests: XCTestCase {
-    @MainActor func testFailedReadPausesCoordinatorStatusAndSetsStorageFailed() {
+    @MainActor func testFailedReadPausesCoordinatorStatusAndSetsTheReadFlag() {
         let owner = UUID(), epoch = UUID(), store = FailableReadStorePort(), service = ProductSearchServicePort()
         let item = CustomProductRevision(localProductID: UUID(), revisionID: UUID(), content: CustomProductContent(name: "Synthetic read", kind: .food, basis: .perServing))
         store.operations = [ProductShareOperation(ownerID: owner, localProductID: item.localProductID, operationID: UUID(),
@@ -158,7 +158,7 @@ final class ProductShareReadFailureTests: XCTestCase {
         coordinator.updateAccountContext(.init(ownerID: owner, profileReady: true, sharingAllowed: true,
             consentVersion: 2, serverGeneration: "1", localSessionEpoch: epoch, backendSupported: true))
         let model = CustomProductSharingModel(store: store, coordinator: coordinator, service: service)
-        // A third read in the call would be the blocker check; failing it must not let Retry through.
+        // Retry reads once; a failure on a later read can't hide the blocker it already saw.
         store.failOnlyReadCall = store.readCalls + 3
         XCTAssertFalse(model.canRetry(item))
     }
