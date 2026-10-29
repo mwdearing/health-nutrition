@@ -65,6 +65,9 @@ any stored plan as it is. The plan is checked against the current weight before 
 the plan write fails, the targets are put back exactly as they were read, and the results stay on screen.
 The other answers (age, sex, height, weight and activity) are still never stored.
 
+If a later version narrows the accepted goal weight or pace range, it migrates stored plans, so a saved
+plan is never read as damaged because the range moved.
+
 Saving is all or nothing. Before anything is written, each of the five nutrients' stored goals is read.
 If a write or removal then fails, the goals already changed are put back exactly as they were read (a goal
 that did not exist is removed again), the Goals screen keeps its own values, and the results stay on screen

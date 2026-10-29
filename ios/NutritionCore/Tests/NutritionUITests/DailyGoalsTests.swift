@@ -769,7 +769,7 @@ final class DailyGoalsTests: XCTestCase {
     /// person rather than about the store.
     func testAnUnreadableGoalStoreStillShowsTheDaysTotalsAndSaysSo() throws {
         let journal = try makeJournalStore()
-        let refusing = InMemoryGoalStore(failNextRead: true)
+        let refusing = InMemoryGoalStore(failReads: true)
         try logWater(journal, milliliters: 300)
 
         let model = TodayViewModel(store: journal, goals: refusing, lookup: SnapshotOnlyFacts())
