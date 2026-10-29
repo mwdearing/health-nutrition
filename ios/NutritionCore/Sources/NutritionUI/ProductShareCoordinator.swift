@@ -224,8 +224,7 @@ public enum ProductShareStatus: String, Sendable {
     }
     private func deliver(context: ProductShareAccountContext, token: UUID, now: Date) async {
         do {
-            failLeftoverSends(context: context, token: token)
-            let capabilities = try await service.capabilities()
+                        let capabilities = try await service.capabilities()
             guard valid(context, token), capabilities.supportedVersion == 2 else { return }
             if !capabilities.sharingPermission { try store.cancelProductPublications(ownerID: context.ownerID) }
             let publicationEligible = context.freshPublicationSupported && capabilities.supportsBoundedPublication && context.sharingAllowed && capabilities.enabled && capabilities.sharingPermission &&
