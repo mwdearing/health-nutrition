@@ -251,32 +251,39 @@ public struct CustomProductSharePreview: Identifiable {
     private var observedOperations: [ProductShareOperation]?
     private var observedContext: ProductShareAccountContext?
     private var observedPause: ProductSharePauseReason?
+    private var observedPauseChanges = 0
     public init(store: any CustomProductStore, coordinator: ProductShareCoordinator?, service: (any CommunityProductServicing)?) {
         self.store = store; self.coordinator = coordinator; self.service = service
     }
     public var canShare: Bool {
         guard let coordinator, let context = coordinator.accountContext else { return false }
-        return context.profileReady && context.backendSupported && context.freshPublicationSupported && context.sharingAllowed && context.consentVersion == 2 && coordinator.pauseReason == nil && !coordinator.storageFailed
+        return context.profileReady && context.backendSupported && context.freshPublicationSupported && context.sharingAllowed && context.consentVersion == 2 && coordinator.pauseReason == nil && !coordinator.sharingBlocked
     }
     public var eligibilityText: String {
         guard let coordinator, let context = coordinator.accountContext else { return "Sign in in Settings to share. Products remain available on this device." }
         if !context.backendSupported || !context.freshPublicationSupported { return "Sharing is unavailable on this server. You can still edit products on this device." }
         return "Enable product sharing and review the current sharing disclosure in Settings."
     }
-    private func latest(_ item: CustomProductRevision) -> ProductShareOperation? {
-        guard let owner = coordinator?.accountContext?.ownerID else { return nil }
-        return try? store.productOperations(ownerID: owner).last(where: { $0.localProductID == item.localProductID })
+    /// This product's operations from one read, so each answer below is worked out from a single snapshot and
+    /// a read that fails part-way can't mix with a later one (#775). Empty without an account; nil when the
+    /// read fails, which pauses sharing.
+    private func snapshot(_ item: CustomProductRevision) -> [ProductShareOperation]? {
+        guard let owner = coordinator?.accountContext?.ownerID else { return [] }
+        return coordinator?.operations(ownerID: owner)?.filter { $0.localProductID == item.localProductID }
     }
-    private func reviewBlocker(_ item: CustomProductRevision) -> ProductShareOperation? {
-        guard let owner = coordinator?.accountContext?.ownerID else { return nil }
-        return try? store.productOperations(ownerID: owner).last {
-            $0.localProductID == item.localProductID && !isSettled($0) && [.failed, .needsReview].contains($0.status)
-        }
+    private func latest(_ item: CustomProductRevision) -> ProductShareOperation? { snapshot(item)?.last }
+    private func reviewBlocker(in mine: [ProductShareOperation]) -> ProductShareOperation? {
+        mine.last { !isSettled($0) && [.failed, .needsReview].contains($0.status) }
     }
     public func status(_ item: CustomProductRevision) -> ProductShareStatus {
-        if let last = latest(item), last.clientRevisionID != item.revisionID { return .localChanges }
-        if reviewBlocker(item) != nil { return .failed }
-        if let last = latest(item), last.reviewSettlementID != nil {
+        if coordinator?.operationsReadFailed == true { return .paused }
+        guard let mine = snapshot(item) else { return .paused }
+        return status(item, in: mine)
+    }
+    private func status(_ item: CustomProductRevision, in mine: [ProductShareOperation]) -> ProductShareStatus {
+        if let last = mine.last, last.clientRevisionID != item.revisionID { return .localChanges }
+        if reviewBlocker(in: mine) != nil { return .failed }
+        if let last = mine.last, last.reviewSettlementID != nil {
             switch last.reviewedCurrentState {
             case .active: return .shared
             case .some(.withdrawn), .some(.none): return .removed
@@ -286,23 +293,30 @@ public struct CustomProductSharePreview: Identifiable {
         return coordinator?.status(localProductID: item.localProductID) ?? .onThisPhone
     }
     public func detail(_ item: CustomProductRevision) -> String {
-        guard let operation = latest(item) else { return "No contribution from this account." }
+        guard coordinator?.operationsReadFailed != true, let mine = snapshot(item) else { return ProductShareStatus.paused.rawValue }
+        guard let operation = mine.last else { return "No contribution from this account." }
         if operation.clientRevisionID != item.revisionID { return "The edited facts are saved on this device; this revision has not been shared." }
-        if reviewBlocker(item) != nil { return "Review the current contribution before sharing again. Your local product is saved." }
+        if reviewBlocker(in: mine) != nil { return "Review the current contribution before sharing again. Your local product is saved." }
         if let retry = operation.nextAttemptAt { return "Retry available after \(retry.formatted(date: .abbreviated, time: .shortened))." }
         if let state = operation.reviewedCurrentState ?? operation.currentState, let revision = operation.reviewedCurrentRevision ?? operation.currentRevision { return "Current contribution: \(state.rawValue), revision \(revision)." }
         return status(item).rawValue
     }
-    public func canRetry(_ item: CustomProductRevision) -> Bool { latest(item)?.clientRevisionID == item.revisionID && latest(item)?.status == .pending && reviewBlocker(item) == nil }
+    public func canRetry(_ item: CustomProductRevision) -> Bool {
+        guard coordinator?.operationsReadFailed != true, let mine = snapshot(item), let last = mine.last else { return false }
+        return last.clientRevisionID == item.revisionID && last.status == .pending && reviewBlocker(in: mine) == nil
+    }
     public func canWithdraw(_ item: CustomProductRevision) -> Bool {
-        guard let context = coordinator?.accountContext, context.profileReady, context.backendSupported,
-              coordinator?.pauseReason == nil, let operation = latest(item), operation.storeEpoch != nil else { return false }
-        return status(item) != .removed && status(item) != .removalPending
+        // Withdrawal stops only on a failed read, as approved (#775); a write failure doesn't block removal.
+        guard coordinator?.operationsReadFailed != true, let context = coordinator?.accountContext, context.profileReady,
+              context.backendSupported, coordinator?.pauseReason == nil, let mine = snapshot(item),
+              let operation = mine.last, operation.storeEpoch != nil else { return false }
+        let current = status(item, in: mine)
+        return current != .removed && current != .removalPending
     }
     public func canReview(_ item: CustomProductRevision) -> Bool {
         if canShare { return true }
         guard let context = coordinator?.accountContext, context.profileReady, context.backendSupported,
-              coordinator?.pauseReason == nil, coordinator?.storageFailed == false,
+              coordinator?.pauseReason == nil, coordinator?.sharingBlocked == false,
               let operation = latest(item), operation.storeEpoch != nil else { return false }
         return operation.serverProductID != nil || operation.acknowledgedProductID != nil || canWithdraw(item)
     }
@@ -395,10 +409,13 @@ public struct CustomProductSharePreview: Identifiable {
     /// Views observe durable changes even when delivery came from a foreground/connectivity trigger.
     @discardableResult public func refreshFromStore() -> Bool {
         let context = coordinator?.accountContext
-        let operations = context.flatMap { try? store.productOperations(ownerID: $0.ownerID) }
+        let operations = context.flatMap { coordinator?.operations(ownerID: $0.ownerID) }
         let pause = coordinator?.pauseReason
-        guard operations != observedOperations || context != observedContext || pause != observedPause else { return false }
-        observedOperations = operations; observedContext = context; observedPause = pause
+        // A read-failure pause raised or lifted by any reader since the last refresh (a render, delivery or this
+        // read) changes what the view shows even when the operations didn't change (#775).
+        let pauseChanges = coordinator?.readPauseChanges ?? 0
+        guard pauseChanges != observedPauseChanges || operations != observedOperations || context != observedContext || pause != observedPause else { return false }
+        observedOperations = operations; observedContext = context; observedPause = pause; observedPauseChanges = pauseChanges
         refreshID = UUID(); return true
     }
     public func observeStatus() async {
