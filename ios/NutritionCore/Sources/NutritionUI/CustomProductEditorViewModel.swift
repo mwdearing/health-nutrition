@@ -263,26 +263,22 @@ public struct CustomProductSharePreview: Identifiable {
         if !context.backendSupported || !context.freshPublicationSupported { return "Sharing is unavailable on this server. You can still edit products on this device." }
         return "Enable product sharing and review the current sharing disclosure in Settings."
     }
-    private func latest(_ item: CustomProductRevision) -> ProductShareOperation? {
-        guard let owner = coordinator?.accountContext?.ownerID else { return nil }
-        return coordinator?.operations(ownerID: owner)?.last(where: { $0.localProductID == item.localProductID })
+    /// This product's operations from one read, so each answer below is worked out from a single snapshot and
+    /// a read that fails part-way can't mix with a later one (#775). Empty without an account; nil when the
+    /// read fails, which pauses sharing.
+    private func snapshot(_ item: CustomProductRevision) -> [ProductShareOperation]? {
+        guard let owner = coordinator?.accountContext?.ownerID else { return [] }
+        return coordinator?.operations(ownerID: owner)?.filter { $0.localProductID == item.localProductID }
     }
-    private func reviewBlocker(_ item: CustomProductRevision) -> ProductShareOperation? {
-        guard let owner = coordinator?.accountContext?.ownerID else { return nil }
-        return coordinator?.operations(ownerID: owner)?.last {
-            $0.localProductID == item.localProductID && !isSettled($0) && [.failed, .needsReview].contains($0.status)
-        }
+    private func latest(_ item: CustomProductRevision) -> ProductShareOperation? { snapshot(item)?.last }
+    private func reviewBlocker(in mine: [ProductShareOperation]) -> ProductShareOperation? {
+        mine.last { !isSettled($0) && [.failed, .needsReview].contains($0.status) }
     }
     public func status(_ item: CustomProductRevision) -> ProductShareStatus {
         if coordinator?.sharingBlocked == true { return .paused }
-        // One read for the whole status, so a read that fails part-way can't mix with a later one (#775).
-        var mine: [ProductShareOperation] = []
-        if let owner = coordinator?.accountContext?.ownerID {
-            guard let read = coordinator?.operations(ownerID: owner) else { return .paused }
-            mine = read.filter { $0.localProductID == item.localProductID }
-        }
+        guard let mine = snapshot(item) else { return .paused }
         if let last = mine.last, last.clientRevisionID != item.revisionID { return .localChanges }
-        if mine.contains(where: { !isSettled($0) && [.failed, .needsReview].contains($0.status) }) { return .failed }
+        if reviewBlocker(in: mine) != nil { return .failed }
         if let last = mine.last, last.reviewSettlementID != nil {
             switch last.reviewedCurrentState {
             case .active: return .shared
@@ -293,14 +289,18 @@ public struct CustomProductSharePreview: Identifiable {
         return coordinator?.status(localProductID: item.localProductID) ?? .onThisPhone
     }
     public func detail(_ item: CustomProductRevision) -> String {
-        guard let operation = latest(item) else { return coordinator?.sharingBlocked == true ? ProductShareStatus.paused.rawValue : "No contribution from this account." }
+        guard coordinator?.sharingBlocked != true, let mine = snapshot(item) else { return ProductShareStatus.paused.rawValue }
+        guard let operation = mine.last else { return "No contribution from this account." }
         if operation.clientRevisionID != item.revisionID { return "The edited facts are saved on this device; this revision has not been shared." }
-        if reviewBlocker(item) != nil { return "Review the current contribution before sharing again. Your local product is saved." }
+        if reviewBlocker(in: mine) != nil { return "Review the current contribution before sharing again. Your local product is saved." }
         if let retry = operation.nextAttemptAt { return "Retry available after \(retry.formatted(date: .abbreviated, time: .shortened))." }
         if let state = operation.reviewedCurrentState ?? operation.currentState, let revision = operation.reviewedCurrentRevision ?? operation.currentRevision { return "Current contribution: \(state.rawValue), revision \(revision)." }
         return status(item).rawValue
     }
-    public func canRetry(_ item: CustomProductRevision) -> Bool { coordinator?.sharingBlocked != true && latest(item)?.clientRevisionID == item.revisionID && latest(item)?.status == .pending && reviewBlocker(item) == nil }
+    public func canRetry(_ item: CustomProductRevision) -> Bool {
+        guard coordinator?.sharingBlocked != true, let mine = snapshot(item), let last = mine.last else { return false }
+        return last.clientRevisionID == item.revisionID && last.status == .pending && reviewBlocker(in: mine) == nil
+    }
     public func canWithdraw(_ item: CustomProductRevision) -> Bool {
         guard coordinator?.sharingBlocked != true, let context = coordinator?.accountContext, context.profileReady,
               context.backendSupported, coordinator?.pauseReason == nil, let operation = latest(item),

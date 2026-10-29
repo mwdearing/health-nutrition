@@ -143,6 +143,25 @@ final class ProductShareReadFailureTests: XCTestCase {
         store.failOnlyReadCall = store.readCalls + 1
         XCTAssertEqual(model.status(item), .paused)
     }
+
+    /// Retry is worked out from one read: a review blocker is never missed because a later read failed.
+    @MainActor func testRetryIsDecidedFromOneReadSoABlockerIsNotMissed() {
+        let owner = UUID(), epoch = UUID(), store = FailableReadStorePort(), service = ProductSearchServicePort()
+        let item = CustomProductRevision(localProductID: UUID(), revisionID: UUID(), content: CustomProductContent(name: "Synthetic read", kind: .food, basis: .perServing))
+        store.products = [item]
+        var blocked = ProductShareOperation(ownerID: owner, localProductID: item.localProductID, operationID: UUID(),
+            clientRevisionID: item.revisionID, kind: .publish, content: item.content, epoch: epoch)
+        blocked.status = .needsReview
+        store.operations = [blocked, ProductShareOperation(ownerID: owner, localProductID: item.localProductID, operationID: UUID(),
+            clientRevisionID: item.revisionID, kind: .publish, content: item.content, epoch: epoch)]
+        let coordinator = ProductShareCoordinator(store: store, service: service)
+        coordinator.updateAccountContext(.init(ownerID: owner, profileReady: true, sharingAllowed: true,
+            consentVersion: 2, serverGeneration: "1", localSessionEpoch: epoch, backendSupported: true))
+        let model = CustomProductSharingModel(store: store, coordinator: coordinator, service: service)
+        // A third read in the call would be the blocker check; failing it must not let Retry through.
+        store.failOnlyReadCall = store.readCalls + 3
+        XCTAssertFalse(model.canRetry(item))
+    }
 }
 
 // A store double whose operation reads can be made to throw. Establishes no persistence guarantees.
