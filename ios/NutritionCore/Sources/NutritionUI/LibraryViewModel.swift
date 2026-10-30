@@ -437,10 +437,11 @@ public final class LibraryViewModel: ObservableObject {
         return try productStore?.customProducts().first { $0.localProductID == localID }
     }
     public func canCompleteProduct(_ item: LibraryItem) -> Bool {
-        // A quick add is amounts with no product behind them, so there is no product to edit.
-        if let id = item.template.productSnapshotID,
-           (try? store.product(snapshotID: id))?.catalogOrigin == IntakeContextFactCatalog.quickAddOrigin {
-            return false
+        // A quick add is amounts with no product behind them, so there is no product to edit. A product that
+        // can't be read isn't offered either: the read failing doesn't show it isn't a quick add (#775).
+        if let id = item.template.productSnapshotID {
+            guard let product = try? store.product(snapshotID: id) else { return false }
+            if product?.catalogOrigin == IntakeContextFactCatalog.quickAddOrigin { return false }
         }
         return item.template.productSnapshotID != nil || ["food", "supplement"].contains(item.template.category)
     }
