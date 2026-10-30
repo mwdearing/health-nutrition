@@ -158,19 +158,15 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
             wasPounds
                 ? Self.centimeters(feetText: heightFeetText, inchesText: heightInchesText, known: convertedHeight)
                 : Self.centimeters(metricText: heightCentimetersText, known: convertedHeight))
-        // Text that does not read as a number is carried over as typed, so the person sees it and can fix it.
         if pounds {
-            weightPoundsText = current?.text ?? weightKilogramsText
-            goalWeightPoundsText = goal?.text ?? goalWeightKilogramsText
-            heightFeetText = height?.feetText ?? heightCentimetersText
+            weightPoundsText = current?.text ?? ""
+            goalWeightPoundsText = goal?.text ?? ""
+            heightFeetText = height?.feetText ?? ""
             heightInchesText = height?.inchesText ?? ""
         } else {
-            weightKilogramsText = current?.text ?? weightPoundsText
-            goalWeightKilogramsText = goal?.text ?? goalWeightPoundsText
-            // The feet and inches keep their units, so the carried text never reads as centimeters.
-            heightCentimetersText = height?.centimetersText
-                ?? [(heightFeetText, "ft"), (heightInchesText, "in")].filter { !$0.0.isEmpty }
-                    .map { "\($0.0) \($0.1)" }.joined(separator: " ")
+            weightKilogramsText = current?.text ?? ""
+            goalWeightKilogramsText = goal?.text ?? ""
+            heightCentimetersText = height?.centimetersText ?? ""
         }
         convertedCurrentWeight = current
         convertedGoalWeight = goal
@@ -188,15 +184,9 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
         // a draft the person edited (its text differs from the old estimate) is kept as typed.
         if step == .results, selectedPaceKilograms != previousPace, let estimated = estimatedTargets {
             let edited = draftTargets.filter { estimated[$0.key] != $0.value }
-            let notices = (fields: fieldErrors, result: resultError)
             calculate()
             if !draftTargets.isEmpty {
                 for (key, text) in edited { draftTargets[key] = text }
-                // A field whose text is unchanged keeps the notice a save gave it: an edited draft, or a field
-                // the estimate does not write. A draft the estimate rewrote starts without one.
-                let kept = notices.fields.filter { edited[$0.key] != nil || draftTargets[$0.key] == nil }
-                fieldErrors.merge(kept) { _, old in old }
-                if resultError == nil, !kept.isEmpty { resultError = notices.result }
             }
         }
     }
