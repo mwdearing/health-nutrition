@@ -1,7 +1,7 @@
 import Foundation
 
-/// The units a medication amount can be typed in. Nothing here says which unit a medication uses; the
-/// person picks one for each medication and each dose.
+/// The units a medication amount can be typed in. Nothing here says which unit a medication uses: the
+/// person picks one for each medication, and each dose is logged in its medication's unit.
 public enum MedicationUnit: String, CaseIterable, Sendable, Equatable {
     /// Milligrams.
     case mg
@@ -37,7 +37,7 @@ public enum MedicationError: Error, Sendable, Equatable {
 
 /// A medication the person tracks, under a name they typed. Nothing here knows what the medication is.
 ///
-/// A medication can be archived to stop its schedule without deleting the doses already logged.
+/// A medication can be archived to set it aside without deleting the doses already logged.
 public struct Medication: Sendable, Equatable {
     /// The maximum number of Characters in the name.
     public static let maximumNameLength = 60
@@ -52,7 +52,8 @@ public struct Medication: Sendable, Equatable {
     public let unit: MedicationUnit
     /// How many calendar days apart the doses are meant to be, when the person keeps a schedule.
     public let scheduleDays: Int?
-    /// Whether the medication is archived. An archived medication keeps its doses but has no status.
+    /// Whether the medication is archived. An archived medication keeps its doses, and its schedule reports
+    /// nothing until it is unarchived.
     public let isArchived: Bool
 
     /// A medication with the given name and unit. Nothing is checked until `validate()` is called.
@@ -78,7 +79,7 @@ public struct Medication: Sendable, Equatable {
         if trimmed != name {
             throw MedicationError.nameNotTrimmed
         }
-        if name.contains(where: { $0 == "\n" || $0 == "\r" || $0 == "\r\n" }) {
+        if name.contains(where: { $0.isNewline }) {
             throw MedicationError.nameHasLineBreak
         }
         if name.count > Self.maximumNameLength {
@@ -173,7 +174,7 @@ public struct MedicationDose: Sendable, Equatable {
 
 /// Where a medication's schedule stands today.
 public enum MedicationScheduleStatus: Sendable, Equatable {
-    /// The medication has no schedule, so there is nothing to be due.
+    /// The medication has no schedule, or is archived, so there is nothing to be due.
     case notScheduled
     /// The medication has a schedule but no dose has been logged yet.
     case noDoseYet
@@ -220,13 +221,14 @@ public enum MedicationLog {
         return taken.adding(days: scheduleDays)
     }
 
-    /// The schedule's standing today. A medication without a schedule is never due, whatever doses it has.
+    /// The schedule's standing today. A medication without a schedule, or an archived one, is never due,
+    /// whatever doses it has.
     /// A scheduled medication with no dose is waiting for its first one. Otherwise today is compared with
     /// the next scheduled day: before it is upcoming, on it is due today, after it is overdue by whole days.
     public static func status(
         of medication: Medication, lastDose: MedicationDose?, today: CalendarDay
     ) -> MedicationScheduleStatus {
-        guard medication.scheduleDays != nil else { return .notScheduled }
+        guard medication.scheduleDays != nil, !medication.isArchived else { return .notScheduled }
         guard let lastDose else { return .noDoseYet }
         guard let next = nextByScheduleDay(medication, lastDose: lastDose) else { return .noDoseYet }
         if today < next {

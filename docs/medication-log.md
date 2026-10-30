@@ -12,7 +12,8 @@ dose, and it holds no list of drugs, dose ranges, titration steps or advice.
   unit.
 - **Name.** A name is required, has no space at either end, has no line break, and is at most 60
   characters. Names are unique ignoring case across all medications, archived ones included.
-- **Schedule.** A medication may have no schedule, or a schedule of every 1 to 28 days.
+- **Schedule.** A medication may have no schedule, or a schedule of every 1 to 28 days. An
+  archived medication keeps its doses and its schedule, but reports no status until it is unarchived.
 - **Amount.** A dose amount is above 0, at most 1000, and has at most three decimals. Amounts are
   stored as exact decimal text, never as binary floating point.
 - **Time zone.** Each dose records the time zone it was taken in. A dose's day is the local day
