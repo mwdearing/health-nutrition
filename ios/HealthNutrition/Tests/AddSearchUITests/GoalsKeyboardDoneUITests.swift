@@ -16,15 +16,19 @@ final class GoalsKeyboardDoneUITests: XCTestCase {
         XCTAssertTrue(edit.waitForExistence(timeout: 15), "no Edit goals button on Today")
         edit.tap()
 
-        let field = app.textFields.firstMatch
+        // A goal target, found by its spoken name: other fields on the screen, such as a water container size, are
+        // not goal targets.
+        let field = app.textFields.matching(NSPredicate(format: "label BEGINSWITH %@", "Daily target for")).firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 10), "no goal target field on the Daily goals screen")
         // Settings has its own Done button, so the keyboard's is counted on top of the ones already on screen.
-        let doneBefore = app.buttons.matching(identifier: "Done").count
+        // SwiftUI gives a Button("Done") the label Done and no identifier, so the buttons are matched by label.
+        let done = app.buttons.matching(NSPredicate(format: "label == %@", "Done"))
+        let doneBefore = done.count
         field.tap()
 
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5),
                       "no software keyboard on screen (is a hardware keyboard attached to the simulator?)")
-        let keyboardDone = NSPredicate { _, _ in app.buttons.matching(identifier: "Done").count > doneBefore }
+        let keyboardDone = NSPredicate { _, _ in done.count > doneBefore }
         let appeared = expectation(for: keyboardDone, evaluatedWith: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [appeared], timeout: 5), .completed,
                        "the goal target keyboard has no Done key\n\(app.debugDescription)")
