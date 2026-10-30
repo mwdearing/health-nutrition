@@ -351,7 +351,7 @@ public final class TodayViewModel: ObservableObject {
             mealSections = Self.makeMealSections(from: newRows)
             waterEntryCount = waterEntries
             dateSubtitle = Self.makeDateSubtitle(now, zoneIdentifier: TimeZone.current.identifier)
-            waterTotalMilliliters = waterTotal + Self.outsideWaterMilliliters(outsideIntake)
+            waterTotalMilliliters = waterTotal
             waterSkippedCount = skipped
             skippedIntakeCount = skippedIntakes
             // A goal store that cannot be read is not a person with no goals, so the failure is
