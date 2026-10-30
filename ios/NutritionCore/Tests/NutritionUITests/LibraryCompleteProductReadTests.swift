@@ -23,11 +23,11 @@ final class LibraryCompleteProductReadTests: XCTestCase {
         return LibraryViewModel(store: store, favorites: favorites, timeZoneIdentifier: "UTC")
     }
 
-    private func item(snapshotID: String) -> LibraryItem {
+    private func item(snapshotID: String) -> NutritionUI.LibraryItem {
         let template = RepeatTemplate(
             displayName: "Synthetic oats", category: "food",
             components: [.init(componentID: "oats", name: "Oats", amount: 40, unit: .g)], productSnapshotID: snapshotID)
-        return LibraryItem(id: "synthetic", title: template.displayName, detail: "40 g", isFavorite: false, template: template)
+        return NutritionUI.LibraryItem(id: "synthetic", title: template.displayName, detail: "40 g", isFavorite: false, template: template)
     }
 
     func testAProductThatCannotBeReadIsNotOfferedForCompletion() throws {
