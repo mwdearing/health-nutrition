@@ -95,6 +95,8 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
     private var convertedCurrentWeight: ConvertedWeight?
     private var convertedGoalWeight: ConvertedWeight?
     private var convertedHeight: ConvertedHeight?
+    /// The drafts exactly as the last estimate wrote them, so a pace change can tell untouched drafts from edited ones.
+    private var estimatedTargets: [String: String]?
 
     public init(goals: GoalsViewModel, now: @escaping () -> Date = { Date() }, calendar: Calendar = .current) {
         self.goals = goals
@@ -172,11 +174,18 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
         // The pace is kilograms and the options differ by unit, so the pace becomes the option nearest to it in
         // the unit now in force. Each unit's four options are the same steps, slowest to fastest, and the
         // nearest kilogram value lands on the same step in the other unit (1 lb, 0.45 kg, is nearest 0.5 kg).
+        let previousPace = selectedPaceKilograms
         if let pace = selectedPaceKilograms,
            let nearest = paceOptions.min(by: { abs($0.kilogramsPerWeek - pace) < abs($1.kilogramsPerWeek - pace) }) {
             selectedPaceKilograms = nearest.kilogramsPerWeek
         }
         textUnitSystem = unitSystem
+        // At the results step the drafts were estimated for the old pace. Estimate them again for the new pace,
+        // but only while the person has not edited them: an edited draft is kept as typed.
+        if step == .results, selectedPaceKilograms != previousPace, let estimated = estimatedTargets,
+           draftTargets == estimated {
+            calculate()
+        }
     }
 
     /// The steps for the aim chosen so far. Before an aim is chosen, the longest path is shown.
@@ -568,6 +577,7 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
     /// Estimates the results from the answers, filling the drafts the person may then edit.
     private func calculate() {
         draftTargets = [:]
+        estimatedTargets = nil
         resultError = nil
         fieldErrors = [:]
         adjustmentNote = nil
@@ -581,6 +591,7 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
                 "fat": DecimalFormatting.text(estimate.fatGrams),
                 "fiber": DecimalFormatting.text(estimate.fiberGrams),
             ]
+            estimatedTargets = draftTargets
             adjustmentNote = estimate.adjustmentNote
         } catch let error as GoalEstimateError {
             resultError = message(for: error)
