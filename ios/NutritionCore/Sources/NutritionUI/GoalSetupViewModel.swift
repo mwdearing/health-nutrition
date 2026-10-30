@@ -167,8 +167,10 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
         } else {
             weightKilogramsText = current?.text ?? weightPoundsText
             goalWeightKilogramsText = goal?.text ?? goalWeightPoundsText
+            // The feet and inches keep their units, so the carried text never reads as centimeters.
             heightCentimetersText = height?.centimetersText
-                ?? [heightFeetText, heightInchesText].filter { !$0.isEmpty }.joined(separator: " ")
+                ?? [(heightFeetText, "ft"), (heightInchesText, "in")].filter { !$0.0.isEmpty }
+                    .map { "\($0.0) \($0.1)" }.joined(separator: " ")
         }
         convertedCurrentWeight = current
         convertedGoalWeight = goal
@@ -190,11 +192,11 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
             calculate()
             if !draftTargets.isEmpty {
                 for (key, text) in edited { draftTargets[key] = text }
-                // An edited draft keeps the notice a save gave it, since its text is unchanged.
-                for key in edited.keys { fieldErrors[key] = notices.fields[key] }
-                if resultError == nil, edited.keys.contains(where: { notices.fields[$0] != nil }) {
-                    resultError = notices.result
-                }
+                // A field whose text is unchanged keeps the notice a save gave it: an edited draft, or a field
+                // the estimate does not write. A draft the estimate rewrote starts without one.
+                let kept = notices.fields.filter { edited[$0.key] != nil || draftTargets[$0.key] == nil }
+                fieldErrors.merge(kept) { _, old in old }
+                if resultError == nil, !kept.isEmpty { resultError = notices.result }
             }
         }
     }

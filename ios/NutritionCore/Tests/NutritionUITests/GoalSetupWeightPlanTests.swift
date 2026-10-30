@@ -488,7 +488,16 @@ final class GoalSetupWeightPlanTests: XCTestCase {
 
         XCTAssertEqual(model.weightKilogramsText, "7o")
         XCTAssertEqual(model.goalWeightKilogramsText, "6o")
-        XCTAssertEqual(model.heightCentimetersText, "5 1x")
+        XCTAssertEqual(model.heightCentimetersText, "5 ft 1x in")
+
+        // Inches with no feet do not read as a height, and the carried text must not read as centimeters.
+        prefs.setUnitSystem(.usCustomary)
+        model.unitSystemDidChange()
+        model.heightFeetText = ""
+        model.heightInchesText = "150"
+        prefs.setUnitSystem(.metric)
+        model.unitSystemDidChange()
+        XCTAssertEqual(model.heightCentimetersText, "150 in")
     }
 
     func testAUnitSwitchAtResultsKeepsTheNoticeOnAnEditedTarget() {
@@ -512,6 +521,30 @@ final class GoalSetupWeightPlanTests: XCTestCase {
 
         XCTAssertEqual(model.draftTargets["energy"], "-5")
         XCTAssertEqual(model.fieldErrors["energy"], fieldNotice)
+        XCTAssertEqual(model.resultError, "Enter a number above zero.")
+    }
+
+    func testAUnitSwitchAtResultsKeepsTheNoticeOnAVitaminGoal() {
+        let prefs = InMemoryDisplayPreferences(unitSystem: .metric)
+        let goals = GoalsViewModel(store: GoalSetupPlanStore(), preferences: prefs)
+        goals.load()
+        let model = GoalSetupViewModel(goals: goals)
+        answer(model, aim: .lose)
+        walk(model, to: .pace)
+        model.selectedPaceKilograms = model.paceOptions[1].kilogramsPerWeek
+        model.goalWeightKilogramsText = "75"
+        walk(model, to: .results)
+        model.chooseVitamins(.own)
+        model.vitaminDrafts["iron"] = "0"
+        XCTAssertFalse(model.save())
+        let fieldNotice = model.fieldErrors["iron"]
+        XCTAssertNotNil(fieldNotice)
+
+        prefs.setUnitSystem(.usCustomary)
+        model.unitSystemDidChange()
+
+        XCTAssertEqual(model.vitaminDrafts["iron"], "0")
+        XCTAssertEqual(model.fieldErrors["iron"], fieldNotice)
         XCTAssertEqual(model.resultError, "Enter a number above zero.")
     }
 
