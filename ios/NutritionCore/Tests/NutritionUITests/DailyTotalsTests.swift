@@ -55,8 +55,7 @@ final class DailyTotalsTests: XCTestCase {
         XCTAssertNil(storeURL)
     }
     /// The file the store under test writes to, so the legacy-amount seed can open the same store (#521 item 3).
-    /// The "/" default is never written to: a seed that runs before makeStore sets this would fail to
-    /// open it and throw, so no test relies on the default.
+    /// Nil until makeStore sets it; each seed unwraps it with XCTUnwrap, so a seed before makeStore fails (#642).
     private var storeURL: URL?
 
     private func makeStore() throws -> SwiftDataJournalStore {
