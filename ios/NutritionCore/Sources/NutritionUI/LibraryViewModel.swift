@@ -460,7 +460,7 @@ public final class LibraryViewModel: ObservableObject {
     }
 
     static func isSearchEmpty(visibleCount: Int, standaloneCount: Int, searchText: String) -> Bool {
-        visibleCount + standaloneCount == 0 && !searchText.isEmpty
+        visibleCount == 0 && !searchText.isEmpty
     }
 
     public var visibleItems: [LibraryItem] {
