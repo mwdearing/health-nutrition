@@ -461,7 +461,6 @@ private actor OverlappingPublishService: CommunityProductServicing {
         if let coordinator {
             overlap = Task { @MainActor in
                 await self.markOverlapStarted()
-                await coordinator.runDueOperations(now: Date())
             }
             // Wait until the overlapping task has started, then give its run time to reach the coordinator's
             // single-flight guard while this publish is still suspended.
