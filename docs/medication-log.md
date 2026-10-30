@@ -36,8 +36,8 @@ already logged in its old unit.
 The medications and doses are kept in their own store file, `medications.store`, separate from
 the journal. The file uses a versioned schema (version 1.0.0) with a migration plan that lists
 that first version, and it opens without CloudKit. The site was added to version 1.0.0 in place,
-not as a second version: no build has opened the store file before the screens slice, so no
-store on any device has the older shape.
+not as a second version: no app code opens the store file yet (the app wiring lands with the
+screens), so no released build has created one in the older shape.
 
 A row that cannot be read, or that fails the same checks as a save, fails the whole read. The
 log never skips a damaged row and shows the rest as if nothing were wrong.

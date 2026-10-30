@@ -63,8 +63,8 @@ final class MedicationDoseRecord {
 }
 
 /// The first and only schema of the medication store file. Its two models are the medication and dose rows above.
-/// No build has opened this store file before the site was added (the store is not opened by any build until the
-/// screens slice), so the version 1.0.0 shape is amended in place and there is no migration.
+/// No app code opens this store file yet (the app wiring lands with the screens slice), so no released build has
+/// created one, and the version 1.0.0 shape is amended in place with no migration.
 enum MedicationSchemaV1: VersionedSchema {
     static var versionIdentifier: Schema.Version { Schema.Version(1, 0, 0) }
     static var models: [any PersistentModel.Type] { [MedicationRecord.self, MedicationDoseRecord.self] }
