@@ -500,6 +500,30 @@ final class GoalSetupWeightPlanTests: XCTestCase {
         XCTAssertEqual(model.heightCentimetersText, "150 in")
     }
 
+    func testHeightTextThatIsNotANumberSurvivesARoundTrip() {
+        let prefs = InMemoryDisplayPreferences(unitSystem: .metric)
+        let goals = GoalsViewModel(store: GoalSetupPlanStore(), preferences: prefs)
+        goals.load()
+        let model = GoalSetupViewModel(goals: goals)
+        model.heightCentimetersText = "18o"
+        prefs.setUnitSystem(.usCustomary)
+        model.unitSystemDidChange()
+        prefs.setUnitSystem(.metric)
+        model.unitSystemDidChange()
+        XCTAssertEqual(model.heightCentimetersText, "18o")
+
+        prefs.setUnitSystem(.usCustomary)
+        model.unitSystemDidChange()
+        model.heightFeetText = "5"
+        model.heightInchesText = "1x"
+        prefs.setUnitSystem(.metric)
+        model.unitSystemDidChange()
+        prefs.setUnitSystem(.usCustomary)
+        model.unitSystemDidChange()
+        XCTAssertEqual(model.heightFeetText, "5")
+        XCTAssertEqual(model.heightInchesText, "1x")
+    }
+
     func testAUnitSwitchAtResultsKeepsTheNoticeOnAnEditedTarget() {
         let prefs = InMemoryDisplayPreferences(unitSystem: .metric)
         let goals = GoalsViewModel(store: GoalSetupPlanStore(), preferences: prefs)

@@ -95,6 +95,8 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
     private var convertedCurrentWeight: ConvertedWeight?
     private var convertedGoalWeight: ConvertedWeight?
     private var convertedHeight: ConvertedHeight?
+    /// Height text that did not read as a number, as it stands in each unit, so switching back shows it as typed.
+    private var carriedHeight: (metric: String, feet: String, inches: String)?
     /// The drafts exactly as the last estimate wrote them, so a pace change can tell untouched drafts from edited ones.
     private var estimatedTargets: [String: String]?
 
@@ -162,15 +164,29 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
         if pounds {
             weightPoundsText = current?.text ?? weightKilogramsText
             goalWeightPoundsText = goal?.text ?? goalWeightKilogramsText
-            heightFeetText = height?.feetText ?? heightCentimetersText
-            heightInchesText = height?.inchesText ?? ""
+            if let height {
+                heightFeetText = height.feetText
+                heightInchesText = height.inchesText
+            } else if let carried = carriedHeight, carried.metric == heightCentimetersText {
+                (heightFeetText, heightInchesText) = (carried.feet, carried.inches)
+            } else {
+                carriedHeight = (metric: heightCentimetersText, feet: heightCentimetersText, inches: "")
+                (heightFeetText, heightInchesText) = (heightCentimetersText, "")
+            }
         } else {
             weightKilogramsText = current?.text ?? weightPoundsText
             goalWeightKilogramsText = goal?.text ?? goalWeightPoundsText
-            // The feet and inches keep their units, so the carried text never reads as centimeters.
-            heightCentimetersText = height?.centimetersText
-                ?? [(heightFeetText, "ft"), (heightInchesText, "in")].filter { !$0.0.isEmpty }
+            if let height {
+                heightCentimetersText = height.centimetersText
+            } else if let carried = carriedHeight, carried.feet == heightFeetText, carried.inches == heightInchesText {
+                heightCentimetersText = carried.metric
+            } else {
+                // The feet and inches keep their units, so the carried text never reads as centimeters.
+                let metric = [(heightFeetText, "ft"), (heightInchesText, "in")].filter { !$0.0.isEmpty }
                     .map { "\($0.0) \($0.1)" }.joined(separator: " ")
+                carriedHeight = (metric: metric, feet: heightFeetText, inches: heightInchesText)
+                heightCentimetersText = metric
+            }
         }
         convertedCurrentWeight = current
         convertedGoalWeight = goal
