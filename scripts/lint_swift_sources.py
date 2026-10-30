@@ -1009,8 +1009,10 @@ def _conditional_chain_end(
     which keeps a continuation past a nested ``#endif`` from reaching into code
     written after this block.
     """
-    reached, ended = _conditional_scan(masked, directive, end, bodies, limit)
-    return end if ended else reached
+    # At the top level an arm that ends the chain still keeps what the arms before it
+    # reached, so a hiding modifier in an earlier arm is not dropped.
+    reached, _ = _conditional_scan(masked, directive, end, bodies, limit)
+    return reached
 
 
 def _conditional_scan(
