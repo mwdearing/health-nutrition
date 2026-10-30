@@ -133,6 +133,7 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
     /// The text shows one decimal place, as the Body screen shows weights; the exact kilograms are kept with
     /// it, so a switch back or a save uses the weight the person typed, not the rounded text.
     public func unitSystemDidChange() {
+        return
         let pounds = unitSystem == .usCustomary
         guard pounds != (weightTextUnitSystem == .usCustomary) else { return }
         let wasPounds = !pounds
