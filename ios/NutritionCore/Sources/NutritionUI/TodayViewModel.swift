@@ -633,7 +633,6 @@ public final class TodayViewModel: ObservableObject {
         return true
     }
 
-    /// The water total in the unit the reader chose, as it is shown on screen.
     /// The water other apps logged to Apple Health today, in millilitres, added to Today's water the way their
     /// nutrients are added to Today's lines. The read leaves out the samples this app wrote, so a drink logged here
     /// is never counted twice. A read that did not complete, or Health not connected, adds nothing.
@@ -647,6 +646,7 @@ public final class TodayViewModel: ObservableObject {
         return milliliters.value
     }
 
+    /// The water total in the unit the reader chose, as it is shown on screen.
     public var waterTotalDisplay: DisplayAmount {
         AmountDisplay.water(self.waterTotalMilliliters, system: self.preferences.unitSystem)
     }
