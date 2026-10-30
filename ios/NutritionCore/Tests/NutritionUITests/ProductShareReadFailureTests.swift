@@ -312,6 +312,8 @@ final class ProductShareReadFailureTests: XCTestCase {
         let publishCalls = await service.publishCalls
         let statusAtPublish = await service.statusAtPublish
         let statusAfterOverlap = await service.statusAfterOverlap
+        let overlapStarted = await service.overlapStarted
+        XCTAssertTrue(overlapStarted, "the second run started while the first publish was suspended")
         XCTAssertEqual(publishCalls, 1, "the overlapping run does not send the row again")
         XCTAssertEqual(statusAtPublish, .sending, "the row is in flight while the publish runs")
         XCTAssertEqual(statusAfterOverlap, .sending, "the overlapping run does not requeue the in-flight row")
@@ -439,7 +441,10 @@ private actor OverlappingPublishService: CommunityProductServicing {
     private(set) var publishCalls = 0
     private(set) var statusAtPublish: ProductOperationStatus?
     private(set) var statusAfterOverlap: ProductOperationStatus?
+    /// Set by the overlapping task just before it calls runDueOperations, so the test can show it ran (#1055).
+    private(set) var overlapStarted = false
     init(store: FailableReadStorePort) { self.store = store }
+    func markOverlapStarted() { overlapStarted = true }
     func attach(_ coordinator: ProductShareCoordinator) { self.coordinator = coordinator }
     func waitForOverlap() async { await overlap?.value }
     func publish(_ request: ProductPublishRequest, expectedOwnerID: UUID) async throws -> ProductDeliveryReceipt {
@@ -447,8 +452,13 @@ private actor OverlappingPublishService: CommunityProductServicing {
         statusAtPublish = store.operations.first?.status
         guard let operationID = UUID(uuidString: request.operationID) else { throw ProductAPIError.invalidRequest(field: nil) }
         if let coordinator {
-            overlap = Task { @MainActor in await coordinator.runDueOperations(now: Date()) }
-            // Give the overlapping run time to reach the coordinator while this publish is still suspended.
+            overlap = Task { @MainActor in
+                await self.markOverlapStarted()
+                await coordinator.runDueOperations(now: Date())
+            }
+            // Wait until the overlapping task has started, then give its run time to reach the coordinator's
+            // single-flight guard while this publish is still suspended.
+            for _ in 0..<200 where !overlapStarted { try? await Task.sleep(nanoseconds: 10_000_000) }
             try? await Task.sleep(nanoseconds: 100_000_000)
             statusAfterOverlap = store.operations.first?.status
         }
