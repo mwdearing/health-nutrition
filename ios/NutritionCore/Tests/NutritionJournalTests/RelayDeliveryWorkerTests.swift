@@ -2451,4 +2451,36 @@ final class AlternatingLinkProvider: @unchecked Sendable {
             return XCTFail("and the run reports it superseded, got \(outcomes)")
         }
     }
+
+    /// An older projection waits behind a newer upsert the receiver asked to retry, and is superseded only on the
+    /// later run where that upsert is accepted: the first run leaves it queued and the queue is told nothing (#123).
+    func testAnOlderProjectionWaitsAcrossRunsUntilTheRetriedNewerUpsertIsAccepted() async throws {
+        let (store, transport, _) = try makeWorker()
+        try store.create(sampleIntake(), components: components(), product: nil, now: when)
+        try store.edit(
+            intakeID: intakeID, components: components(), product: nil, changeReason: "more", now: when)
+        let queue = RecordingProjectionQueue()
+        let older = projection(sequence: 2)
+        queue.offer([older])
+        let newerUpsert = try XCTUnwrap(pendingRelay(store).last?.operationID)
+        transport.answer(.init(resultsByOperation: [newerUpsert: .retryableFailure]))
+
+        let first = await makeWorker(store: store, transport: transport, projections: queue).runOnce(now: when)
+
+        XCTAssertEqual(queue.recorded, [], "the newer upsert was not accepted, so nothing settled the projection")
+        guard case .blocked(_, let by) = try XCTUnwrap(first.first { $0.operationID == older.operationID }) else {
+            return XCTFail("the first run reports the projection blocked, got \(first)")
+        }
+        XCTAssertEqual(by, newerUpsert)
+
+        transport.reset()
+        transport.answer(.init(resultsByOperation: [newerUpsert: .duplicate]))
+        let second = await makeWorker(store: store, transport: transport, projections: queue)
+            .runOnce(now: when.addingTimeInterval(86_400))
+
+        XCTAssertEqual(queue.recorded, [.superseded], "the later run settles it once the newer upsert is accepted")
+        guard case .superseded = try XCTUnwrap(second.first { $0.operationID == older.operationID }) else {
+            return XCTFail("the second run reports it superseded, got \(second)")
+        }
+    }
 }
