@@ -452,12 +452,16 @@ final class GoalSetupWeightPlanTests: XCTestCase {
         model.selectedPaceKilograms = model.paceOptions[1].kilogramsPerWeek
         model.goalWeightKilogramsText = "75"
         walk(model, to: .results)
+        let before = model.draftTargets
         model.draftTargets["energy"] = "2100"
 
         prefs.setUnitSystem(.usCustomary)
         model.unitSystemDidChange()
 
         XCTAssertEqual(model.draftTargets["energy"], "2100")
+        // The targets the person did not edit are estimated again for the new pace.
+        let refreshed = model.draftTargets.filter { $0.key != "energy" }
+        XCTAssertNotEqual(refreshed, before.filter { $0.key != "energy" })
     }
 
     func testThePrivacyNoticeSaysWhatIsSaved() {

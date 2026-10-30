@@ -180,11 +180,14 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
             selectedPaceKilograms = nearest.kilogramsPerWeek
         }
         textUnitSystem = unitSystem
-        // At the results step the drafts were estimated for the old pace. Estimate them again for the new pace,
-        // but only while the person has not edited them: an edited draft is kept as typed.
-        if step == .results, selectedPaceKilograms != previousPace, let estimated = estimatedTargets,
-           draftTargets == estimated {
+        // At the results step the drafts were estimated for the old pace. Estimate them again for the new pace;
+        // a draft the person edited (its text differs from the old estimate) is kept as typed.
+        if step == .results, selectedPaceKilograms != previousPace, let estimated = estimatedTargets {
+            let edited = draftTargets.filter { estimated[$0.key] != $0.value }
             calculate()
+            if !draftTargets.isEmpty {
+                for (key, text) in edited { draftTargets[key] = text }
+            }
         }
     }
 
