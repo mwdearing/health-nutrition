@@ -58,9 +58,27 @@ public struct TodayView: View {
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: DesignSpacing.m) {
+                // The navigation title is the one spoken name for the screen. The wrapper keeps the header's frame for
+                // XCUITest and has no label, and its text is not exposed as a separate element, so VoiceOver reads nothing.
+                VStack {
+                    Text("Today")
+                        .font(.largeTitle.weight(.bold))
+                        .foregroundStyle(TokenColors.textPrimary)
+                        .multilineTextAlignment(.center)
+                        .accessibilityHidden(true)
+                }
+                .frame(maxWidth: .infinity)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("")
+                // Replaces the header's accessibility tree with an empty element, so the drawn title is not in it at all.
+                .accessibilityRepresentation { Color.clear }
+                .accessibilityIdentifier("todayHeader")
                 Text(model.dateSubtitle)
                     .font(.subheadline)
                     .foregroundStyle(TokenColors.textSecondary)
+                    .frame(maxWidth: .infinity)
+                    .multilineTextAlignment(.center)
+                    .accessibilityIdentifier("todayDate")
                 notices
                 if let checklist {
                     FirstDayChecklistCard(
@@ -91,7 +109,15 @@ public struct TodayView: View {
             .padding(.bottom, DesignSpacing.floatingClearance)
         }
         .background(TokenColors.background)
+        // The screen name stays the navigation title, so VoiceOver and the back button keep "Today". The bar draws no
+        // visible title: the heading is drawn in the content, centred, and an empty principal item hides the bar copy.
         .navigationTitle("Today")
+#if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) { EmptyView() }
+        }
+#endif
         .onAppear { model.load(now: now()) }
     }
 

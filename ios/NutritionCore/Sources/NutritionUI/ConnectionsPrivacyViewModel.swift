@@ -103,13 +103,13 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     public static let privacySummary =
         "Your journal stays on this device and in your own iCloud or device backups, and is not uploaded as a whole. Signing in sends your account email, "
         + "account ID and optional display name to the project's server. A barcode lookup you start sends the "
-        + "barcode to Open Food Facts and, if no product is found and you are signed in, to the community catalog. "
+        + "barcode to the community catalog, and only when you are signed in. "
         + "A name search in Search foods sends the words you typed to Open Food Facts. "
         + "Share labels off stops new label submissions but does not disable barcode lookup. A label submission is "
         + "linked to your signed-in account, but does not include your journal entries or photo. A product you create "
         + "and share is linked the same way. Searching shared products sends your search words to the project's server "
         + "with your account when you are signed in. After you connect Apple Health in Settings, the app writes "
-        + "nutrients from real logged food and water entries to HealthKit on this phone and reads back only its own samples, plus steps, activity and weight if you ask on Today; "
+        + "nutrients from real logged food and water entries to HealthKit on this device and reads back only its own samples, plus steps, activity and weight if you ask on Today; "
         + "a debug build's HealthKit screen can also write test samples. Erasing journal rows does not remove "
         + "HealthKit samples already written. "
         + "For email sign-in, hCaptcha can process browser/device signals and sends a verification result; a rare "
@@ -120,18 +120,24 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     public static let exportFailedMessage = "Could not export the journal."
     public static let importButtonTitle = "Import a journal export"
     public static let importFailedMessage = "Could not import that file."
+    /// The approved rollback wording: a write failed, and the undo put everything back.
+    public static let importRolledBackMessage = "Nothing was imported. Try again."
     /// What the importer refused and why, in the words a person can act on.
     public static let importUnsupportedVersionMessage =
         "That file was made by a newer version of the app, so this one cannot read it."
     public static let importNotEmptyMessage =
-        "This phone already has journal entries. An import only works on a journal that is empty."
+        "This device already has journal entries. An import only works on a journal that is empty."
     /// A version 4 backup carries the whole saved meals list, so it is not restored over saved meals the phone keeps.
     public static let importSavedMealsNotEmptyMessage =
-        "This phone already has saved meals. An import that includes saved meals only works when there are none."
+        "This device already has saved meals. An import that includes saved meals only works when there are none."
     /// An import asked for while an erase was running. It is refused rather than queued, because a restore
     /// that landed afterwards would put back what the person had just deleted.
     public static let importDuringEraseMessage =
         "Data was being erased, so nothing was imported. Try again once that is finished."
+    /// A restore that could not take the Health delivery gate, because a pass was still writing to Apple Health
+    /// after the wait (#982). Nothing was imported. Wording approved by Mike on 2026-10-28.
+    public static let importDuringHealthDeliveryMessage =
+        "Apple Health was still being updated, so nothing was imported. Try again in a moment."
     public static let partialRestoreWarningMessage =
         "The restore was incomplete; journal entries or saved meals may already be present. Check your journal and saved meals before importing this file again."
 
@@ -142,7 +148,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         + "are switched off, along with any export file it wrote. This cannot be undone. A copy you already shared or saved elsewhere — in Files, "
         + "in mail, in cloud storage or in another app — is not erased: the app cannot reach it, so delete "
         + "it there yourself. Nutrition and water data this app wrote to Apple Health stays there: delete it in the Health app. "
-        + "Erasing also signs you out on this phone; your community account and any "
+        + "Erasing also signs you out on this device; your community account and any "
         + "shared labels remain on the server."
     public static let eraseConfirmationTitle = "Erase all data?"
     /// Sits under the erase button, so the cost of the action is read before it is tapped rather than
@@ -150,13 +156,13 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     public static let eraseFooterMessage =
         "Erases the journal, favorites, saved meals, recipes, your supplement list and daily goals this app stores on this device and switches off the daily, water and supplement "
         + "reminders, plus any export file it wrote. A copy you already shared or saved elsewhere — in Files, in mail, in cloud storage "
-        + "or in another app — is not erased: delete it there yourself. Data this app wrote to Apple Health stays there too: delete it in the Health app. Erasing signs you out on this phone; "
+        + "or in another app — is not erased: delete it there yourself. Data this app wrote to Apple Health stays there too: delete it in the Health app. Erasing signs you out on this device; "
         + "your community account and any shared labels remain on the server."
     /// Shown when the erase stopped before any store was touched, so nothing has been erased yet.
     public static let eraseNothingErasedMessage = "Nothing was erased. Tap Retry to try again."
     /// Names what is still on the phone after an erase, in the order the erase ran. `names` is never empty.
     public static func eraseLeftBehindMessage(_ names: [String]) -> String {
-        "Erase didn't finish. Still on this phone: \(naturalList(names)). Tap Retry to erase them."
+        "Erase didn't finish. Still on this device: \(naturalList(names)). Tap Retry to erase them."
     }
     private static func naturalList(_ names: [String]) -> String {
         guard names.count > 1, let last = names.last else { return names.joined() }
@@ -281,6 +287,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     private let favorites: FavoritesStore?
     /// Where an export reads saved meals and an import writes them; nil leaves them out of both.
     private let savedMeals: JournalSavedMealsStore?
+    /// Where an export reads goals and an import writes them. Required, so no caller can leave them out silently.
+    private let goals: GoalStore
     private let appVersion: String
     private let writer: ConnectionsPrivacyExportWriter
     private let remover: ConnectionsPrivacyExportRemover
@@ -297,6 +305,11 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     private let remindersStillPending: () async -> [String]
     /// How long an erase waits for a running import; a test shortens it so the timeout path runs quickly.
     private let importWaitSeconds: TimeInterval
+    /// The Health delivery worker's run gate. An erase holds it while it runs, so no delivery pass is between its
+    /// busy check and its Health write while the stores are emptied (#841). Nil only where no worker runs.
+    private let deliveryGate: DeliveryRunGate?
+    /// How long an erase waits for a delivery pass that holds the gate; a test shortens it.
+    private let deliveryWaitSeconds: TimeInterval
 
     /// Changes whenever this screen creates, clears, or forgets an export. An import may remove only the
     /// copy that was already current when that import began; a later export may contain restored rows.
@@ -344,6 +357,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     ///   is the default, so a host that does not persist anything still gets a working screen and a
     ///   test needs no defaults domain.
     public init(
+        goals: GoalStore,
         store: JournalStore, favorites: FavoritesStore? = nil, savedMeals: JournalSavedMealsStore? = nil,
         appVersion: String = ConnectionsPrivacyViewModel.defaultAppVersion,
         writer: @escaping ConnectionsPrivacyExportWriter = ConnectionsPrivacyViewModel.writeExport,
@@ -355,12 +369,17 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         eraseLocalAccount: @escaping () async throws -> Void = {},
         remindersStillPending: @escaping () async -> [String] = { [] },
         importWaitSeconds: TimeInterval = ConnectionsPrivacyViewModel.eraseWaitsForImportSeconds,
-        importGate: ImportGate = ImportGate()
+        importGate: ImportGate = ImportGate(),
+        deliveryGate: DeliveryRunGate? = nil,
+        deliveryWaitSeconds: TimeInterval = ConnectionsPrivacyViewModel.eraseWaitsForImportSeconds
     ) {
         self.importGate = importGate
+        self.deliveryGate = deliveryGate
+        self.deliveryWaitSeconds = deliveryWaitSeconds
         self.store = store
         self.favorites = favorites
         self.savedMeals = savedMeals
+        self.goals = goals
         self.appVersion = appVersion
         self.writer = writer
         self.erasers = erasers
@@ -543,7 +562,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         [
             ConnectionsPrivacyConnection(
                 id: "apple-health", title: Self.appleHealthTitle,
-                detail: "Write entries to the Health app on this phone.", isAvailable: Self.appleHealthAvailable,
+                detail: "Write entries to the Health app on this device.", isAvailable: Self.appleHealthAvailable,
                 isEnabled: Self.appleHealthAvailable && appleHealthEnabled, arrivingNote: Self.arrivingNote),
             ConnectionsPrivacyConnection(
                 id: "health-relay", title: Self.healthRelayTitle,
@@ -567,7 +586,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         exportRevision += 1
         do {
             let document = try JournalExporter.makeExport(
-                store: store, favorites: favorites, savedMeals: savedMeals, appVersion: appVersion, exportedAt: now)
+                store: store, favorites: favorites, savedMeals: savedMeals, goals: goals, appVersion: appVersion,
+                exportedAt: now)
             let data = try JournalExporter.encode(document)
             let name = JournalExporter.fileName(exportedAt: now)
             let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
@@ -631,6 +651,27 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             resolveDeferredImportEffectsAfterErase(journalEraseSucceeded: false)
             return false
         }
+        // Then take the Health delivery gate, so no pass is between its busy check and its Health write while the
+        // stores are emptied (#841). A pass still running after the wait is not cancelled: the erase touches
+        // nothing and offers Retry, as it does for an import.
+        let erased: Bool
+        let hold = await deliveryGate?.pause(upTo: deliveryWaitSeconds)
+        if deliveryGate == nil || hold != nil {
+            erased = await eraseHoldingDelivery()
+        } else {
+            errorMessage = Self.eraseNothingErasedMessage
+            eraseRetryAvailable = true
+            resolveDeferredImportEffectsAfterErase(journalEraseSucceeded: false)
+            erased = false
+        }
+        // On every exit, the timeout included. A pause that timed out has no hold, so this releases nothing then,
+        // and it can only ever release this erase's own hold.
+        await deliveryGate?.resume(hold)
+        return erased
+    }
+
+    /// The erase itself, run while it holds the Health delivery gate. Returns whether every store erased itself.
+    private func eraseHoldingDelivery() async -> Bool {
         // With the import gone, no import can run again until this erase finishes. A restore flag left behind would
         // let the next import of that file put back favorites the person is erasing, so it goes before any store is
         // touched. A flag that cannot be removed stops the erase with nothing erased, and the screen offers Retry.
@@ -843,6 +884,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         case other
         /// An erase was running, so the import was refused before it started.
         case erasing
+        /// A Health delivery pass was still writing after the wait, so nothing was imported (#982).
+        case healthDeliveryBusy
     }
 
     /// Reads a file the person chose and restores it. Nothing is sent anywhere: the file was already on
@@ -887,18 +930,31 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         // a task body that needs the main actor in order to start would never get to run: the erase would
         // wait on a signal nothing was ever going to send. A detached task needs no actor to begin, and its
         // `defer` opens the gate from a background thread as soon as the store writes are done.
+        let goals = self.goals
+        let deliveryGate = self.deliveryGate
+        let deliveryWaitSeconds = self.deliveryWaitSeconds
         let restore = Task.detached(priority: .userInitiated) { () -> ImportOutcome in
             // The gate is opened from the background, and not from the task below: the erase waits on it from
             // the main actor, so it has to be signalled by the work it is waiting for.
             defer { gate.end() }
+            // The restore holds the Health delivery gate while it writes, as the erase does (#982), so no pass is
+            // between its busy check and its Health write while the journal is filled. A pass still running after
+            // the wait is not cancelled: nothing is imported, and the screen says so.
+            let hold = await deliveryGate?.pause(upTo: deliveryWaitSeconds)
+            if deliveryGate != nil, hold == nil { return .failed(.healthDeliveryBusy) }
+            let outcome: ImportOutcome
             do {
-                return .imported(
-                    try JournalImporter.importExport(data, into: store, favorites: favorites, savedMeals: savedMeals))
+                outcome = .imported(
+                    try JournalImporter.importExport(
+                        data, into: store, favorites: favorites, savedMeals: savedMeals, goals: goals))
             } catch let error as JournalImportError {
-                return .failed(.refused(error))
+                outcome = .failed(.refused(error))
             } catch {
-                return .failed(.other)
+                outcome = .failed(.other)
             }
+            // On every path past the wait; only this restore's own hold is released.
+            await deliveryGate?.resume(hold)
+            return outcome
         }
         Task { [weak self] in
             let outcome = await restore.value
@@ -959,7 +1015,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         case .imported(let summary):
             importSummary = summary
             importState = .imported
-            importMessage = Self.importSummaryText(summary)
+            importMessage = Self.importSummaryText(summary, locale: .current)
         case .failed(let failure):
             importSummary = nil
             importState = .failed
@@ -1033,6 +1089,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             return importFailedMessage
         case .erasing:
             return importDuringEraseMessage
+        case .healthDeliveryBusy:
+            return importDuringHealthDeliveryMessage
         }
     }
 
@@ -1055,16 +1113,19 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     }
 
     /// One line saying what came back, so a restore that quietly did nothing still looks like an answer.
-    public static func importSummaryText(_ summary: JournalImportSummary) -> String {
-        let entries = summary.intakes == 1 ? "1 entry" : "\(summary.intakes) entries"
-        let deleted = summary.tombstones == 0 ? "" : " and \(summary.tombstones) deleted"
-        let favorites = summary.favorites == 0 ? "" : ", \(summary.favorites) favorites"
+    public static func importSummaryText(_ summary: JournalImportSummary, locale: Locale = .current) -> String {
+        // Every count carries grouping separators (1,234 entries), in the locale the screen is shown in.
+        func count(_ n: Int) -> String { n.formatted(.number.locale(locale)) }
+        let entries = summary.intakes == 1 ? "1 entry" : "\(count(summary.intakes)) entries"
+        let deleted = summary.tombstones == 0 ? "" : " and \(count(summary.tombstones)) deleted"
+        let favorites = summary.favorites == 0 ? "" : ", \(count(summary.favorites)) favorites"
         let savedMeals = summary.savedMeals == 0 ? ""
-            : summary.savedMeals == 1 ? ", 1 saved meal" : ", \(summary.savedMeals) saved meals"
+            : summary.savedMeals == 1 ? ", 1 saved meal" : ", \(count(summary.savedMeals)) saved meals"
+        let goals = summary.goals == 0 ? "" : summary.goals == 1 ? ", 1 goal" : ", \(count(summary.goals)) goals"
         let kept = summary.keptOutOfLibrary == 0 ? ""
             : summary.keptOutOfLibrary == 1 ? ", 1 entry kept out of Library > Products"
-            : ", \(summary.keptOutOfLibrary) entries kept out of Library > Products"
-        return "Imported \(entries)\(deleted)\(favorites)\(savedMeals)\(kept)."
+            : ", \(count(summary.keptOutOfLibrary)) entries kept out of Library > Products"
+        return "Imported \(entries)\(deleted)\(favorites)\(savedMeals)\(goals)\(kept)."
     }
 
     public static func importFailureText(for error: JournalImportError) -> String {
@@ -1081,6 +1142,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             return importFailedMessage
         case .partialRestore:
             return partialRestoreWarningMessage
+        case .rolledBack:
+            return importRolledBackMessage
         }
     }
 

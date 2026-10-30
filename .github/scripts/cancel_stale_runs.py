@@ -18,7 +18,7 @@ import urllib.request
 from collections.abc import Iterable
 from datetime import datetime, timedelta, timezone
 
-CANCELLABLE = frozenset({"ios", "screenshots", "catalog", "privacy-shield", "design-system-tests"})
+CANCELLABLE = frozenset({"ios", "screenshots", "catalog", "design-system-tests"})
 PULL_REQUEST_EVENTS = frozenset({"pull_request"})
 MAX_QUEUED = timedelta(hours=6)
 

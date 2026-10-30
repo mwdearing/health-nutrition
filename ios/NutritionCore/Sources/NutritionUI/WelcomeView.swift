@@ -25,7 +25,7 @@ public struct WelcomeView: View {
                         .foregroundStyle(TokenColors.textSecondary)
                 }
                 point("Scan a label or barcode, or type it in", symbol: "barcode.viewfinder")
-                point("Your journal stays on this phone", symbol: "iphone")
+                point("Your journal stays on this device", symbol: "iphone")
                 point("No scores, no advice", symbol: "hand.raised")
                 PrimaryCapsule("Get started", action: onStart)
                 Button(action: onRestore) {

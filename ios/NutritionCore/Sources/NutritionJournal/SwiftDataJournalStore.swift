@@ -1103,8 +1103,9 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     @unchecked Sendable
 {
     private let lock = NSLock()
-    private var deleteCommittedHandler: (@Sendable (String, UInt64) -> Void)?
-    /// Counts committed deletes in commit order. Only read or changed under writeLock.
+    /// Every handler added with `addOnDeleteCommitted`, called in the order they were added.
+    private var deleteCommittedHandlers: [@Sendable (String, UInt64) -> Void] = []
+    /// Counts committed deletes and water quick-adds in commit order. Only read or changed under writeLock.
     private var deleteCounter: UInt64 = 0
     /// Serializes whole writes so two edits never read the same current revision. Separate from `lock`.
     private let writeLock = NSLock()
@@ -1391,6 +1392,40 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
         intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
         now: Date, occurredAt: Date?, timeZoneIdentifier: String?, unitRemovals: [String]
     ) throws -> IntakeRevision {
+        try writeEdit(
+            intakeID: intakeID, components: components, product: product, changeReason: changeReason, now: now,
+            occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier, unitRemovals: unitRemovals,
+            expectedRevision: nil)
+    }
+
+    @discardableResult
+    public func edit(
+        intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
+        now: Date, occurredAt: Date?, timeZoneIdentifier: String?, expectedRevision: Int
+    ) throws -> IntakeRevision {
+        try writeEdit(
+            intakeID: intakeID, components: components, product: product, changeReason: changeReason, now: now,
+            occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier, unitRemovals: [],
+            expectedRevision: expectedRevision)
+    }
+
+    @discardableResult
+    public func editRemovingUnits(
+        intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
+        now: Date, occurredAt: Date?, timeZoneIdentifier: String?, unitRemovals: [String], expectedRevision: Int
+    ) throws -> IntakeRevision {
+        try writeEdit(
+            intakeID: intakeID, components: components, product: product, changeReason: changeReason, now: now,
+            occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier, unitRemovals: unitRemovals,
+            expectedRevision: expectedRevision)
+    }
+
+    /// The one edit write. With an expected revision, the entry's current revision is checked inside the same
+    /// commit that writes the next one, so nothing can land between the check and the write.
+    private func writeEdit(
+        intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
+        now: Date, occurredAt: Date?, timeZoneIdentifier: String?, unitRemovals: [String], expectedRevision: Int?
+    ) throws -> IntakeRevision {
         guard !components.isEmpty else { throw JournalError.noComponents(intakeID) }
         let json = try Self.encode(components)
         return try commit { context in
@@ -1399,6 +1434,9 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             }
             guard record.lifecycleRaw == IntakeLifecycle.active.rawValue else {
                 throw JournalError.intakeDeleted(intakeID)
+            }
+            if let expectedRevision, record.currentRevision != expectedRevision {
+                throw JournalError.staleRevision(intakeID)
             }
             let number = record.currentRevision + 1
             record.currentRevision = number
@@ -1472,10 +1510,11 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
         }
     }
 
-    /// Called after a delete commits, with the intake it removed. The app uses it for every delete, whatever
-    /// screen made it, to start delivery once the Undo window ends and to drop an older Undo offer.
-    public func setOnDeleteCommitted(_ handler: @escaping @Sendable (String, UInt64) -> Void) {
-        lock.withLock { deleteCommittedHandler = handler }
+    /// Adds a handler called after a delete commits, with the intake it removed and the delete's place in the
+    /// commit order. The app uses it for every delete, whatever screen made it, to start delivery once the Undo
+    /// window ends and to drop an older Undo offer. Handlers add up: a second caller does not replace the first.
+    public func addOnDeleteCommitted(_ handler: @escaping @Sendable (String, UInt64) -> Void) {
+        lock.withLock { deleteCommittedHandlers.append(handler) }
     }
 
     public var deleteSequence: UInt64 {
@@ -1507,8 +1546,8 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             staged = deleteCounter + 1
         }
         let sequence = staged
-        let handler = lock.withLock { deleteCommittedHandler }
-        handler?(intakeID, sequence)
+        let handlers = lock.withLock { deleteCommittedHandlers }
+        for handler in handlers { handler(intakeID, sequence) }
         return sequence
     }
 
@@ -1847,7 +1886,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
 
     /// Deletes the store file with its write-ahead and shared-memory files, then opens an empty store at the same
     /// place. The write-ahead file is always checkpointed into the store file first; only the removal is conditional.
-    /// On success the checkpoint leaves the store file alone holding the erased state. If the checkpoint fails, nothing
+    /// On success the checkpoint leaves the main store file holding the erased state. If the checkpoint fails, nothing
     /// is removed, the deleted rows may still be in the store files (main or write-ahead) until Retry removes them, and
     /// the error is StoreFileError.checkpointFailed. The erase screen names the
     /// journal as still on the phone; a retry removes the files. The companion files go before the main file: once the checkpoint has emptied

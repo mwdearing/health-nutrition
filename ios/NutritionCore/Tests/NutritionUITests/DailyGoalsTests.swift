@@ -769,7 +769,7 @@ final class DailyGoalsTests: XCTestCase {
     /// person rather than about the store.
     func testAnUnreadableGoalStoreStillShowsTheDaysTotalsAndSaysSo() throws {
         let journal = try makeJournalStore()
-        let refusing = InMemoryGoalStore(failNextRead: true)
+        let refusing = InMemoryGoalStore(failReads: true)
         try logWater(journal, milliliters: 300)
 
         let model = TodayViewModel(store: journal, goals: refusing, lookup: SnapshotOnlyFacts())
@@ -1172,7 +1172,7 @@ final class DailyGoalsTests: XCTestCase {
         let goals = try makeGoalStore()
         try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
         try logOats(journal, grams: 400)
-        let connections = ConnectionsPrivacyViewModel(
+        let connections = ConnectionsPrivacyViewModel(goals: goals,
             store: journal, erasers: [journal, goals])
         XCTAssertTrue(connections.canEraseAll)
 
@@ -1383,7 +1383,7 @@ extension DailyGoalsTests {
         model.load(now: when)
 
         XCTAssertTrue(model.calorieRemaining.isPartial)
-        XCTAssertEqual(model.calorieRemaining.partialNote, "1 entry has no energy value")
+        XCTAssertEqual(model.calorieRemaining.partialNote, "1 entry has no calories")
     }
 
     /// No energy goal: there is no Remaining, but Food is still shown.

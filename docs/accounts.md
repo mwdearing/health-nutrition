@@ -17,7 +17,7 @@ Signing in sends the account email address and identifier to the project server.
 
 ## Barcode lookup
 
-Open Food Facts is asked first when you submit the barcode field, tap Look up, or accept a barcode from the camera scanner. The camera scan sends nothing while the camera is open; after a code is accepted, it starts the lookup. If Open Food Facts has no product and you are signed in, the app also asks the authenticated community catalog. Turning Share labels off does not disable this read lookup. A signed-out person does not get the community fallback.
+The authenticated community catalog is asked when you submit the barcode field, tap Look up, or accept a barcode from the camera scanner, and only when you are signed in. The camera scan sends nothing while the camera is open; after a code is accepted, it starts the lookup. Open Food Facts is not asked about a barcode. Turning Share labels off does not disable this read lookup. A signed-out person does not get the community fallback.
 
 ## Searching and sharing a product you create
 
@@ -39,4 +39,4 @@ Entries, product snapshots, goals, recipes, favorites, reminders and export file
 
 - **Sign out** asks the server to end the session and clears the session stored on this phone. Local journal data stays on the phone.
 - **Delete account** removes the server account, its profile and its submissions. An independently approved owner-reviewed catalog snapshot may remain without contributor identity. Local journal data and other device settings are kept.
-- **Erase all data** removes local journal rows, favorites, recipes, goals, display preferences, reminders, the session in this phone's Keychain and export files the app can still reach. It does not call server sign-out, delete the account or retract shared submissions. Copies already shared outside the app remain with those destinations. Row deletion is not a promise of forensic erasure.
+- **Erase all data** removes local journal rows, favorites, recipes, goals, the weight plan, display preferences, reminders, the session in this phone's Keychain and export files the app can still reach. It does not call server sign-out, delete the account or retract shared submissions. Copies already shared outside the app remain with those destinations. Row deletion is not a promise of forensic erasure.

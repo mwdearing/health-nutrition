@@ -1,4 +1,5 @@
 import NutritionDomain
+import NutritionJournal
 import SwiftUI
 
 /// The guided goal setup, one screen per step, shown as a sheet from the Goals screen.
@@ -118,6 +119,22 @@ public struct GoalSetupView: View {
                     model.selectedPaceKilograms = option.kilogramsPerWeek
                 }
             }
+            heading("What is your goal weight?")
+            if model.unitSystem == .usCustomary {
+                measured("Goal weight in pounds", text: $model.goalWeightPoundsText, prompt: "For example, 165", decimal: true)
+            } else {
+                measured("Goal weight in kilograms", text: $model.goalWeightKilogramsText, prompt: "For example, 75", decimal: true)
+            }
+            if let notice = model.goalWeightNotice {
+                Text(notice)
+                    .font(.footnote)
+                    .foregroundStyle(TokenColors.textSecondary)
+            }
+            if let dayText = model.paceGoalDayText {
+                Text(dayText)
+                    .font(.footnote)
+                    .foregroundStyle(TokenColors.textSecondary)
+            }
         }
     }
 
@@ -164,7 +181,68 @@ public struct GoalSetupView: View {
                 Text(GoalSetupViewModel.estimateNotice)
                     .font(.footnote)
                     .foregroundStyle(TokenColors.textSecondary)
+                vitaminsSection
             }
+        }
+    }
+
+    /// The vitamins and minerals choice under the daily targets: the reference values for the person's age
+    /// and sex as they are, or the same values to edit.
+    @ViewBuilder
+    private var vitaminsSection: some View {
+        // With every covered vitamin and mineral already set, there is nothing to offer, so nothing shows.
+        if model.vitaminShowsNoGroupNotice || model.vitaminPrefillNotice != nil {
+            heading("Vitamins and minerals")
+        }
+        if let notice = model.vitaminPrefillNotice {
+            choice(GoalSetupViewModel.vitaminRecommendedTitle, selected: model.vitaminChoice == .recommended) {
+                model.chooseVitamins(.recommended)
+            }
+            choice(GoalSetupViewModel.vitaminOwnTitle, selected: model.vitaminChoice == .own) {
+                model.chooseVitamins(.own)
+            }
+            if model.vitaminChoice != nil {
+                Text(notice)
+                    .font(.footnote)
+                    .foregroundStyle(TokenColors.textSecondary)
+                ForEach(model.vitaminPrefill, id: \.nutrient) { goal in
+                    vitaminRow(goal)
+                }
+            }
+            Text(GoalSetupViewModel.vitaminSourceNotice)
+                .font(.footnote)
+                .foregroundStyle(TokenColors.textSecondary)
+        } else if model.vitaminShowsNoGroupNotice {
+            Text(GoalSetupViewModel.vitaminNoGroupNotice)
+                .font(.footnote)
+                .foregroundStyle(TokenColors.textSecondary)
+        }
+    }
+
+    /// One vitamin or mineral: a field to edit under "Set my own", the value as it will be saved otherwise.
+    @ViewBuilder
+    private func vitaminRow(_ goal: NutrientGoal) -> some View {
+        let label = "\(NutrientNames.displayName(for: goal.nutrient)) (\(goal.unit.symbol))"
+        if model.vitaminChoice == .own {
+            LabeledField(label, error: model.fieldErrors[goal.nutrient], spokenTitle: true) { focus in
+                TextField(text: vitaminBinding(goal.nutrient), prompt: Text(label)) {
+                    Text(label)
+                }
+                .labelsHidden()
+                .font(.body)
+                .foregroundStyle(TokenColors.textPrimary)
+                .decimalKeyboard()
+                .focused(focus)
+            }
+        } else {
+            HStack {
+                Text(label)
+                Spacer(minLength: DesignSpacing.s)
+                Text(DecimalFormatting.text(goal.target))
+            }
+            .font(.body)
+            .foregroundStyle(TokenColors.textPrimary)
+            .accessibilityElement(children: .combine)
         }
     }
 
@@ -210,6 +288,12 @@ public struct GoalSetupView: View {
             ResultRow(key: "fat", label: "Fat (g)"),
             ResultRow(key: "fiber", label: "Fiber (g)"),
         ]
+    }
+
+    private func vitaminBinding(_ key: String) -> Binding<String> {
+        Binding(
+            get: { model.vitaminDrafts[key] ?? "" },
+            set: { model.vitaminDrafts[key] = $0 })
     }
 
     private func draftBinding(_ key: String) -> Binding<String> {

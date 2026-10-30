@@ -3,10 +3,9 @@ import NutritionDomain
 import NutritionProviders
 import NutritionUI
 
-/// Adapts the Open Food Facts client to the lookup protocol the intake UI depends on. The UI never
-/// sees the client, the outcome type or the provider name; this file owns that knowledge, including
-/// the attribution the license requires and the serving definition.
-struct OpenFoodFactsProductLookup: BarcodeProductLookup {
+/// Open Food Facts name search. Barcodes do not use this source: barcodes resolve through the community
+/// catalog only, so this adapter no longer answers a barcode lookup.
+struct OpenFoodFactsProductLookup {
     /// Stored with an entry as its catalog origin, so a later reader can tell which source a set of
     /// values came from.
     static let catalogOrigin = "open-food-facts"
@@ -15,27 +14,6 @@ struct OpenFoodFactsProductLookup: BarcodeProductLookup {
 
     init(client: OpenFoodFactsClient) {
         self.client = client
-    }
-
-    func lookUp(barcode: String) async -> BarcodeLookupResult {
-        switch await client.lookup(barcode: barcode) {
-        case .found(let product):
-            return .found(Self.product(from: product))
-        case .notFound:
-            return .notFound
-        case .rateLimited(let retryAfter):
-            // Round up: retrying a second early would be rate-limited straight away, and a wait
-            // that is never shorter than the source asked for cannot be wrong.
-            return .rateLimited(retryAfterSeconds: retryAfter.map { max(1, Int(min($0, 86_400).rounded(.up))) })
-        case .invalidBarcode:
-            // The form checks the barcode before calling, so this only means the two checks
-            // disagree; report it rather than looking up nothing.
-            return .failed("invalid barcode")
-        case .transport(let reason):
-            return .failed(reason)
-        case .offline:
-            return .offline
-        }
     }
 
     /// Name search reuses the same mapping as a barcode hit, so a picked result is filled exactly like a scan.

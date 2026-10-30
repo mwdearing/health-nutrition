@@ -192,6 +192,9 @@ public final class GoalsViewModel: ObservableObject {
     public static let removeFailedMessage = "Could not remove that daily goal."
 
     private let store: GoalStore
+    /// The same store as a weight plan store, or nil when the store keeps no plan. Goal setup writes the
+    /// plan through this, after the targets it saves with it.
+    var weightPlanStore: (any WeightPlanStore)? { store as? WeightPlanStore }
     /// The journal, read only to learn which compound keys its snapshots carry, so the screen can
     /// offer a goal for a nutrient a captured label states but the fixed list does not name.
     private let journal: (any JournalStore)?
@@ -251,6 +254,10 @@ public final class GoalsViewModel: ObservableObject {
     public static let activityGoalFooter =
         "Raises today's calorie goal by the active energy Apple Health reports so far. Needs Show steps, "
         + "activity and weight on Today. Your saved goal does not change."
+
+    /// The newest height Apple Health reports, in centimeters, or nil when none was read. Goal setup uses it
+    /// only to fill an empty height field; it is never saved.
+    public var latestHeightCentimeters: @MainActor () -> Decimal? = { nil }
 
     /// The unit system the screen shows amounts in, read from the same preferences as the rest of the app.
     public var unitSystem: UnitSystem { preferences.unitSystem }

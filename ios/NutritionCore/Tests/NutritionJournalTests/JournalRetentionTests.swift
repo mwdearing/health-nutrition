@@ -52,7 +52,7 @@ final class JournalRetentionTests: XCTestCase {
     private func exportData(_ store: SwiftDataJournalStore) throws -> Data {
         try JournalExporter.encode(
             try JournalExporter.makeExport(
-                store: store, favorites: nil, appVersion: "test", exportedAt: when))
+                store: store, favorites: nil, goals: InMemoryGoalStore(), appVersion: "test", exportedAt: when))
     }
 
     func testRetentionPrunesAcknowledgedOutboxRowsOlderThanThirtyDays() throws {
