@@ -10,7 +10,7 @@ final class MedicationRecord {
     var id: String
     /// The name as the person typed it.
     var name: String
-    /// The unit's raw value, `mg` or `mcg`.
+    /// The unit's raw value, `mg`, `mcg`, `mL` or `units`.
     var unitText: String
     /// The schedule in days, or nil when none is set.
     var scheduleDays: Int?
@@ -40,14 +40,16 @@ final class MedicationDoseRecord {
     var timeZoneIdentifier: String
     /// The amount as exact decimal text, POSIX.
     var amountText: String
-    /// The unit's raw value, the medication's unit when the dose was saved.
+    /// The unit's raw value, `mg`, `mcg`, `mL` or `units`: the medication's unit when the dose was saved.
     var unitText: String
+    /// The optional site the person typed for the dose.
+    var site: String?
     /// The optional note the person typed.
     var note: String?
 
     init(
         id: String, medicationID: String, takenAt: Date, timeZoneIdentifier: String, amountText: String,
-        unitText: String, note: String?
+        unitText: String, site: String?, note: String?
     ) {
         self.id = id
         self.medicationID = medicationID
@@ -55,11 +57,14 @@ final class MedicationDoseRecord {
         self.timeZoneIdentifier = timeZoneIdentifier
         self.amountText = amountText
         self.unitText = unitText
+        self.site = site
         self.note = note
     }
 }
 
 /// The first and only schema of the medication store file. Its two models are the medication and dose rows above.
+/// No build has opened this store file before the site was added (the store is not opened by any build until the
+/// screens slice), so the version 1.0.0 shape is amended in place and there is no migration.
 enum MedicationSchemaV1: VersionedSchema {
     static var versionIdentifier: Schema.Version { Schema.Version(1, 0, 0) }
     static var models: [any PersistentModel.Type] { [MedicationRecord.self, MedicationDoseRecord.self] }
@@ -74,29 +79,53 @@ enum MedicationMigrationPlan: SchemaMigrationPlan {
 /// Medications and doses in their own store file, `medications.store`, opened beside the journal and the goals.
 /// Nothing here is shared or synced: the medication log is the person's own record.
 ///
-/// Erasing deletes every row one at a time in one save, as the goal store does. A batch delete runs against the
-/// persistent store immediately, so a save that then fails could not roll it back and would leave the file half-erased.
+/// Erasing deletes every row one at a time in one save, then replaces the store file with an empty one, with its -wal
+/// and -shm companions, as the goal store and the journal store do. A batch delete runs against the persistent store
+/// immediately, so a save that then fails could not roll it back. The store stays open afterwards.
 public final class SwiftDataMedicationStore: MedicationStore, JournalErasing, @unchecked Sendable {
     private let lock = NSLock()
     /// Held across each whole write, so a save and an erase cannot read the same rows at once.
     private let writeLock = NSLock()
     private var container: ModelContainer?
 
+    private let storeURL: URL
+    private let fileOperations: StoreFileOperations
+    /// True after an erase whose reopen failed; the next call tries the reopen again.
+    private var reopenPending = false
+
     /// Opens or creates the store file at `url`. Throws when the file cannot be opened or its schema cannot be migrated.
-    public init(url: URL) throws {
+    public convenience init(url: URL) throws {
+        try self.init(url: url, fileOperations: .systemOperations(opening: Self.makeContainer))
+    }
+
+    /// The store at `url`, with the file steps an erase takes, so a test can make each one fail.
+    init(url: URL, fileOperations: StoreFileOperations) throws {
+        storeURL = url
+        self.fileOperations = fileOperations
+        container = try fileOperations.openContainer(url)
+    }
+
+    static func makeContainer(url: URL) throws -> ModelContainer {
         let schema = Schema(versionedSchema: MedicationSchemaV1.self)
         let configuration = ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
-        container = try ModelContainer(
+        return try ModelContainer(
             for: schema, migrationPlan: MedicationMigrationPlan.self, configurations: configuration)
     }
 
     /// Releases the file. Every later call throws `MedicationStoreError.closed`, and a new instance can reopen the file.
     public func close() {
-        lock.withLock { container = nil }
+        lock.withLock {
+            container = nil
+            reopenPending = false
+        }
     }
 
     private func openContainer() throws -> ModelContainer {
         try lock.withLock {
+            if container == nil, reopenPending {
+                container = try fileOperations.openContainer(storeURL)
+                reopenPending = false
+            }
             guard let container else { throw MedicationStoreError.closed }
             return container
         }
@@ -190,7 +219,7 @@ public final class SwiftDataMedicationStore: MedicationStore, JournalErasing, @u
         context.insert(MedicationDoseRecord(
             id: key, medicationID: medicationKey, takenAt: dose.takenAt,
             timeZoneIdentifier: dose.timeZoneIdentifier, amountText: DecimalText.encode(dose.amount),
-            unitText: dose.unit.rawValue, note: dose.note))
+            unitText: dose.unit.rawValue, site: dose.site, note: dose.note))
         try context.save()
     }
 
@@ -208,16 +237,32 @@ public final class SwiftDataMedicationStore: MedicationStore, JournalErasing, @u
         try context.save()
     }
 
-    /// Removes every medication and every dose. The rows are deleted one at a time in one save, so the erase is
-    /// all or nothing, and the store stays open afterwards.
+    /// Removes every medication and every dose. The rows are deleted one at a time in one save, and then the store file
+    /// is replaced with an empty one. The store stays open afterwards.
     public func eraseAll() throws {
-        let container = try openContainer()
         writeLock.lock()
         defer { writeLock.unlock() }
-        let context = ModelContext(container)
-        for row in try context.fetch(FetchDescriptor<MedicationDoseRecord>()) { context.delete(row) }
-        for row in try context.fetch(FetchDescriptor<MedicationRecord>()) { context.delete(row) }
-        try context.save()
+        do {
+            let context = ModelContext(try openContainer())
+            for row in try context.fetch(FetchDescriptor<MedicationDoseRecord>()) { context.delete(row) }
+            for row in try context.fetch(FetchDescriptor<MedicationRecord>()) { context.delete(row) }
+            try context.save()
+        }
+        // The rows are gone from every read, but the file keeps their bytes until SQLite reuses the pages, so the file
+        // is replaced too, as the goal store's erase does.
+        try replaceFiles()
+    }
+
+    /// Replaces the store file with an empty one. The caller holds writeLock, so no write lands between the row delete
+    /// and the file removal. A failed step is thrown; a failed reopen is retried by the next call.
+    private func replaceFiles() throws {
+        try lock.withLock {
+            container = nil
+            let result = fileOperations.replaceStoreFiles(at: storeURL)
+            container = result.container
+            reopenPending = result.container == nil
+            if let error = result.error { throw error }
+        }
     }
 
     /// Reads one medication row back. Any field that cannot be read, or a medication that fails `validate()`, is a
@@ -250,7 +295,7 @@ public final class SwiftDataMedicationStore: MedicationStore, JournalErasing, @u
         }
         let dose = MedicationDose(
             id: id, medicationID: medicationID, takenAt: row.takenAt,
-            timeZoneIdentifier: row.timeZoneIdentifier, amount: amount, unit: unit, note: row.note)
+            timeZoneIdentifier: row.timeZoneIdentifier, amount: amount, unit: unit, site: row.site, note: row.note)
         do {
             try dose.validate()
         } catch {
@@ -282,7 +327,8 @@ public final class SwiftDataMedicationStore: MedicationStore, JournalErasing, @u
     /// `saveDose` validates before it writes, so the store's own API cannot produce such a row. A test of the read path
     /// plants one through this hook, as the goal store's hooks do.
     func writeCorruptDoseForTesting(
-        id: UUID, amountText: String? = nil, unitText: String? = nil, timeZoneIdentifier: String? = nil
+        id: UUID, amountText: String? = nil, unitText: String? = nil, timeZoneIdentifier: String? = nil,
+        site: String? = nil
     ) throws {
         let context = ModelContext(try openContainer())
         let key = id.uuidString
@@ -294,6 +340,7 @@ public final class SwiftDataMedicationStore: MedicationStore, JournalErasing, @u
         if let amountText { row.amountText = amountText }
         if let unitText { row.unitText = unitText }
         if let timeZoneIdentifier { row.timeZoneIdentifier = timeZoneIdentifier }
+        if let site { row.site = site }
         try context.save()
     }
 }
