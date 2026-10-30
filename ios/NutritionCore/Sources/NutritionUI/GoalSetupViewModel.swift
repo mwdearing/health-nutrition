@@ -165,9 +165,11 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
             weightPoundsText = current?.text ?? weightKilogramsText
             goalWeightPoundsText = goal?.text ?? goalWeightKilogramsText
             if let height {
+                carriedHeight = nil
                 heightFeetText = height.feetText
                 heightInchesText = height.inchesText
-            } else if let carried = carriedHeight, carried.metric == heightCentimetersText {
+            } else if let carried = carriedHeight, carried.metric == heightCentimetersText,
+                      carried.feet == heightFeetText, carried.inches == heightInchesText {
                 (heightFeetText, heightInchesText) = (carried.feet, carried.inches)
             } else {
                 carriedHeight = (metric: heightCentimetersText, feet: heightCentimetersText, inches: "")
@@ -177,6 +179,7 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
             weightKilogramsText = current?.text ?? weightPoundsText
             goalWeightKilogramsText = goal?.text ?? goalWeightPoundsText
             if let height {
+                carriedHeight = nil
                 heightCentimetersText = height.centimetersText
             } else if let carried = carriedHeight, carried.feet == heightFeetText, carried.inches == heightInchesText {
                 heightCentimetersText = carried.metric
@@ -577,6 +580,7 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
     /// person typed outlives the sheet.
     public func clearAnswers() {
         step = .aim
+        carriedHeight = nil
         aim = nil
         sex = nil
         ageText = ""

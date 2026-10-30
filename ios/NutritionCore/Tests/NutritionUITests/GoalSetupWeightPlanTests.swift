@@ -524,6 +524,30 @@ final class GoalSetupWeightPlanTests: XCTestCase {
         XCTAssertEqual(model.heightInchesText, "1x")
     }
 
+    func testAnOldCarriedHeightIsNotReusedForNewText() {
+        let prefs = InMemoryDisplayPreferences(unitSystem: .metric)
+        let goals = GoalsViewModel(store: GoalSetupPlanStore(), preferences: prefs)
+        goals.load()
+        let model = GoalSetupViewModel(goals: goals)
+        model.heightCentimetersText = "18o"
+        prefs.setUnitSystem(.usCustomary)
+        model.unitSystemDidChange()
+        model.clearAnswers()
+        model.heightFeetText = "18o"
+        prefs.setUnitSystem(.metric)
+        model.unitSystemDidChange()
+        XCTAssertEqual(model.heightCentimetersText, "18o ft")
+
+        model.heightCentimetersText = "152"
+        prefs.setUnitSystem(.usCustomary)
+        model.unitSystemDidChange()
+        model.heightFeetText = "18o"
+        model.heightInchesText = ""
+        prefs.setUnitSystem(.metric)
+        model.unitSystemDidChange()
+        XCTAssertEqual(model.heightCentimetersText, "18o ft")
+    }
+
     func testAUnitSwitchAtResultsKeepsTheNoticeOnAnEditedTarget() {
         let prefs = InMemoryDisplayPreferences(unitSystem: .metric)
         let goals = GoalsViewModel(store: GoalSetupPlanStore(), preferences: prefs)
