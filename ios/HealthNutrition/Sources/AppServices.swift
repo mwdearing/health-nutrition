@@ -227,9 +227,13 @@ final class AppServices {
         appleHealth = AppleHealthConnectionViewModel(connector: healthKitDeliveryStatus)
         firstDayChecklist = FirstDayChecklistModel(
             store: journalStore, goals: goalStore, preferences: displayPreferences, health: appleHealth)
+        // One reader for Today's activity card and the Diary's day headers, so both ask Health the same way.
+        let healthReader = HealthKitReader()
         bodyActivity = BodyActivityViewModel(
-            reader: HealthKitReader(), unitSystem: { [displayPreferences] in displayPreferences.unitSystem },
+            reader: healthReader, unitSystem: { [displayPreferences] in displayPreferences.unitSystem },
             weightPlan: { [goalStore] in try? goalStore.weightPlan() })
+        // Each Diary day header adds what other apps logged to Apple Health that day, read as the day comes on screen.
+        journal.healthDayReader = { start, end in await healthReader.outsideIntake(from: start, to: end) }
         goals.latestHeightCentimeters = { [bodyActivity] in bodyActivity.readings.latestHeightCm }
         // Set after every stored property, so the Library can link to the supplement list.
         library.supplementStack = supplementStack

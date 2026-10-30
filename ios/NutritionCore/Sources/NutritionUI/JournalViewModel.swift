@@ -130,6 +130,34 @@ public final class JournalViewModel: ObservableObject {
     /// What other apps logged to Apple Health on each day, by the day's yyyy-MM-dd key. The app sets it after reading
     /// Health for the days on screen; a day without an entry here reads journal-only, as before.
     public var outsideIntakeByDay: [String: HealthIntakeTotals.Outside] = [:]
+    /// Reads what other apps logged to Apple Health between two instants. The app sets it; nil keeps the Diary
+    /// journal-only.
+    public var healthDayReader: (@MainActor (Date, Date) async -> HealthIntakeTotals.Outside)?
+
+    /// Reads Apple Health for one Diary day and adds it to that day's header. A past day is read once and kept;
+    /// today is read again each time, because more can still be logged elsewhere.
+    public func loadHealthTotals(forDayKey key: String, now: Date) async {
+        guard let reader = healthDayReader else { return }
+        let todayKey = Self.dayKey(now, zone: dayZone)
+        if key != todayKey, outsideIntakeByDay[key] != nil { return }
+        guard let day = Self.dayInterval(forKey: key, zone: dayZone) else { return }
+        let outside = await reader(day.start, key == todayKey ? now : day.end)
+        guard outside != outsideIntakeByDay[key] else { return }
+        outsideIntakeByDay[key] = outside
+        load(now: now)
+    }
+
+    /// The instants a yyyy-MM-dd day starts and ends in `zone`, or nil for a key that names no day.
+    static func dayInterval(forKey key: String, zone: TimeZone) -> (start: Date, end: Date)? {
+        let parts = key.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3 else { return nil }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = zone
+        guard let start = calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2])),
+              let end = calendar.date(byAdding: .day, value: 1, to: start)
+        else { return nil }
+        return (start, end)
+    }
     @Published public private(set) var sections: [JournalDaySection] = [] {
         didSet { arrowSectionIDs = diarySections.map(\.id) }
     }

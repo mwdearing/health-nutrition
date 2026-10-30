@@ -61,4 +61,36 @@ final class DiaryHealthTotalsTests: XCTestCase {
         model.load(now: now)
         XCTAssertNil(model.sections.first { $0.id == key }?.energyText)
     }
+
+    /// The Diary reads Health for a day as it comes on screen and adds it to that day's header.
+    func testLoadingHealthForADayAddsItToThatDaysHeader() async throws {
+        let (model, key) = try waterOnlyDay()
+        var asked: [(Date, Date)] = []
+        model.healthDayReader = { start, end in
+            asked.append((start, end))
+            return .read(values: ["energy": 620], readKeys: ["energy"])
+        }
+        model.load(now: now)
+        await model.loadHealthTotals(forDayKey: key, now: now)
+        XCTAssertEqual(model.sections.first { $0.id == key }?.energyText, "620 Calories")
+        let day = try XCTUnwrap(JournalViewModel.dayInterval(forKey: key, zone: TimeZone(identifier: "UTC")!))
+        XCTAssertEqual(asked.first?.0, day.start, "the read starts at the day's start in the Diary's zone")
+    }
+
+    /// A past day is read once and kept; today is read again, because more can still be logged elsewhere.
+    func testAPastDayIsReadOnceAndTodayIsReadAgain() async throws {
+        let (model, key) = try waterOnlyDay()
+        var reads = 0
+        model.healthDayReader = { _, _ in
+            reads += 1
+            return .read(values: [:], readKeys: ["energy"])
+        }
+        let tomorrow = now.addingTimeInterval(86_400)
+        await model.loadHealthTotals(forDayKey: key, now: tomorrow)
+        await model.loadHealthTotals(forDayKey: key, now: tomorrow)
+        XCTAssertEqual(reads, 1, "a past day is read once")
+        await model.loadHealthTotals(forDayKey: key, now: now)
+        await model.loadHealthTotals(forDayKey: key, now: now)
+        XCTAssertEqual(reads, 3, "today is read each time")
+    }
 }
