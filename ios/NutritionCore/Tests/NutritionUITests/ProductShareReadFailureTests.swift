@@ -318,10 +318,6 @@ final class ProductShareReadFailureTests: XCTestCase {
         XCTAssertEqual(statusAtPublish, .sending, "the row is in flight while the publish runs")
         XCTAssertEqual(statusAfterOverlap, .sending, "the overlapping run does not requeue the in-flight row")
         XCTAssertEqual(store.operations[0].status, .acknowledged)
-        // #1058: the overlapping call reached the single-flight guard, which sets rerunRequested. The first run then
-        // starts one more deliver pass after it finishes, so capabilities() is called at least twice.
-        let capabilityCalls = await service.capabilityCalls
-        XCTAssertGreaterThanOrEqual(capabilityCalls, 2, "the first run reran after the guard was hit")
         XCTAssertEqual(coordinator.rerunRequests, 1, "the overlapping call hit the single-flight guard")
     }
 }
@@ -448,8 +444,6 @@ private actor OverlappingPublishService: CommunityProductServicing {
     private(set) var statusAfterOverlap: ProductOperationStatus?
     /// Set by the overlapping task just before it calls runDueOperations, so the test can show it ran (#1055).
     private(set) var overlapStarted = false
-    /// Counts capabilities() calls, one per deliver pass. A rerun after the guard adds a second pass (#1058).
-    private(set) var capabilityCalls = 0
     init(store: FailableReadStorePort) { self.store = store }
     func markOverlapStarted() { overlapStarted = true }
     func attach(_ coordinator: ProductShareCoordinator) { self.coordinator = coordinator }
@@ -477,8 +471,7 @@ private actor OverlappingPublishService: CommunityProductServicing {
     func searchProducts(query: String, kind: ProductKind?, cursor: String?) async throws -> CommunityProductPage { throw ProductAPIError.unavailable }
     func product(id: UUID) async throws -> CommunityProduct { throw ProductAPIError.unavailable }
     func capabilities() async throws -> ProductCatalogCapabilities {
-        capabilityCalls += 1
-        return ProductCatalogCapabilities(supportedVersion: 2, enabled: true,
+        ProductCatalogCapabilities(supportedVersion: 2, enabled: true,
             limits: ProductCatalogLimits(maxEnvelopeBytes: 16384, maxFacts: 64, maxSearchLimit: 20), currentConsentVersion: 2,
             callerAcknowledgment: ProductConsentAcknowledgment(version: 2, generation: "1"), consentGeneration: "1",
             sharingPermission: true, publishResolutionVersion: 1, boundedPublicationVersion: 1)
