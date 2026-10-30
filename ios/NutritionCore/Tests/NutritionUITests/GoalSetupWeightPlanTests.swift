@@ -404,6 +404,62 @@ final class GoalSetupWeightPlanTests: XCTestCase {
             WeightPlan(aim: .lose, goalKilograms: kg("74.84274105"), weeklyPaceKilograms: model.paceOptions[1].kilogramsPerWeek))
     }
 
+    func testAUnitSwitchAtResultsRefreshesTheTargetsForTheNewPace() throws {
+        let prefs = InMemoryDisplayPreferences(unitSystem: .metric)
+        let store = GoalSetupPlanStore()
+        let goals = GoalsViewModel(store: store, preferences: prefs)
+        goals.load()
+        let model = GoalSetupViewModel(goals: goals)
+        answer(model, aim: .lose)
+        walk(model, to: .pace)
+        model.selectedPaceKilograms = model.paceOptions[1].kilogramsPerWeek
+        model.goalWeightKilogramsText = "75"
+        walk(model, to: .results)
+        let before = model.draftTargets
+
+        prefs.setUnitSystem(.usCustomary)
+        model.unitSystemDidChange()
+
+        // 0.5 kg a week becomes the nearest pound option, 1 lb a week, 0.45359237 kg.
+        let pace = kg("0.45359237")
+        XCTAssertEqual(model.selectedPaceKilograms, pace)
+        // A second model walked to the results with the same answers and the same pace.
+        let fresh = makeModel(store: GoalSetupPlanStore())
+        answer(fresh, aim: .lose)
+        walk(fresh, to: .pace)
+        fresh.selectedPaceKilograms = pace
+        fresh.goalWeightKilogramsText = "75"
+        walk(fresh, to: .results)
+
+        XCTAssertNotEqual(before, fresh.draftTargets)
+        XCTAssertEqual(model.draftTargets, fresh.draftTargets)
+        XCTAssertEqual(model.adjustmentNote, fresh.adjustmentNote)
+
+        XCTAssertTrue(model.save())
+
+        XCTAssertEqual(try store.weightPlan(), WeightPlan(aim: .lose, goalKilograms: 75, weeklyPaceKilograms: pace))
+        XCTAssertEqual(try store.goal(for: "energy")?.target, kg(fresh.draftTargets["energy"]!))
+        XCTAssertEqual(try store.goal(for: "protein")?.target, kg(fresh.draftTargets["protein"]!))
+    }
+
+    func testAUnitSwitchAtResultsKeepsATargetThePersonEdited() {
+        let prefs = InMemoryDisplayPreferences(unitSystem: .metric)
+        let goals = GoalsViewModel(store: GoalSetupPlanStore(), preferences: prefs)
+        goals.load()
+        let model = GoalSetupViewModel(goals: goals)
+        answer(model, aim: .lose)
+        walk(model, to: .pace)
+        model.selectedPaceKilograms = model.paceOptions[1].kilogramsPerWeek
+        model.goalWeightKilogramsText = "75"
+        walk(model, to: .results)
+        model.draftTargets["energy"] = "2100"
+
+        prefs.setUnitSystem(.usCustomary)
+        model.unitSystemDidChange()
+
+        XCTAssertEqual(model.draftTargets["energy"], "2100")
+    }
+
     func testThePrivacyNoticeSaysWhatIsSaved() {
         XCTAssertEqual(
             GoalSetupViewModel.privacyNotice,
