@@ -41,6 +41,8 @@ final class AppleHealthConnectionTests: XCTestCase {
             (access(0, 0, 15), true),
             (access(15, 0, 0), false),
             (access(0, 15, 0), false),
+            (access(3, 12, 0), false),
+            (.unavailable, false),
         ]
         for (access, expected) in opens {
             XCTAssertEqual(AppleHealthConnectionViewModel(connector: FakeConnector(access)).opensHealthSettings, expected)
