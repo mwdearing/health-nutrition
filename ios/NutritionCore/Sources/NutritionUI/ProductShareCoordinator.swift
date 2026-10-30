@@ -48,6 +48,8 @@ public enum ProductShareStatus: String, Sendable {
     private var generation = UUID()
     private var running: Task<Void, Never>?
     private var rerunRequested = false
+    /// How many calls found a run in flight and asked for a rerun instead of starting their own (#1058).
+    private(set) var rerunRequests = 0
     private var lifecycleBlocked = false
     private var lifecycleOwnerID: UUID?
 
@@ -182,7 +184,7 @@ public enum ProductShareStatus: String, Sendable {
     }
 
     public func runDueOperations(now: Date) async {
-        if let running { rerunRequested = true; await running.value; return }
+        if let running { rerunRequested = true; rerunRequests += 1; await running.value; return }
         // A pause from a failed read is retried here too, so delivery resumes once reads work without waiting
         // for a screen to read first (#775).
         if operationsReadFailed, let context = accountContext { _ = operations(ownerID: context.ownerID) }

@@ -323,6 +323,7 @@ final class ProductShareReadFailureTests: XCTestCase {
         // count is 2 when the guard was hit and 1 when it was not.
         let capabilityCalls = await service.capabilityCalls
         XCTAssertEqual(capabilityCalls, 2, "the overlapping run hit the single-flight guard, so the first run reran once")
+        XCTAssertEqual(coordinator.rerunRequests, 1, "the overlapping call hit the single-flight guard")
     }
 }
 
