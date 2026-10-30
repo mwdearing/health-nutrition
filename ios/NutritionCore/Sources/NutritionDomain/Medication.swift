@@ -13,7 +13,7 @@ public enum MedicationUnit: String, CaseIterable, Sendable, Equatable {
 public enum MedicationError: Error, Sendable, Equatable {
     /// The name is empty or only whitespace.
     case nameEmpty
-    /// The name starts or ends with a space or a line break.
+    /// The name starts or ends with whitespace (a space, a tab or a line break).
     case nameNotTrimmed
     /// The name holds a line break inside it.
     case nameHasLineBreak
@@ -69,7 +69,7 @@ public struct Medication: Sendable, Equatable {
     }
 
     /// Checks the name, then the schedule when there is one, in this order: the name must not be blank,
-    /// must not start or end with a space, must not hold a line break, and must fit the length limit.
+    /// must not start or end with whitespace, must not hold a line break, and must fit the length limit.
     /// A schedule must fall in `scheduleDayRange`.
     public func validate() throws {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)

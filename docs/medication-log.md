@@ -10,8 +10,9 @@ dose, and it holds no list of drugs, dose ranges, titration steps or advice.
 
 - **Units.** A medication is measured in mg or mcg only. A dose uses the medication's current
   unit.
-- **Name.** A name is required, has no space at either end, has no line break, and is at most 60
-  characters. Names are unique ignoring case across all medications, archived ones included.
+- **Name.** A name is required, has no whitespace (space, tab or line break) at either end and no
+  line break inside, and is at most 60 characters. Names are unique ignoring case across all
+  medications, archived ones included.
 - **Schedule.** A medication may have no schedule, or a schedule of every 1 to 28 days. An
   archived medication keeps its doses and its schedule, but reports no status until it is unarchived.
 - **Amount.** A dose amount is above 0, at most 1000, and has at most three decimals. Amounts are
