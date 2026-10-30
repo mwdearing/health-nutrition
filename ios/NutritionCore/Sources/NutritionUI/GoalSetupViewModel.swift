@@ -85,11 +85,18 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
     private var filledHeightFromHealth = false
     private let now: () -> Date
     private let calendar: Calendar
+    /// A weight shown after a unit switch: the text in the field and the exact kilograms it stands for.
+    private typealias ConvertedWeight = (text: String, kilograms: Decimal)
+    /// The unit system the two weight fields are in. A switch while the sheet is open converts them.
+    private var weightTextUnitSystem: UnitSystem
+    private var convertedCurrentWeight: ConvertedWeight?
+    private var convertedGoalWeight: ConvertedWeight?
 
     public init(goals: GoalsViewModel, now: @escaping () -> Date = { Date() }, calendar: Calendar = .current) {
         self.goals = goals
         self.now = now
         self.calendar = calendar
+        self.weightTextUnitSystem = goals.unitSystem
         fillHeightFromHealth()
     }
 
@@ -120,6 +127,36 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
 
     /// The unit system the answers are asked in.
     public var unitSystem: UnitSystem { goals.unitSystem }
+
+    /// Moves the typed current and goal weights into the unit system now in force, so a weight typed in one
+    /// unit shows in the other. The sheet calls it when the unit system changes, and `save()` calls it first.
+    /// The text shows one decimal place, as the Body screen shows weights; the exact kilograms are kept with
+    /// it, so a switch back or a save uses the weight the person typed, not the rounded text.
+    public func unitSystemDidChange() {
+        let pounds = unitSystem == .usCustomary
+        guard pounds != (weightTextUnitSystem == .usCustomary) else { return }
+        let wasPounds = !pounds
+        let current = Self.displayed(
+            Self.kilograms(
+                typed: wasPounds ? weightPoundsText : weightKilogramsText, pounds: wasPounds,
+                known: convertedCurrentWeight),
+            pounds: pounds)
+        let goal = Self.displayed(
+            Self.kilograms(
+                typed: wasPounds ? goalWeightPoundsText : goalWeightKilogramsText, pounds: wasPounds,
+                known: convertedGoalWeight),
+            pounds: pounds)
+        if pounds {
+            weightPoundsText = current?.text ?? ""
+            goalWeightPoundsText = goal?.text ?? ""
+        } else {
+            weightKilogramsText = current?.text ?? ""
+            goalWeightKilogramsText = goal?.text ?? ""
+        }
+        convertedCurrentWeight = current
+        convertedGoalWeight = goal
+        weightTextUnitSystem = unitSystem
+    }
 
     /// The steps for the aim chosen so far. Before an aim is chosen, the longest path is shown.
     public var steps: [GoalSetupStep] {
@@ -344,6 +381,7 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
     /// write fails, the goals already changed are put back exactly as they were read.
     @discardableResult
     public func save() -> Bool {
+        unitSystemDidChange()
         guard aim != .justTrack, step == .results, !draftTargets.isEmpty else { return false }
         fieldErrors = [:]
         for key in Self.targetKeys {
@@ -490,6 +528,9 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
         weightPoundsText = ""
         goalWeightKilogramsText = ""
         goalWeightPoundsText = ""
+        convertedCurrentWeight = nil
+        convertedGoalWeight = nil
+        weightTextUnitSystem = unitSystem
         activity = nil
         selectedPaceKilograms = nil
         clearVitaminChoice()
@@ -618,19 +659,30 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
     }
 
     private func weightKilograms() -> Decimal? {
-        if unitSystem == .usCustomary {
-            guard let pounds = AmountParser.parseTyped(weightPoundsText) else { return nil }
-            return pounds * Self.kilogramsPerPound
-        }
-        return AmountParser.parseTyped(weightKilogramsText)
+        let pounds = unitSystem == .usCustomary
+        return Self.kilograms(
+            typed: pounds ? weightPoundsText : weightKilogramsText, pounds: pounds, known: convertedCurrentWeight)
     }
 
     /// The goal weight in kilograms, read in the unit system's field, with no range check.
     private func goalWeightKilograms() -> Decimal? {
-        if unitSystem == .usCustomary {
-            guard let pounds = AmountParser.parseTyped(goalWeightPoundsText) else { return nil }
-            return pounds * Self.kilogramsPerPound
-        }
-        return AmountParser.parseTyped(goalWeightKilogramsText)
+        let pounds = unitSystem == .usCustomary
+        return Self.kilograms(
+            typed: pounds ? goalWeightPoundsText : goalWeightKilogramsText, pounds: pounds, known: convertedGoalWeight)
+    }
+
+    /// The kilograms a weight field stands for. A field still showing the text of a switch keeps the exact
+    /// kilograms that text was converted from; any other text is read in the field's unit.
+    private static func kilograms(typed text: String, pounds: Bool, known: ConvertedWeight?) -> Decimal? {
+        if let known, known.text == text { return known.kilograms }
+        guard let value = AmountParser.parseTyped(text) else { return nil }
+        return pounds ? value * kilogramsPerPound : value
+    }
+
+    /// A weight shown in the unit system now in force, with the kilograms it was converted from.
+    private static func displayed(_ kilograms: Decimal?, pounds: Bool) -> ConvertedWeight? {
+        guard let kilograms else { return nil }
+        let shown = pounds ? kilograms / kilogramsPerPound : kilograms
+        return (text: BodyActivityViewModel.oneDecimal(shown), kilograms: kilograms)
     }
 }
