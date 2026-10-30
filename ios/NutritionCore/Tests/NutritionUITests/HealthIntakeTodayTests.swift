@@ -97,5 +97,8 @@ final class HealthIntakeTodayTests: XCTestCase {
         let bar = try XCTUnwrap(model.waterBar)
         XCTAssertEqual(bar.state, .progress)
         XCTAssertEqual(model.progress.first { $0.nutrient == "water" }?.amount, NutrientValue.known(750, .mL))
+        // The water figure and the water line each add Health's water once: 250 logged plus 500 from Health is 750
+        // on both, never 1,250 (the figure adding it twice) or 1,000 (the line counting the figure again).
+        XCTAssertEqual(model.waterTotalMilliliters, 750)
     }
 }
