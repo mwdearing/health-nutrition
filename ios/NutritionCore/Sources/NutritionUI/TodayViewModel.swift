@@ -449,9 +449,12 @@ public final class TodayViewModel: ObservableObject {
                 $0.nutrient == DailyTotalsBuilder.waterKey && $0.hasGoal
                     && !hiddenGoals.contains(DailyTotalsBuilder.waterKey)
             }.map { line in
-                GoalBarModel.make(
-                    line: line, hasEntries: waterEntries > 0 || countedWater > 0, missingCount: 0,
-                    skippedWaterCount: skipped, someKnown: countedWater > 0, unitSystem: self.preferences.unitSystem)
+                // Water other apps logged to Health counts as logged and known, as it does in the water figure.
+                let outsideWater = Self.outsideWaterMilliliters(outsideIntake) > 0
+                return GoalBarModel.make(
+                    line: line, hasEntries: waterEntries > 0 || countedWater > 0 || outsideWater, missingCount: 0,
+                    skippedWaterCount: skipped, someKnown: countedWater > 0 || outsideWater,
+                    unitSystem: self.preferences.unitSystem)
             }
             let burnedCounted = (preferences as? ActivityGoalPreferences)?.addsActiveEnergyToGoal == true
             let foodLine = progress.first { $0.nutrient == Self.energyKey }

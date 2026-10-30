@@ -85,4 +85,17 @@ final class HealthIntakeTodayTests: XCTestCase {
         model.load(now: now)
         XCTAssertEqual(model.waterTotalMilliliters, 250)
     }
+
+    /// With a water goal, the water bar shows Health's water too, so the bar and the water figure agree.
+    func testTheWaterBarCountsHealthWaterLikeTheWaterFigure() throws {
+        let goals = InMemoryGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "water", target: 2000, unit: .mL))
+        let model = TodayViewModel(store: try makeJournal(), goals: goals, timeZoneIdentifier: "UTC")
+        XCTAssertNotNil(model.quickAddWater(milliliters: 250, now: now))
+        model.outsideIntake = .read(values: ["water": 500], readKeys: ["water"])
+        model.load(now: now)
+        let bar = try XCTUnwrap(model.waterBar)
+        XCTAssertEqual(bar.state, .progress)
+        XCTAssertEqual(model.progress.first { $0.nutrient == "water" }?.amount, NutrientValue.known(750, .mL))
+    }
 }

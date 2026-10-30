@@ -18,16 +18,14 @@ public enum HealthIntakeTotals {
         case read(values: [String: Decimal], readKeys: Set<String>)
     }
 
-    /// The lines with Health's side added. Water is left alone here: Today adds Health's water to its own water
-    /// total instead (`TodayViewModel.outsideWaterMilliliters`), next to the drinks that line already counts.
+    /// The lines with Health's side added, water included, so the water goal bar and Today's water figure agree.
     public static func combine(_ lines: [NutrientProgressLine], outside: Outside) -> [NutrientProgressLine] {
         guard outside != .notConnected else { return lines }
         return lines.map { combine($0, outside: outside) }
     }
 
     static func combine(_ line: NutrientProgressLine, outside: Outside) -> NutrientProgressLine {
-        guard line.nutrient != DailyTotalsBuilder.waterKey,
-              let unit = HealthKitWritePlanner.mapping(for: line.nutrient)?.unit
+        guard let unit = HealthKitWritePlanner.mapping(for: line.nutrient)?.unit
         else { return line }
 
         // The journal's side: complete when the whole day is known, a known partial sum otherwise. Its amount is
