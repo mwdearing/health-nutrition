@@ -57,4 +57,32 @@ final class HealthIntakeTodayTests: XCTestCase {
         XCTAssertEqual(model.progress.first { $0.nutrient == "energy" }?.amount,
                        NutrientValue.known(620, HealthKitWritePlanner.mapping(for: "energy")!.unit))
     }
+
+    // MARK: - Water other apps logged to Health
+
+    /// Water another app logged to Health counts toward Today's water, the way its nutrients count toward their lines.
+    func testWaterFromOtherAppsInHealthCountsTowardTodaysWater() throws {
+        let model = TodayViewModel(store: try makeJournal(), timeZoneIdentifier: "UTC")
+        model.outsideIntake = .read(values: ["water": 500], readKeys: ["water"])
+        model.load(now: now)
+        XCTAssertEqual(model.waterTotalMilliliters, 500)
+    }
+
+    /// Health's water is added to what the journal logged, not put in its place.
+    func testHealthWaterIsAddedToTheJournalsWater() throws {
+        let model = TodayViewModel(store: try makeJournal(), timeZoneIdentifier: "UTC")
+        XCTAssertNotNil(model.quickAddWater(milliliters: 250, now: now))
+        model.outsideIntake = .read(values: ["water": 500], readKeys: ["water"])
+        model.load(now: now)
+        XCTAssertEqual(model.waterTotalMilliliters, 750)
+    }
+
+    /// A water read that did not complete adds nothing, so Today's water stays the journal's.
+    func testAnIncompleteHealthWaterReadAddsNothing() throws {
+        let model = TodayViewModel(store: try makeJournal(), timeZoneIdentifier: "UTC")
+        XCTAssertNotNil(model.quickAddWater(milliliters: 250, now: now))
+        model.outsideIntake = .read(values: ["water": 500, "energy": 620], readKeys: ["energy"])
+        model.load(now: now)
+        XCTAssertEqual(model.waterTotalMilliliters, 250)
+    }
 }

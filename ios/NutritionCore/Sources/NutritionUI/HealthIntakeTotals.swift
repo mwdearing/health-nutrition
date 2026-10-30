@@ -18,7 +18,8 @@ public enum HealthIntakeTotals {
         case read(values: [String: Decimal], readKeys: Set<String>)
     }
 
-    /// The lines with Health's side added. Water is left alone: its own line already counts drinks.
+    /// The lines with Health's side added. Water is left alone here: Today adds Health's water to its own water
+    /// total instead (`TodayViewModel.outsideWaterMilliliters`), next to the drinks that line already counts.
     public static func combine(_ lines: [NutrientProgressLine], outside: Outside) -> [NutrientProgressLine] {
         guard outside != .notConnected else { return lines }
         return lines.map { combine($0, outside: outside) }
