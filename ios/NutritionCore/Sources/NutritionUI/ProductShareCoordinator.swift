@@ -211,8 +211,20 @@ public enum ProductShareStatus: String, Sendable {
               [.pending, .sending].contains(saved.status) else { throw CancellationError() }
         return saved
     }
+    /// A `.sending` row is a leftover when this delivery run starts: `runDueOperations` starts a run only when
+    /// no send is in flight in this process, and a send's reply records before the run ends. Its reply never
+    /// recorded (#1041), so it goes back to `.pending`, as the store's recovery does for a restarted app, and
+    /// this run sends it again with the same operation ID, which the server answers as a replay.
+    private func requeueLeftoverSends(context: ProductShareAccountContext, token: UUID) {
+        guard valid(context, token), let saved = operations(ownerID: context.ownerID) else { return }
+        for operation in saved where operation.epoch == context.localSessionEpoch && operation.status == .sending {
+            do { try record(operation, status: .pending, reason: .network) }
+            catch { return }
+        }
+    }
     private func deliver(context: ProductShareAccountContext, token: UUID, now: Date) async {
         do {
+            requeueLeftoverSends(context: context, token: token)
             let capabilities = try await service.capabilities()
             guard valid(context, token), capabilities.supportedVersion == 2 else { return }
             if !capabilities.sharingPermission { try store.cancelProductPublications(ownerID: context.ownerID) }
