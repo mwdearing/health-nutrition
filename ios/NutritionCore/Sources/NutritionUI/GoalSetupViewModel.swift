@@ -159,12 +159,9 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
         if pounds {
             weightPoundsText = current?.text ?? ""
             goalWeightPoundsText = goal?.text ?? ""
-            heightFeetText = height?.feetText ?? ""
-            heightInchesText = height?.inchesText ?? ""
         } else {
             weightKilogramsText = current?.text ?? ""
             goalWeightKilogramsText = goal?.text ?? ""
-            heightCentimetersText = height?.centimetersText ?? ""
         }
         convertedCurrentWeight = current
         convertedGoalWeight = goal
