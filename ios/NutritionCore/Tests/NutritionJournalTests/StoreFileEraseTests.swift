@@ -1,5 +1,6 @@
 import Foundation
 import NutritionDomain
+import SwiftData
 import XCTest
 @testable import NutritionJournal
 

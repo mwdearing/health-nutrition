@@ -68,7 +68,7 @@ because a summary from an earlier day shows dashes.
 - **Apple Health.** After the person connects Apple Health in Settings and allows it, nutrients from real logged food and water entries are written to HealthKit; a debug build's HealthKit screen can also write separate test samples. Erasing local rows does not remove HealthKit samples already written. HealthKit has its own store.
 - **HealthRelay.** It is unavailable in this version, so there is no active relay destination for this erase to contact.
 
-On a successful erase, every store's files are removed after its rows are deleted, so the deleted rows are not kept in those files; a partial erase leaves them until Retry. This documentation does not promise a forensic wipe, a particular file-protection class or that old database bytes cannot be recovered in those stores. Device-level protection and physical erase behavior have not been established by this change.
+On a successful erase, every store's files are removed after its rows are deleted, so the deleted rows are not kept in those files; a partial erase leaves them until Retry. This documentation does not promise a forensic wipe, a particular file-protection class or that old database bytes cannot be recovered from any store. Device-level protection and physical erase behavior have not been established by this change.
 
 ## Checking it
 
