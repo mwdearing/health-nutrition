@@ -1498,6 +1498,69 @@ def test_a_sibling_after_a_nested_conditional_ends_the_outer_arm(
     assert findings(result) == [("NestedThenSibling.swift", 4, "unlabeled-image")]
 
 
+def test_a_labeled_sibling_in_a_nested_arm_does_not_name_the_image(
+    tmp_path: Path,
+) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/NestedLabeledSibling.swift": (
+            "import SwiftUI\n"
+            "struct NestedLabeledSibling: View {\n"
+            "    var body: some View {\n"
+            '        Image("x")\n'
+            "        #if os(iOS)\n"
+            "        #if DEBUG\n"
+            '        Text("sibling").accessibilityLabel("Sibling")\n'
+            "        #else\n"
+            '        .accessibilityLabel("Release")\n'
+            "        #endif\n"
+            "        #else\n"
+            '        .accessibilityLabel("Other")\n'
+            "        #endif\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    # The debug arm starts a sibling view, so the iOS debug build leaves the image
+    # unnamed. A later outer arm reaching past it must not lend it the sibling's
+    # label (#68).
+    assert findings(result) == [("NestedLabeledSibling.swift", 4, "unlabeled-image")]
+
+
+def test_two_nested_conditionals_in_one_arm_are_both_read_as_modifiers(
+    tmp_path: Path,
+) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/TwoNestedBlocks.swift": (
+            "import SwiftUI\n"
+            "struct TwoNestedBlocks: View {\n"
+            "    var body: some View {\n"
+            '        Image("x")\n'
+            "        #if os(iOS)\n"
+            "        #if DEBUG\n"
+            "        .padding()\n"
+            "        #else\n"
+            "        .padding()\n"
+            "        #endif\n"
+            "        #if DEBUG\n"
+            '        .accessibilityLabel("Debug")\n'
+            "        #else\n"
+            '        .accessibilityLabel("Release")\n'
+            "        #endif\n"
+            "        #else\n"
+            '        .accessibilityLabel("Other")\n'
+            "        #endif\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    # The second nested block follows the first inside the iOS arm and names the
+    # image in both of its builds, so every compiled path is named (#68).
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_a_text_hidden_in_one_branch_still_names_the_control_where_it_shows(
     tmp_path: Path,
 ) -> None:

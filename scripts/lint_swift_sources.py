@@ -1009,13 +1009,30 @@ def _conditional_chain_end(
     which keeps a continuation past a nested ``#endif`` from reaching into code
     written after this block.
     """
+    reached, ended = _conditional_scan(masked, directive, end, bodies, limit)
+    return end if ended else reached
+
+
+def _conditional_scan(
+    masked: str,
+    directive: re.Match[str],
+    end: int,
+    bodies: list[tuple[int, int]],
+    limit: int,
+) -> tuple[int, bool]:
+    """How far the block ``directive`` opens carries the chain, and whether an arm ended it.
+
+    An arm holding a sibling view ends the chain for every build that takes it, so
+    a nested block reports that to the arm enclosing it rather than handing back
+    an end the outer arms could carry past the sibling (#68).
+    """
     arms, closed = _conditional_arms(masked, directive)
     for arm in arms:
         following = _arm_chain_end(masked, arm, bodies, limit)
         if following is None:
-            return end
+            return end, True
         end = max(end, following)
-    return max(end, min(_chain_end(masked, closed, bodies), limit))
+    return max(end, min(_chain_end(masked, closed, bodies), limit)), False
 
 
 def _arm_chain_end(
@@ -1037,7 +1054,9 @@ def _arm_chain_end(
         index += 1
     nested = BRANCH_DIRECTIVE.match(masked, index)
     if nested is not None and nested.group(1) == "if":
-        end = _conditional_chain_end(masked, nested, index, bodies, limit)
+        end, ended = _conditional_scan(masked, nested, index, bodies, limit)
+        if ended:
+            return None
         _, closed = _conditional_arms(masked, nested)
         return _arm_tail_end(masked, closed, end, bodies, limit)
     if not _starts_with_modifier(masked, arm):
@@ -1061,6 +1080,15 @@ def _arm_tail_end(
     boundary = min(boundary, limit)
     if not masked[position:boundary].strip():
         return end
+    index = position
+    while index < boundary and masked[index].isspace():
+        index += 1
+    # Another conditional block right after this one is read the same way, not as
+    # a sibling view (#68).
+    following_block = BRANCH_DIRECTIVE.match(masked, index)
+    if following_block is not None and following_block.group(1) == "if":
+        reached = _arm_chain_end(masked, index, bodies, limit)
+        return None if reached is None else max(end, reached)
     if not _starts_with_modifier(masked, position):
         return None
     return max(end, min(_chain_end(masked, position, bodies), boundary, limit))
