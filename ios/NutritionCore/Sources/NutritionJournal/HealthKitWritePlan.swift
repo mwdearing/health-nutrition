@@ -164,7 +164,7 @@ public enum HealthKitWritePlanner {
         HealthKitNutrientMapping(nutrientKey: "protein", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryProtein, unit: .g),
         HealthKitNutrientMapping(nutrientKey: "carbohydrate", aliases: ["carbohydrates"], quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryCarbohydrates, unit: .g),
         HealthKitNutrientMapping(nutrientKey: "fat", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryFatTotal, unit: .g),
-        HealthKitNutrientMapping(nutrientKey: "fiber", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryFiber, unit: .g),
+        HealthKitNutrientMapping(nutrientKey: "fiber", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryFiber, unit: .oz),
         HealthKitNutrientMapping(nutrientKey: "sugar", aliases: ["sugars"], quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietarySugar, unit: .g),
         HealthKitNutrientMapping(nutrientKey: "sodium", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietarySodium, unit: .mg),
         HealthKitNutrientMapping(nutrientKey: "potassium", quantityTypeIdentifier: HealthKitTypeIdentifier._HKQuantityTypeIdentifierDietaryPotassium, unit: .mg),
