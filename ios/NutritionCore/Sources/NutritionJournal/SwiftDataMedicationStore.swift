@@ -156,11 +156,11 @@ public final class SwiftDataMedicationStore: MedicationStore, JournalErasing, @u
     /// Writes the medication. It is validated before anything is written, and its name is checked against every
     /// other stored medication ignoring case, so a refused save leaves the file as it was.
     public func saveMedication(_ medication: Medication) throws {
-        let container = try openContainer()
         try medication.validate()
         writeLock.lock()
         defer { writeLock.unlock() }
-        let context = ModelContext(container)
+        // The container is read under writeLock, so a write queued behind an erase uses the replaced store file.
+        let context = ModelContext(try openContainer())
         let key = medication.id.uuidString
         let name = medication.name.lowercased()
         let rows = try context.fetch(FetchDescriptor<MedicationRecord>())
@@ -177,10 +177,9 @@ public final class SwiftDataMedicationStore: MedicationStore, JournalErasing, @u
 
     /// Removes the medication and every dose of it in one save. Removing a medication that is not stored is not an error.
     public func removeMedication(id: UUID) throws {
-        let container = try openContainer()
         writeLock.lock()
         defer { writeLock.unlock() }
-        let context = ModelContext(container)
+        let context = ModelContext(try openContainer())
         let key = id.uuidString
         for row in try context.fetch(FetchDescriptor<MedicationDoseRecord>(
             predicate: #Predicate<MedicationDoseRecord> { $0.medicationID == key })) {
@@ -196,11 +195,10 @@ public final class SwiftDataMedicationStore: MedicationStore, JournalErasing, @u
     /// Writes the dose. It is validated first, then checked against its medication: the medication must be stored, and
     /// the dose's unit must be that medication's current unit. A refused dose writes nothing.
     public func saveDose(_ dose: MedicationDose) throws {
-        let container = try openContainer()
         try dose.validate()
         writeLock.lock()
         defer { writeLock.unlock() }
-        let context = ModelContext(container)
+        let context = ModelContext(try openContainer())
         let medicationKey = dose.medicationID.uuidString
         guard let medication = try context.fetch(FetchDescriptor<MedicationRecord>(
             predicate: #Predicate<MedicationRecord> { $0.id == medicationKey })).first
@@ -225,10 +223,9 @@ public final class SwiftDataMedicationStore: MedicationStore, JournalErasing, @u
 
     /// Removes one dose. A dose that is not stored is not an error.
     public func removeDose(id: UUID) throws {
-        let container = try openContainer()
         writeLock.lock()
         defer { writeLock.unlock() }
-        let context = ModelContext(container)
+        let context = ModelContext(try openContainer())
         let key = id.uuidString
         for row in try context.fetch(FetchDescriptor<MedicationDoseRecord>(
             predicate: #Predicate<MedicationDoseRecord> { $0.id == key })) {
