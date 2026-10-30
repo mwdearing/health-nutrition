@@ -1589,6 +1589,38 @@ def test_a_caption_hidden_in_one_arm_stays_hidden_when_another_arm_ends_the_chai
     assert findings(result) == [("HiddenThenSibling.swift", 5, "unlabeled-image")]
 
 
+def test_a_caption_hidden_in_a_nested_arm_stays_hidden_when_its_sibling_arm_ends_the_chain(
+    tmp_path: Path,
+) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/NestedHiddenThenSibling.swift": (
+            "import SwiftUI\n"
+            "struct NestedHiddenThenSibling: View {\n"
+            "    var body: some View {\n"
+            "        Button {} label: {\n"
+            '            Image(systemName: "trash")\n'
+            '            Text("Delete")\n'
+            "            #if os(iOS)\n"
+            "            #if DEBUG\n"
+            "            .accessibilityHidden(true)\n"
+            "            #else\n"
+            "            Color.clear\n"
+            "            #endif\n"
+            "            #else\n"
+            "            .padding()\n"
+            "            #endif\n"
+            "        }\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    # The iOS debug build hides the only caption, so the image names nothing there.
+    # The nested release arm's sibling must not drop that hiding modifier.
+    assert findings(result) == [("NestedHiddenThenSibling.swift", 5, "unlabeled-image")]
+
+
 def test_a_text_hidden_in_one_branch_still_names_the_control_where_it_shows(
     tmp_path: Path,
 ) -> None:
