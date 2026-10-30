@@ -82,7 +82,11 @@ public struct CommunityProductSearchView: View {
             if let savedMeals = library?.savedMeals, onPick != nil {
                 SavedMealSections(model: savedMeals, query: query, showsMeals: kind == nil, onLog: { mealToLog = $0 })
             }
-            if let library, let onPick { LibrarySearchSections(library: library, query: query, kind: kind, onPick: onPick) }
+            if let library, let onPick {
+                LibrarySearchSections(
+                    library: library, query: query, kind: kind,
+                    onPick: { template in leaveSearch { onPick(template) } })
+            }
             Section("On this device") {
                 if model.localError { Text("Could not read local products.") }
                 else if model.localResults.isEmpty { Text("No matching local products.") }
@@ -367,7 +371,7 @@ struct LibrarySearchSections: View {
             Section(group.title) {
                 if group.items.isEmpty { Text("Nothing you have logged or saved matches.").foregroundStyle(TokenColors.textSecondary) }
                 ForEach(group.items) { item in
-                    Button { leaveSearch { onPick(item.template) } } label: {
+                    Button { onPick(item.template) } label: {
                         VStack(alignment: .leading) {
                             Text(item.title).font(.headline).foregroundStyle(TokenColors.textPrimary)
                             Text(item.detail).font(.subheadline).foregroundStyle(TokenColors.textSecondary)
