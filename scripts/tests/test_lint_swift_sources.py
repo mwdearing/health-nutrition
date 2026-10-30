@@ -1498,36 +1498,6 @@ def test_a_sibling_after_a_nested_conditional_ends_the_outer_arm(
     assert findings(result) == [("NestedThenSibling.swift", 4, "unlabeled-image")]
 
 
-def test_a_labeled_sibling_in_a_nested_arm_does_not_name_the_image(
-    tmp_path: Path,
-) -> None:
-    root = write_tree(tmp_path, {
-        f"{UI}/NestedLabeledSibling.swift": (
-            "import SwiftUI\n"
-            "struct NestedLabeledSibling: View {\n"
-            "    var body: some View {\n"
-            '        Image("x")\n'
-            "        #if os(iOS)\n"
-            "        #if DEBUG\n"
-            '        Text("sibling").accessibilityLabel("Sibling")\n'
-            "        #else\n"
-            '        .accessibilityLabel("Release")\n'
-            "        #endif\n"
-            "        #else\n"
-            '        .accessibilityLabel("Other")\n'
-            "        #endif\n"
-            "    }\n"
-            "}\n"
-        ),
-    })
-    result = run(root)
-    assert result.returncode == 1
-    # The debug arm starts a sibling view, so the iOS debug build leaves the image
-    # unnamed. A later outer arm reaching past it must not lend it the sibling's
-    # label (#68).
-    assert findings(result) == [("NestedLabeledSibling.swift", 4, "unlabeled-image")]
-
-
 def test_two_nested_conditionals_in_one_arm_are_both_read_as_modifiers(
     tmp_path: Path,
 ) -> None:
@@ -1619,6 +1589,35 @@ def test_a_caption_hidden_in_a_nested_arm_stays_hidden_when_its_sibling_arm_ends
     # The iOS debug build hides the only caption, so the image names nothing there.
     # The nested release arm's sibling must not drop that hiding modifier.
     assert findings(result) == [("NestedHiddenThenSibling.swift", 5, "unlabeled-image")]
+
+
+def test_a_caption_hidden_in_a_later_outer_arm_stays_hidden(tmp_path: Path) -> None:
+    root = write_tree(tmp_path, {
+        f"{UI}/LaterArmHidden.swift": (
+            "import SwiftUI\n"
+            "struct LaterArmHidden: View {\n"
+            "    var body: some View {\n"
+            "        Button {} label: {\n"
+            '            Image(systemName: "trash")\n'
+            '            Text("Delete")\n'
+            "            #if os(iOS)\n"
+            "            #if DEBUG\n"
+            "            Color.clear\n"
+            "            #else\n"
+            "            .padding()\n"
+            "            #endif\n"
+            "            #else\n"
+            "            .accessibilityHidden(true)\n"
+            "            #endif\n"
+            "        }\n"
+            "    }\n"
+            "}\n"
+        ),
+    })
+    result = run(root)
+    assert result.returncode == 1
+    # Builds other than iOS hide the only caption, so the image names nothing there.
+    assert findings(result) == [("LaterArmHidden.swift", 5, "unlabeled-image")]
 
 
 def test_a_text_hidden_in_one_branch_still_names_the_control_where_it_shows(

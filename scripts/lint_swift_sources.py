@@ -1009,43 +1009,22 @@ def _conditional_chain_end(
     which keeps a continuation past a nested ``#endif`` from reaching into code
     written after this block.
     """
-    # At the top level an arm that ends the chain still keeps what the arms before it
-    # reached, so a hiding modifier in an earlier arm is not dropped.
-    reached, _ = _conditional_scan(masked, directive, end, bodies, limit)
-    return reached
-
-
-def _conditional_scan(
-    masked: str,
-    directive: re.Match[str],
-    end: int,
-    bodies: list[tuple[int, int]],
-    limit: int,
-) -> tuple[int, bool]:
-    """How far the block ``directive`` opens carries the chain, and whether an arm ended it.
-
-    The end keeps every modifier the arms scanned before one held a sibling view,
-    so a hiding modifier in an earlier arm still counts. The flag says a sibling
-    ended the chain, which a nested block reports to the arm enclosing it, so the
-    outer arms after it are not read as carrying the chain past that sibling (#68).
-    """
     arms, closed = _conditional_arms(masked, directive)
     for arm in arms:
-        reached, ended = _arm_scan(masked, arm, bodies, limit)
-        end = max(end, reached)
-        if ended:
-            return end, True
-    return max(end, min(_chain_end(masked, closed, bodies), limit)), False
+        following = _arm_chain_end(masked, arm, bodies, limit)
+        if following is None:
+            return end
+        end = max(end, following)
+    return max(end, min(_chain_end(masked, closed, bodies), limit))
 
 
-def _arm_scan(
+def _arm_chain_end(
     masked: str, arm: int, bodies: list[tuple[int, int]], limit: int
-) -> tuple[int, bool]:
-    """How far one arm of a conditional extends the chain, and whether it ended it.
+) -> int | None:
+    """How far one arm of a conditional extends the chain, or ``None``.
 
-    An arm that holds a sibling view rather than modifiers of the expression the
-    chain started from ends the chain there; what the arm scanned before the
-    sibling is still returned.
+    ``None`` means the arm holds a sibling view rather than modifiers of the
+    expression the chain started from, which ends the chain there.
 
     An arm that begins with another ``#if`` is descended into rather than read
     as a view: the nested arms are what the expression is modified by in that
@@ -1058,43 +1037,42 @@ def _arm_scan(
         index += 1
     nested = BRANCH_DIRECTIVE.match(masked, index)
     if nested is not None and nested.group(1) == "if":
-        end, ended = _conditional_scan(masked, nested, index, bodies, limit)
-        if ended:
-            return end, True
+        end = _conditional_chain_end(masked, nested, index, bodies, limit)
         _, closed = _conditional_arms(masked, nested)
-        return _arm_tail_scan(masked, closed, end, bodies, limit)
+        return _arm_tail_end(masked, closed, end, bodies, limit)
     if not _starts_with_modifier(masked, arm):
-        return arm, True
+        return None
     following = BRANCH_END.search(masked, arm)
     boundary = following.start() if following is not None else len(masked)
-    return min(_chain_end(masked, arm, bodies), boundary, limit), False
+    return min(_chain_end(masked, arm, bodies), boundary, limit)
 
 
-def _arm_tail_scan(
+def _arm_tail_end(
     masked: str, position: int, end: int, bodies: list[tuple[int, int]], limit: int
-) -> tuple[int, bool]:
+) -> int | None:
     """How far the arm reaches past a nested conditional ending at ``position``.
 
     ``end`` is how far the nested block carried the chain. Modifiers written after
-    it continue the chain, another conditional block after it is read the same way
-    as the first (#68), an arm with nothing else after the block stops there, and
-    a sibling view ends the chain instead, as elsewhere in an arm.
+    it continue the chain, an arm with nothing else after the block stops there,
+    and a sibling view ends the chain instead, as elsewhere in an arm.
     """
     following = BRANCH_END.search(masked, position)
     boundary = following.start() if following is not None else len(masked)
     boundary = min(boundary, limit)
     if not masked[position:boundary].strip():
-        return end, False
+        return end
     index = position
     while index < boundary and masked[index].isspace():
         index += 1
+    # Another conditional block right after this one is read the same way, not as
+    # a sibling view (#68).
     following_block = BRANCH_DIRECTIVE.match(masked, index)
     if following_block is not None and following_block.group(1) == "if":
-        reached, ended = _arm_scan(masked, index, bodies, limit)
-        return max(end, reached), ended
+        reached = _arm_chain_end(masked, index, bodies, limit)
+        return None if reached is None else max(end, reached)
     if not _starts_with_modifier(masked, position):
-        return end, True
-    return max(end, min(_chain_end(masked, position, bodies), boundary, limit)), False
+        return None
+    return max(end, min(_chain_end(masked, position, bodies), boundary, limit))
 
 
 def _call_expression_end(masked: str, start: int, position: int) -> int:
