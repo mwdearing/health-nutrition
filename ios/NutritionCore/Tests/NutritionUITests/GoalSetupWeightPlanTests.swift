@@ -309,7 +309,8 @@ final class GoalSetupWeightPlanTests: XCTestCase {
         // The height is not converted by a switch, so the pounds answers are given again here.
         model.heightFeetText = "5"
         model.heightInchesText = "11"
-        model.selectedPaceKilograms = model.paceOptions[1].kilogramsPerWeek
+        let pace = model.paceOptions[1].kilogramsPerWeek
+        model.selectedPaceKilograms = pace
         walk(model, to: .results)
         XCTAssertEqual(model.step, .results)
 
@@ -317,7 +318,7 @@ final class GoalSetupWeightPlanTests: XCTestCase {
 
         XCTAssertEqual(
             try store.weightPlan(),
-            WeightPlan(aim: .lose, goalKilograms: 75, weeklyPaceKilograms: kg("0.226796185")))
+            WeightPlan(aim: .lose, goalKilograms: 75, weeklyPaceKilograms: pace))
     }
 
     func testSwitchingToKilogramsConvertsTheTypedGoalWeightAndSaveKeepsTheGoal() throws {
