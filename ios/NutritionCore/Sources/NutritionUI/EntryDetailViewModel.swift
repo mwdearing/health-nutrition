@@ -117,6 +117,9 @@ public struct SourceDetailRow: Identifiable, Equatable {
 
 @MainActor
 public final class EntryDetailViewModel: ObservableObject {
+    /// Shown when the entry has a newer revision than the one this screen loaded.
+    static let changedSinceOpenedNotice = "This entry changed since you opened it. Reopen it to see the latest amounts."
+
     /// The reason a revision carries when the person did not write one.
     public static let defaultChangeReason = "Edited"
     /// What a correction of the entry's time alone is recorded as, because a history that reads
@@ -256,7 +259,8 @@ public final class EntryDetailViewModel: ObservableObject {
                     id: $0.componentID, name: AmountText.name($0),
                     amountText: $0.amount.isNaN ? "unknown" : DecimalFormatting.text($0.amount), unit: $0.unit)
             }
-            let snapshot = current.productSnapshotID.flatMap { try? store.product(snapshotID: $0) }
+            // A snapshot that cannot be read is a failed read, not an entry without a product (#775).
+            let snapshot = try current.productSnapshotID.flatMap { try store.product(snapshotID: $0) }
             additionalNutrients = Self.additionalNutrients(of: snapshot)
             sourceLine = Self.sourceLine(for: snapshot)
             sourceDetailRows = Self.sourceDetails(for: snapshot)
@@ -441,7 +445,7 @@ public final class EntryDetailViewModel: ObservableObject {
             // Revision numbers start at 1, so 0 means no load has happened and there is no screen state to check.
             guard currentRevision == 0 || intake.currentRevision == currentRevision else {
                 fieldErrors = [:]
-                errorMessage = "This entry changed since you opened it. Reopen it to see the latest amounts."
+                errorMessage = Self.changedSinceOpenedNotice
                 return false
             }
             let current = try store.revisions(of: intakeID).first { $0.number == intake.currentRevision }
@@ -506,7 +510,12 @@ public final class EntryDetailViewModel: ObservableObject {
                 changeReason: Self.recordedReason(written: reason, timeOnlyChange: timeOnly), now: now,
                 occurredAt: correctedTime,
                 timeZoneIdentifier: correctedTime == nil ? nil : intake.timeZoneIdentifier,
-                unitRemovals: unitRemovals)
+                unitRemovals: unitRemovals, expectedRevision: intake.currentRevision)
+        } catch JournalError.staleRevision {
+            // A write landed between the check above and this one; the store refuses it in the same commit.
+            fieldErrors = [:]
+            errorMessage = Self.changedSinceOpenedNotice
+            return false
         } catch {
             errorMessage = "Couldn't save. Your previous amount is kept."
             return false

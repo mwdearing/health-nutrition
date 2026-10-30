@@ -130,6 +130,31 @@ final class LogSavedMealShortcutTests: XCTestCase {
         XCTAssertEqual(entities.map(\.name), [SavedMealPickerPolicy.standInTitle, SavedMealShortcut.unavailableMessage])
     }
 
+    /// The query feeds the lock state into the policies above, so a locked device lists no meals and resolves a
+    /// named one without its name (#493). Unlocked, the same meal shows its name, so the test fails if the hook
+    /// is not read.
+    @MainActor
+    func testTheQueryHoldsNamesBackWhileTheDeviceIsLocked() async throws {
+        let store = UserDefaultsSavedMealStore()
+        let before = try store.meals()
+        let unlocked = SavedMealQuery.isDeviceUnlocked
+        addTeardownBlock { @MainActor in
+            SavedMealQuery.isDeviceUnlocked = unlocked
+            try? store.update { $0 = before }
+        }
+        try store.update { $0 = [saved()] }
+
+        SavedMealQuery.isDeviceUnlocked = { false }
+        let suggested = try await SavedMealQuery().suggestedEntities()
+        XCTAssertTrue(suggested.isEmpty)
+        let locked = try await SavedMealQuery().entities(for: ["meal-1"])
+        XCTAssertEqual(locked.map(\.name), [SavedMealPickerPolicy.standInTitle])
+
+        SavedMealQuery.isDeviceUnlocked = { true }
+        let open = try await SavedMealQuery().entities(for: ["meal-1"])
+        XCTAssertEqual(open.map(\.name), ["Usual breakfast"])
+    }
+
     /// The picker lists saved meals only while the device is unlocked and no erase or import runs.
     func testThePickerOffersNoMealsWhileLockedOrBusy() {
         let meals = [saved()]

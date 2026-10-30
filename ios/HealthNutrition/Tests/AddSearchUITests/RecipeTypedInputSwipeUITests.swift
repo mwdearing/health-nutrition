@@ -21,14 +21,18 @@ final class RecipeTypedInputSwipeUITests: XCTestCase {
         XCTAssertTrue(library.waitForExistence(timeout: 10), "no Library tab")
         library.tap()
 
-        // "Open recipes" only shows inside the Recipes segment of Library, so select that segment first.
+        // "Open recipes" only shows inside the Recipes segment of Library, so select that segment first. Only the
+        // segmented control's own button is used: a looser app.buttons["Recipes"] can match another element, and a
+        // tap on it leaves the segment unchanged. The tap is checked by the segment reporting itself selected,
+        // with one more tap if the first lands while Library is still settling.
         let segment = app.segmentedControls.buttons["Recipes"].firstMatch
-        let recipesTab = segment.waitForExistence(timeout: 5) ? segment : app.buttons["Recipes"].firstMatch
-        XCTAssertTrue(recipesTab.waitForExistence(timeout: 10), "Library has no Recipes segment")
-        recipesTab.tap()
+        XCTAssertTrue(segment.waitForExistence(timeout: 20), "Library has no Recipes segment")
+        segment.tap()
+        if !waitUntil(timeout: 5, { segment.isSelected }) { segment.tap() }
+        XCTAssertTrue(waitUntil(timeout: 10, { segment.isSelected }), "the Recipes segment did not become selected")
 
         let openRecipes = app.buttons["Open recipes"]
-        XCTAssertTrue(openRecipes.waitForExistence(timeout: 10), "Library has no Open recipes control")
+        XCTAssertTrue(openRecipes.waitForExistence(timeout: 20), "Library has no Open recipes control")
         openRecipes.tap()
 
         let newRecipe = app.buttons["New recipe"]
@@ -67,6 +71,16 @@ final class RecipeTypedInputSwipeUITests: XCTestCase {
         XCTAssertTrue(askedFirst || stillThere,
                       "the edge swipe left the recipe editor and lost the typed title without asking")
     }
+}
+
+/// Polls `condition` until it holds or `timeout` seconds pass; true when it held.
+private func waitUntil(timeout: TimeInterval, _ condition: () -> Bool) -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        if condition() { return true }
+        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+    }
+    return condition()
 }
 
 /// Once a form is pushed, its own navigation bar shows exactly one leading control, Back or Cancel.
