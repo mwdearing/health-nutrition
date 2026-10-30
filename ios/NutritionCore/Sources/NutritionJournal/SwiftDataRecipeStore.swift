@@ -71,18 +71,41 @@ public final class SwiftDataRecipeStore: RecipeStore, JournalErasing, @unchecked
     private let writeLock = NSLock()
     private var container: ModelContainer?
 
-    public init(url: URL) throws {
+    private let storeURL: URL
+    private let fileOperations: StoreFileOperations
+    /// True after an erase whose reopen failed; the next call tries the reopen again.
+    private var reopenPending = false
+
+    public convenience init(url: URL) throws {
+        try self.init(url: url, fileOperations: .systemOperations(opening: Self.makeContainer))
+    }
+
+    /// The store at `url`, with the file steps an erase takes, so a test can make each one fail.
+    init(url: URL, fileOperations: StoreFileOperations) throws {
+        storeURL = url
+        self.fileOperations = fileOperations
+        container = try fileOperations.openContainer(url)
+    }
+
+    static func makeContainer(url: URL) throws -> ModelContainer {
         let schema = Schema([RecipeVersionRecord.self, RecipeTombstoneRecord.self])
         let configuration = ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
-        container = try ModelContainer(for: schema, configurations: configuration)
+        return try ModelContainer(for: schema, configurations: configuration)
     }
 
     public func close() {
-        lock.withLock { container = nil }
+        lock.withLock {
+            container = nil
+            reopenPending = false
+        }
     }
 
     private func openContainer() throws -> ModelContainer {
         try lock.withLock {
+            if container == nil, reopenPending {
+                container = try fileOperations.openContainer(storeURL)
+                reopenPending = false
+            }
             guard let container else { throw RecipeStoreError.closed }
             return container
         }
@@ -181,10 +204,27 @@ public final class SwiftDataRecipeStore: RecipeStore, JournalErasing, @unchecked
     public func eraseAll() throws {
         writeLock.lock()
         defer { writeLock.unlock() }
-        let context = ModelContext(try openContainer())
-        for row in try context.fetch(FetchDescriptor<RecipeTombstoneRecord>()) { context.delete(row) }
-        for row in try context.fetch(FetchDescriptor<RecipeVersionRecord>()) { context.delete(row) }
-        try context.save()
+        do {
+            let context = ModelContext(try openContainer())
+            for row in try context.fetch(FetchDescriptor<RecipeTombstoneRecord>()) { context.delete(row) }
+            for row in try context.fetch(FetchDescriptor<RecipeVersionRecord>()) { context.delete(row) }
+            try context.save()
+        }
+        // The rows are gone from every read, but the store file keeps their bytes until SQLite reuses the pages, so
+        // the file is replaced too, as the journal store's erase does (#228).
+        try replaceFiles()
+    }
+
+    /// Replaces the store file with an empty one. The caller holds writeLock, so no write lands between the row delete
+    /// and the file removal. A failed step is thrown; a failed reopen is retried by the next call.
+    private func replaceFiles() throws {
+        try lock.withLock {
+            container = nil
+            let result = fileOperations.replaceStoreFiles(at: storeURL)
+            container = result.container
+            reopenPending = result.container == nil
+            if let error = result.error { throw error }
+        }
     }
 
     /// Writes a row as given, bypassing validation, so tests can hold stored data the app would never write.
