@@ -237,7 +237,9 @@ final class JournalImportGoalsTests: XCTestCase {
     }
 
     /// A goal the restore set, then the person deleted after every goal was written, is not added back when the same
-    /// file is imported again while the flag is still set. Fails without the done marker, which makes resume add it.
+    /// file is imported again while the flag is still set. The done marker makes the import refuse as already restored
+    /// (`notEmpty`); without it the resume runs again. The receipt is empty once both goals are written, so the energy
+    /// check holds either way and only the refusal tells the marker is there.
     func testAGoalDeletedAfterTheGoalsFinishedIsNotReAdded() throws {
         let base = try goalStore()
         let data = try goalsExport([protein, energy])
@@ -248,11 +250,16 @@ final class JournalImportGoalsTests: XCTestCase {
             NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g),
             NutrientGoal(nutrient: "energy", target: Decimal(2000), unit: .kcal),
         ])
+        // The restore writes both goals, which empties the receipt, and then marks it done.
+        _ = try base.writeRestoredGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g), receipt: digest)
+        _ = try base.writeRestoredGoal(NutrientGoal(nutrient: "energy", target: Decimal(2000), unit: .kcal), receipt: digest)
         try base.markGoalRestoreReceiptDone(digest)
-        try base.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
         // The person deletes energy after the goals were written.
+        try base.removeGoal(nutrient: "energy")
 
-        XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: nil, goals: base))
+        XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: nil, goals: base)) { error in
+            guard case JournalImportError.notEmpty = error else { return XCTFail("expected notEmpty, got \(error)") }
+        }
         XCTAssertNil(try base.goal(for: "energy"), "a goal the person deleted must not come back")
     }
 

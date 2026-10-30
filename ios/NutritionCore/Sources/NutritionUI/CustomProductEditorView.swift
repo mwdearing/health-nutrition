@@ -75,6 +75,9 @@ public struct CustomProductEditorView: View {
                                     get: { model.ingredientName(for: fact.id) },
                                     set: { model.setIngredientName($0, for: fact.id) })).focused(focus)
                             }
+                            if let note = model.unnamedIngredientNote(for: fact.id) {
+                                Text(note).font(.footnote).foregroundStyle(TokenColors.error)
+                            }
                         }
                         LabeledField("Display name") { focus in
                             TextField("Display name", text: $fact.displayName).focused(focus)
@@ -106,13 +109,14 @@ public struct CustomProductEditorView: View {
             }
             Section {
                 Toggle("Open intake details after saving", isOn: $openDetails)
-                Button("Save product on this phone") {
+                Button("Save product on this device") {
                     do {
                         let saved = try model.save(now: Date())
                         onSaved(saved, openDetails)
                     } catch { }
                 }
                 .accessibilityHint("Saves without logging an intake. Eligible new products are queued for sharing.")
+                .disabled(!model.canSave)
                 if let message = model.errorMessage { Text(message).foregroundStyle(TokenColors.error) }
             }
             if let item = model.revision, let sharing { CustomProductSharingSection(item: item, model: sharing) }

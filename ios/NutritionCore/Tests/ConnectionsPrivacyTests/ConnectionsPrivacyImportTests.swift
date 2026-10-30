@@ -1,7 +1,8 @@
+import Combine
 import Foundation
 import Dispatch
 import NutritionDomain
-import NutritionJournal
+@testable import NutritionJournal
 import XCTest
 @testable import NutritionUI
 
@@ -717,6 +718,52 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         XCTAssertEqual(try journal.activeIntakes().map(\.id), [entryID])
     }
 
+    /// The success side of the deferred-effect path: an import that completes while a successful erase is suspended
+    /// is dropped, so its partial-restore warning never reaches the screen after the journal is gone.
+    ///
+    /// Signals hold the timing, not sleeps: the account step keeps the erase suspended until the import's outcome has
+    /// been applied, which writes `isImporting`. An outcome that arrives before the erase starts or after it ends never
+    /// satisfies that wait, so the test fails instead of passing without the deferred path.
+    func testImportCompletingDuringASuccessfulEraseIsDiscarded() async throws {
+        let journal = ImportStubStore()
+        journal.failUndoForTesting = true
+        journal.pauseAfterRestoreForTesting = true
+        let favorites = ImportStubFavorites()
+        favorites.failRestoreForTesting = true
+        var eraseUnderway = false
+        var importWritesDuringErase = 0
+        var outcomeArrivedDuringErase = false
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(),
+            store: journal, favorites: favorites, erasers: [journal, favorites],
+            beforeErase: { eraseUnderway = true },
+            eraseLocalAccount: {
+                // Hold the erase here until the import's outcome has been applied on the main actor.
+                let deadline = Date(timeIntervalSinceNow: 10)
+                while importWritesDuringErase == 0, Date() < deadline {
+                    try await Task.sleep(nanoseconds: 1_000_000)
+                }
+                outcomeArrivedDuringErase = importWritesDuringErase > 0
+            })
+        let importWrites = model.$isImporting.sink { _ in
+            if eraseUnderway { importWritesDuringErase += 1 }
+        }
+        defer { importWrites.cancel() }
+
+        model.importJournal(data: try export(includeFavorite: true))
+        let restorePaused = await waitForSignal(journal.restorePausedForTesting)
+        XCTAssertTrue(restorePaused)
+        // The outcome needs the main actor, which the erase holds until it suspends in the account step.
+        journal.resumeRestoreForTesting.signal()
+
+        let erased = await model.eraseAllData()
+
+        XCTAssertTrue(outcomeArrivedDuringErase, "the import's outcome did not arrive while the erase was suspended")
+        XCTAssertTrue(erased)
+        XCTAssertNil(model.incompleteRestoreWarning)
+        XCTAssertEqual(model.journalRestoreGeneration, 0)
+        XCTAssertTrue(try journal.activeIntakes().isEmpty)
+    }
+
     func testSuccessfulJournalEraseDiscardsDeferredWarningDespiteLaterEraserFailure() async throws {
         let journal = ImportStubStore()
         journal.failUndoForTesting = true
@@ -899,7 +946,7 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
     func testASavedMealsRefusalShowsItsOwnMessage() {
         XCTAssertEqual(
             ConnectionsPrivacyViewModel.importFailureText(for: .savedMealsNotEmpty),
-            "This phone already has saved meals. An import that includes saved meals only works when there are none.")
+            "This device already has saved meals. An import that includes saved meals only works when there are none.")
         XCTAssertNotEqual(
             ConnectionsPrivacyViewModel.importFailureText(for: .savedMealsNotEmpty),
             ConnectionsPrivacyViewModel.importRolledBackMessage)
@@ -927,5 +974,69 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         XCTAssertNoThrow(summary = try JournalImporter.importExport(data, into: journal, favorites: favorites))
         XCTAssertEqual(summary?.favorites, 1, "the resume restores the favorite")
         XCTAssertNil(try journal.restoreInProgressDigest(), "the finished resume clears its flag")
+    }
+
+    // MARK: - The Health delivery gate (#982)
+
+    private func gatedModel(
+        _ journal: ImportStubStore, gate: DeliveryRunGate, waitSeconds: TimeInterval = 5
+    ) -> ConnectionsPrivacyViewModel {
+        ConnectionsPrivacyViewModel(
+            goals: InMemoryGoalStore(), store: journal, favorites: ImportStubFavorites(),
+            deliveryGate: gate, deliveryWaitSeconds: waitSeconds)
+    }
+
+    /// A restore that finds a Health pass running writes nothing until the pass ends, then restores.
+    func testARestoreWaitsForARunningHealthPassBeforeWriting() async throws {
+        let gate = DeliveryRunGate()
+        let journal = ImportStubStore()
+        let model = gatedModel(journal, gate: gate)
+        await gate.enter() // a delivery pass is running
+        model.importJournal(data: try export())
+        XCTAssertTrue(model.isImporting, "the restore has started, so the check below is not vacuous")
+        try? await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertEqual(journal.restoredPlans.count, 0, "nothing is written while the pass runs")
+        await gate.leave()
+        await waitForImportToSettle(model)
+        XCTAssertEqual(model.importState, .imported)
+        XCTAssertEqual(journal.restoredPlans.count, 1)
+    }
+
+    /// A pass still running after the wait leaves the journal untouched, and the screen says why.
+    func testARestoreGivesUpWithNothingImportedWhenAHealthPassIsStillRunning() async throws {
+        let gate = DeliveryRunGate()
+        let journal = ImportStubStore()
+        let model = gatedModel(journal, gate: gate, waitSeconds: 0.05)
+        await gate.enter()
+        model.importJournal(data: try export())
+        await waitForImportToSettle(model)
+        XCTAssertEqual(model.importState, .failed)
+        XCTAssertEqual(model.importMessage, ConnectionsPrivacyViewModel.importDuringHealthDeliveryMessage)
+        // The approved wording (Mike, 2026-10-28), pinned as a literal so a change to it is a visible test change.
+        XCTAssertEqual(
+            ConnectionsPrivacyViewModel.importDuringHealthDeliveryMessage,
+            "Apple Health was still being updated, so nothing was imported. Try again in a moment.")
+        XCTAssertEqual(journal.restoredPlans.count, 0, "nothing is imported")
+        await gate.leave()
+    }
+
+    /// The restore lets go of the gate when it finishes, and a timed-out restore releases nothing the pass holds.
+    func testARestoreReleasesTheGateAndNeverAPassesHold() async throws {
+        let gate = DeliveryRunGate()
+        let model = gatedModel(ImportStubStore(), gate: gate)
+        model.importJournal(data: try export())
+        await waitForImportToSettle(model)
+        let free = await gate.pause(upTo: 0.5)
+        XCTAssertNotNil(free, "the gate is free after the restore")
+        await gate.resume(free)
+
+        let held = DeliveryRunGate()
+        let timedOut = gatedModel(ImportStubStore(), gate: held, waitSeconds: 0.05)
+        await held.enter()
+        timedOut.importJournal(data: try export())
+        await waitForImportToSettle(timedOut)
+        let stillHeld = await held.pause(upTo: 0.05)
+        XCTAssertNil(stillHeld, "a timed-out restore does not release the running pass's hold")
+        await held.leave()
     }
 }

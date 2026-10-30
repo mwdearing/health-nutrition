@@ -3,7 +3,7 @@
 Today has a **Vitamins and minerals** card below the day's entries. It opens a screen that lists the 25 vitamins and
 minerals the reference table covers (`docs/reference-intakes.md`) with what today's entries state for each (or, on
 **Week**, the daily average over the last 7 days), and, once a person picks a group, how that compares with the
-published adult values for it. The same screen is the Nutrients view on the Trends tab. The screen states comparisons only: it
+published values for it. The same screen is the Nutrients view on the Trends tab. The screen states comparisons only: it
 gives no advice and no score.
 
 ## Day and week
@@ -35,16 +35,16 @@ Today, and entries dated after today are left out.
 
 ## Comparing with a group
 
-**Compare with** offers the twelve published adult rows ("Women 19 to 30" to "Men 71 and over", then "Pregnancy 19 to
-30", "Pregnancy 31 to 50", "Breastfeeding 19 to 30" and "Breastfeeding 31 to 50") and **Nothing**. Until a group is
+**Compare with** offers the sixteen published rows ("Women 14 to 18" to "Men 71 and over", then "Pregnancy 14 to 18"
+to "Pregnancy 31 to 50" and "Breastfeeding 14 to 18" to "Breastfeeding 31 to 50") and **Nothing**. Until a group is
 picked the screen shows amounts alone, because the sources publish no row for someone who has not said which one is
 theirs. The choice is a display preference on this phone: `UserDefaultsDisplayPreferences` stores it under
-`display.reference.group` as `<sex>.<age band>` (for example `female.years31To50`), or with the life stage after it for
-pregnancy and breastfeeding (`female.years31To50.pregnancy`); a value that does not read back as one published row is no
-group, and **Erase all data** removes it with the other display preferences.
+`display.reference.group` as `<sex>.<age band>` (for example `female.years31To50`), or with the life stage after it
+for pregnancy and breastfeeding (`female.years31To50.pregnancy`); a value that does not read back as one published row
+is no group, and **Erase all data** removes it with the other display preferences.
 
-The footer says what the values are: the published adult RDA or AI and upper limit, from the NIH Office of Dietary
-Supplements, describing populations rather than the person, and not covering anyone under 19.
+The footer says what the values are: the published RDA or AI and upper limit, from the NIH Office of Dietary
+Supplements, describing populations rather than the person, and not covering anyone under 14.
 
 ## How the day is added up
 

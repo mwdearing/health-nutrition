@@ -59,9 +59,14 @@ private final class FaultyJournal: JournalStore, JournalLoggedUnits, @unchecked 
     var failUnitWrites = false
     /// Called before each unit write, so a test can see what was saved at that moment.
     var onUnitWrite: (() -> Void)?
+    /// When set, unit writes succeed this many times and then fail.
+    var failUnitWritesAfter: Int?
+    private var unitWrites = 0
     func recordLoggedUnit(_ loggedUnit: JournalLoggedUnit) throws {
         onUnitWrite?()
         if failUnitWrites { throw Failure() }
+        if let limit = failUnitWritesAfter, unitWrites >= limit { throw Failure() }
+        unitWrites += 1
         try inner.recordLoggedUnit(loggedUnit)
     }
     /// When set, reading the recorded units fails.
@@ -70,7 +75,10 @@ private final class FaultyJournal: JournalStore, JournalLoggedUnits, @unchecked 
         if failUnitReads { throw Failure() }
         return try inner.loggedUnits()
     }
+    /// When set, removing a logged unit fails, as a cleanup after a failed save might.
+    var failUnitRemovals = false
     func removeLoggedUnit(intakeID: String, componentID: String) throws {
+        if failUnitRemovals { throw Failure() }
         try inner.removeLoggedUnit(intakeID: intakeID, componentID: componentID)
     }
 }
@@ -322,6 +330,46 @@ final class SavedMealsModelTests: XCTestCase {
                 componentID: "fiber", name: "Fiber", amount: Decimal(string: "19.715686375")!, unit: .mL)],
             product: nil, now: now)
         return intake
+    }
+
+    /// A second unit write that fails takes back the first: no meal is saved, and only the entries' own unit rows
+    /// remain (#415).
+    func testASecondUnitWriteThatFailsTakesBackTheFirst() throws {
+        let inner = try makeJournal()
+        let journal = FaultyJournal(inner)
+        let first = try fiberEntry(inner)
+        let second = try fiberEntry(inner)
+        let store = UserDefaultsSavedMealStore(defaults: makeDefaults())
+        let model = SavedMealsModel(store: store, journal: journal)
+        journal.failUnitWritesAfter = 1
+
+        XCTAssertFalse(model.save(name: "Usual", meal: .breakfast, intakes: [first, second]))
+
+        XCTAssertTrue(model.noticeIsFailure)
+        XCTAssertEqual(model.notice, "Could not save the meal.")
+        XCTAssertEqual(try store.meals(), [])
+        XCTAssertEqual(Set(try inner.loggedUnits().map(\.intakeID)), [first.id, second.id])
+    }
+
+    /// When taking back the first unit write also fails, the save is still refused and no meal is saved. The row
+    /// left behind belongs to an item id no meal has, so nothing reads it (#415).
+    func testAFailedTakeBackStillSavesNoMeal() throws {
+        let inner = try makeJournal()
+        let journal = FaultyJournal(inner)
+        let first = try fiberEntry(inner)
+        let second = try fiberEntry(inner)
+        let store = UserDefaultsSavedMealStore(defaults: makeDefaults())
+        let model = SavedMealsModel(store: store, journal: journal)
+        journal.failUnitWritesAfter = 1
+        journal.failUnitRemovals = true
+
+        XCTAssertFalse(model.save(name: "Usual", meal: .breakfast, intakes: [first, second]))
+
+        XCTAssertTrue(model.noticeIsFailure)
+        XCTAssertEqual(model.notice, "Could not save the meal.")
+        XCTAssertEqual(try store.meals(), [])
+        let leftover = try inner.loggedUnits().filter { $0.intakeID != first.id && $0.intakeID != second.id }
+        XCTAssertEqual(leftover.count, 1, "the one written item row stays, owned by no meal")
     }
 
     /// A failed read of the recorded units stops the writes that would carry them, instead of creating the copy or

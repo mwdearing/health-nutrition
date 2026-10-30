@@ -173,7 +173,7 @@ private struct SettingsContent: View {
                     Text("Exported \(connections.entryCount) entries.").font(.footnote)
                 }
                 Button("Restore from an export") { self.isImporting = true }
-                    .accessibilityHint("Restores an export only while this phone's journal is empty.")
+                    .accessibilityHint("Restores an export only while this device's journal is empty.")
                     .disabled(isReadingImport || connections.isImporting || connections.isErasing)
                 if isReadingImport || connections.isImporting {
                     ProgressView(isReadingImport ? "Reading export…" : "Restoring export…")
@@ -295,7 +295,7 @@ private struct SettingsContent: View {
                     }
                 ), displayedComponents: .hourAndMinute)
             }
-            Text("A reminder on this phone at the time you choose. Nothing is sent anywhere.")
+            Text("A reminder on this device at the time you choose. Nothing is sent anywhere.")
                 .font(.footnote).foregroundStyle(TokenColors.textSecondary)
             if let message = reminders.message {
                 InlineNotice(message, tone: .failed)

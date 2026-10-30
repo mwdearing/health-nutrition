@@ -42,6 +42,27 @@ final class SavedMealsBackupTests: XCTestCase {
         XCTAssertEqual(try store.journalSavedMeals(), meals, "forgetting the receipt keeps the list")
     }
 
+    /// The erase epoch lives under its own key for Undo only; the journal export reads just the list (#767).
+    func testTheJournalExportLeavesTheEraseEpochOut() throws {
+        let defaults = makeDefaults()
+        let store = UserDefaultsSavedMealStore(defaults: defaults)
+        try store.restoreJournalSavedMeals([meal("meal-1", "Usual lunch")], receipt: "digest-1")
+        let epoch = store.ensureEraseEpoch()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let journal = try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
+
+        let document = try JournalExporter.makeExport(
+            store: journal, savedMeals: store, goals: InMemoryGoalStore(), appVersion: "test",
+            exportedAt: Date(timeIntervalSince1970: 1_700_000_000))
+        let json = try JournalExporter.json(document)
+
+        XCTAssertEqual(document.savedMeals.map(\.id), ["meal-1"], "the list itself is exported")
+        XCTAssertFalse(json.contains(epoch), "the erase epoch value must not reach the export")
+        XCTAssertFalse(json.contains(UserDefaultsSavedMealStore.eraseEpochKey), "nor its key")
+    }
+
     func testEraseAndAnUndoneRestoreForgetTheListAndTheReceipt() throws {
         let defaults = makeDefaults()
         let store = UserDefaultsSavedMealStore(defaults: defaults)
@@ -85,10 +106,10 @@ final class SavedMealsBackupTests: XCTestCase {
     func testTheSavedMealsRefusalSaysSavedMeals() {
         XCTAssertEqual(
             ConnectionsPrivacyViewModel.importFailureText(for: .savedMealsNotEmpty),
-            "This phone already has saved meals. An import that includes saved meals only works when there are none.")
+            "This device already has saved meals. An import that includes saved meals only works when there are none.")
         XCTAssertEqual(
             ConnectionsPrivacyViewModel.importFailureText(for: .notEmpty),
-            "This phone already has journal entries. An import only works on a journal that is empty.")
+            "This device already has journal entries. An import only works on a journal that is empty.")
         // Saved meals that could not be emptied again are reported as a partial restore, so its warning names them.
         XCTAssertEqual(
             ConnectionsPrivacyViewModel.importFailureText(for: .partialRestore(retainedIntakes: 0, retainedTombstones: 0)),

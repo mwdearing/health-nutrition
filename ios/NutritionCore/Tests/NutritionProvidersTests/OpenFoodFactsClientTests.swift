@@ -53,35 +53,25 @@ final class TestClock: @unchecked Sendable {
 final class OpenFoodFactsClientTests: XCTestCase {
     private let foundCode = "2000000000015"
 
-
     private func dec(_ text: String) -> Decimal {
         Decimal(string: text, locale: Locale(identifier: "en_US_POSIX"))!
     }
 
-
-
-
-
-
-
-
-
     /// The basis decision the product mapping uses, from the data-per and quantity-unit fields it is given.
-    private func basis(servingSize: String? = nil, quantityUnit: String?, per: String = "100g") throws -> OpenFoodFactsBasis {
-        _ = servingSize
+    private func basis(quantityUnit: String?, per: String = "100g") throws -> OpenFoodFactsBasis {
         return OpenFoodFactsBasis.decide(dataPer: per, quantityUnit: quantityUnit)
     }
 
     func testBasisFromProductQuantityUnitOnly() throws {
-        let powder = try basis(servingSize: "200 ml", quantityUnit: "g")
+        let powder = try basis(quantityUnit: "g")
         XCTAssertEqual(powder, .per100g)
         XCTAssertNotEqual(powder, .per100ml)
-        let powderNoUnit = try basis(servingSize: "200 ml", quantityUnit: nil)
+        let powderNoUnit = try basis(quantityUnit: nil)
         XCTAssertEqual(powderNoUnit, .per100Unspecified)
         XCTAssertNotEqual(powderNoUnit, .per100ml)
         let drink = try basis(quantityUnit: "ml")
         XCTAssertEqual(drink, .per100ml)
-        let solid = try basis(servingSize: "30 g", quantityUnit: "g")
+        let solid = try basis(quantityUnit: "g")
         XCTAssertEqual(solid, .per100g)
         let missing = try basis(quantityUnit: nil)
         XCTAssertEqual(missing, .per100Unspecified)
@@ -92,7 +82,6 @@ final class OpenFoodFactsClientTests: XCTestCase {
         let perServing = try basis(quantityUnit: "ml", per: "serving")
         XCTAssertEqual(perServing, .perServing)
     }
-
 
     func testInitializerFillsMissingStandardKeysWithUnknown() {
         let product = OpenFoodFactsProduct(
@@ -107,24 +96,12 @@ final class OpenFoodFactsClientTests: XCTestCase {
         XCTAssertEqual(product.nutrients[OpenFoodFactsProduct.fat], .known(dec("2"), .g))
     }
 
-
-
-
-
-
-
-
-
-
-
     func testValidCheckDigitsForEan8UpcAAndEan13() {
         XCTAssertTrue(BarcodeValidator.isValid("20000011"))
         XCTAssertTrue(BarcodeValidator.isValid("200000000011"))
         XCTAssertTrue(BarcodeValidator.isValid("2000000000015"))
         XCTAssertFalse(BarcodeValidator.isValid("2000000000014"))
     }
-
-
 
     func testAttributionNamesSourceAndLicense() {
         XCTAssertEqual(
@@ -133,9 +110,6 @@ final class OpenFoodFactsClientTests: XCTestCase {
         )
         XCTAssertEqual(OpenFoodFactsAttribution.url, "https://world.openfoodfacts.org")
     }
-
-
-
 
 }
 

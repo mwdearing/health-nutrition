@@ -82,9 +82,9 @@ logged amount is converted into the stated serving's unit first, so 0.48 L count
 against a logged volume does not agree and is nil, as is a serving stated no quantity at all — "per serving",
 "per serving (1 large biscuit)", "per serving (a handful)" — so the nutrient stays unknown rather than being scaled by
 a guess. A household measure that carries its gram weight in its own brackets, "per serving (1 bar
-(30 g))", is read from the innermost brackets, so the 30 g is what scales. That is done by the totals builder and not by the basis type itself: the intake-context encoder answers the
-same basis as unresolvable and its contract with the relay receiver says so, so changing what the basis means would be
-a contract change rather than one reader being able to answer a question the data can answer.
+(30 g))", is read from the innermost brackets, so the 30 g is what scales. That is done by the totals builder and not by the basis type itself. The intake-context encoder,
+the Apple Health write and the totals all take a "per 100 g or mL" label the same way (#395): per 100 g for logged
+weights and per 100 mL for logged volumes, through `IntakeContextSnapshotBasis.perHundredGOrMLFactor`.
 
 The key a value is read under is resolved through the **canonical nutrient mapping** `HealthKitWritePlanner` holds,
 not by an exact dictionary lookup. A barcode snapshot keeps the keys `LookedUpProduct.standardKeys` names —
