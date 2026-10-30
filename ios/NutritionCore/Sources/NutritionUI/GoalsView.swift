@@ -100,7 +100,6 @@ public struct GoalsView: View {
                     set: { self.model.userEditedDraft($0, for: row.nutrient) }))
                     .font(.body)
                     .foregroundStyle(TokenColors.textPrimary)
-                    .decimalAmountKeyboard()
                     .focused($focusedNutrient, equals: row.nutrient)
                     .onSubmit { self.model.submitTarget(for: row.nutrient) }
                     .accessibilityLabel("Daily target for \(row.displayName)")
