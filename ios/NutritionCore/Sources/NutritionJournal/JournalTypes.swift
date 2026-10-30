@@ -47,6 +47,9 @@ public enum JournalError: Error, Sendable, Equatable {
     /// An intake with an empty category, which the export contract requires to be at least one character.
     /// Carries the intake id.
     case emptyCategory(String)
+    /// An edit made against a revision the caller read, refused because the entry has a newer revision since.
+    /// Carries the intake id.
+    case staleRevision(String)
 }
 
 /// Validation of the identifiers used in the intake-context contract.
@@ -480,6 +483,19 @@ public protocol JournalStore: AnyObject, Sendable {
         intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
         now: Date, occurredAt: Date?, timeZoneIdentifier: String?, unitRemovals: [String]
     ) throws -> IntakeRevision
+    /// As `edit`, refused with `staleRevision` unless the entry is still at `expectedRevision`, the revision the
+    /// caller read, so a newer revision the person never saw is not overwritten.
+    @discardableResult
+    func edit(
+        intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
+        now: Date, occurredAt: Date?, timeZoneIdentifier: String?, expectedRevision: Int
+    ) throws -> IntakeRevision
+    /// As `editRemovingUnits`, refused with `staleRevision` unless the entry is still at `expectedRevision`.
+    @discardableResult
+    func editRemovingUnits(
+        intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
+        now: Date, occurredAt: Date?, timeZoneIdentifier: String?, unitRemovals: [String], expectedRevision: Int
+    ) throws -> IntakeRevision
     /// Marks the intake deleted and queues delete operations at the current revision, in one save.
     func delete(intakeID: String, now: Date) throws
     /// As `delete`, and returns the delete's place in the store's commit order.
@@ -488,7 +504,8 @@ public protocol JournalStore: AnyObject, Sendable {
     func createSequenced(
         _ intake: Intake, components: [IntakeComponent], product: ProductDefinition?, now: Date
     ) throws -> (IntakeRevision, UInt64)
-    /// The place of the latest delete in the store's commit order.
+    /// The place of the latest delete or water quick-add in the store's commit order. Both advance it, so a
+    /// water offer and a delete offer can be compared to tell which came last.
     var deleteSequence: UInt64 { get }
     /// Takes back a delete inside the Undo window: withdraws its queued delete operations and restores the
     /// intake and its projections as they were. Refused once a delete has reached a destination.
@@ -528,6 +545,39 @@ extension JournalStore {
     /// Stores without undo support refuse it rather than restoring an entry in the app alone.
     public func undoDelete(intakeID: String) throws {
         throw JournalError.undoUnavailable(intakeID)
+    }
+
+    /// The revision check for a store without its own: it reads the current revision, refuses a stale edit,
+    /// then edits. The check and the write are separate calls here, so a store that can make them one commit
+    /// (`SwiftDataJournalStore`) implements the requirement itself.
+    @discardableResult
+    public func edit(
+        intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
+        now: Date, occurredAt: Date?, timeZoneIdentifier: String?, expectedRevision: Int
+    ) throws -> IntakeRevision {
+        try refuseStaleRevision(intakeID: intakeID, expectedRevision: expectedRevision)
+        return try edit(
+            intakeID: intakeID, components: components, product: product, changeReason: changeReason, now: now,
+            occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier)
+    }
+
+    @discardableResult
+    public func editRemovingUnits(
+        intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
+        now: Date, occurredAt: Date?, timeZoneIdentifier: String?, unitRemovals: [String], expectedRevision: Int
+    ) throws -> IntakeRevision {
+        try refuseStaleRevision(intakeID: intakeID, expectedRevision: expectedRevision)
+        return try editRemovingUnits(
+            intakeID: intakeID, components: components, product: product, changeReason: changeReason, now: now,
+            occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier, unitRemovals: unitRemovals)
+    }
+
+    /// Throws `staleRevision` when the entry's latest revision is not `expectedRevision`. An entry with no
+    /// revisions is left to the edit, which refuses it as unknown.
+    private func refuseStaleRevision(intakeID: String, expectedRevision: Int) throws {
+        if let current = try revisions(of: intakeID).last?.number, current != expectedRevision {
+            throw JournalError.staleRevision(intakeID)
+        }
     }
 
     /// Corrects the amounts only and leaves the entry's time as it was.

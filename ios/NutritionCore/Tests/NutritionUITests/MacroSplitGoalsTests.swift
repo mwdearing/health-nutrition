@@ -133,7 +133,7 @@ final class MacroSplitGoalsTests: XCTestCase {
     }
 
     func testAnUnreadableStoreIsReportedAsAReadFailureNotAsAMissingEnergyGoal() {
-        let model = GoalsViewModel(store: InMemoryGoalStore(goals: [energyGoal(2000)], failNextRead: true))
+        let model = GoalsViewModel(store: InMemoryGoalStore(goals: [energyGoal(2000)], failReads: true))
 
         XCTAssertThrowsError(try model.macroSplitEnergyKcal()) {
             XCTAssertEqual($0 as? MacroSplitProblem, .readFailed)

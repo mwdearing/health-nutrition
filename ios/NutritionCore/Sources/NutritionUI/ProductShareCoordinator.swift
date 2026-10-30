@@ -32,6 +32,15 @@ public enum ProductShareStatus: String, Sendable {
     public private(set) var accountContext: ProductShareAccountContext?
     public private(set) var pauseReason: ProductSharePauseReason?
     public private(set) var storageFailed = false
+    /// True while the last share-operations read failed. Sharing is paused until a read works again (#775).
+    public private(set) var operationsReadFailed = false {
+        didSet { if operationsReadFailed != oldValue { readPauseChanges += 1 } }
+    }
+    /// Counts each time the read-failure pause is raised or lifted, so a screen can tell it changed even when a
+    /// different reader lifted it (#775).
+    public private(set) var readPauseChanges = 0
+    /// Sharing is blocked by a failed write (`storageFailed`) or by the last operations read failing.
+    public var sharingBlocked: Bool { storageFailed || operationsReadFailed }
     private let store: any CustomProductStore
     private let service: any CommunityProductServicing
     private let clock: () -> Date
@@ -124,9 +133,26 @@ public enum ProductShareStatus: String, Sendable {
         if lifecycleOwnerID == ownerID { lifecycleBlocked = false; lifecycleOwnerID = nil }
     }
 
+    /// A failed read pauses sharing rather than guessing from stale or missing state, and the next read that
+    /// works lifts that pause again (#775).
+    public func operations(ownerID: UUID) -> [ProductShareOperation]? {
+        do {
+            let operations = try store.productOperations(ownerID: ownerID)
+            operationsReadFailed = false
+            return operations
+        } catch { operationsReadFailed = true; return nil }
+    }
+
     public func status(localProductID: UUID) -> ProductShareStatus {
-        guard let context = accountContext,
-              let operation = try? store.productOperations(ownerID: context.ownerID).last(where: { $0.localProductID == localProductID }) else { return .onThisPhone }
+        guard let context = accountContext else { return .onThisPhone }
+        guard let saved = operations(ownerID: context.ownerID) else { return .paused }
+        return status(localProductID: localProductID, in: saved)
+    }
+
+    /// The status from operations already read, without reading the store again. Callers pass one snapshot.
+    public func status(localProductID: UUID, in operations: [ProductShareOperation]) -> ProductShareStatus {
+        guard accountContext != nil else { return .onThisPhone }
+        guard let operation = operations.last(where: { $0.localProductID == localProductID }) else { return .onThisPhone }
         if operation.status == .failed || operation.status == .needsReview { return .failed }
         if operation.kind == .withdraw && ![.acknowledged, .satisfied].contains(operation.status) { return .removalPending }
         if operation.status == .acknowledged || operation.status == .satisfied {
@@ -140,7 +166,7 @@ public enum ProductShareStatus: String, Sendable {
 
     @discardableResult public func requestWithdrawal(_ operation: ProductShareOperation, expectedStoreEpoch: UUID) throws -> ProductShareOperation {
         guard let context = accountContext, operation.ownerID == context.ownerID,
-              operation.epoch == context.localSessionEpoch, !lifecycleBlocked else { throw CustomProductStoreError.obsoleteOperation }
+              operation.epoch == context.localSessionEpoch, !lifecycleBlocked, !operationsReadFailed else { throw CustomProductStoreError.obsoleteOperation }
         // The atomic store mutation cancels only this product's publications. Its persisted status
         // rejects their late replies; unrelated transport retains its admission token and exact envelope.
         // A failed enqueue leaves the worker and every operation unchanged.
@@ -149,7 +175,7 @@ public enum ProductShareStatus: String, Sendable {
 
     public func retry(operationID: UUID) async {
         guard let context = accountContext,
-              let operation = try? store.productOperations(ownerID: context.ownerID).first(where: { $0.operationID == operationID }),
+              let operation = operations(ownerID: context.ownerID)?.first(where: { $0.operationID == operationID }),
               operation.status == .pending else { return }
         // A manual retry still honors server Retry-After and never revives permanent or canceled work.
         await runDueOperations(now: clock())
@@ -157,7 +183,10 @@ public enum ProductShareStatus: String, Sendable {
 
     public func runDueOperations(now: Date) async {
         if let running { rerunRequested = true; await running.value; return }
-        guard let context = accountContext, pauseReason == nil, !lifecycleBlocked, !storageFailed,
+        // A pause from a failed read is retried here too, so delivery resumes once reads work without waiting
+        // for a screen to read first (#775).
+        if operationsReadFailed, let context = accountContext { _ = operations(ownerID: context.ownerID) }
+        guard let context = accountContext, pauseReason == nil, !lifecycleBlocked, !sharingBlocked,
               context.profileReady, context.backendSupported else { return }
         let token = generation
         let task = Task<Void, Never> { [weak self] in await self?.deliver(context: context, token: token, now: now) }
@@ -170,6 +199,9 @@ public enum ProductShareStatus: String, Sendable {
         }
     }
 
+    /// The read-failure pause (`operationsReadFailed`) alone does not reject a send already under way, so its
+    /// reply is still recorded once the store can be read. New sends stop at `runDueOperations` and in the loop;
+    /// a store read that really fails mid-send still stops it, as before this change (#775).
     private func valid(_ context: ProductShareAccountContext, _ token: UUID) -> Bool {
         !Task.isCancelled && generation == token && accountContext == context && pauseReason == nil && !lifecycleBlocked && !storageFailed
     }
@@ -179,8 +211,20 @@ public enum ProductShareStatus: String, Sendable {
               [.pending, .sending].contains(saved.status) else { throw CancellationError() }
         return saved
     }
+    /// A `.sending` row is a leftover when this delivery run starts: `runDueOperations` starts a run only when
+    /// no send is in flight in this process, and a send's reply records before the run ends. Its reply never
+    /// recorded (#1041), so it goes back to `.pending`, as the store's recovery does for a restarted app, and
+    /// this run sends it again with the same operation ID, which the server answers as a replay.
+    private func requeueLeftoverSends(context: ProductShareAccountContext, token: UUID) {
+        guard valid(context, token), let saved = operations(ownerID: context.ownerID) else { return }
+        for operation in saved where operation.epoch == context.localSessionEpoch && operation.status == .sending {
+            do { try record(operation, status: .pending, reason: .network) }
+            catch { return }
+        }
+    }
     private func deliver(context: ProductShareAccountContext, token: UUID, now: Date) async {
         do {
+            requeueLeftoverSends(context: context, token: token)
             let capabilities = try await service.capabilities()
             guard valid(context, token), capabilities.supportedVersion == 2 else { return }
             if !capabilities.sharingPermission { try store.cancelProductPublications(ownerID: context.ownerID) }
@@ -189,9 +233,11 @@ public enum ProductShareStatus: String, Sendable {
                 capabilities.consentGeneration == context.serverGeneration &&
                 capabilities.callerAcknowledgment?.generation == capabilities.consentGeneration && capabilities.callerAcknowledgment?.version == 2
             var processed = Set<UUID>()
-            while valid(context, token) {
-                let operations = try store.productOperations(ownerID: context.ownerID)
-                guard let candidate = operations.first(where: {
+            // A read-failure pause raised mid-run stops new sends; a send already under way still records (#775).
+            while valid(context, token), !operationsReadFailed {
+                // Through the pausing read, so a failure here shows as paused rather than a silent stop (#775).
+                guard let saved = operations(ownerID: context.ownerID) else { break }
+                guard let candidate = saved.first(where: {
                     $0.epoch == context.localSessionEpoch && $0.status == .pending && !processed.contains($0.operationID) &&
                     ($0.nextAttemptAt == nil || $0.nextAttemptAt! <= now) &&
                     ($0.kind == .withdraw || (($0.attempts > 0 && $0.envelope != nil || publicationEligible) && $0.predecessorOperationID == nil))
@@ -208,6 +254,8 @@ public enum ProductShareStatus: String, Sendable {
                     operation = prepared
                     if operation.status != .pending || operation.predecessorOperationID != nil { continue }
                 }
+                // The pause can be raised during an await above, such as prepare; #775.
+                if operationsReadFailed { break }
                 await send(operation, context: context, token: token)
             }
         } catch is CancellationError { }

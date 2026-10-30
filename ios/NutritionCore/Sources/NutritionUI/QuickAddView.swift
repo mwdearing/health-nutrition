@@ -78,7 +78,6 @@ public struct QuickAddView: View {
             .font(.body)
             .decimalAmountKeyboard()
             .focused(focus)
-            .accessibilityHint(self.model.error(for: field) ?? "")
         }
     }
 }

@@ -32,8 +32,8 @@ final class WidgetSnapshotTests: XCTestCase {
 
     func testWaterIsDrawnInFluidOuncesUnderUSUnitsAndMillilitresOtherwise() {
         XCTAssertEqual(WidgetFigure.water(1_000, usUnits: true), "34 fl oz")
-        XCTAssertEqual(WidgetFigure.water(1_000, usUnits: false), "1000 mL")
-        XCTAssertEqual(WidgetFigure.water(1_000, usUnits: nil), "1000 mL", "a summary from before the field is metric")
+        XCTAssertEqual(WidgetFigure.water(1_000, usUnits: false), "1,000 mL")
+        XCTAssertEqual(WidgetFigure.water(1_000, usUnits: nil), "1,000 mL", "a summary from before the field is metric")
         XCTAssertEqual(WidgetFigure.water(0, usUnits: true), "0 fl oz")
         XCTAssertEqual(WidgetFigure.water(10, usUnits: true), "<1 fl oz", "a sip is not zero")
         XCTAssertEqual(WidgetFigure.water(15, usUnits: true), "1 fl oz")
@@ -73,7 +73,9 @@ final class WidgetSnapshotTests: XCTestCase {
         snapshot.energyKcal = 800
         snapshot.remainingKcal = 1_200
         snapshot.burnedKcal = 250
-        let grouped = { (value: Double) in value.formatted(.number.precision(.fractionLength(0))) }
+        let grouped = { (value: Double) in
+            value.formatted(.number.precision(.fractionLength(0)).locale(Locale(identifier: "en_US")))
+        }
         XCTAssertEqual(snapshot.remainingText, grouped(1_200))
         XCTAssertEqual(snapshot.foodText, "800")
         XCTAssertEqual(snapshot.burnedText, "250")
@@ -89,6 +91,7 @@ final class WidgetSnapshotTests: XCTestCase {
         snapshot.remainingKcal = nil
         snapshot.burnedKcal = nil
         XCTAssertEqual(WidgetFigure.groupedWholeNumber(-0.4), grouped(0), "never \"-0\"")
+        XCTAssertEqual(WidgetFigure.groupedWholeNumber(-1_500), "-1,500", "grouped in en_US whatever the device locale")
         XCTAssertNil(WidgetFigure.groupedWholeNumber(.infinity))
         XCTAssertNil(WidgetFigure.groupedWholeNumber(nil))
         XCTAssertNil(snapshot.remainingText)
@@ -97,7 +100,9 @@ final class WidgetSnapshotTests: XCTestCase {
     }
 
     func testAPartialDayMarksFoodAndRemainingAsApproved() throws {
-        let grouped = { (value: Double) in value.formatted(.number.precision(.fractionLength(0))) }
+        let grouped = { (value: Double) in
+            value.formatted(.number.precision(.fractionLength(0)).locale(Locale(identifier: "en_US")))
+        }
         var snapshot = WidgetSnapshot.empty(at: Date(timeIntervalSince1970: 1_700_000_000))
         snapshot.energyKcal = 800
         snapshot.remainingKcal = 1_200
@@ -382,7 +387,9 @@ final class WidgetSnapshotTests: XCTestCase {
     }
 
     func testFiguresAreWholeNumbersAndHugeOrBrokenValuesAreLeftOut() {
-        XCTAssertEqual(WidgetFigure.wholeNumber(1_849.6), "1850")
+        XCTAssertEqual(WidgetFigure.wholeNumber(1_849.6), "1,850")
+        XCTAssertEqual(WidgetFigure.number(2_494), "2,494", "widget figures group thousands like Today (#816)")
+        XCTAssertEqual(WidgetFigure.figure(2_494, unit: "g"), "2,494 g")
         XCTAssertEqual(WidgetFigure.wholeNumber(0), "0")
         XCTAssertNil(WidgetFigure.wholeNumber(nil))
         XCTAssertNil(WidgetFigure.wholeNumber(.nan))

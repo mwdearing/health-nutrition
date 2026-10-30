@@ -13,24 +13,10 @@ final class AddSearchRowUITests: XCTestCase {
         let getStarted = app.buttons["Get started"]
         if getStarted.waitForExistence(timeout: 5) { getStarted.tap() }
 
-        // Two buttons share this label and the first one is not hittable, so the tap went nowhere. Pick
-        // the hittable one, and wait for it to become hittable rather than tapping straight away.
-        let addCandidates = app.buttons.matching(NSPredicate(format: "label == %@", "Add food, drink, or supplement"))
-        let hittableAdd = NSPredicate(format: "isHittable == true")
-        let addButton = addCandidates.allElementsBoundByIndex.first(where: { $0.exists && $0.isHittable })
-        if addButton == nil {
-            let deadline = Date().addingTimeInterval(15)
-            while Date() < deadline, !addCandidates.allElementsBoundByIndex.contains(where: { $0.exists && $0.isHittable }) {
-                RunLoop.current.run(until: Date().addingTimeInterval(0.5))
-            }
-        }
-        let tappable = addCandidates.allElementsBoundByIndex.first(where: { $0.exists && $0.isHittable })
-        XCTAssertNotNil(tappable, "no hittable Add button on the Today screen (matching: \(hittableAdd))")
-        tappable?.tap()
-
-        // Matched by identifier: the Library picker and Library carry the same "Search foods" label.
+        // Matched by identifier: the Library picker and Library carry the same "Search foods" label. The shared
+        // opener waits for a hittable Add button and retries a tap that landed while Today was still settling.
         let row = app.buttons["addSearchRow"]
-        XCTAssertTrue(row.waitForExistence(timeout: 10),
+        XCTAssertTrue(openAddScreen(in: app, until: row),
                       "the search row is not on the Add screen. \(describeAddState(app))")
         XCTAssertTrue(row.isHittable, "the search row is on screen but cannot be tapped")
         row.tap()

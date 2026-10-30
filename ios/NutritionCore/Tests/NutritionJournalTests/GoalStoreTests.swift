@@ -109,10 +109,59 @@ final class GoalStoreTests: XCTestCase {
         XCTAssertEqual(try store.goal(for: "protein")?.target, Decimal(90))
     }
 
+    /// A receipt that still lists a goal is not all written, so marking it done is refused and leaves it pending.
+    func testMarkingAReceiptWithPendingGoalsDoneThrows() throws {
+        let store = try makeStore()
+        try store.recordGoalRestoreReceipt("pending-receipt", goals: [NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g)])
+        XCTAssertThrowsError(try store.markGoalRestoreReceiptDone("pending-receipt"))
+        XCTAssertEqual(try store.goalRestoreReceiptDone("pending-receipt"), false)
+    }
+
+    /// A goal the person already holds is skipped, not written, and still leaves the pending list, so a restore that
+    /// skipped it can be marked done. Fails if a skipped goal stays pending, which the pending-goals guard would refuse.
+    func testASkippedGoalLeavesTheReceiptSoItCanBeMarkedDone() throws {
+        let store = try makeStore()
+        try store.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(90), unit: .g))
+        try store.recordGoalRestoreReceipt("skip-receipt", goals: [NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g)])
+        XCTAssertFalse(try store.writeRestoredGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g), receipt: "skip-receipt"))
+        try store.markGoalRestoreReceiptDone("skip-receipt")
+        XCTAssertEqual(try store.goalRestoreReceiptDone("skip-receipt"), true)
+        XCTAssertEqual(try store.goal(for: "protein")?.target, Decimal(90), "the person's own goal is kept")
+    }
+
     /// A receipt is recorded before its goals are written, so marking one done when it is not there means the store lost it.
     /// Fails when a missing receipt is marked done without an error, which would hide the loss.
     func testMarkingAMissingReceiptDoneThrows() throws {
         let store = try makeStore()
         XCTAssertThrowsError(try store.markGoalRestoreReceiptDone("never-recorded"))
+    }
+
+    /// A key outside the Goals screen's fixed list, such as a compound a captured label states, is stored and read
+    /// back like any other key. `goals()` does not filter to the fixed list on purpose: a label's compound goal must
+    /// come back so the screen can list it under "From your labels".
+    func testAStoredCompoundKeyOutsideTheFixedListRoundTrips() throws {
+        let store = try makeStore()
+        try store.setGoal(NutrientGoal(nutrient: "creatine-monohydrate", target: Decimal(5), unit: .g))
+        try store.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+
+        let all = try store.goals()
+
+        XCTAssertEqual(all.map(\.nutrient), ["creatine-monohydrate", "protein"])
+        XCTAssertEqual(all.first, NutrientGoal(nutrient: "creatine-monohydrate", target: Decimal(5), unit: .g))
+        XCTAssertEqual(try store.goal(for: "creatine-monohydrate"), all.first)
+    }
+
+    /// A compound row whose stored unit symbol cannot be decoded fails the whole read, as a fixed-list row does. The
+    /// read does not drop the compound row and return the rest as if the list were complete.
+    func testACompoundRowWithAnUndecodableUnitFailsTheWholeRead() throws {
+        let store = try makeStore()
+        try store.setGoal(NutrientGoal(nutrient: "creatine-monohydrate", target: Decimal(5), unit: .g))
+        try store.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        try store.writeCorruptTargetForTesting(nutrient: "creatine-monohydrate", unitSymbol: "cups")
+
+        XCTAssertThrowsError(try store.goals()) { error in
+            XCTAssertEqual(error as? GoalStoreError, .corruptRecord("creatine-monohydrate"))
+        }
+        XCTAssertEqual(try store.goal(for: "protein")?.target, Decimal(60))
     }
 }
