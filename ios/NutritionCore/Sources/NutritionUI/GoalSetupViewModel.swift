@@ -158,15 +158,17 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
             wasPounds
                 ? Self.centimeters(feetText: heightFeetText, inchesText: heightInchesText, known: convertedHeight)
                 : Self.centimeters(metricText: heightCentimetersText, known: convertedHeight))
+        // Text that does not read as a number is carried over as typed, so the person sees it and can fix it.
         if pounds {
-            weightPoundsText = current?.text ?? ""
-            goalWeightPoundsText = goal?.text ?? ""
-            heightFeetText = height?.feetText ?? ""
+            weightPoundsText = current?.text ?? weightKilogramsText
+            goalWeightPoundsText = goal?.text ?? goalWeightKilogramsText
+            heightFeetText = height?.feetText ?? heightCentimetersText
             heightInchesText = height?.inchesText ?? ""
         } else {
-            weightKilogramsText = current?.text ?? ""
-            goalWeightKilogramsText = goal?.text ?? ""
-            heightCentimetersText = height?.centimetersText ?? ""
+            weightKilogramsText = current?.text ?? weightPoundsText
+            goalWeightKilogramsText = goal?.text ?? goalWeightPoundsText
+            heightCentimetersText = height?.centimetersText
+                ?? [heightFeetText, heightInchesText].filter { !$0.isEmpty }.joined(separator: " ")
         }
         convertedCurrentWeight = current
         convertedGoalWeight = goal
@@ -184,9 +186,15 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
         // a draft the person edited (its text differs from the old estimate) is kept as typed.
         if step == .results, selectedPaceKilograms != previousPace, let estimated = estimatedTargets {
             let edited = draftTargets.filter { estimated[$0.key] != $0.value }
+            let notices = (fields: fieldErrors, result: resultError)
             calculate()
             if !draftTargets.isEmpty {
                 for (key, text) in edited { draftTargets[key] = text }
+                // An edited draft keeps the notice a save gave it, since its text is unchanged.
+                for key in edited.keys { fieldErrors[key] = notices.fields[key] }
+                if resultError == nil, edited.keys.contains(where: { notices.fields[$0] != nil }) {
+                    resultError = notices.result
+                }
             }
         }
     }
