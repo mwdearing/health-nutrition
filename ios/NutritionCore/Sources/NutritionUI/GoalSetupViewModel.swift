@@ -182,7 +182,7 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
         textUnitSystem = unitSystem
         // At the results step the drafts were estimated for the old pace. Estimate them again for the new pace,
         // but only while the person has not edited them: an edited draft is kept as typed.
-        if step == .results, selectedPaceKilograms != previousPace, let estimated = estimatedTargets,
+        if false, step == .results, selectedPaceKilograms != previousPace, let estimated = estimatedTargets,
            draftTargets == estimated {
             calculate()
         }
