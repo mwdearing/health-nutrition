@@ -1,5 +1,6 @@
 import Foundation
 import NutritionDomain
+import SwiftData
 import XCTest
 @testable import NutritionJournal
 
@@ -7,8 +8,9 @@ import XCTest
 /// own store file, `medications.store`.
 ///
 /// The rules are the same for the SwiftData store and the in-memory one, so each rule test runs against
-/// both. A store never changes what was typed: a dose reads back with the amount, unit, time, zone and
-/// note it was saved with, and a row that cannot be read fails the read rather than vanishing from it.
+/// both. A store never changes what was typed: a dose reads back with the amount, unit, time, zone, site
+/// and note it was saved with, and a row that cannot be read fails the read rather than vanishing from it.
+/// Erasing replaces the store file, as every other store's erase does.
 final class MedicationStoreTests: XCTestCase {
     private let penID = UUID(uuidString: "00000000-0000-0000-0000-0000000000A1")!
     private let dropsID = UUID(uuidString: "00000000-0000-0000-0000-0000000000B2")!
@@ -47,11 +49,11 @@ final class MedicationStoreTests: XCTestCase {
 
     private func dose(
         _ text: String, of medicationID: UUID? = nil, unit: MedicationUnit = .mg, at seconds: TimeInterval,
-        zone: String = "America/Chicago", note: String? = nil, id: UUID = UUID()
+        zone: String = "America/Chicago", site: String? = nil, note: String? = nil, id: UUID = UUID()
     ) -> MedicationDose {
         MedicationDose(
             id: id, medicationID: medicationID ?? penID, takenAt: Date(timeIntervalSince1970: seconds),
-            timeZoneIdentifier: zone, amount: amount(text), unit: unit, note: note)
+            timeZoneIdentifier: zone, amount: amount(text), unit: unit, site: site, note: note)
     }
 
     private func storeError(_ check: () throws -> Void) -> MedicationStoreError? {
@@ -130,6 +132,34 @@ final class MedicationStoreTests: XCTestCase {
             try store.saveDose(typed)
             XCTAssertEqual(try store.doses(of: penID), [typed], kind)
             XCTAssertEqual(try store.allDoses(), [typed], kind)
+        }
+    }
+
+    func testEveryUnitAndTheSiteRoundTrip() throws {
+        for (kind, store) in try freshStores() {
+            let vial = Medication(id: penID, name: "Example vial", unit: .mL, scheduleDays: 7)
+            let unitPen = Medication(id: dropsID, name: "Example unit pen", unit: .units)
+            try store.saveMedication(vial)
+            try store.saveMedication(unitPen)
+            XCTAssertEqual(try store.medications(), [unitPen, vial], kind)
+            let drawn = dose("0.25", unit: .mL, at: 1_789_961_400, site: "Left thigh")
+            let dialed = dose("12", of: dropsID, unit: .units, at: 1_790_200_000)
+            try store.saveDose(drawn)
+            try store.saveDose(dialed)
+            XCTAssertEqual(try store.doses(of: penID), [drawn], kind)
+            XCTAssertEqual(try store.doses(of: penID).first?.site, "Left thigh", kind)
+            XCTAssertEqual(try store.doses(of: dropsID), [dialed], kind)
+            XCTAssertNil(try store.doses(of: dropsID).first?.site, kind)
+        }
+    }
+
+    func testADoseWithAnInvalidSiteWritesNothing() throws {
+        for (kind, store) in try freshStores() {
+            try store.saveMedication(pen)
+            XCTAssertThrowsError(try store.saveDose(dose("2.5", at: 1_789_961_400, site: " ")), kind) { error in
+                XCTAssertEqual(error as? MedicationError, .siteEmpty, kind)
+            }
+            XCTAssertEqual(try store.allDoses(), [], kind)
         }
     }
 
@@ -256,7 +286,8 @@ final class MedicationStoreTests: XCTestCase {
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appendingPathComponent("medications.store")
         let archivedDrops = Medication(id: dropsID, name: "Example daily drops", unit: .mcg, isArchived: true)
-        let typed = dose("0.125", at: 1_789_961_400, zone: "Asia/Tokyo", note: "Second pen of the box")
+        let typed = dose(
+            "0.125", at: 1_789_961_400, zone: "Asia/Tokyo", site: "Abdomen, left", note: "Second pen of the box")
         let plain = dose("62.5", of: dropsID, unit: .mcg, at: 1_790_200_000, zone: "UTC")
 
         let first = try makeStore(at: url)
@@ -270,6 +301,7 @@ final class MedicationStoreTests: XCTestCase {
         XCTAssertEqual(try reopened.medications(), [archivedDrops, pen])
         XCTAssertEqual(try reopened.allDoses(), [plain, typed])
         XCTAssertEqual(try reopened.doses(of: penID).first?.amount, amount("0.125"))
+        XCTAssertEqual(try reopened.doses(of: penID).first?.site, "Abdomen, left")
         XCTAssertNil(try reopened.medications().first?.scheduleDays)
     }
 
@@ -304,7 +336,7 @@ final class MedicationStoreTests: XCTestCase {
         let store = try makeStore()
         try store.saveMedication(pen)
         try store.saveMedication(drops)
-        try store.writeCorruptMedicationForTesting(id: dropsID, unitText: "mL")
+        try store.writeCorruptMedicationForTesting(id: dropsID, unitText: "ml")
         XCTAssertTrue(isCorrupt { _ = try store.medications() })
 
         let other = try makeStore()
@@ -315,11 +347,13 @@ final class MedicationStoreTests: XCTestCase {
 
     func testAnUnreadableDoseFailsTheWholeRead() throws {
         for corrupt in [
-            (amountText: "1.2.3", unitText: nil, zone: nil),
-            (amountText: "0", unitText: nil, zone: nil),
-            (amountText: nil, unitText: "units", zone: nil),
-            (amountText: nil, unitText: nil, zone: "Not/AZone"),
-        ] as [(amountText: String?, unitText: String?, zone: String?)] {
+            (amountText: "1.2.3", unitText: nil, zone: nil, site: nil),
+            (amountText: "0", unitText: nil, zone: nil, site: nil),
+            (amountText: nil, unitText: "IU", zone: nil, site: nil),
+            (amountText: nil, unitText: nil, zone: "Not/AZone", site: nil),
+            (amountText: nil, unitText: nil, zone: nil, site: " "),
+            (amountText: nil, unitText: nil, zone: nil, site: String(repeating: "s", count: 41)),
+        ] as [(amountText: String?, unitText: String?, zone: String?, site: String?)] {
             let store = try makeStore()
             try store.saveMedication(pen)
             let kept = dose("2.5", at: 1_789_961_400)
@@ -328,10 +362,114 @@ final class MedicationStoreTests: XCTestCase {
             try store.saveDose(damaged)
             try store.writeCorruptDoseForTesting(
                 id: damaged.id, amountText: corrupt.amountText, unitText: corrupt.unitText,
-                timeZoneIdentifier: corrupt.zone)
+                timeZoneIdentifier: corrupt.zone, site: corrupt.site)
             XCTAssertTrue(isCorrupt { _ = try store.doses(of: self.penID) }, "\(corrupt)")
             XCTAssertTrue(isCorrupt { _ = try store.allDoses() }, "\(corrupt)")
         }
+    }
+
+    // MARK: Erase replaces the store file
+
+    private func makeDirectory() throws -> URL {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        return directory
+    }
+
+    func testAnEraseReplacesTheStoreFileAndTheStoreStaysUsable() throws {
+        let url = try makeDirectory().appendingPathComponent("medications.store")
+        let store = try SwiftDataMedicationStore(url: url)
+        try store.saveMedication(pen)
+        try store.saveDose(dose("2.5", at: 1_789_961_400, site: "Left thigh"))
+        let before = try XCTUnwrap(FileManager.default.attributesOfItem(atPath: url.path)[.systemFileNumber] as? UInt64)
+        // A plain read handle keeps the old file's number allocated, so the replacement cannot reuse it.
+        let pinned = try FileHandle(forReadingFrom: url)
+        defer { try? pinned.close() }
+
+        try store.eraseAll()
+
+        let after = try XCTUnwrap(FileManager.default.attributesOfItem(atPath: url.path)[.systemFileNumber] as? UInt64)
+        XCTAssertNotEqual(before, after, "the erase deleted rows but left the store file in place")
+        XCTAssertEqual(try store.medications(), [])
+        XCTAssertEqual(try store.allDoses(), [])
+        try store.saveMedication(drops)
+        store.close()
+        let reopened = try SwiftDataMedicationStore(url: url)
+        XCTAssertEqual(try reopened.medications(), [drops])
+        reopened.close()
+    }
+
+    func testAFailedFileRemovalIsReportedAndStopsTheErase() throws {
+        let url = try makeDirectory().appendingPathComponent("medications.store")
+        let calls = MedicationRemovedFiles()
+        let store = try SwiftDataMedicationStore(
+            url: url,
+            fileOperations: StoreFileOperations(
+                checkpoint: { _ in },
+                remove: { file in
+                    calls.names.append(file.lastPathComponent)
+                    throw CocoaError(.fileWriteNoPermission)
+                },
+                openContainer: SwiftDataMedicationStore.makeContainer))
+        try store.saveMedication(pen)
+        try store.saveDose(dose("2.5", at: 1_789_961_400))
+
+        XCTAssertThrowsError(try store.eraseAll()) {
+            XCTAssertEqual(($0 as? CocoaError)?.code, .fileWriteNoPermission)
+        }
+        XCTAssertEqual(calls.names.count, 1, "the erase stops at the first failed removal")
+        // The rows were deleted before the files, and the store reopened on the file the erase left.
+        XCTAssertEqual(try store.medications(), [])
+        XCTAssertEqual(try store.allDoses(), [])
+        store.close()
+    }
+
+    func testAFailedCheckpointRemovesNothing() throws {
+        let url = try makeDirectory().appendingPathComponent("medications.store")
+        let calls = MedicationRemovedFiles()
+        let store = try SwiftDataMedicationStore(
+            url: url,
+            fileOperations: StoreFileOperations(
+                checkpoint: { _ in throw StoreFileError.checkpointFailed },
+                remove: { file in
+                    calls.names.append(file.lastPathComponent)
+                    try FileManager.default.removeItem(at: file)
+                },
+                openContainer: SwiftDataMedicationStore.makeContainer))
+        try store.saveMedication(pen)
+
+        XCTAssertThrowsError(try store.eraseAll()) { XCTAssertEqual($0 as? StoreFileError, .checkpointFailed) }
+        XCTAssertTrue(calls.names.isEmpty)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+        store.close()
+    }
+
+    func testAFailedReopenIsReportedAndRetriedByTheNextCall() throws {
+        let url = try makeDirectory().appendingPathComponent("medications.store")
+        let reopen = MedicationReopenSwitch()
+        let store = try SwiftDataMedicationStore(
+            url: url,
+            fileOperations: StoreFileOperations(
+                checkpoint: { _ in },
+                remove: { try FileManager.default.removeItem(at: $0) },
+                openContainer: { url in
+                    if reopen.fails { throw CocoaError(.fileWriteNoPermission) }
+                    return try SwiftDataMedicationStore.makeContainer(url: url)
+                }))
+        try store.saveMedication(pen)
+
+        reopen.fails = true
+        XCTAssertThrowsError(try store.eraseAll()) {
+            XCTAssertEqual(($0 as? CocoaError)?.code, .fileWriteNoPermission)
+        }
+        XCTAssertThrowsError(try store.medications()) {
+            XCTAssertEqual(($0 as? CocoaError)?.code, .fileWriteNoPermission)
+        }
+        reopen.fails = false
+        XCTAssertEqual(try store.medications(), [])
+        store.close()
+        XCTAssertEqual(storeError { _ = try store.medications() }, .closed)
     }
 
     // MARK: In-memory store
@@ -355,4 +493,14 @@ final class MedicationStoreTests: XCTestCase {
         XCTAssertEqual(try store.medications(), [pen])
         XCTAssertEqual(try store.allDoses(), [taken])
     }
+}
+
+/// The file names a test's removal step was asked to delete, in order.
+private final class MedicationRemovedFiles: @unchecked Sendable {
+    var names: [String] = []
+}
+
+/// Lets a test make the store's reopen fail, then succeed, on later calls.
+private final class MedicationReopenSwitch: @unchecked Sendable {
+    var fails = false
 }
