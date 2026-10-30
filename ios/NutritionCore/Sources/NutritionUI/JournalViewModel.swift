@@ -127,6 +127,9 @@ public struct JournalWeekSummary: Equatable {
 
 @MainActor
 public final class JournalViewModel: ObservableObject {
+    /// What other apps logged to Apple Health on each day, by the day's yyyy-MM-dd key. The app sets it after reading
+    /// Health for the days on screen; a day without an entry here reads journal-only, as before.
+    public var outsideIntakeByDay: [String: HealthIntakeTotals.Outside] = [:]
     @Published public private(set) var sections: [JournalDaySection] = [] {
         didSet { arrowSectionIDs = diarySections.map(\.id) }
     }
@@ -295,8 +298,9 @@ public final class JournalViewModel: ObservableObject {
                     mealGroups: Self.mealGroups(for: rows),
                     headerBars: Self.headerBars(
                         totals: totals, goals: storedGoals, hasFoodEntries: Self.hasFoodEntries(rows),
-                        unitSystem: self.preferences.unitSystem, hidden: hiddenGoals),
-                    energyText: Self.energyText(totals: totals),
+                        unitSystem: self.preferences.unitSystem, hidden: hiddenGoals,
+                        outside: self.outsideIntakeByDay[key] ?? .notConnected),
+                    energyText: Self.energyText(totals: totals, outside: self.outsideIntakeByDay[key] ?? .notConnected),
                     isCollapsedByDefault: !rows.isEmpty && rows.allSatisfy { row in
                         let zone = TimeZone(identifier: row.timeZoneIdentifier) ?? TimeZone.current
                         return Self.isMoreThanAWeekBefore(Self.dayKey(row.occurredAt, zone: zone), now: now, zone: zone)
@@ -820,24 +824,29 @@ public final class JournalViewModel: ObservableObject {
     /// One bar per stored goal that is not water and is shown on Today, in the stored order, at most
     /// three. A nutrient with a goal but no value in the day still gets a bar, which says it cannot be
     /// totaled or is unlogged.
+    /// `outside` is what other apps logged to Apple Health that day; it is added the same way Today adds it, so the
+    /// header reads the whole day wherever an entry was logged.
     static func headerBars(
         totals: DailyTotals, goals: [NutrientGoal], hasFoodEntries: Bool, unitSystem: UnitSystem,
-        hidden: Set<String> = []
+        hidden: Set<String> = [], outside: HealthIntakeTotals.Outside = .notConnected
     ) -> [GoalBarModel] {
         goals.filter { $0.nutrient != DailyTotalsBuilder.waterKey && !hidden.contains($0.nutrient) }
             .prefix(3).map { goal -> GoalBarModel in
-            let line = NutrientProgressLine.make(
+            let journalLine = NutrientProgressLine.make(
                 nutrient: goal.nutrient, total: totals.total(for: goal.nutrient), goal: goal,
                 knownSum: totals.knownSum(for: goal.nutrient), missingCount: totals.missingCount(for: goal.nutrient))
+            let line = HealthIntakeTotals.combine([journalLine], outside: outside).first ?? journalLine
             return GoalBarModel.make(
                 line: line, hasEntries: line.hasKnownAmount || hasFoodEntries, missingCount: line.missingCount,
                 unitSystem: unitSystem)
         }
     }
 
-    /// The day's energy as "1240 kcal", or nil when the day cannot total it. Never a zero for unknown.
-    static func energyText(totals: DailyTotals) -> String? {
-        let line = NutrientProgressLine.make(nutrient: energyKey, total: totals.total(for: energyKey), goal: nil)
+    /// The day's energy as "1240 kcal", or nil when the day cannot total it. Never a zero for unknown. `outside` is
+    /// the energy other apps logged to Apple Health that day, added as Today adds it.
+    static func energyText(totals: DailyTotals, outside: HealthIntakeTotals.Outside = .notConnected) -> String? {
+        let journalLine = NutrientProgressLine.make(nutrient: energyKey, total: totals.total(for: energyKey), goal: nil)
+        let line = HealthIntakeTotals.combine([journalLine], outside: outside).first ?? journalLine
         guard case .known(let value, _) = line.amount else { return nil }
         // Energy reads as "400 Calories": the Diary never shows the kcal symbol on a screen. A small positive
         // amount reads "under 1", never "0", the same as Today's ring.
