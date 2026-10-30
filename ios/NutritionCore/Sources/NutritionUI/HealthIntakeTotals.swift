@@ -25,7 +25,8 @@ public enum HealthIntakeTotals {
     }
 
     static func combine(_ line: NutrientProgressLine, outside: Outside) -> NutrientProgressLine {
-        guard let unit = HealthKitWritePlanner.mapping(for: line.nutrient)?.unit
+        guard line.nutrient != DailyTotalsBuilder.waterKey,
+              let unit = HealthKitWritePlanner.mapping(for: line.nutrient)?.unit
         else { return line }
 
         // The journal's side: complete when the whole day is known, a known partial sum otherwise. Its amount is
