@@ -101,4 +101,16 @@ final class HealthIntakeTodayTests: XCTestCase {
         // on both, never 1,250 (the figure adding it twice) or 1,000 (the line counting the figure again).
         XCTAssertEqual(model.waterTotalMilliliters, 750)
     }
+
+    /// With only Health water and none logged here, the water bar shows progress, not "Nothing logged yet".
+    func testTheWaterBarShowsHealthOnlyWaterAsLogged() throws {
+        let goals = InMemoryGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "water", target: 2000, unit: .mL))
+        let model = TodayViewModel(store: try makeJournal(), goals: goals, timeZoneIdentifier: "UTC")
+        model.outsideIntake = .read(values: ["water": 500], readKeys: ["water"])
+        model.load(now: now)
+        let bar = try XCTUnwrap(model.waterBar)
+        XCTAssertEqual(bar.state, .progress)
+        XCTAssertNotEqual(bar.valueText, "Nothing logged yet")
+    }
 }
