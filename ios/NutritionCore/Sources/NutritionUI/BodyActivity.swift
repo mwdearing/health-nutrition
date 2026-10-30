@@ -10,6 +10,8 @@ public struct BodyActivityReadings: Equatable, Sendable {
     public var activeEnergyKcal: Decimal?
     public var latestWeightKg: Decimal?
     public var latestWeightDate: Date?
+    /// The newest height in Health, in centimeters, used only to prefill goal setup. Never stored.
+    public var latestHeightCm: Decimal?
     /// Every weigh-in of the last 28 days, each on its local day, for the trend.
     public var weightSamples: [WeightSample]
     /// Today's nutrient totals from entries other apps wrote to Health, per canonical nutrient key, in
@@ -106,8 +108,8 @@ public final class BodyActivityViewModel: ObservableObject {
 
     /// Reads the saved plan, then the trend through the local day of `now`, then the plan beside the trend.
     /// The pace comparison needs a loss or gain plan with a goal and a pace, and a current weight from the
-    /// trend or else the latest weigh-in. The day is read as a Gregorian date in the calendar's time zone,
-    /// so a device set to another calendar gets the same day.
+    /// trend or else a latest weigh-in inside the trend's window. The day is read as a Gregorian date in the
+    /// calendar's time zone, so a device set to another calendar gets the same day.
     private func applyWeightPlan(now: Date) {
         plan = weightPlan()
         var gregorian = Calendar(identifier: .gregorian)
@@ -125,7 +127,7 @@ public final class BodyActivityViewModel: ObservableObject {
             goalKilograms: aimsAtGoal ? plan?.goalKilograms : nil)
         trend = result
         guard aimsAtGoal, let plan, let goal = plan.goalKilograms, let pace = plan.weeklyPaceKilograms,
-              let current = result.trendKilograms ?? readings.latestWeightKg
+              let current = result.trendKilograms ?? recentLatestWeight(window: result, calendar: gregorian)
         else {
             paceComparison = nil
             return
@@ -133,6 +135,16 @@ public final class BodyActivityViewModel: ObservableObject {
         paceComparison = PlanProjection.compare(
             aim: plan.aim, weeklyPaceKilograms: pace, currentKilograms: current, goalKilograms: goal,
             trend: result)
+    }
+
+    /// The latest weigh-in, only when its Gregorian day falls inside the trend's window.
+    private func recentLatestWeight(window: WeightTrendResult, calendar: Calendar) -> Decimal? {
+        guard let date = readings.latestWeightDate else { return nil }
+        let parts = calendar.dateComponents([.year, .month, .day], from: date)
+        guard let day = CalendarDay(year: parts.year ?? 0, month: parts.month ?? 0, day: parts.day ?? 0),
+              window.from <= day && day <= window.through
+        else { return nil }
+        return readings.latestWeightKg
     }
 
     /// Shows Health's read request, then reads.

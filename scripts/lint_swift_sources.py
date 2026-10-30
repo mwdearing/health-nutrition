@@ -1061,6 +1061,15 @@ def _arm_tail_end(
     boundary = min(boundary, limit)
     if not masked[position:boundary].strip():
         return end
+    index = position
+    while index < boundary and masked[index].isspace():
+        index += 1
+    # Another conditional block right after this one is read the same way, not as
+    # a sibling view (#68).
+    following_block = BRANCH_DIRECTIVE.match(masked, index)
+    if following_block is not None and following_block.group(1) == "if":
+        reached = _arm_chain_end(masked, index, bodies, limit)
+        return None if reached is None else max(end, reached)
     if not _starts_with_modifier(masked, position):
         return None
     return max(end, min(_chain_end(masked, position, bodies), boundary, limit))

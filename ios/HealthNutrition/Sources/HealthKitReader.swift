@@ -11,17 +11,22 @@ import NutritionUI
 final class HealthKitReader: BodyActivityReading {
     private let healthStore = HKHealthStore()
     private let defaults: UserDefaults
-    /// Versioned with the read set: builds before nutrient reading asked for steps, energy and weight under the
-    /// old key only, so their card offers the request again and the nutrient types are asked for once.
-    private static let askedKey = "healthKitReader.askedForReadAccess.nutrition"
-    private static let legacyAskedKey = "healthKitReader.askedForReadAccess"
+    /// Versioned with the read set: a person asked under an earlier set (before nutrient reading, then before
+    /// height) has only the old key, so their card offers the request again and the new types are asked for once.
+    private static let askedKey = "healthKitReader.askedForReadAccess.height"
+    private static let legacyAskedKeys = [
+        "healthKitReader.askedForReadAccess", "healthKitReader.askedForReadAccess.nutrition",
+    ]
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
     }
 
-    private static var readTypes: Set<HKObjectType> {
-        var types: Set<HKObjectType> = [HKQuantityType(.stepCount), HKQuantityType(.activeEnergyBurned), HKQuantityType(.bodyMass)]
+    static var readTypes: Set<HKObjectType> {
+        var types: Set<HKObjectType> = [
+            HKQuantityType(.stepCount), HKQuantityType(.activeEnergyBurned), HKQuantityType(.bodyMass),
+            HKQuantityType(.height),
+        ]
         for identifier in OutsideIntakeTotals.readQuantityTypeIdentifiers {
             if let type = HKObjectType.quantityType(forIdentifier: HKQuantityTypeIdentifier(rawValue: identifier)) {
                 types.insert(type)
@@ -35,7 +40,7 @@ final class HealthKitReader: BodyActivityReading {
     /// Erase all data returns the card to its opt-in state: the next read waits for the person again.
     nonisolated static func forgetReadAccess(defaults: UserDefaults = .standard) {
         defaults.removeObject(forKey: Self.askedKey)
-        defaults.removeObject(forKey: Self.legacyAskedKey)
+        for key in Self.legacyAskedKeys { defaults.removeObject(forKey: key) }
     }
 
     func requestReadAccess() async {
@@ -63,6 +68,7 @@ final class HealthKitReader: BodyActivityReading {
             readings.latestWeightKg = latest.kilograms
             readings.latestWeightDate = latest.date
         }
+        readings.latestHeightCm = await latestHeightCentimeters(before: now)
         let weightWindowStart = Calendar.current.date(byAdding: .day, value: -27, to: startOfDay) ?? startOfDay
         readings.weightSamples = await weightSamples(from: weightWindowStart, to: now)
         return readings
@@ -164,6 +170,17 @@ final class HealthKitReader: BodyActivityReading {
             limit: 1)
         guard let sample = try? await descriptor.result(for: healthStore).first else { return nil }
         return (Decimal(sample.quantity.doubleValue(for: .gramUnit(with: .kilo))), sample.endDate)
+    }
+
+    /// The newest height sample at or before `date`, in centimeters.
+    private func latestHeightCentimeters(before date: Date) async -> Decimal? {
+        let predicate = HKQuery.predicateForSamples(withStart: nil, end: date, options: [])
+        let descriptor = HKSampleQueryDescriptor(
+            predicates: [.quantitySample(type: HKQuantityType(.height), predicate: predicate)],
+            sortDescriptors: [SortDescriptor(\.endDate, order: .reverse)],
+            limit: 1)
+        guard let sample = try? await descriptor.result(for: healthStore).first else { return nil }
+        return Decimal(sample.quantity.doubleValue(for: .meterUnit(with: .centi)))
     }
 
     /// Every weight sample that starts from `start` up to `end`, each with the local day it was taken, read as a

@@ -49,9 +49,9 @@ public struct RecentItemsProvider {
         let intakes = try store.activeIntakes().filter { $0.lifecycle == .active }.sorted { $0.occurredAt > $1.occurredAt }
         for intake in intakes {
             guard result.count < limit else { break }
-            guard let revisions = try? store.revisions(of: intake.id),
-                let current = revisions.first(where: { $0.number == intake.currentRevision })
-            else { continue }
+            // A failed read throws: one unreadable entry is a failed load, not a row that quietly goes missing.
+            let revisions = try store.revisions(of: intake.id)
+            guard let current = revisions.first(where: { $0.number == intake.currentRevision }) else { continue }
             let key = Self.key(category: intake.category, revision: current, meal: intake.meal)
             guard seen.insert(key).inserted else { continue }
             result.append(RecentItem(id: key, template: template(intake: intake, revision: current), lastUsedAt: intake.occurredAt))
@@ -94,15 +94,16 @@ public struct RecentItemsProvider {
         // Each snapshot is read once, however many entries used it: a product logged hundreds of times is one query.
         var productsBySnapshot: [String: ProductDefinition?] = [:]
         for intake in intakes where !keptOutOfLibrary.contains(intake.id) {
-            guard let revisions = try? store.revisions(of: intake.id),
-                let current = revisions.first(where: { $0.number == intake.currentRevision }),
+            let revisions = try store.revisions(of: intake.id)
+            guard let current = revisions.first(where: { $0.number == intake.currentRevision }),
                 let snapshotID = current.productSnapshotID
             else { continue }
             let loaded: ProductDefinition?
             if let cached = productsBySnapshot[snapshotID] {
                 loaded = cached
             } else {
-                loaded = try? store.product(snapshotID: snapshotID)
+                // A failed read fails the load rather than dropping the product's row (#775).
+                loaded = try store.product(snapshotID: snapshotID)
                 productsBySnapshot[snapshotID] = loaded
             }
             guard let product = loaded,
@@ -342,7 +343,8 @@ public final class LibraryViewModel: ObservableObject {
                     .compactMap(\.productSnapshotID))
             var kinds: [String: ProductKind] = [:]
             for snapshotID in snapshotIDs {
-                kinds[snapshotID] = (try? store.product(snapshotID: snapshotID))?.kind ?? .food
+                // A read that fails leaves no kind, so the template's own category decides (#775).
+                kinds[snapshotID] = (try? store.product(snapshotID: snapshotID))?.kind
             }
             func kind(of template: RepeatTemplate) -> ProductKind {
                 ProductKindResolution.kind(
@@ -392,6 +394,8 @@ public final class LibraryViewModel: ObservableObject {
             ]
             errorMessage = nil
         } catch {
+            // Rows from an earlier load are not kept under the error: they may be what failed to read.
+            sections = []
             errorMessage = "Could not read the library."
         }
     }
@@ -433,10 +437,12 @@ public final class LibraryViewModel: ObservableObject {
         return try productStore?.customProducts().first { $0.localProductID == localID }
     }
     public func canCompleteProduct(_ item: LibraryItem) -> Bool {
-        // A quick add is amounts with no product behind them, so there is no product to edit.
-        if let id = item.template.productSnapshotID,
-           (try? store.product(snapshotID: id))?.catalogOrigin == IntakeContextFactCatalog.quickAddOrigin {
-            return false
+        // A quick add is amounts with no product behind them, so there is no product to edit. A product that
+        // can't be read isn't offered either: the read failing doesn't show it isn't a quick add (#775).
+        if let id = item.template.productSnapshotID {
+            let product: ProductDefinition?
+            do { product = try store.product(snapshotID: id) } catch { return false }
+            if product?.catalogOrigin == IntakeContextFactCatalog.quickAddOrigin { return false }
         }
         return item.template.productSnapshotID != nil || ["food", "supplement"].contains(item.template.category)
     }

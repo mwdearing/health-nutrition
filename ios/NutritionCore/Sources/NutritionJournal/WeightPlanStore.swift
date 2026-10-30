@@ -18,23 +18,23 @@ public protocol WeightPlanStore: AnyObject, Sendable {
 /// A weight plan held in memory, for tests and for a caller that has nowhere to persist to.
 ///
 /// It answers exactly what it was given, so a test can hold a store that refuses a write or throws on
-/// a read - states a real store reaches too.
+/// a read - states a real store reaches too. `failReads` fails every read, not only the first.
 public final class InMemoryWeightPlanStore: WeightPlanStore, @unchecked Sendable {
     private let lock = NSLock()
     private var plan: WeightPlan?
-    private let failNextRead: Bool
+    private let failReads: Bool
     private let refusesWrites: Bool
 
-    public init(plan: WeightPlan? = nil, failNextRead: Bool = false, refusesWrites: Bool = false) {
+    public init(plan: WeightPlan? = nil, failReads: Bool = false, refusesWrites: Bool = false) {
         self.plan = plan
-        self.failNextRead = failNextRead
+        self.failReads = failReads
         self.refusesWrites = refusesWrites
     }
 
     private struct Unsupported: Error {}
 
     public func weightPlan() throws -> WeightPlan? {
-        if failNextRead { throw Unsupported() }
+        if failReads { throw Unsupported() }
         return lock.withLock { plan }
     }
 

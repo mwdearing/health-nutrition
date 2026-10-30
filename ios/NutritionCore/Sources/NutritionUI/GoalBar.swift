@@ -29,14 +29,11 @@ public struct GoalBarModel: Equatable, Identifiable {
     public let accessibilityText: String
     /// The one line that explains a state that needs explaining, or nil.
     public let reason: String?
-    /// Whether the track is drawn. Always true, so a nutrient with no goal keeps an empty track and its row lines up.
-    public let showsTrack: Bool
 
     public init(
         id: String, label: String, valueText: String, state: GoalBarState, fraction: Decimal?,
-        goalMarker: Decimal?, accessibilityText: String, reason: String?, showsTrack: Bool = true
+        goalMarker: Decimal?, accessibilityText: String, reason: String?
     ) {
-        self.showsTrack = showsTrack
         self.id = id
         self.label = label
         self.valueText = valueText
@@ -147,7 +144,6 @@ public struct GoalBarModel: Equatable, Identifiable {
         }
         return MissingValueWording.partialNote(name: name, healthGap: line.healthGap, count: missingCount)
     }
-
 }
 
 /// A labeled bar: the nutrient and its figure above a capsule track. One accessibility element, so
@@ -171,9 +167,8 @@ public struct GoalBar: View {
                     .foregroundStyle(valueColor)
                     .multilineTextAlignment(.trailing)
             }
-            if model.showsTrack {
-                track
-            }
+            // Every bar keeps its track, so a nutrient with no goal stays empty and its row lines up with the others.
+            track
             if let reason = model.reason {
                 Text(reason)
                     .font(.footnote)
@@ -252,6 +247,14 @@ enum MissingValueWording {
         if count == 1 { return "1 entry has no \(name) value" }
         if count > 1 { return "\(count) entries have no \(name) value" }
         return fallback(name: name)
+    }
+
+    /// The calorie summary's count note (#486): it says "calories", whatever the energy row is named on other
+    /// screens. Nil when no entry is missing, so the caller keeps the fallback.
+    static func caloriesNote(count: Int) -> String? {
+        if count == 1 { return "1 entry has no calories" }
+        if count > 1 { return "\(count) entries have no calories" }
+        return nil
     }
 
     /// The wording for a partial line with no missing entry (a below-threshold amount).
