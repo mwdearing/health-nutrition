@@ -87,16 +87,20 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
     private let calendar: Calendar
     /// A weight shown after a unit switch: the text in the field and the exact kilograms it stands for.
     private typealias ConvertedWeight = (text: String, kilograms: Decimal)
-    /// The unit system the two weight fields are in. A switch while the sheet is open converts them.
-    private var weightTextUnitSystem: UnitSystem
+    /// A height shown after a unit switch: the exact centimeters, and the text in the centimeter field or in
+    /// the feet and inches fields that show them.
+    private typealias ConvertedHeight = (centimeters: Decimal, centimetersText: String, feetText: String, inchesText: String)
+    /// The unit system the weight and height fields are in. A switch while the sheet is open converts them.
+    private var textUnitSystem: UnitSystem
     private var convertedCurrentWeight: ConvertedWeight?
     private var convertedGoalWeight: ConvertedWeight?
+    private var convertedHeight: ConvertedHeight?
 
     public init(goals: GoalsViewModel, now: @escaping () -> Date = { Date() }, calendar: Calendar = .current) {
         self.goals = goals
         self.now = now
         self.calendar = calendar
-        self.weightTextUnitSystem = goals.unitSystem
+        self.textUnitSystem = goals.unitSystem
         fillHeightFromHealth()
     }
 
@@ -128,13 +132,15 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
     /// The unit system the answers are asked in.
     public var unitSystem: UnitSystem { goals.unitSystem }
 
-    /// Moves the typed current and goal weights into the unit system now in force, so a weight typed in one
-    /// unit shows in the other. The sheet calls it when the unit system changes, and `save()` calls it first.
-    /// The text shows one decimal place, as the Body screen shows weights; the exact kilograms are kept with
-    /// it, so a switch back or a save uses the weight the person typed, not the rounded text.
+    /// Moves the typed current and goal weights and the height into the unit system now in force, so a value
+    /// typed in one unit shows in the other. The sheet calls it when the unit system changes, and `save()`
+    /// calls it first. Weights show one decimal place, as the Body screen shows them; the height shows whole
+    /// centimeters, or whole inches with feet. The exact kilograms and centimeters are kept with the text, so a
+    /// switch back or a save uses the value the person typed, not the rounded text. The selected pace moves to
+    /// the nearest option in the new unit, so a pace stays selected.
     public func unitSystemDidChange() {
         let pounds = unitSystem == .usCustomary
-        guard pounds != (weightTextUnitSystem == .usCustomary) else { return }
+        guard pounds != (textUnitSystem == .usCustomary) else { return }
         let wasPounds = !pounds
         let current = Self.displayed(
             Self.kilograms(
@@ -146,16 +152,31 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
                 typed: wasPounds ? goalWeightPoundsText : goalWeightKilogramsText, pounds: wasPounds,
                 known: convertedGoalWeight),
             pounds: pounds)
+        let height = Self.displayedHeight(
+            wasPounds
+                ? Self.centimeters(feetText: heightFeetText, inchesText: heightInchesText, known: convertedHeight)
+                : Self.centimeters(metricText: heightCentimetersText, known: convertedHeight))
         if pounds {
             weightPoundsText = current?.text ?? ""
             goalWeightPoundsText = goal?.text ?? ""
+            heightFeetText = height?.feetText ?? ""
+            heightInchesText = height?.inchesText ?? ""
         } else {
             weightKilogramsText = current?.text ?? ""
             goalWeightKilogramsText = goal?.text ?? ""
+            heightCentimetersText = height?.centimetersText ?? ""
         }
         convertedCurrentWeight = current
         convertedGoalWeight = goal
-        weightTextUnitSystem = unitSystem
+        convertedHeight = height
+        // The pace is kilograms and the options differ by unit, so the pace becomes the option nearest to it in
+        // the unit now in force. Each unit's four options are the same steps, slowest to fastest, and the
+        // nearest kilogram value lands on the same step in the other unit (1 lb, 0.45 kg, is nearest 0.5 kg).
+        if let pace = selectedPaceKilograms,
+           let nearest = paceOptions.min(by: { abs($0.kilogramsPerWeek - pace) < abs($1.kilogramsPerWeek - pace) }) {
+            selectedPaceKilograms = nearest.kilogramsPerWeek
+        }
+        textUnitSystem = unitSystem
     }
 
     /// The steps for the aim chosen so far. Before an aim is chosen, the longest path is shown.
@@ -530,7 +551,8 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
         goalWeightPoundsText = ""
         convertedCurrentWeight = nil
         convertedGoalWeight = nil
-        weightTextUnitSystem = unitSystem
+        convertedHeight = nil
+        textUnitSystem = unitSystem
         activity = nil
         selectedPaceKilograms = nil
         clearVitaminChoice()
@@ -615,12 +637,37 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
 
     private func heightCentimeters() -> Decimal? {
         if unitSystem == .usCustomary {
-            guard let feet = Self.wholeOrZero(heightFeetText),
-                  let inches = Self.inchesOrNone(heightInchesText)
-            else { return nil }
-            return (feet * 12 + inches) * Self.centimetersPerInch
+            return Self.centimeters(feetText: heightFeetText, inchesText: heightInchesText, known: convertedHeight)
         }
-        return AmountParser.parseTyped(heightCentimetersText)
+        return Self.centimeters(metricText: heightCentimetersText, known: convertedHeight)
+    }
+
+    /// The centimeters a centimeter field stands for. A field still showing the text of a switch keeps the exact
+    /// centimeters that text was converted from; any other text is read as typed.
+    private static func centimeters(metricText: String, known: ConvertedHeight?) -> Decimal? {
+        if let known, known.centimetersText == metricText { return known.centimeters }
+        return AmountParser.parseTyped(metricText)
+    }
+
+    /// The centimeters that feet and inches stand for. A field still showing the text of a switch keeps the exact
+    /// centimeters that text was converted from; any other text is read as feet and inches.
+    private static func centimeters(feetText: String, inchesText: String, known: ConvertedHeight?) -> Decimal? {
+        if let known, known.feetText == feetText, known.inchesText == inchesText { return known.centimeters }
+        guard let feet = wholeOrZero(feetText), let inches = inchesOrNone(inchesText) else { return nil }
+        return (feet * 12 + inches) * centimetersPerInch
+    }
+
+    /// A height shown in the unit system now in force, with the centimeters it was converted from. Centimeters
+    /// round to whole centimeters, and inches round to whole inches, as the height from Health does.
+    private static func displayedHeight(_ centimeters: Decimal?) -> ConvertedHeight? {
+        guard let centimeters else { return nil }
+        let totalInches = rounded(centimeters / centimetersPerInch, scale: 0, .plain)
+        let feet = rounded(totalInches / 12, scale: 0, .down)
+        return (
+            centimeters: centimeters,
+            centimetersText: DecimalFormatting.text(rounded(centimeters, scale: 0, .plain)),
+            feetText: DecimalFormatting.text(feet),
+            inchesText: DecimalFormatting.text(totalInches - feet * 12))
     }
 
     /// Feet typed as a number, where zero is read as zero rather than refused.
