@@ -311,7 +311,7 @@ public struct IntakeContextEncoder: Sendable {
             "time_zone": .string(revision.timeZoneIdentifier ?? intake.timeZoneIdentifier),
             "recorded_at": .string(IntakeContextTimestamp.utc(revision.createdAt)),
             "category": .string(intake.category),
-            "display_name": .string(displayName(intake: intake, product: snapshot)),
+            "display_name": .string(displayName(intake: intake, revision: revision, product: snapshot)),
             "serving": try serving(of: revision),
             "facts": .array(facts),
             "healthkit_links": .array(try linkValues(links ?? [], codes: nutrientCodes(of: facts))),
@@ -850,10 +850,14 @@ public struct IntakeContextEncoder: Sendable {
         ])
     }
 
-    /// What the intake is called: the product's name when a snapshot is attached, else the meal or note the
-    /// user wrote, else the category slug. The contract wants a readable name of 1 to 200 characters.
-    private func displayName(intake: Intake, product: ProductDefinition?) -> String {
-        for candidate in [product?.name, intake.meal, intake.note] {
+    /// What the intake is called: the product's name when a snapshot is attached, else the name of the revision's
+    /// first component, else the category slug. The contract wants a readable name of 1 to 200 characters.
+    ///
+    /// Every name comes from the revision, never from the entry's meal or note: those can be edited after a revision
+    /// is queued, and a retry rebuilt with the new name would reach the receiver under the same `operation_id` with a
+    /// different payload, which it rejects as a conflict (#210).
+    private func displayName(intake: Intake, revision: IntakeRevision, product: ProductDefinition?) -> String {
+        for candidate in [product?.name, revision.components.first?.name] {
             if let name = candidate, !name.isEmpty { return name }
         }
         return intake.category

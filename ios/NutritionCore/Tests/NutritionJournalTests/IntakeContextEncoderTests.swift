@@ -181,6 +181,40 @@ final class IntakeContextEncoderTests: XCTestCase {
         XCTAssertEqual(value.member("nutrition_completeness")?.stringValue, "partial")
     }
 
+    /// An entry with no product is named from its own revision, so editing the entry's meal or note after a
+    /// revision is queued rebuilds that revision's payload unchanged: same name, same digests (#210).
+    func testAnEntryWithNoProductIsNamedFromItsRevisionNotItsMeal() throws {
+        let revision = IntakeRevision(
+            intakeID: intakeID,
+            number: 1,
+            components: [
+                IntakeComponent(
+                    componentID: "oats", name: "Rolled oats", amount: try XCTUnwrap(DecimalText.decode("40")),
+                    unit: .g),
+            ],
+            productSnapshotID: nil,
+            changeReason: "Typed by hand",
+            createdAt: Self.labelReadAt)
+        func encode(meal: String?, note: String?) throws -> IntakeContextValue {
+            var edited = intake
+            edited.meal = meal
+            edited.note = note
+            return try encoder.upsert(
+                intake: edited,
+                revision: revision,
+                product: nil,
+                operation: outboxOperation(id: "2b7e4d61-9c3a-4f85-b0d2-6e1a8c5f3d94", kind: .upsert, revision: 1))
+        }
+        let breakfast = try encode(meal: "breakfast", note: "before the run")
+        let lunch = try encode(meal: "lunch", note: nil)
+        XCTAssertEqual(breakfast.member("display_name")?.stringValue, "Rolled oats")
+        XCTAssertEqual(lunch.member("display_name")?.stringValue, "Rolled oats")
+        let first = try XCTUnwrap(breakfast.operations.first)
+        let later = try XCTUnwrap(lunch.operations.first)
+        XCTAssertEqual(first.domainFactsHash, later.domainFactsHash)
+        XCTAssertEqual(first.clientPayloadHash, later.clientPayloadHash)
+    }
+
     /// A compound states the basis its amount measures and the name as printed; a proprietary blend is one fact
     /// with its stated total and its named members, and never an invented member amount.
     func testCompoundAndBlendFactsCarryTheirBasisAndMembers() throws {
