@@ -66,6 +66,18 @@ final class GoalStoreTests: XCTestCase {
         }
     }
 
+    /// A stored goal in the wrong dimension (protein in kcal) is refused on read as the write path refuses it,
+    /// so a legacy row cannot reach the goal bars as a guessed value (#1069).
+    func testAStoredGoalInTheWrongDimensionFailsTheWholeRead() throws {
+        let store = try makeStore()
+        try store.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        try store.writeCorruptTargetForTesting(nutrient: "protein", unitSymbol: "kcal")
+
+        XCTAssertThrowsError(try store.goals()) { error in
+            XCTAssertEqual(error as? GoalStoreError, .corruptRecord("protein"))
+        }
+    }
+
     /// A target that is not a positive number is unreadable however it got there: zero would read as
     /// a met day and a negative one as more than met.
     func testAZeroOrNegativeTargetFailsTheWholeRead() throws {
