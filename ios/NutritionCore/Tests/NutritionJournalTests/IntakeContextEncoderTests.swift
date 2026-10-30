@@ -1270,7 +1270,11 @@ final class IntakeContextEncoderTests: XCTestCase {
         let perServing = try encode(basis: "per serving (20 g)")
         XCTAssertEqual(perServing.map { $0.string("component_id") }, ["protein-bar", "protein"])
         XCTAssertEqual(perServing[1].string("amount"), "26")
-        for unresolved in ["per 100 g or mL", "per 100 kcal", "unknown"] {
+        // "per 100 g or mL" with grams logged scales per 100 g, as the Apple Health write does (#395).
+        let perHundredGOrML = try encode(basis: "per 100 g or mL")
+        XCTAssertEqual(perHundredGOrML.map { $0.string("component_id") }, ["protein-bar", "protein"])
+        XCTAssertEqual(perHundredGOrML[1].string("amount"), "5.2")
+        for unresolved in ["per 100 kcal", "unknown"] {
             let facts = try encode(basis: unresolved)
             XCTAssertEqual(
                 facts.map { $0.string("component_id") }, ["protein-bar"], unresolved)

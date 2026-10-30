@@ -663,8 +663,11 @@ public struct IntakeContextEncoder: Sendable {
         excluding covered: inout Set<String>
     ) throws -> [IntakeContextJSONValue] {
         guard let product else { return [] }
+        // A "per 100 g or mL" label scales per 100 g for logged weights and per 100 mL for logged volumes, the
+        // same factor the day totals and the Apple Health write use (#395), so the relay states what Health has.
         guard let factor = IntakeContextSnapshotBasis.scalingFactor(
             labelBasis: product.labelBasis, logged: components)
+            ?? IntakeContextSnapshotBasis.perHundredGOrMLFactor(labelBasis: product.labelBasis, logged: components)
         else { return [] }
         let provenance = IntakeContextFactCatalog.provenance(for: product)
         var facts: [IntakeContextJSONValue] = []
