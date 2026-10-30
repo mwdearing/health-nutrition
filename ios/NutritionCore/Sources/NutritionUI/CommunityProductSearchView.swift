@@ -171,6 +171,9 @@ public struct CommunityProductSearchView: View {
         // waiting when the screen goes away is dropped, and the screen takes no focus on a later return.
         .onDisappear {
             library?.savedMeals?.clearUndo()
+            // The field keeps its focus state while a pushed screen covers it, and SwiftUI gives focus back when the
+            // screen shows again, which raises the keyboard on Back (#944). Leaving clears it.
+            searchFocused = false
             if focusTask != nil {
                 focusTask?.cancel()
                 focusTask = nil
