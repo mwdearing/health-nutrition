@@ -23,11 +23,11 @@ final class MedicationLogTests: XCTestCase {
 
     private func dose(
         _ text: String = "2.5", unit: MedicationUnit = .mg, at seconds: TimeInterval = 1_790_000_000,
-        zone: String = "America/Chicago", note: String? = nil, id: UUID = UUID()
+        zone: String = "America/Chicago", site: String? = nil, note: String? = nil, id: UUID = UUID()
     ) -> MedicationDose {
         MedicationDose(
             id: id, medicationID: medicationID, takenAt: Date(timeIntervalSince1970: seconds),
-            timeZoneIdentifier: zone, amount: amount(text), unit: unit, note: note)
+            timeZoneIdentifier: zone, amount: amount(text), unit: unit, site: site, note: note)
     }
 
     /// The error `validate()` throws, or nil when it passes.
@@ -46,13 +46,16 @@ final class MedicationLogTests: XCTestCase {
 
     // MARK: Units
 
-    func testTheOnlyUnitsAreMilligramsAndMicrograms() {
-        XCTAssertEqual(MedicationUnit.allCases, [.mg, .mcg])
+    func testTheUnitsAreMilligramsMicrogramsMillilitersAndUnits() {
+        XCTAssertEqual(MedicationUnit.allCases, [.mg, .mcg, .mL, .units])
         XCTAssertEqual(MedicationUnit.mg.rawValue, "mg")
         XCTAssertEqual(MedicationUnit.mcg.rawValue, "mcg")
-        XCTAssertNil(MedicationUnit(rawValue: "mL"))
-        XCTAssertNil(MedicationUnit(rawValue: "units"))
+        XCTAssertEqual(MedicationUnit.mL.rawValue, "mL")
+        XCTAssertEqual(MedicationUnit.units.rawValue, "units")
+        XCTAssertNil(MedicationUnit(rawValue: "ml"))
         XCTAssertNil(MedicationUnit(rawValue: "MG"))
+        XCTAssertNil(MedicationUnit(rawValue: "Units"))
+        XCTAssertNil(MedicationUnit(rawValue: "IU"))
     }
 
     // MARK: Medication
@@ -111,6 +114,8 @@ final class MedicationLogTests: XCTestCase {
     func testADoseAsTypedIsValid() {
         XCTAssertNil(thrownError { try dose().validate() })
         XCTAssertNil(thrownError { try dose("250", unit: .mcg, note: "Left the pen out overnight").validate() })
+        XCTAssertNil(thrownError { try dose("0.25", unit: .mL).validate() })
+        XCTAssertNil(thrownError { try dose("12", unit: .units, site: "Left thigh").validate() })
     }
 
     func testADoseMustBeMoreThanZero() {
@@ -148,9 +153,37 @@ final class MedicationLogTests: XCTestCase {
         XCTAssertEqual(thrownError { try dose(note: String(repeating: "n", count: 201)).validate() }, .noteTooLong)
     }
 
-    func testTheAmountIsCheckedBeforeTheTimeZoneAndTheNote() {
-        XCTAssertEqual(thrownError { try dose("0", zone: "Not/AZone", note: " ").validate() }, .amountNotPositive)
-        XCTAssertEqual(thrownError { try dose(zone: "Not/AZone", note: " ").validate() }, .timeZoneUnknown)
+    func testASiteIsOptionalTypedTextOnOneLineOfAtMostFortyCharacters() {
+        XCTAssertEqual(MedicationDose.maximumSiteLength, 40)
+        XCTAssertNil(dose().site)
+        XCTAssertNil(thrownError { try dose(site: nil).validate() })
+        XCTAssertNil(thrownError { try dose(site: "Abdomen, right of navel").validate() })
+        XCTAssertNil(thrownError { try dose(site: String(repeating: "s", count: 40)).validate() })
+        XCTAssertEqual(thrownError { try dose(site: "").validate() }, .siteEmpty)
+        XCTAssertEqual(thrownError { try dose(site: " \t").validate() }, .siteEmpty)
+        XCTAssertEqual(thrownError { try dose(site: " Left arm").validate() }, .siteNotTrimmed)
+        XCTAssertEqual(thrownError { try dose(site: "Left arm\n").validate() }, .siteNotTrimmed)
+        XCTAssertEqual(thrownError { try dose(site: "Left\narm").validate() }, .siteHasLineBreak)
+        XCTAssertEqual(thrownError { try dose(site: String(repeating: "s", count: 41)).validate() }, .siteTooLong)
+    }
+
+    func testTheAmountIsCheckedBeforeTheTimeZoneThenTheSiteThenTheNote() {
+        XCTAssertEqual(
+            thrownError { try dose("0", zone: "Not/AZone", site: " ", note: " ").validate() }, .amountNotPositive)
+        XCTAssertEqual(thrownError { try dose(zone: "Not/AZone", site: " ", note: " ").validate() }, .timeZoneUnknown)
+        XCTAssertEqual(thrownError { try dose(site: " ", note: " ").validate() }, .siteEmpty)
+    }
+
+    func testTheSiteChangesNothingTheLogReports() {
+        // The site is kept with the dose only. The day, the last dose and the schedule read the same with or without it.
+        let weekly = medication(scheduleDays: 7)
+        let plain = dose(at: 1_789_961_400)
+        let withSite = dose(at: 1_789_961_400, site: "Right thigh", id: plain.id)
+        XCTAssertEqual(withSite.day, plain.day)
+        XCTAssertEqual(MedicationLog.lastDose(of: medicationID, in: [withSite])?.id, plain.id)
+        XCTAssertEqual(
+            MedicationLog.status(of: weekly, lastDose: withSite, today: day("2026-09-27")),
+            MedicationLog.status(of: weekly, lastDose: plain, today: day("2026-09-27")))
     }
 
     // MARK: Day of a dose
@@ -207,6 +240,15 @@ final class MedicationLogTests: XCTestCase {
         let taken = dose(at: 1_789_961_400, zone: "America/Chicago")
         XCTAssertEqual(MedicationLog.status(of: medication(), lastDose: taken, today: day("2026-10-30")), .notScheduled)
         XCTAssertEqual(MedicationLog.status(of: medication(), lastDose: nil, today: day("2026-10-30")), .notScheduled)
+    }
+
+    func testAnArchivedMedicationHasNoStatusWhateverItsScheduleAndDoses() {
+        let archived = Medication(
+            id: medicationID, name: "Example weekly injection", unit: .mg, scheduleDays: 7, isArchived: true)
+        let taken = dose(at: 1_789_961_400, zone: "America/Chicago")
+        XCTAssertEqual(MedicationLog.status(of: archived, lastDose: taken, today: day("2026-09-20")), .notScheduled)
+        XCTAssertEqual(MedicationLog.status(of: archived, lastDose: taken, today: day("2026-10-07")), .notScheduled)
+        XCTAssertEqual(MedicationLog.status(of: archived, lastDose: nil, today: day("2026-09-20")), .notScheduled)
     }
 
     func testAScheduledMedicationWithNoDoseYetSaysSo() {
