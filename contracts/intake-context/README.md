@@ -192,6 +192,15 @@ Each fact describes one component of the intake.
 | `provenance` | `user_confirmed`, `label_confirmed`, `ocr_confirmed` (a label read by OCR and confirmed by the user), `catalog_reference`, `recipe_calculated` (derived from a recipe's ingredients) or `estimated`. |
 | `members` | Blends only. Non-empty array of blend members. |
 
+**Snapshot nutrients.** A nutrient fact read from a product snapshot carries the
+amount for the portion logged, not the label's stated value: the stated value is
+scaled by the label basis and the logged quantity. A label stated "per 100 g or
+mL" scales per 100 g when every logged component is a weight and per 100 mL when
+every one is a volume, the same factor the app's Apple Health write uses. A count
+(a scoop, a piece), a mix of weight and volume, or a negative amount has no factor,
+and neither does a basis such as "per 100 kcal": the snapshot's nutrients are then
+left out rather than sent unscaled.
+
 **Decimal strings.** Every amount is a decimal string matching
 `^(0|[1-9][0-9]*)(\.[0-9]+)?$`. It is never a JSON number, so binary
 floating-point drift cannot enter the contract. The string is hashed exactly as
