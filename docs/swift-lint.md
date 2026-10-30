@@ -47,6 +47,17 @@ view-scoped instead of module-scoped and reach every SwiftUI surface in either
 module, `Sources/NutritionUI/**` in the package module and the app target's whole
 `Sources/**`, so no file under that tree is exempt from those two.
 
+## Limits of a text scanner
+
+The lint reads masked source text, not a Swift syntax tree. The `unlabeled-image` rule follows `#if` blocks, nested
+ones included, but some layouts are still misread. An open case: a nested `#if` arm that starts with a labeled sibling
+view can let an outer arm lend that label to an unlabeled image (#68). A misread is silenced with `lint-allow`.
+
+A SwiftSyntax version of `unlabeled-image` and `fixed-font-size` was tried (#75, closed unmerged). It agreed with this
+lint on 50 of 55 corpus cases and missed some `#if` cases of its own. The current decision is to keep this Python lint
+as the only gate and revisit a parser when the text rules need more `#if` handling than they can carry. That ADR,
+0003, is still Proposed on the spike branch and is not in `docs/adr/`.
+
 ## Allowing a finding
 
 Sometimes a line has a good reason to break a rule. End the line with a
