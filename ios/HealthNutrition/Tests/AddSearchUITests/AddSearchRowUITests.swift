@@ -100,7 +100,11 @@ final class AddSearchRowUITests: XCTestCase {
 
         // The focus request waits 400 ms after an appearance; wait well past it, then the field must not hold focus.
         RunLoop.current.run(until: Date().addingTimeInterval(2))
-        XCTAssertFalse(field.hasKeyboardFocus, "returning to the search screen after a push raised the keyboard")
+        // `hasKeyboardFocus` is read through key-value coding, as the Library search test does: it is not a public
+        // XCUIElement property, so `field.hasKeyboardFocus` does not compile.
+        XCTAssertFalse(
+            (field.value(forKey: "hasKeyboardFocus") as? Bool) == true,
+            "returning to the search screen after a push raised the keyboard")
         XCTAssertFalse(app.keyboards.firstMatch.exists, "a keyboard is up after returning to the search screen")
     }
 
