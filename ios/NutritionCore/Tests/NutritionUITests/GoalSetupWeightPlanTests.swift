@@ -291,6 +291,62 @@ final class GoalSetupWeightPlanTests: XCTestCase {
         XCTAssertEqual(model.goalWeightPoundsText, "")
     }
 
+    func testSwitchingToPoundsConvertsTheTypedGoalWeightAndSaveKeepsTheGoal() throws {
+        let prefs = InMemoryDisplayPreferences(unitSystem: .metric)
+        let store = GoalSetupPlanStore()
+        let goals = GoalsViewModel(store: store, preferences: prefs)
+        goals.load()
+        let model = GoalSetupViewModel(goals: goals)
+        answer(model, aim: .lose)
+        walk(model, to: .pace)
+        model.goalWeightKilogramsText = "75"
+
+        prefs.setUnitSystem(.usCustomary)
+        model.unitSystemDidChange()
+
+        XCTAssertEqual(model.goalWeightPoundsText, BodyActivityViewModel.oneDecimal(kg("75") / kg("0.45359237")))
+        XCTAssertEqual(model.weightPoundsText, BodyActivityViewModel.oneDecimal(kg("80") / kg("0.45359237")))
+        // The height is not converted by a switch, so the pounds answers are given again here.
+        model.heightFeetText = "5"
+        model.heightInchesText = "11"
+        model.selectedPaceKilograms = model.paceOptions[1].kilogramsPerWeek
+        walk(model, to: .results)
+        XCTAssertEqual(model.step, .results)
+
+        XCTAssertTrue(model.save())
+
+        XCTAssertEqual(
+            try store.weightPlan(),
+            WeightPlan(aim: .lose, goalKilograms: 75, weeklyPaceKilograms: kg("0.226796185")))
+    }
+
+    func testSwitchingToKilogramsConvertsTheTypedGoalWeightAndSaveKeepsTheGoal() throws {
+        let prefs = InMemoryDisplayPreferences(unitSystem: .usCustomary)
+        let store = GoalSetupPlanStore()
+        let goals = GoalsViewModel(store: store, preferences: prefs)
+        goals.load()
+        let model = GoalSetupViewModel(goals: goals)
+        answer(model, aim: .lose, system: .usCustomary)
+        walk(model, to: .pace)
+        model.goalWeightPoundsText = "165"
+
+        prefs.setUnitSystem(.metric)
+        model.unitSystemDidChange()
+
+        XCTAssertEqual(model.goalWeightKilogramsText, BodyActivityViewModel.oneDecimal(kg("165") * kg("0.45359237")))
+        // The height is not converted by a switch, so the metric answer is given again here.
+        model.heightCentimetersText = "180"
+        model.selectedPaceKilograms = model.paceOptions[1].kilogramsPerWeek
+        walk(model, to: .results)
+        XCTAssertEqual(model.step, .results)
+
+        XCTAssertTrue(model.save())
+
+        XCTAssertEqual(
+            try store.weightPlan(),
+            WeightPlan(aim: .lose, goalKilograms: kg("74.84274105"), weeklyPaceKilograms: kg("0.5")))
+    }
+
     func testThePrivacyNoticeSaysWhatIsSaved() {
         XCTAssertEqual(
             GoalSetupViewModel.privacyNotice,
