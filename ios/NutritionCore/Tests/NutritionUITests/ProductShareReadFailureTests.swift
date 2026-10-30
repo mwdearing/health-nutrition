@@ -237,8 +237,8 @@ final class ProductShareReadFailureTests: XCTestCase {
         XCTAssertTrue(model.refreshFromStore(), "the view still redraws")
     }
 
-    /// #1041: a `.sending` row left by an interrupted send (its reply never recorded) is marked failed on the
-    /// next delivery run and is never re-sent, so it reads "Couldn't share" instead of staying `.sending`.
+    /// #1041: a `.sending` row left by an interrupted send (its reply never recorded) goes back to waiting when
+    /// the next delivery run starts, and that run sends it again with its own operation ID, as after a restart.
     @MainActor func testALeftoverSendingRowIsSentAgainLikeAfterARestart() async {
         let owner = UUID(), epoch = UUID(), store = FailableReadStorePort()
         let service = CountingPublishService(store: store)
@@ -259,25 +259,63 @@ final class ProductShareReadFailureTests: XCTestCase {
         XCTAssertNotEqual(store.operations[0].status, .sending, "nothing stays stuck in sending")
     }
 
-    /// #1041: a send in flight in this process is not a leftover. Its row reads `.sending` while the publish
-    /// runs, and the reply records `.acknowledged`.
-    @MainActor func testInFlightSendingRowIsNotMarkedFailed() async {
+    /// #1051: a leftover `.sending` row has the envelope its send stored, as every real leftover does. Sharing is
+    /// off here (`freshPublicationSupported: false`), so publicationEligible is false and only the
+    /// `attempts > 0 && envelope != nil` clause can pick the row. It is sent once, with the same operation ID and
+    /// the stored bytes, and the envelope is left unchanged.
+    @MainActor func testALeftoverSendingRowWithAStoredEnvelopeIsSentAgainUnchanged() async throws {
         let owner = UUID(), epoch = UUID(), store = FailableReadStorePort()
         let service = CountingPublishService(store: store)
+        var leftover = ProductShareOperation(ownerID: owner, localProductID: UUID(), operationID: UUID(), clientRevisionID: UUID(),
+            kind: .publish, content: CustomProductContent(name: "Synthetic enveloped leftover", kind: .food, basis: .per100g), consentGeneration: "1", epoch: epoch)
+        leftover.storeEpoch = UUID()
+        leftover.envelope = try ProductShareDeliveryWorker.publishRequest(leftover).canonicalBody()
+        leftover.attempts = 1
+        leftover.status = .sending
+        let storedEnvelope = try XCTUnwrap(leftover.envelope)
+        store.operations = [leftover]
+        let coordinator = ProductShareCoordinator(store: store, service: service)
+        coordinator.updateAccountContext(.init(ownerID: owner, profileReady: true, sharingAllowed: true,
+            consentVersion: 2, serverGeneration: "1", localSessionEpoch: epoch, backendSupported: true,
+            freshPublicationSupported: false))
+
+        await coordinator.runDueOperations(now: Date())
+
+        let publishCalls = await service.publishCalls
+        let operationIDs = await service.operationIDs
+        let bodies = await service.bodies
+        XCTAssertEqual(publishCalls, 1, "only the attempts-and-envelope clause picks the leftover")
+        XCTAssertEqual(operationIDs, [leftover.operationID.uuidString.lowercased()], "the publish carries the row's operation ID")
+        XCTAssertEqual(bodies, [storedEnvelope], "the publish sends the stored bytes")
+        XCTAssertEqual(store.operations[0].envelope, storedEnvelope, "the stored envelope is unchanged afterwards")
+        XCTAssertNotEqual(store.operations[0].status, .sending, "nothing stays stuck in sending")
+    }
+
+    /// #1041: a send in flight in this process is not a leftover. Its row reads `.sending` while the publish runs,
+    /// and a second run that overlaps it neither requeues the row nor publishes again. The second run is started
+    /// from inside the suspended publish without being awaited there, because it waits for the first run.
+    @MainActor func testInFlightSendingRowIsNotRequeued() async {
+        let owner = UUID(), epoch = UUID(), store = FailableReadStorePort()
+        let service = OverlappingPublishService(store: store)
         var first = ProductShareOperation(ownerID: owner, localProductID: UUID(), operationID: UUID(), clientRevisionID: UUID(),
             kind: .publish, content: CustomProductContent(name: "Synthetic in flight", kind: .food, basis: .per100g), consentGeneration: "1", epoch: epoch)
         first.storeEpoch = UUID()
         store.operations = [first]
         let coordinator = ProductShareCoordinator(store: store, service: service)
+        await service.attach(coordinator)
         coordinator.updateAccountContext(.init(ownerID: owner, profileReady: true, sharingAllowed: true,
             consentVersion: 2, serverGeneration: "1", localSessionEpoch: epoch, backendSupported: true))
 
         await coordinator.runDueOperations(now: Date())
+        await service.waitForOverlap()
 
+        let publishCalls = await service.publishCalls
         let statusAtPublish = await service.statusAtPublish
+        let statusAfterOverlap = await service.statusAfterOverlap
+        XCTAssertEqual(publishCalls, 1, "the overlapping run does not send the row again")
         XCTAssertEqual(statusAtPublish, .sending, "the row is in flight while the publish runs")
+        XCTAssertEqual(statusAfterOverlap, .sending, "the overlapping run does not requeue the in-flight row")
         XCTAssertEqual(store.operations[0].status, .acknowledged)
-        XCTAssertNotEqual(store.operations[0].status, .failed)
     }
 }
 
@@ -287,10 +325,14 @@ private actor CountingPublishService: CommunityProductServicing {
     private let store: FailableReadStorePort
     private(set) var publishCalls = 0
     private(set) var statusAtPublish: ProductOperationStatus?
+    private(set) var operationIDs: [String] = []
+    private(set) var bodies: [Data] = []
     init(store: FailableReadStorePort) { self.store = store }
     func publish(_ request: ProductPublishRequest, expectedOwnerID: UUID) async throws -> ProductDeliveryReceipt {
         publishCalls += 1
         statusAtPublish = store.operations.first?.status
+        operationIDs.append(request.operationID)
+        bodies.append(try request.canonicalBody())
         guard let operationID = UUID(uuidString: request.operationID) else { throw ProductAPIError.invalidRequest(field: nil) }
         return ProductDeliveryReceipt(operationID: operationID, productID: UUID(),
             acknowledgedRevision: "1", currentRevision: "1", currentState: .active, replayed: false)
@@ -370,6 +412,45 @@ private actor PauseDuringFirstPublishService: CommunityProductServicing {
                 _ = coordinator?.operations(ownerID: owner)
                 store.failReads = false
             }
+        }
+        return ProductDeliveryReceipt(operationID: operationID, productID: UUID(),
+            acknowledgedRevision: "1", currentRevision: "1", currentState: .active, replayed: false)
+    }
+    func resolvePublishForWithdrawal(_ request: ProductPublishRequest, expectedOwnerID: UUID) async throws -> ProductPublishResolution { throw ProductAPIError.unavailable }
+    func withdraw(_ request: ProductWithdrawRequest, expectedOwnerID: UUID) async throws -> ProductDeliveryReceipt { throw ProductAPIError.unavailable }
+    func searchProducts(query: String, kind: ProductKind?, cursor: String?) async throws -> CommunityProductPage { throw ProductAPIError.unavailable }
+    func product(id: UUID) async throws -> CommunityProduct { throw ProductAPIError.unavailable }
+    func capabilities() async throws -> ProductCatalogCapabilities {
+        ProductCatalogCapabilities(supportedVersion: 2, enabled: true,
+            limits: ProductCatalogLimits(maxEnvelopeBytes: 16384, maxFacts: 64, maxSearchLimit: 20), currentConsentVersion: 2,
+            callerAcknowledgment: ProductConsentAcknowledgment(version: 2, generation: "1"), consentGeneration: "1",
+            sharingPermission: true, publishResolutionVersion: 1, boundedPublicationVersion: 1)
+    }
+    func acknowledgeConsent(version: Int, expectedOwnerID: UUID) async throws -> ProductConsentState { throw ProductAPIError.unavailable }
+    func contribution(productID: UUID, expectedOwnerID: UUID) async throws -> ProductContributionState { throw ProductAPIError.unavailable }
+}
+
+/// Starts a second delivery run from inside the first publish and does not await it there, since that run waits
+/// for the first one. Records the first row's status before and after the overlap. Establishes no persistence guarantees.
+private actor OverlappingPublishService: CommunityProductServicing {
+    private let store: FailableReadStorePort
+    private var coordinator: ProductShareCoordinator?
+    private var overlap: Task<Void, Never>?
+    private(set) var publishCalls = 0
+    private(set) var statusAtPublish: ProductOperationStatus?
+    private(set) var statusAfterOverlap: ProductOperationStatus?
+    init(store: FailableReadStorePort) { self.store = store }
+    func attach(_ coordinator: ProductShareCoordinator) { self.coordinator = coordinator }
+    func waitForOverlap() async { await overlap?.value }
+    func publish(_ request: ProductPublishRequest, expectedOwnerID: UUID) async throws -> ProductDeliveryReceipt {
+        publishCalls += 1
+        statusAtPublish = store.operations.first?.status
+        guard let operationID = UUID(uuidString: request.operationID) else { throw ProductAPIError.invalidRequest(field: nil) }
+        if let coordinator {
+            overlap = Task { @MainActor in await coordinator.runDueOperations(now: Date()) }
+            // Give the overlapping run time to reach the coordinator while this publish is still suspended.
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            statusAfterOverlap = store.operations.first?.status
         }
         return ProductDeliveryReceipt(operationID: operationID, productID: UUID(),
             acknowledgedRevision: "1", currentRevision: "1", currentState: .active, replayed: false)
