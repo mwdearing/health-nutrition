@@ -453,7 +453,6 @@ private actor OverlappingPublishService: CommunityProductServicing {
         guard let operationID = UUID(uuidString: request.operationID) else { throw ProductAPIError.invalidRequest(field: nil) }
         if let coordinator {
             overlap = Task { @MainActor in
-                await self.markOverlapStarted()
                 await coordinator.runDueOperations(now: Date())
             }
             // Wait until the overlapping task has started, then give its run time to reach the coordinator's
