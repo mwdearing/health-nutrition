@@ -41,8 +41,6 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
         "Some goals may not have been put back. Check your targets on the Goals screen."
     public static let justTrackExistingNotice = "Your current targets are unchanged. You can change or remove them on the Goals screen."
     public static let genericErrorNotice = "Check your answers and try again."
-    /// The notice a save gives when a field cannot be saved.
-    static let fieldsNotice = "Enter a number above zero."
     public static let saveFailedNotice = "Could not save your goals. Try again."
     public static let invalidFieldNotice = "Enter a number greater than zero."
     public static let goalWeightBelowNotice = "To lose weight, your goal weight must be below your current weight."
@@ -216,12 +214,8 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
                 // A field whose text is unchanged keeps the notice a save gave it: an edited draft, or a field
                 // the estimate does not write. A draft the estimate rewrote starts without one.
                 let kept = notices.fields.filter { edited[$0.key] != nil || draftTargets[$0.key] == nil }
-                fieldErrors.merge(kept) { _, saved in saved }
-                // The notice for fields that cannot be saved comes back only with a field it names; any other
-                // notice from a save, such as a failed write, still applies after the switch.
-                if resultError == nil, let result = notices.result, result != Self.fieldsNotice || !kept.isEmpty {
-                    resultError = result
-                }
+                fieldErrors.merge(kept) { _, old in old }
+                if resultError == nil, !kept.isEmpty { resultError = notices.result }
             }
         }
     }
@@ -472,7 +466,7 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
             fieldErrors[entry.nutrient] = Self.invalidFieldNotice
         }
         guard fieldErrors.isEmpty else {
-            resultError = Self.fieldsNotice
+            resultError = "Enter a number above zero."
             return false
         }
         resultError = nil
