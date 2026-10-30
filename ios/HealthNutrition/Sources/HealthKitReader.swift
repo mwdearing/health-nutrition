@@ -153,7 +153,7 @@ final class HealthKitReader: BodyActivityReading {
     static func healthKitUnit(for unit: MeasureUnit) -> HKUnit? {
         switch unit.symbol {
         case "g": return .gram()
-        case "mg": return .gramUnit(with: .milli)
+        case "mg": return .gramUnit(with: .micro)
         case "mcg": return .gramUnit(with: .micro)
         case "mL": return .literUnit(with: .milli)
         case "kcal": return .kilocalorie()
