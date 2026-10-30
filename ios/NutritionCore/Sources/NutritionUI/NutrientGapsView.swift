@@ -75,16 +75,16 @@ public struct NutrientGapsView: View {
 public enum NutrientGapsCopy {
     public static func intro(hasGroup: Bool, span: NutrientGapsSpan = .day) -> String {
         switch (span, hasGroup) {
-        case (.day, true): return "Today's amounts beside the published adult values for this group."
-        case (.day, false): return "Pick a group to see today's amounts beside its published adult values."
-        case (.week, true): return "Your daily averages beside the published adult values for this group."
-        case (.week, false): return "Pick a group to see your daily averages beside its published adult values."
+        case (.day, true): return "Today's amounts beside the published values for this group."
+        case (.day, false): return "Pick a group to see today's amounts beside its published values."
+        case (.week, true): return "Your daily averages beside the published values for this group."
+        case (.week, false): return "Pick a group to see your daily averages beside its published values."
         }
     }
 
-    public static let footer = "Reference values are the published adult RDA (Recommended Dietary Allowance) "
+    public static let footer = "Reference values are the published RDA (Recommended Dietary Allowance) "
         + "or AI (Adequate Intake) and upper limit, from the NIH Office of Dietary Supplements. They describe "
-        + "populations, not you, and are not advice. They do not cover anyone under 19. "
+        + "populations, not you, and are not advice. They do not cover anyone under 14. "
         + "Unknown means an entry does not state the nutrient, not that it has none."
 }
 

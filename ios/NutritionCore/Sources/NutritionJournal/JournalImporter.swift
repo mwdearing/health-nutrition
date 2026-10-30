@@ -879,8 +879,6 @@ public enum JournalImporter {
         }
     }
 
-    /// Writes each goal whose nutrient has no goal on the device yet, and returns the nutrients it set, so an
-    /// undo removes exactly those. A goal already on the device is never replaced.
     /// Removes the goals a restore recorded, but only where the device still holds exactly the value it set. A
     /// goal the person set or changed since is left alone, and a recorded nutrient with no goal is a no-op. Returns
     /// false when a removal failed, so the caller reports the restore as partial rather than clean.

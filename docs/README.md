@@ -12,6 +12,7 @@ Public architecture decisions and design notes for this project live here.
 - [Personal recipes: versions, calculation and logging](recipes.md)
 - [Privacy manifest: tracking, collected data and required-reason APIs](privacy-manifest.md)
 - [Erase all data: what the erase removes, and what it cannot reach](erase-all-data.md)
+- [Medication log: named medications and typed doses](medication-log.md)
 - [Daily reminder: one optional local notification, off by default](reminders.md)
 - [Goal setup: estimated daily targets from a few answers](goal-setup.md)
 - [Weight trend and planned goal date: least squares trend beside the chosen pace](weight-trend.md)

@@ -1,6 +1,6 @@
 import Foundation
 import NutritionDomain
-import NutritionJournal
+@testable import NutritionJournal
 import XCTest
 @testable import NutritionUI
 
@@ -102,6 +102,91 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
         ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(), store: EraseStubStore(), favorites: EraseStubFavorites(), erasers: erasers)
     }
 
+    // MARK: - The Health delivery gate (#841)
+
+    private func makeModel(
+        _ eraser: RecordingEraser, gate: DeliveryRunGate, waitSeconds: TimeInterval = 5,
+        eraseLocalAccount: @escaping () async throws -> Void = {}
+    ) -> ConnectionsPrivacyViewModel {
+        ConnectionsPrivacyViewModel(
+            goals: InMemoryGoalStore(), store: EraseStubStore(), favorites: EraseStubFavorites(), erasers: [eraser],
+            eraseLocalAccount: eraseLocalAccount, deliveryGate: gate, deliveryWaitSeconds: waitSeconds)
+    }
+
+    /// An erase that finds a Health pass running waits for it before it touches any store. Checked by order, not by
+    /// a time window (#1001): the erase's wait on the gate is seen to start, and while it waits no store is touched.
+    func testEraseWaitsForARunningHealthPassBeforeTouchingAStore() async {
+        let waits = GateWaitWatcher()
+        let gate = DeliveryRunGate(schedule: waits.schedule)
+        let eraser = RecordingEraser()
+        let model = makeModel(eraser, gate: gate)
+        await gate.enter() // a delivery pass is running
+        let erase = Task { await model.eraseAllData() }
+        // The erase is now queued on the gate: it scheduled its timeout, which only a waiting pause does. An erase
+        // that skipped the gate would never get here, and this bounded poll would fail instead of hanging.
+        let deadline = Date().addingTimeInterval(5)
+        var waiting = await waits.started
+        while !waiting, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 10_000_000)
+            waiting = await waits.started
+        }
+        XCTAssertTrue(waiting, "the erase waits on the gate while the pass runs")
+        XCTAssertEqual(eraser.eraseCount, 0, "no store is touched while the pass runs")
+        await gate.leave()
+        guard let erased = await finished(erase) else {
+            return XCTFail("the erase never finished after the pass ended")
+        }
+        XCTAssertTrue(erased)
+        XCTAssertEqual(eraser.eraseCount, 1)
+    }
+
+    /// A pass that is still running after the wait leaves everything in place: nothing erased, and Retry offered.
+    func testEraseGivesUpAfterTheWaitWithNothingErasedAndOffersRetry() async {
+        let gate = DeliveryRunGate()
+        let eraser = RecordingEraser()
+        let model = makeModel(eraser, gate: gate, waitSeconds: 0.05)
+        await gate.enter()
+        let erased = await model.eraseAllData()
+        XCTAssertFalse(erased)
+        XCTAssertEqual(eraser.eraseCount, 0, "nothing is erased")
+        XCTAssertEqual(model.errorMessage, ConnectionsPrivacyViewModel.eraseNothingErasedMessage)
+        XCTAssertTrue(model.eraseRetryAvailable)
+        await gate.leave()
+    }
+
+    /// A pass that arrives while the erase runs cannot start until the erase is done.
+    func testAPassCannotStartWhileTheEraseHoldsTheGate() async {
+        let gate = DeliveryRunGate()
+        var passCouldStart: Bool?
+        let model = makeModel(RecordingEraser(), gate: gate, eraseLocalAccount: {
+            passCouldStart = await gate.pause(upTo: 0.05) != nil
+        })
+        _ = await model.eraseAllData()
+        XCTAssertEqual(passCouldStart, false, "the erase holds the delivery gate while it runs")
+    }
+
+    /// The erase lets go of the gate on every exit: after a success, a failed store, and a timed-out wait.
+    func testEraseReleasesTheGateOnEveryExit() async {
+        for failing in [false, true] {
+            let gate = DeliveryRunGate()
+            let model = makeModel(RecordingEraser(failure: failing ? EraseFailure() : nil), gate: gate)
+            _ = await model.eraseAllData()
+            let free = await gate.pause(upTo: 0.5)
+            XCTAssertNotNil(free, "the gate is free after an erase that \(failing ? "failed" : "succeeded")")
+            await gate.resume(free)
+        }
+        // Timed out: the erase never held the gate, so it releases nothing the pass still holds.
+        let gate = DeliveryRunGate()
+        let model = makeModel(RecordingEraser(), gate: gate, waitSeconds: 0.05)
+        await gate.enter()
+        _ = await model.eraseAllData()
+        let stillHeld = await gate.pause(upTo: 0.05)
+        XCTAssertNil(stillHeld, "a timed-out erase does not release the running pass's hold")
+        await gate.leave()
+        let freeAfterPass = await gate.pause(upTo: 0.5)
+        XCTAssertNotNil(freeAfterPass, "the gate is free once the pass ends")
+    }
+
     func testDeliveryGateClosesBeforeFirstEraserEvenWhenEraseFails() async {
         var closed = false
         let eraser = RecordingEraser(failure: EraseFailure())
@@ -178,14 +263,23 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
             store: EraseStubStore(), favorites: EraseStubFavorites(), erasers: [RecordingEraser()],
             eraseLocalAccount: { await gate.pause() })
         let erasing = Task { await model.eraseAllData() }
-        while !(await gate.entered()) { await Task.yield() }
+        // Bounded, so an erase that never reaches the account cleanup fails here instead of hanging the run.
+        var entered = await gate.entered()
+        let deadline = Date().addingTimeInterval(5)
+        while !entered, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 10_000_000)
+            entered = await gate.entered()
+        }
+        XCTAssertTrue(entered, "the erase reached the account cleanup")
 
         model.importJournal(data: Data("[]".utf8))
 
         XCTAssertEqual(model.importState, .failed)
         XCTAssertEqual(model.importMessage, ConnectionsPrivacyViewModel.importDuringEraseMessage)
         await gate.open()
-        let erased = await erasing.value
+        guard let erased = await finished(erasing) else {
+            return XCTFail("the erase never finished after the account cleanup was let go")
+        }
         XCTAssertTrue(erased)
     }
 
@@ -555,4 +649,42 @@ struct FakePendingReminderCenter: PendingReminderCenter {
     let identifiers: [String]
     init(_ identifiers: [String]) { self.identifiers = identifiers }
     func pendingRequestIdentifiers() async -> [String] { identifiers }
+}
+
+/// Records that a pause on the delivery gate started waiting, by its scheduling a timeout that never fires. The erase
+/// test uses it to know the erase is queued on the gate (#1001).
+private actor GateWaitWatcher {
+    private(set) var started = false
+
+    nonisolated var schedule: DeliveryRunGate.Schedule {
+        { _, _ in Task { await self.markStarted() } }
+    }
+
+    private func markStarted() { started = true }
+}
+
+/// The value of `task`, or nil when it has not finished within `seconds`, so a broken gate fails the waiting assertion
+/// instead of hanging the run. A task that never finishes is left behind; the test has already failed by then.
+private func finished<T: Sendable>(_ task: Task<T, Never>, within seconds: TimeInterval = 5) async -> T? {
+    let once = ResumeOnce<T?>()
+    return await withCheckedContinuation { continuation in
+        Task { once.resume(continuation, with: await task.value) }
+        Task {
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            once.resume(continuation, with: nil)
+        }
+    }
+}
+
+/// Resumes a continuation at most once, for whichever of two racing tasks gets there first.
+private final class ResumeOnce<T>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var done = false
+    func resume(_ continuation: CheckedContinuation<T, Never>, with value: T) {
+        let first = lock.withLock { () -> Bool in
+            defer { done = true }
+            return !done
+        }
+        if first { continuation.resume(returning: value) }
+    }
 }
