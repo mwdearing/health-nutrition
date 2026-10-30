@@ -62,7 +62,7 @@ public struct CommunityProductSearchView: View {
             if kind != .supplement { Section(header: Text("Food databases"), footer: Text("The words you search for are sent to public food databases (USDA FoodData Central and Open Food Facts). Nothing else from this device is sent.")) {
                 openFoodFactsStatus
                 ForEach(model.openFoodFactsResults, id: \.self) { product in
-                    Button { onOpenFoodFacts(product, kind) } label: {
+                    Button { leaveSearch { onOpenFoodFacts(product, kind) } } label: {
                         VStack(alignment: .leading, spacing: DesignSpacing.xs) {
                             Text(product.name ?? "Unnamed product").font(.headline)
                             if let brand = product.brand { Text(brand) }
@@ -87,7 +87,7 @@ public struct CommunityProductSearchView: View {
                 if model.localError { Text("Could not read local products.") }
                 else if model.localResults.isEmpty { Text("No matching local products.") }
                 ForEach(model.localResults, id: \.localProductID) { product in
-                    Button { onSelect(product) } label: {
+                    Button { leaveSearch { onSelect(product) } } label: {
                         VStack(alignment: .leading) {
                             Text(product.content.name)
                             Text(product.content.kind.displayName).font(.footnote)
@@ -255,6 +255,12 @@ public struct CommunityProductSearchView: View {
             focusTask = nil
         }
     }
+    /// Puts the keyboard away before a row opens the next screen. A screen presented over this one hands focus back to
+    /// the field when it closes, which raised the keyboard on Back (#944), so the field gives focus up first.
+    private func leaveSearch(_ open: () -> Void) {
+        searchFocused = false
+        open()
+    }
     private func search() {
         // The keyboard covers the results below the form, which reads as if nothing happened.
         searchFocused = false
@@ -361,7 +367,7 @@ struct LibrarySearchSections: View {
             Section(group.title) {
                 if group.items.isEmpty { Text("Nothing you have logged or saved matches.").foregroundStyle(TokenColors.textSecondary) }
                 ForEach(group.items) { item in
-                    Button { onPick(item.template) } label: {
+                    Button { leaveSearch { onPick(item.template) } } label: {
                         VStack(alignment: .leading) {
                             Text(item.title).font(.headline).foregroundStyle(TokenColors.textPrimary)
                             Text(item.detail).font(.subheadline).foregroundStyle(TokenColors.textSecondary)
