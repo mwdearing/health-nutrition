@@ -62,7 +62,8 @@ final class AddSearchRowUITests: XCTestCase {
         XCTAssertTrue(typeIt.waitForExistence(timeout: 10), "the Type it in tile is not on Add. \(describeAddState(app))")
         typeIt.tap()
         XCTAssertTrue(app.navigationBars["Log entry"].waitForExistence(timeout: 20), "the details screen did not open")
-        let name = app.textFields["Name"]
+        // The Name field's title is not its spoken name (only opted-in fields are), so it is the form's first field.
+        let name = app.textFields.firstMatch
         XCTAssertTrue(name.waitForExistence(timeout: 20), "the details form has no Name field")
         name.tap()
         name.typeText(entryName)
@@ -94,8 +95,12 @@ final class AddSearchRowUITests: XCTestCase {
         recent.tap()
         let detailsBar = app.navigationBars["Log entry"]
         XCTAssertTrue(detailsBar.waitForExistence(timeout: 20), "tapping the Recent row did not open the details form")
-        let back = detailsBar.buttons["BackButton"].exists ? detailsBar.buttons["BackButton"] : detailsBar.buttons.firstMatch
+        // The Recent row opens a prefilled form, so the form shows its own Back button and asks before discarding.
+        let back = detailsBar.buttons["Back"]
+        XCTAssertTrue(back.waitForExistence(timeout: 10), "the details form has no Back button")
         back.tap()
+        let discard = app.buttons["Discard"]
+        if discard.waitForExistence(timeout: 5) { discard.tap() }
         XCTAssertTrue(field.waitForExistence(timeout: 10), "Back did not return to the search screen")
 
         // The focus request waits 400 ms after an appearance; wait well past it, then the field must not hold focus.
@@ -126,7 +131,8 @@ final class AddSearchRowUITests: XCTestCase {
         }
         XCTAssertTrue(delete.exists, "teardown: the entry screen has no Delete entry button")
         delete.tap()
-        let confirm = app.buttons["Delete"]
+        // The confirmation button is spoken as "Confirm delete" (EntryDetailView), not by its title.
+        let confirm = app.buttons["Confirm delete"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 10), "teardown: the delete confirmation did not appear")
         confirm.tap()
         XCTAssertTrue(row.waitForNonExistence(timeout: 10), "teardown: the logged entry is still on Today")
