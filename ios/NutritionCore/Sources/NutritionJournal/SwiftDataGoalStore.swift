@@ -366,10 +366,7 @@ public final class SwiftDataGoalStore: GoalStore, WeightPlanStore, JournalErasin
         else {
             throw GoalStoreError.corruptRecord(row.nutrient)
         }
-        let goal = NutrientGoal(nutrient: row.nutrient, target: target, unit: unit)
-        // A row the write path would refuse (a goal in the wrong dimension) is corrupt on read too (#1069).
-        do { try goal.validate() } catch { throw GoalStoreError.corruptRecord(row.nutrient) }
-        return goal
+        return NutrientGoal(nutrient: row.nutrient, target: target, unit: unit)
     }
 
     /// Reads the stored plan back. Any field that cannot be read, or a plan that fails `validate()`, is a
