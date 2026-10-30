@@ -19,8 +19,13 @@ final class GoalsKeyboardDoneUITests: XCTestCase {
         // A goal target, found by its spoken name: other fields on the screen, such as a water container size, are
         // not goal targets.
         let field = app.textFields.matching(NSPredicate(format: "label BEGINSWITH %@", "Daily target for")).firstMatch
-        // Settings opens with its quick-water field above the goals, and a list only builds the rows near the screen,
-        // so the goal rows are scrolled into view.
+        // Edit goals opens Settings; the goal targets are on the Daily goals screen behind its first row.
+        if !field.waitForExistence(timeout: 5) {
+            let dailyGoals = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Daily goals")).firstMatch
+            XCTAssertTrue(dailyGoals.waitForExistence(timeout: 10), "no Daily goals row in Settings")
+            dailyGoals.tap()
+        }
+        // A list only builds the rows near the screen, so the goal rows are scrolled into view.
         var swipes = 0
         while !field.waitForExistence(timeout: 2), swipes < 8 {
             app.swipeUp()
