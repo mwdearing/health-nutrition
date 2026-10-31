@@ -886,7 +886,7 @@ public final class JournalViewModel: ObservableObject {
             let journalLine = NutrientProgressLine.make(
                 nutrient: goal.nutrient, total: totals.total(for: goal.nutrient), goal: goal,
                 knownSum: totals.knownSum(for: goal.nutrient), missingCount: totals.missingCount(for: goal.nutrient))
-            let line = HealthIntakeTotals.combine([journalLine], outside: outside).first ?? journalLine
+            let line = journalLine
             return GoalBarModel.make(
                 line: line, hasEntries: line.hasKnownAmount || hasFoodEntries, missingCount: line.missingCount,
                 unitSystem: unitSystem)
@@ -903,7 +903,7 @@ public final class JournalViewModel: ObservableObject {
         // An exact figure only: a combined day that is partial (a Health read that did not complete, or journal entries
         // with no energy) keeps the journal-only figure the header showed before, rather than a figure that is short.
         let line: NutrientProgressLine
-        if case .known = combined.amount, !combined.isPartial { line = combined } else { line = journalLine }
+        line = journalLine
         guard case .known(let value, _) = line.amount else { return nil }
         // Energy reads as "400 Calories": the Diary never shows the kcal symbol on a screen. A small positive
         // amount reads "under 1", never "0", the same as Today's ring.
