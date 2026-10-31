@@ -30,7 +30,7 @@ final class TodayDistrustedWaterTests: XCTestCase {
     }
 
     private func today(_ store: SwiftDataJournalStore) -> TodayViewModel {
-        let model = TodayViewModel(store: store, timeZoneIdentifier: "UTC", lookup: SuspectFacts())
+        let model = TodayViewModel(store: store, lookup: SuspectFacts(), timeZoneIdentifier: "UTC")
         model.load(now: now)
         return model
     }
