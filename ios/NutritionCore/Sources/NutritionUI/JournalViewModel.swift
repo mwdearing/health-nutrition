@@ -172,7 +172,10 @@ public final class JournalViewModel: ObservableObject {
         healthReadGenerations[key] = generation
         let epoch = healthReadEpoch
         let read = await reader(day.start, through)
-        guard healthReadGenerations[key] == generation, healthReadEpoch == epoch else { return }
+        // A read that finished after a newer one started for the day, after the totals were forgotten, or after the
+        // Diary's zone changed (its day was another span of time), is dropped; the day is read again in the new zone.
+        guard healthReadGenerations[key] == generation, healthReadEpoch == epoch, dayZone.identifier == zoneID
+        else { return }
         if read.complete {
             healthReadMarks[key] = (through, zoneID)
         } else {
@@ -208,8 +211,12 @@ public final class JournalViewModel: ObservableObject {
         guard parts.count == 3 else { return nil }
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = zone
-        guard let start = calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2])),
-              let end = calendar.date(byAdding: .day, value: 1, to: start),
+        // From noon, so a zone whose clocks change at midnight (that midnight does not exist) still gets its real
+        // start of day; the end is the next day's start.
+        guard let noon = calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2], hour: 12)),
+              let nextNoon = calendar.date(byAdding: .day, value: 1, to: noon),
+              case let start = calendar.startOfDay(for: noon),
+              case let end = calendar.startOfDay(for: nextNoon),
               // A key that names no real day (2026-02-31) would be normalised to another day, so it is refused.
               dayKey(start, zone: zone) == key
         else { return nil }
