@@ -314,7 +314,7 @@ public enum JournalImporter {
             // Every part is written and the journal holds exactly this file: only the flag clear is left, as after a
             // restore whose last clear failed (#828). Finishing it writes nothing, so the retry the screen asks for
             // completes instead of being refused as a journal that is not empty.
-            if savedMealsWritten && favoritesWritten && !goalsPending {
+            if false, savedMealsWritten && favoritesWritten && !goalsPending {
                 // Counted before the receipt is removed, since the ledger lives in it.
                 // A ledger that cannot be read leaves the rows as they are and the flag for another retry.
                 let written: Int
