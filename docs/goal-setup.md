@@ -11,7 +11,14 @@ ones they keep. Nothing is saved until they tap Save goals.
 3. Body: height and weight, in centimeters and kilograms or in feet, inches and pounds, following the
    unit system in settings. Pounds and inches are converted exactly.
 4. Activity: how active the person is in a usual week.
-5. Pace, for losing or gaining only: 0.25, 0.5, 0.75 or 1 kg a week (0.5, 1, 1.5 or 2 lb a week).
+5. Pace and goal weight, for losing or gaining only: a pace of 0.25, 0.5, 0.75 or 1 kg a week (0.5, 1, 1.5
+   or 2 lb a week), and the goal weight, in kilograms or pounds to match the unit system. The goal weight
+   must be between 30 and 300 kg (67 to 661 lb). When losing it must be below the current weight; when
+   gaining, above it. Otherwise the step says "To lose weight, your goal weight must be below your current
+   weight." or "To gain weight, your goal weight must be above your current weight.", and Next waits.
+   Once a pace and a valid goal weight are in, the step shows the day that pace reaches the goal, counted
+   from today, for example "Plan reaches 75 kg on Jun 24, 2026". The words are the same as the plan line
+   on Today, and the days are rounded up to a whole day. Nothing grades the pace.
 6. Results: energy, protein, carbohydrate, fat and fiber, each editable before saving.
 
 Just tracking ends after the aim and saves nothing. When any target is already stored, the result says
@@ -44,11 +51,22 @@ value rounds up and the most rounds down, so every number the sentence names is 
 
 Age, sex, height and weight are used only to compute the numbers. They are held in memory while the
 sheet is open, are never stored, logged or sent, and are cleared when the sheet closes. The first screen
-says so: "Your answers stay on this phone and are not saved. Only the targets you choose are."
+says so: "Your age, sex, height and current weight stay on this phone and are not saved. Your aim, pace and goal weight are saved on this phone with the targets you choose."
 
-Only the targets a person saves are written, through the same goal store the Goals screen uses, in the
+The targets a person saves are written through the same goal store the Goals screen uses, in the
 stored units (kcal for energy, grams for the rest). Saving replaces any target already set for those
 nutrients; a blank result removes that target.
+
+The aim, pace and goal weight form the **weight plan**. It is stored in `goals.store` beside the targets,
+through `WeightPlanStore`, and it is written last: after the five targets are saved, so a failed plan write
+never leaves a plan without its targets. A losing or gaining plan keeps the goal weight and pace, a
+maintain plan keeps the aim only (a goal weight typed for maintain is ignored), and just tracking leaves
+any stored plan as it is. The plan is checked against the current weight before any target is written. If
+the plan write fails, the targets are put back exactly as they were read, and the results stay on screen.
+The other answers (age, sex, height, weight and activity) are still never stored.
+
+If a later version narrows the accepted goal weight or pace range, it migrates stored plans, so a saved
+plan is never read as damaged because the range moved.
 
 Saving is all or nothing. Before anything is written, each of the five nutrients' stored goals is read.
 If a write or removal then fails, the goals already changed are put back exactly as they were read (a goal

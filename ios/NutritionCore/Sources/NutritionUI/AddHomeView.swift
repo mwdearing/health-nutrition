@@ -58,7 +58,7 @@ public struct AddHomeView: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel(Self.searchRowTitle)
                     .accessibilityIdentifier("addSearchRow")
-                    .accessibilityHint("Opens product search on this phone, public food databases and shared foods.")
+                    .accessibilityHint("Opens product search on this device, public food databases and shared foods.")
                 }
                 Picker(selection: $model.meal) {
                     Text("None").tag(MealLabel?.none)
@@ -162,11 +162,11 @@ public struct AddHomeView: View {
     /// The four quick actions in one compact row; a row too narrow for four wraps them into two columns.
     private var quickActions: [QuickAction] {
         [
-            QuickAction(id: "barcode", title: "Barcode", icon: "barcode.viewfinder",
+            QuickAction(id: "barcode", title: AddQuickActionTitle.barcode, icon: "barcode.viewfinder",
                 help: "Read the code on the package.",
                 available: model.scannerAvailability.barcode,
                 explanation: model.scannerAvailability.barcodeExplanation, action: onBarcode),
-            QuickAction(id: "label", title: "Label", icon: "text.viewfinder",
+            QuickAction(id: "label", title: AddQuickActionTitle.label, icon: "text.viewfinder",
                 help: "Read and check the nutrition values.",
                 available: model.scannerAvailability.label,
                 explanation: model.scannerAvailability.labelExplanation, action: onLabel),
@@ -243,6 +243,12 @@ private struct QuickAddSheet: View {
         }
         .interactiveDismissDisabled(form.hasTypedInput)
     }
+}
+
+/// The scan tiles' titles on Add, named here so a test pins the approved wording (#593).
+enum AddQuickActionTitle {
+    static let barcode = "Scan barcode"
+    static let label = "Scan label"
 }
 
 private struct QuickAction: Identifiable {

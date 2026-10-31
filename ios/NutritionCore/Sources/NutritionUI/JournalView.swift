@@ -65,6 +65,10 @@ public struct JournalView: View {
                 }
                 ForEach(model.diarySections) { section in
                     daySection(section)
+                        // Adds what other apps logged to Apple Health that day, read as the day comes on screen.
+                        .task(id: model.healthReadTaskID(forDayKey: section.id)) {
+                            await model.loadHealthTotals(forDayKey: section.id, now: Date())
+                        }
                 }
                 if let skipped = model.skippedText {
                     InlineNotice(skipped, tone: .waiting)
@@ -124,10 +128,10 @@ public struct JournalView: View {
             }
             // A time-zone change while the app is open reloads the days in the new zone (#648).
             .task {
-                await model.runZoneChangeReloads(
+                await model.runZoneChangeReloads({
                     NotificationCenter.default.notifications(named: NSNotification.Name.NSSystemTimeZoneDidChange)
-                        .map { _ in () },
-                    now: now)
+                        .map { _ in () }
+                }, now: now)
             }
             // Coming back to the app reloads the day titles, so "Yesterday" moves on after midnight.
             .onChange(of: scenePhase) { phase in

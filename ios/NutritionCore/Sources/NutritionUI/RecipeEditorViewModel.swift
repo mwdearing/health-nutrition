@@ -319,7 +319,8 @@ public final class RecipeEditorViewModel: ObservableObject {
             var latest = 0
             if isEdit {
                 // A version that cannot be read is left out of this list but still holds its number,
-                // so the store, not this list, has the last word on which number comes next.
+                // so the store, not this list, has the last word on which number comes next. A failed read
+                // of the whole list throws here and refuses the save with "Could not save the recipe."
                 latest = try store.versions(of: recipeID).last?.number ?? 0
             }
             var version = RecipeVersion(

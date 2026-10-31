@@ -239,7 +239,8 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
     private func makeWorker(
         totals: [String: NutrientValue] = ["water": .known(dec("250"), .mL)],
         enabled: Set<JournalDestination> = [.healthKit, .relay],
-        writer: FakeHealthSampleWriter = FakeHealthSampleWriter()
+        writer: FakeHealthSampleWriter = FakeHealthSampleWriter(),
+        isBusy: @escaping @Sendable () async -> Bool = { false }
     ) throws -> (
         store: SwiftDataJournalStore, writer: FakeHealthSampleWriter, totals: RecordingTotals,
         worker: HealthKitDeliveryWorker
@@ -251,9 +252,27 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         let recording = RecordingTotals(totals)
         let worker = HealthKitDeliveryWorker(
             store: store, writer: writer,
-            totals: { intakeID, revision in try await recording.totals(intakeID: intakeID, revision: revision) }
+            totals: { intakeID, revision in try await recording.totals(intakeID: intakeID, revision: revision) },
+            isBusy: isBusy
         )
         return (store, writer, recording, worker)
+    }
+
+    /// An erase that starts at one point of a pass: the busy check answers true on its `busyOn`th call only,
+    /// counting from 1, so each test pins exactly one of the worker's checks.
+    private final class EraseStartsAt: @unchecked Sendable {
+        private let lock = NSLock()
+        private var calls = 0
+        private let busyOn: Int
+
+        init(call busyOn: Int) { self.busyOn = busyOn }
+
+        func check() -> Bool {
+            lock.withLock {
+                calls += 1
+                return calls == busyOn
+            }
+        }
     }
 
     /// The healthKit operation for one kind, from the store's own queue.
@@ -285,6 +304,89 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         XCTAssertEqual(outcomes, [.delivered(operationID: operationID, samples: 1)])
         XCTAssertNil(try healthKitOperation(store, kind: .upsert), "an acknowledged operation leaves the queue")
         XCTAssertEqual(try projectionState(store, intakeID: intakeID), .succeeded)
+    }
+
+    // MARK: - While Erase all data or a restore runs (#777, #841)
+
+    /// A pass that starts during an erase reads nothing and writes nothing, and the entry stays pending.
+    func testAPassThatStartsDuringAnEraseWritesNothing() async throws {
+        let erase = EraseStartsAt(call: 1)
+        let (store, writer, _, worker) = try makeWorker(isBusy: { erase.check() })
+
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        let outcomes = await worker.runOnce(now: when)
+
+        XCTAssertEqual(outcomes, [], "the queue is not read while an erase runs")
+        XCTAssertTrue(writer.saved.isEmpty, "nothing is written to Health")
+        XCTAssertNotNil(try healthKitOperation(store, kind: .upsert), "the operation stays pending")
+    }
+
+    /// An erase that begins after the pass read the queue stops the upsert before Health or the ledger is written.
+    func testAnEraseThatBeginsBeforeTheSaveWritesNothingToHealthOrTheLedger() async throws {
+        let erase = EraseStartsAt(call: 2)
+        let (store, writer, _, worker) = try makeWorker(isBusy: { erase.check() })
+
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        let operationID = try XCTUnwrap(healthKitOperation(store, kind: .upsert)?.operationID)
+        let outcomes = await worker.runOnce(now: when)
+
+        XCTAssertEqual(outcomes, [.notDue(operationID: operationID, nextAttemptAt: when)])
+        XCTAssertTrue(writer.saved.isEmpty, "nothing is written to Health once the erase began")
+        XCTAssertNil(try store.writtenHealthKitKeys(intakeID: intakeID), "nothing is recorded in the ledger")
+        XCTAssertNotNil(try healthKitOperation(store, kind: .upsert), "the operation stays pending")
+    }
+
+    /// An erase that begins during the save leaves the operation unacknowledged, so no bookkeeping row points
+    /// at an entry the erase removed.
+    func testAnEraseThatBeginsDuringTheSaveRecordsNoDelivery() async throws {
+        let erase = EraseStartsAt(call: 3)
+        let (store, writer, _, worker) = try makeWorker(isBusy: { erase.check() })
+
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        let operationID = try XCTUnwrap(healthKitOperation(store, kind: .upsert)?.operationID)
+        let outcomes = await worker.runOnce(now: when)
+
+        XCTAssertEqual(writer.saved.map(\.syncIdentifier), [waterIdentifier(intakeID)], "the save had begun")
+        XCTAssertEqual(outcomes, [.notDue(operationID: operationID, nextAttemptAt: when)])
+        XCTAssertNotNil(try healthKitOperation(store, kind: .upsert), "the delivery is not acknowledged")
+        XCTAssertNotEqual(try projectionState(store, intakeID: intakeID), .succeeded)
+    }
+
+    /// A delete delivered after the upsert, by a worker whose erase starts at `call`.
+    private func retractWithErase(at call: Int) async throws -> (
+        store: SwiftDataJournalStore, writer: FakeHealthSampleWriter, outcomes: [HealthKitDeliveryOutcome],
+        operationID: String
+    ) {
+        let (store, writer, recording, worker) = try makeWorker()
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        _ = await worker.runOnce(now: when)
+        try store.delete(intakeID: intakeID, now: when)
+        let operationID = try XCTUnwrap(healthKitOperation(store, kind: .delete)?.operationID)
+        let erase = EraseStartsAt(call: call)
+        let erasing = HealthKitDeliveryWorker(
+            store: store, writer: writer,
+            totals: { intakeID, revision in try await recording.totals(intakeID: intakeID, revision: revision) },
+            isBusy: { erase.check() })
+        let outcomes = await erasing.runOnce(now: when)
+        return (store, writer, outcomes, operationID)
+    }
+
+    /// An erase that begins after the pass read the queue stops a delete before it removes anything from Health.
+    func testAnEraseThatBeginsBeforeARetractionDeletesNothing() async throws {
+        let (store, writer, outcomes, operationID) = try await retractWithErase(at: 2)
+
+        XCTAssertTrue(writer.deleted.isEmpty, "nothing is removed from Health once the erase began")
+        XCTAssertEqual(outcomes, [.notDue(operationID: operationID, nextAttemptAt: when)])
+        XCTAssertNotNil(try healthKitOperation(store, kind: .delete), "the delete stays pending")
+    }
+
+    /// An erase that begins during a retraction leaves the delete unacknowledged and unrecorded.
+    func testAnEraseThatBeginsDuringARetractionRecordsNoDelivery() async throws {
+        let (store, writer, outcomes, operationID) = try await retractWithErase(at: 3)
+
+        XCTAssertEqual(writer.deleted, allMappedIdentifiers(intakeID), "the deletion had begun")
+        XCTAssertEqual(outcomes, [.notDue(operationID: operationID, nextAttemptAt: when)])
+        XCTAssertNotNil(try healthKitOperation(store, kind: .delete), "the delete is not acknowledged")
     }
 
     /// Two runs started together never write at the same time, and the revision is written once.

@@ -31,12 +31,12 @@ wire set is a subset of the app's set (the app also has `oz`, `fl oz`, `cup`,
 `tbsp` and `tsp`, which are input units and never published).
 
 The vectors follow the model of the Swift `NutritionDomain` (same operations,
-same error names, same order of multiplication and division), but they are not
-yet run against it. Apart from a conversion into an input unit (`oz`, `fl oz`,
-`cup`, `tbsp`, `tsp`), which `UnitRegistry.reciprocalFractionDigits` rounds to
-10 fraction digits, the Swift code does not round a repeating quotient to the
-contract's 10 fraction digits today; the Swift/Python golden verification that
-follows this contract makes `NutritionDomain` conform and runs these vectors in
-Swift. The journal's own scaling keeps its present arithmetic by design and is
-not part of that work (`decimal-rules.md`, "The journal keeps the digits its
-arithmetic gives").
+same error names, same order of multiplication and division), and they are run
+in both languages. `ContractArithmetic` in `NutritionDomain` is the catalog's
+arithmetic in Swift: exact decimals, the one rounding rule for a quotient that
+does not terminate, and the 38-digit and exponent bounds.
+`ios/NutritionCore/Tests/NutritionDomainTests/ContractGoldenTests.swift` runs
+every vector through it and checks that its unit table and vitamin D factor are
+this registry's. The journal's own scaling (`Quantity` and the totals) keeps its
+present arithmetic by design and does not use it (`decimal-rules.md`, "The
+journal keeps the digits its arithmetic gives").

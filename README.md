@@ -4,7 +4,7 @@ A native iOS app for a local food, supplement and hydration journal. This reposi
 
 ## Implemented
 
-- Today, quick-add water, Add intake, Journal, entry detail and Library screens
+- Today, Diary, Library and Trends tabs, plus Add intake, entry detail and Settings (opened from the gear), with quick-add water on Today
 - Local SwiftData persistence with immutable revisions, product snapshots and destination outbox operations
 - Favorites, recents, repeat entries and versioned personal recipes
 - Versioned journal export and import, plus Erase all data in Settings, which clears the local stores and the community session on the phone

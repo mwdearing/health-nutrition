@@ -57,4 +57,60 @@ final class HealthIntakeTodayTests: XCTestCase {
         XCTAssertEqual(model.progress.first { $0.nutrient == "energy" }?.amount,
                        NutrientValue.known(620, HealthKitWritePlanner.mapping(for: "energy")!.unit))
     }
+
+    // MARK: - Water other apps logged to Health
+
+    /// Water another app logged to Health counts toward Today's water, the way its nutrients count toward their lines.
+    func testWaterFromOtherAppsInHealthCountsTowardTodaysWater() throws {
+        let model = TodayViewModel(store: try makeJournal(), timeZoneIdentifier: "UTC")
+        model.outsideIntake = .read(values: ["water": 500], readKeys: ["water"])
+        model.load(now: now)
+        XCTAssertEqual(model.waterTotalMilliliters, 500)
+    }
+
+    /// Health's water is added to what the journal logged, not put in its place.
+    func testHealthWaterIsAddedToTheJournalsWater() throws {
+        let model = TodayViewModel(store: try makeJournal(), timeZoneIdentifier: "UTC")
+        XCTAssertNotNil(model.quickAddWater(milliliters: 250, now: now))
+        model.outsideIntake = .read(values: ["water": 500], readKeys: ["water"])
+        model.load(now: now)
+        XCTAssertEqual(model.waterTotalMilliliters, 750)
+    }
+
+    /// A water read that did not complete adds nothing, so Today's water stays the journal's.
+    func testAnIncompleteHealthWaterReadAddsNothing() throws {
+        let model = TodayViewModel(store: try makeJournal(), timeZoneIdentifier: "UTC")
+        XCTAssertNotNil(model.quickAddWater(milliliters: 250, now: now))
+        model.outsideIntake = .read(values: ["water": 500, "energy": 620], readKeys: ["energy"])
+        model.load(now: now)
+        XCTAssertEqual(model.waterTotalMilliliters, 250)
+    }
+
+    /// With a water goal, the water bar shows Health's water too, so the bar and the water figure agree.
+    func testTheWaterBarCountsHealthWaterLikeTheWaterFigure() throws {
+        let goals = InMemoryGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "water", target: 2000, unit: .mL))
+        let model = TodayViewModel(store: try makeJournal(), goals: goals, timeZoneIdentifier: "UTC")
+        XCTAssertNotNil(model.quickAddWater(milliliters: 250, now: now))
+        model.outsideIntake = .read(values: ["water": 500], readKeys: ["water"])
+        model.load(now: now)
+        let bar = try XCTUnwrap(model.waterBar)
+        XCTAssertEqual(bar.state, .progress)
+        XCTAssertEqual(model.progress.first { $0.nutrient == "water" }?.amount, NutrientValue.known(750, .mL))
+        // The water figure and the water line each add Health's water once: 250 logged plus 500 from Health is 750
+        // on both, never 1,250 (the figure adding it twice) or 1,000 (the line counting the figure again).
+        XCTAssertEqual(model.waterTotalMilliliters, 750)
+    }
+
+    /// With only Health water and none logged here, the water bar shows progress, not "Nothing logged yet".
+    func testTheWaterBarShowsHealthOnlyWaterAsLogged() throws {
+        let goals = InMemoryGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "water", target: 2000, unit: .mL))
+        let model = TodayViewModel(store: try makeJournal(), goals: goals, timeZoneIdentifier: "UTC")
+        model.outsideIntake = .read(values: ["water": 500], readKeys: ["water"])
+        model.load(now: now)
+        let bar = try XCTUnwrap(model.waterBar)
+        XCTAssertEqual(bar.state, .progress)
+        XCTAssertNotEqual(bar.valueText, "Nothing logged yet")
+    }
 }
