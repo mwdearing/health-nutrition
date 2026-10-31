@@ -257,7 +257,7 @@ public final class AccountViewModel: ObservableObject {
     }
 
     public func signOut() async {
-        guard !signOutInProgress else { return }
+        // MUTATION: in-flight guard removed to prove the bounded wait fails
         signOutInProgress = true
         busyCount += 1
         defer {
