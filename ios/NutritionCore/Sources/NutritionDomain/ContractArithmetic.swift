@@ -53,7 +53,7 @@ public enum ContractArithmetic {
     /// The mass of one IU, for the one nutrient that states it (vitamin D, 0.025 mcg per IU).
     public static let mcgPerInternationalUnit: [String: String] = ["vitamin_d": "0.025"]
 
-    public static let fractionDigits = 10
+    public static let fractionDigits = 9
     public static let significantDigits = 38
     public static let adjustedExponentLimit = 127
 
