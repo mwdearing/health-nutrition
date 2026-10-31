@@ -256,7 +256,7 @@ final class JournalImportAtomicityTests: JournalImportTestCase {
 
     /// A complete restore whose flag clear failed leaves its rows and receipts. A retry of the same file is refused,
     /// as a finished restore is, and writes nothing.
-    func testARetryAfterAFailedFlagClearIsRefusedAndWritesNothing() throws {
+    func testARetryAfterAFailedFlagClearFinishesTheCleanupAndWritesNothing() throws {
         let data = try exportData()
         let target = try directory()
         let inner = try store(target)
@@ -271,12 +271,32 @@ final class JournalImportAtomicityTests: JournalImportTestCase {
         let rowsAfterFirst = try inner.activeIntakes().map(\.id)
         XCTAssertFalse(rowsAfterFirst.isEmpty)
 
-        // A retry finds every receipt and the flag, and is refused as before: nothing is written again, and the flag stays.
+        // The retry the message asks for finds every receipt and the flag: it clears the flag, writes nothing again,
+        // and reports the restore (#828).
+        XCTAssertNoThrow(try JournalImporter.importExport(data, into: journal, favorites: favoritesStore))
+        XCTAssertNil(try inner.restoreInProgressDigest())
+        XCTAssertEqual(try inner.activeIntakes().map(\.id), rowsAfterFirst)
+
+        // With the flag gone, a third import is refused as a journal that is not empty.
         XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: favoritesStore)) {
             XCTAssertEqual($0 as? JournalImportError, .notEmpty)
         }
+    }
+
+    /// A retry whose flag clear fails again still reports the cleanup, not a bad file or a full journal.
+    func testARetryWhoseFlagClearFailsAgainReportsCleanupIncomplete() throws {
+        let data = try exportData()
+        let target = try directory()
+        let inner = try store(target)
+        let journal = FlagClearFailsOnceJournal(inner)
+        let favoritesStore = try favorites(target)
+        journal.failNextClear = true
+        XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: favoritesStore))
+        journal.failNextClear = true
+        XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: favoritesStore)) {
+            XCTAssertEqual($0 as? JournalImportError, .cleanupIncomplete)
+        }
         XCTAssertNotNil(try inner.restoreInProgressDigest())
-        XCTAssertEqual(try inner.activeIntakes().map(\.id), rowsAfterFirst)
     }
 
     /// A flag that cannot be removed fails the erase before any journal row is deleted, so the screen can

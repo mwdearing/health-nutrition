@@ -311,7 +311,16 @@ public enum JournalImporter {
                     }
                 }
             }
-            guard !(savedMealsWritten && favoritesWritten && !goalsPending) else { throw JournalImportError.notEmpty }
+            // Every part is written and the journal holds exactly this file: only the flag clear is left, as after a
+            // restore whose last clear failed (#828). Finishing it writes nothing, so the retry the screen asks for
+            // completes instead of being refused as a journal that is not empty.
+            if savedMealsWritten && favoritesWritten && !goalsPending {
+                try clearFlagAfterRestore(progress)
+                try? favoritesTarget?.removeRestoreReceipt(digest)
+                try? savedMealsTarget?.removeSavedMealsRestoreReceipt(digest)
+                try? goalsTarget?.removeGoalRestoreReceipt(digest)
+                return summary(of: plan, goals: 0)
+            }
             if let savedMealsTarget, !savedMealsWritten {
                 try savedMealsTarget.restoreJournalSavedMeals(plan.savedMeals, receipt: digest)
             }
@@ -336,7 +345,7 @@ public enum JournalImporter {
             }
             // A flag that outlived a finished resume would let a later import of this file write rows the
             // person deleted since, so a failure to clear it is reported rather than swallowed.
-            try progress.clearRestoreInProgress()
+            try clearFlagAfterRestore(progress)
             // The flag is gone, so the receipts have nothing left to answer; one left by a stop here is harmless.
             try? favoritesTarget?.removeRestoreReceipt(digest)
             try? savedMealsTarget?.removeSavedMealsRestoreReceipt(digest)
@@ -477,6 +486,16 @@ public enum JournalImporter {
         }
         let deleted = try (store as? JournalTombstoneSource)?.deletedIntakes() ?? []
         return Set(deleted.map(\.id)) == Set(plan.tombstones.map(\.id)) && deleted.count == plan.tombstones.count
+    }
+
+    /// Clears the restore flag once every row is written. A failed clear is the restore that finished but could
+    /// not clean up (#828), not a bad file, so it is reported as `cleanupIncomplete`.
+    private static func clearFlagAfterRestore(_ progress: JournalRestoreProgress) throws {
+        do {
+            try progress.clearRestoreInProgress()
+        } catch {
+            throw JournalImportError.cleanupIncomplete
+        }
     }
 
     private static func summary(of plan: JournalRestorePlan, goals: Int) -> JournalImportSummary {
