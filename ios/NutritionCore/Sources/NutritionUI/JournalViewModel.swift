@@ -129,7 +129,10 @@ public struct JournalWeekSummary: Equatable {
 public final class JournalViewModel: ObservableObject {
     /// What other apps logged to Apple Health on each day, by the day's yyyy-MM-dd key. The app sets it after reading
     /// Health for the days on screen; a day without an entry here reads journal-only, as before.
-    public var outsideIntakeByDay: [String: HealthIntakeTotals.Outside] = [:]
+    public internal(set) var outsideIntakeByDay: [String: HealthIntakeTotals.Outside] = [:]
+    /// For each day in `outsideIntakeByDay`, the instant its read covered through and the zone it was read in. A
+    /// day read as today, before midnight, or in another zone, is read again rather than kept.
+    private var healthReadMarks: [String: (through: Date, zoneID: String)] = [:]
     /// Reads what other apps logged to Apple Health between two instants. The app sets it; nil keeps the Diary
     /// journal-only.
     public var healthDayReader: (@MainActor (Date, Date) async -> HealthIntakeTotals.Outside)?
@@ -139,13 +142,24 @@ public final class JournalViewModel: ObservableObject {
     public func loadHealthTotals(forDayKey key: String, now: Date) async {
         guard let reader = healthDayReader else { return }
         let todayKey = Self.dayKey(now, zone: dayZone)
-        // A past day already read stays read. Not connected is not kept, so connecting Health later reads it then.
-        if key != todayKey, let cached = outsideIntakeByDay[key], cached != .notConnected { return }
+        let zoneID = dayZone.identifier
         guard let day = Self.dayInterval(forKey: key, zone: dayZone) else { return }
-        let outside = await reader(day.start, key == todayKey ? now : day.end)
+        // A past day already read through its end, in this zone, stays read. Not connected is not kept, so connecting
+        // Health later reads it then; a day last read as today, or in another zone, is read again in full.
+        if key != todayKey, let cached = outsideIntakeByDay[key], cached != .notConnected,
+           let mark = healthReadMarks[key], mark.through >= day.end, mark.zoneID == zoneID {
+            return
+        }
+        let through = key == todayKey ? now : day.end
+        let outside = await reader(day.start, through)
+        healthReadMarks[key] = (through, zoneID)
         guard outside != outsideIntakeByDay[key] else { return }
         outsideIntakeByDay[key] = outside
+        // A background Health read must not clear a copy's Undo notice, which `load` resets for a person's own reload.
+        let notice = copyNotice, failed = copyFailed
         load(now: now)
+        copyNotice = notice
+        copyFailed = failed
     }
 
     /// Reads today's Apple Health totals again, for a reload while the Diary is open: more can be logged elsewhere.
@@ -882,8 +896,14 @@ public final class JournalViewModel: ObservableObject {
     /// The day's energy as "1240 kcal", or nil when the day cannot total it. Never a zero for unknown. `outside` is
     /// the energy other apps logged to Apple Health that day, added as Today adds it.
     static func energyText(totals: DailyTotals, outside: HealthIntakeTotals.Outside = .notConnected) -> String? {
-        let journalLine = NutrientProgressLine.make(nutrient: energyKey, total: totals.total(for: energyKey), goal: nil)
-        let line = HealthIntakeTotals.combine([journalLine], outside: outside).first ?? journalLine
+        let journalLine = NutrientProgressLine.make(
+            nutrient: energyKey, total: totals.total(for: energyKey), goal: nil,
+            knownSum: totals.knownSum(for: energyKey), missingCount: totals.missingCount(for: energyKey))
+        let combined = HealthIntakeTotals.combine([journalLine], outside: outside).first ?? journalLine
+        // An exact figure only: a combined day that is partial (a Health read that did not complete, or journal entries
+        // with no energy) keeps the journal-only figure the header showed before, rather than a figure that is short.
+        let line: NutrientProgressLine
+        if case .known = combined.amount, !combined.isPartial { line = combined } else { line = journalLine }
         guard case .known(let value, _) = line.amount else { return nil }
         // Energy reads as "400 Calories": the Diary never shows the kcal symbol on a screen. A small positive
         // amount reads "under 1", never "0", the same as Today's ring.

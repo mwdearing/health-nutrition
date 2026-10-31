@@ -6,6 +6,17 @@ import XCTest
 
 /// The Diary's day header adds what other apps logged to Apple Health that day, as Today does, so the header reads
 /// the whole day wherever an entry was logged (Mike, 2026-10-30).
+/// Every component states 100 kcal of energy and nothing else, so a day's journal energy is known.
+private struct EnergyFacts: NutrientFactsLookup {
+    func value(for component: IntakeComponent, nutrient: String) -> NutrientValue {
+        nutrient == "energy" ? .known(100, .kcal) : .unknown
+    }
+
+    func value(for component: IntakeComponent, snapshot: ProductDefinition?, nutrient: String) -> NutrientValue {
+        value(for: component, nutrient: nutrient)
+    }
+}
+
 @MainActor
 final class DiaryHealthTotalsTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_700_000_000)
@@ -124,5 +135,83 @@ final class DiaryHealthTotalsTests: XCTestCase {
         XCTAssertNil(JournalViewModel.dayInterval(forKey: "2026-02-31", zone: utc))
         XCTAssertNil(JournalViewModel.dayInterval(forKey: "not-a-day", zone: utc))
         XCTAssertNotNil(JournalViewModel.dayInterval(forKey: "2026-02-28", zone: utc))
+    }
+
+    /// One food entry on `now`'s day, with the given lookup.
+    private func foodDay(lookup: NutrientFactsLookup) throws -> (JournalViewModel, String) {
+        let journal = try makeJournal()
+        try journal.create(
+            Intake(id: UUID().uuidString.lowercased(), category: "food", occurredAt: now, timeZoneIdentifier: "UTC"),
+            components: [IntakeComponent(componentID: "oats", name: "Example oats", amount: 40, unit: .g)],
+            product: nil, now: now)
+        let model = JournalViewModel(
+            store: journal, lookup: lookup, timeZoneIdentifier: "UTC", locale: Locale(identifier: "en_US"))
+        return (model, JournalViewModel.dayKey(now, zone: TimeZone(identifier: "UTC")!))
+    }
+
+    /// A day whose food has no energy is not shown as Health's figure alone: the header stays journal-only.
+    func testAFoodDayWithUnknownEnergyIsNotShownAsHealthsFigureAlone() throws {
+        let (model, key) = try foodDay(lookup: UnknownNutrientFacts())
+        model.outsideIntakeByDay[key] = .read(values: ["energy": 620], readKeys: ["energy"])
+        model.load(now: now)
+        XCTAssertNotEqual(model.sections.first { $0.id == key }?.energyText, "620 Calories")
+    }
+
+    /// A Health read that did not complete leaves the journal's known energy showing, not blank.
+    func testAnIncompleteHealthReadKeepsTheJournalsEnergy() throws {
+        let (model, key) = try foodDay(lookup: EnergyFacts())
+        model.outsideIntakeByDay[key] = .read(values: [:], readKeys: [])
+        model.load(now: now)
+        XCTAssertEqual(model.sections.first { $0.id == key }?.energyText, "100 Calories")
+    }
+
+    /// A day read while it was today is read again in full once it is past, so later Health entries count.
+    func testADayReadAsTodayIsReadAgainOnceItIsPast() async throws {
+        let (model, key) = try waterOnlyDay()
+        var reads = 0
+        model.healthDayReader = { _, _ in
+            reads += 1
+            return .read(values: [:], readKeys: ["energy"])
+        }
+        await model.loadHealthTotals(forDayKey: key, now: now)
+        let tomorrow = now.addingTimeInterval(86_400)
+        await model.loadHealthTotals(forDayKey: key, now: tomorrow)
+        await model.loadHealthTotals(forDayKey: key, now: tomorrow)
+        XCTAssertEqual(reads, 2, "read as today, then once in full as a past day, then kept")
+    }
+
+    /// A past day read in one zone is read again after the Diary's zone changes.
+    func testAPastDayIsReadAgainAfterTheZoneChanges() async throws {
+        let journal = try makeJournal()
+        var zone = "UTC"
+        let model = JournalViewModel(store: journal, timeZoneProvider: { zone }, locale: Locale(identifier: "en_US"))
+        var reads = 0
+        model.healthDayReader = { _, _ in
+            reads += 1
+            return .read(values: [:], readKeys: ["energy"])
+        }
+        await model.loadHealthTotals(forDayKey: "2020-01-15", now: now)
+        await model.loadHealthTotals(forDayKey: "2020-01-15", now: now)
+        zone = "America/New_York"
+        await model.loadHealthTotals(forDayKey: "2020-01-15", now: now)
+        XCTAssertEqual(reads, 2, "kept in UTC, read again in New York")
+    }
+
+    /// A background Health read does not clear a copy's Undo notice.
+    func testAHealthReadKeepsTheCopyUndoNotice() async throws {
+        let journal = try makeJournal()
+        let yesterday = now.addingTimeInterval(-86_400)
+        try journal.create(
+            Intake(id: UUID().uuidString.lowercased(), category: "food", occurredAt: yesterday, timeZoneIdentifier: "UTC"),
+            components: [IntakeComponent(componentID: "oats", name: "Example oats", amount: 40, unit: .g)],
+            product: nil, now: yesterday)
+        let model = JournalViewModel(store: journal, timeZoneIdentifier: "UTC", locale: Locale(identifier: "en_US"))
+        model.load(now: now)
+        let pastKey = JournalViewModel.dayKey(yesterday, zone: TimeZone(identifier: "UTC")!)
+        XCTAssertNotNil(model.copyDayToToday(pastKey, now: now))
+        let notice = try XCTUnwrap(model.copyNotice)
+        model.healthDayReader = { _, _ in .read(values: ["energy": 620], readKeys: ["energy"]) }
+        await model.loadHealthTotals(forDayKey: JournalViewModel.dayKey(now, zone: TimeZone(identifier: "UTC")!), now: now)
+        XCTAssertEqual(model.copyNotice, notice)
     }
 }
