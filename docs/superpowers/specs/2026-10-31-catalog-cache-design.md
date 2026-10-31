@@ -50,6 +50,12 @@ revision.
   entry's own snapshot stays as it was (#87).
 - B. A fixed expiry (for example 30 days), after which a cached product is hidden until it is fetched again.
 
+Either way a withdrawal, rejection or recall reaches a phone's cache only when that phone next fetches the product,
+so a phone that stays offline keeps showing what it saved. Option A makes that visible rather than hiding it: every
+cached product shows when it was saved ("Saved on this phone on Oct 31", choice 6), and after 90 days without the
+catalog confirming it, the product is still shown but without its verification badge until it is fetched again. That
+90-day limit is part of the owner decision.
+
 ### 4. Search order and the offline state — owner decision (copy)
 
 - **A. Recommended: device first, then cache, then the catalog.** Library rows come first as today, then cached
