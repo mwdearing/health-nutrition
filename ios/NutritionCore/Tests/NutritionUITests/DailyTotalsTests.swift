@@ -1248,7 +1248,7 @@ final class DailyTotalsTests: XCTestCase {
         }
         let component = IntakeComponent(componentID: "oats", name: "Oats", amount: 40, unit: .g)
         let lookup = NutrientFacts(values: ["oats": stated])
-        let entry = (components: [component], snapshot: nil as ProductDefinition?, category: "food")
+        let entry = (components: [component], snapshot: nil as ProductDefinition?, category: "food", typed: false)
         XCTAssertTrue(DailyTotalsBuilder.isDistrusted(entry, lookup: lookup))
     }
 
@@ -1263,7 +1263,7 @@ final class DailyTotalsTests: XCTestCase {
         }
         let component = IntakeComponent(componentID: "oats", name: "Oats", amount: 40, unit: .g)
         let lookup = NutrientFacts(values: ["oats": stated])
-        let entry = (components: [component], snapshot: nil as ProductDefinition?, category: "food")
+        let entry = (components: [component], snapshot: nil as ProductDefinition?, category: "food", typed: false)
         XCTAssertTrue(DailyTotalsBuilder.isDistrusted(entry, lookup: lookup))
     }
 }
