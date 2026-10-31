@@ -16,6 +16,9 @@ ones they keep. Nothing is saved until they tap Save goals.
    must be between 30 and 300 kg (67 to 661 lb). When losing it must be below the current weight; when
    gaining, above it. Otherwise the step says "To lose weight, your goal weight must be below your current
    weight." or "To gain weight, your goal weight must be above your current weight.", and Next waits.
+   Once a pace and a valid goal weight are in, the step shows the day that pace reaches the goal, counted
+   from today, for example "Plan reaches 75 kg on Jun 24, 2026". The words are the same as the plan line
+   on Today, and the days are rounded up to a whole day. Nothing grades the pace.
 6. Results: energy, protein, carbohydrate, fat and fiber, each editable before saving.
 
 Just tracking ends after the aim and saves nothing. When any target is already stored, the result says
@@ -61,6 +64,9 @@ maintain plan keeps the aim only (a goal weight typed for maintain is ignored), 
 any stored plan as it is. The plan is checked against the current weight before any target is written. If
 the plan write fails, the targets are put back exactly as they were read, and the results stay on screen.
 The other answers (age, sex, height, weight and activity) are still never stored.
+
+If a later version narrows the accepted goal weight or pace range, it migrates stored plans, so a saved
+plan is never read as damaged because the range moved.
 
 Saving is all or nothing. Before anything is written, each of the five nutrients' stored goals is read.
 If a write or removal then fails, the goals already changed are put back exactly as they were read (a goal

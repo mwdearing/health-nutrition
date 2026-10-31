@@ -6,14 +6,15 @@ public enum ReferenceSex: String, Sendable, Hashable, Codable, CaseIterable {
     case female, male
 }
 
-/// The adult age bands the reference tables use. Every adult value changes, if it changes at all, at
-/// 31, 51 or 71, so these four bands state every adult row exactly.
+/// The age bands the reference tables use: 14 to 18, then the adult bands. Every adult value changes, if it
+/// changes at all, at 31, 51 or 71, so the four adult bands state every adult row exactly.
 public enum ReferenceAgeBand: String, Sendable, Hashable, Codable, CaseIterable {
-    case years19To30, years31To50, years51To70, years71Plus
+    case years14To18, years19To30, years31To50, years51To70, years71Plus
 
-    /// The band an age falls in, or nil under 19, which the table does not cover.
+    /// The band an age falls in, or nil under 14, which the table does not cover.
     public init?(ageYears: Int) {
         switch ageYears {
+        case 14...18: self = .years14To18
         case 19...30: self = .years19To30
         case 31...50: self = .years31To50
         case 51...70: self = .years51To70
@@ -25,6 +26,7 @@ public enum ReferenceAgeBand: String, Sendable, Hashable, Codable, CaseIterable 
     /// "19 to 30", the words a picker shows.
     public var label: String {
         switch self {
+        case .years14To18: return "14 to 18"
         case .years19To30: return "19 to 30"
         case .years31To50: return "31 to 50"
         case .years51To70: return "51 to 70"
@@ -32,9 +34,10 @@ public enum ReferenceAgeBand: String, Sendable, Hashable, Codable, CaseIterable 
         }
     }
 
-    /// The column a row's values are listed in.
-    fileprivate var index: Int {
+    /// The column a row's adult values are listed in, or nil for 14 to 18, which has rows of its own.
+    fileprivate var adultIndex: Int? {
         switch self {
+        case .years14To18: return nil
         case .years19To30: return 0
         case .years31To50: return 1
         case .years51To70: return 2
@@ -43,7 +46,7 @@ public enum ReferenceAgeBand: String, Sendable, Hashable, Codable, CaseIterable 
     }
 }
 
-/// Pregnancy and breastfeeding have published rows of their own, for women 19 to 50.
+/// Pregnancy and breastfeeding have published rows of their own, for women 14 to 50.
 public enum ReferenceLifeStage: String, Sendable, Hashable, Codable, CaseIterable {
     case standard, pregnancy, lactation
 
@@ -51,17 +54,17 @@ public enum ReferenceLifeStage: String, Sendable, Hashable, Codable, CaseIterabl
     public var ageBands: [ReferenceAgeBand] {
         switch self {
         case .standard: return ReferenceAgeBand.allCases
-        case .pregnancy, .lactation: return [.years19To30, .years31To50]
+        case .pregnancy, .lactation: return [.years14To18, .years19To30, .years31To50]
         }
     }
 }
 
-/// Who a set of reference values is for: one published row of the adult tables. Anyone under 19 has
+/// Who a set of reference values is for: one published row of the tables, 14 and over. Anyone under 14 has
 /// rows of their own that this table does not carry.
 public struct ReferenceGroup: Sendable, Hashable, Codable {
     public let sex: ReferenceSex
     public let ageBand: ReferenceAgeBand
-    /// Pregnancy or breastfeeding, published for women 19 to 50 only; `standard` otherwise.
+    /// Pregnancy or breastfeeding, published for women 14 to 50 only; `standard` otherwise.
     public let lifeStage: ReferenceLifeStage
 
     public init(sex: ReferenceSex, ageBand: ReferenceAgeBand) {
@@ -98,7 +101,8 @@ public struct ReferenceGroup: Sendable, Hashable, Codable {
         }
     }
 
-    /// Every group: women, then men, youngest band first, then pregnancy and breastfeeding.
+    /// Every group, the list a picker shows: women, then men, youngest band first, then pregnancy and
+    /// breastfeeding, youngest band first.
     public static let all: [ReferenceGroup] = ReferenceSex.allCases.flatMap { sex in
         ReferenceAgeBand.allCases.map { ReferenceGroup(sex: sex, ageBand: $0) }
     } + [ReferenceLifeStage.pregnancy, .lactation].flatMap { stage in
@@ -153,7 +157,7 @@ public enum UpperLimitScope: String, Sendable, Hashable, Codable {
     case preformedVitaminA
 }
 
-/// One nutrient's published adult reference values for one group, in the unit the app counts that
+/// One nutrient's published reference values for one group, in the unit the app counts that
 /// nutrient in.
 ///
 /// These are population reference values, not advice for a person: they are what a screen may show
@@ -187,9 +191,9 @@ public struct ReferenceIntake: Sendable, Hashable {
     }
 }
 
-/// The adult Dietary Reference Intakes for the vitamins and minerals the app tracks.
+/// The Dietary Reference Intakes, ages 14 and over, for the vitamins and minerals the app tracks.
 ///
-/// Values are the Food and Nutrition Board's adult RDAs, AIs and ULs as the NIH Office of Dietary
+/// Values are the Food and Nutrition Board's RDAs, AIs and ULs as the NIH Office of Dietary
 /// Supplements health-professional fact sheets state them; `docs/reference-intakes.md` lists each
 /// source. Units are the app's own for each key: vitamin A is mcg RAE, niacin mg NE, folate mcg DFE
 /// and vitamin E mg alpha-tocopherol, which is how labels state them in those units. Copper is the one
@@ -205,12 +209,12 @@ public enum ReferenceIntakes {
 
     /// The reference values for one nutrient and group, or nil for a key the table does not cover.
     public static func intake(for nutrient: String, group: ReferenceGroup) -> ReferenceIntake? {
-        rows.first { $0.nutrient == nutrient }.map { $0.intake(for: group) }
+        rows.first { $0.nutrient == nutrient }.flatMap { $0.intake(for: group) }
     }
 
     /// Every nutrient's reference values for one group, in table order.
     public static func intakes(for group: ReferenceGroup) -> [ReferenceIntake] {
-        rows.map { $0.intake(for: group) }
+        rows.compactMap { $0.intake(for: group) }
     }
 
     /// One nutrient's published values. `female` and `male` are indexed by `ReferenceAgeBand`: 19 to
@@ -246,8 +250,10 @@ public enum ReferenceIntakes {
             self.upperLimitScope = scope
         }
 
-        func intake(for group: ReferenceGroup) -> ReferenceIntake {
-            let column = group.ageBand.index
+        /// The values for one group, or nil only for a 14 to 18 group whose nutrient has no teen row, which a
+        /// test rules out (the nutrient is then left out rather than crashing).
+        func intake(for group: ReferenceGroup) -> ReferenceIntake? {
+            guard let column = group.ageBand.adultIndex else { return teenIntake(for: group) }
             let amount: Decimal
             var limit = upperLimit?[column]
             switch group.lifeStage {
@@ -266,6 +272,52 @@ public enum ReferenceIntakes {
                 unit: unit,
                 upperLimit: limit,
                 upperLimitScope: limit == nil ? nil : upperLimitScope)
+        }
+
+        /// The 14 to 18 values, from the teen table. Every row has one; a test pins that.
+        func teenIntake(for group: ReferenceGroup) -> ReferenceIntake? {
+            guard let teen = ReferenceIntakes.teenRows[nutrient] else { return nil }
+            let amount: Decimal
+            var limit = teen.upperLimit
+            switch group.lifeStage {
+            case .standard:
+                amount = group.sex == .female ? teen.female : teen.male
+            case .pregnancy:
+                amount = teen.pregnancy
+                if let published = teen.pregnancyUpperLimit { limit = published }
+            case .lactation:
+                amount = teen.lactation
+            }
+            return ReferenceIntake(
+                nutrient: nutrient,
+                amount: amount,
+                kind: kind,
+                unit: unit,
+                upperLimit: limit,
+                upperLimitScope: limit == nil ? nil : upperLimitScope)
+        }
+    }
+
+    /// The 14 to 18 row for one nutrient: the published values for women, men, pregnancy and lactation, and
+    /// one UL for all four, unless pregnancy has its own (phosphorus). Units and UL scopes are the adult row's.
+    private struct TeenRow: Sendable {
+        let female: Decimal
+        let male: Decimal
+        let pregnancy: Decimal
+        let lactation: Decimal
+        let upperLimit: Decimal?
+        let pregnancyUpperLimit: Decimal?
+
+        init(
+            female: String, male: String, pregnancy: String, lactation: String,
+            upperLimit: String? = nil, pregnancyUpperLimit: String? = nil
+        ) {
+            self.female = ReferenceIntakes.decimal(female)
+            self.male = ReferenceIntakes.decimal(male)
+            self.pregnancy = ReferenceIntakes.decimal(pregnancy)
+            self.lactation = ReferenceIntakes.decimal(lactation)
+            self.upperLimit = upperLimit.map(ReferenceIntakes.decimal)
+            self.pregnancyUpperLimit = pregnancyUpperLimit.map(ReferenceIntakes.decimal)
         }
     }
 
@@ -325,5 +377,36 @@ public enum ReferenceIntakes {
             upperLimit: same("2000"), scope: .allSources),
         Row("selenium", .mcg, rda, female: same("55"), male: same("55"), pregnancy: both("60"), lactation: both("70"),
             upperLimit: same("400"), scope: .allSources),
+    ]
+
+    /// The 14 to 18 rows, in each row's own unit (copper restated from mcg to mg). Read from the same ODS
+    /// fact sheet tables as the adult rows; `docs/reference-intakes.md` lists them with their table numbers.
+    private static let teenRows: [String: TeenRow] = [
+        "vitaminA": TeenRow(female: "700", male: "900", pregnancy: "750", lactation: "1200", upperLimit: "2800"),
+        "vitaminB6": TeenRow(female: "1.2", male: "1.3", pregnancy: "1.9", lactation: "2.0", upperLimit: "80"),
+        "vitaminB12": TeenRow(female: "2.4", male: "2.4", pregnancy: "2.6", lactation: "2.8"),
+        "vitaminC": TeenRow(female: "65", male: "75", pregnancy: "80", lactation: "115", upperLimit: "1800"),
+        "vitaminD": TeenRow(female: "15", male: "15", pregnancy: "15", lactation: "15", upperLimit: "100"),
+        "vitaminE": TeenRow(female: "15", male: "15", pregnancy: "15", lactation: "19", upperLimit: "800"),
+        "vitaminK": TeenRow(female: "75", male: "75", pregnancy: "75", lactation: "75"),
+        "thiamin": TeenRow(female: "1.0", male: "1.2", pregnancy: "1.4", lactation: "1.4"),
+        "riboflavin": TeenRow(female: "1.0", male: "1.3", pregnancy: "1.4", lactation: "1.6"),
+        "niacin": TeenRow(female: "14", male: "16", pregnancy: "18", lactation: "17", upperLimit: "30"),
+        "folate": TeenRow(female: "400", male: "400", pregnancy: "600", lactation: "500", upperLimit: "800"),
+        "biotin": TeenRow(female: "25", male: "25", pregnancy: "30", lactation: "35"),
+        "pantothenicAcid": TeenRow(female: "5", male: "5", pregnancy: "6", lactation: "7"),
+        "calcium": TeenRow(female: "1300", male: "1300", pregnancy: "1300", lactation: "1300", upperLimit: "3000"),
+        "iron": TeenRow(female: "15", male: "11", pregnancy: "27", lactation: "10", upperLimit: "45"),
+        "magnesium": TeenRow(female: "360", male: "410", pregnancy: "400", lactation: "360", upperLimit: "350"),
+        "phosphorus": TeenRow(
+            female: "1250", male: "1250", pregnancy: "1250", lactation: "1250", upperLimit: "4000", pregnancyUpperLimit: "3500"),
+        "potassium": TeenRow(female: "2300", male: "3000", pregnancy: "2600", lactation: "2500"),
+        "zinc": TeenRow(female: "9", male: "11", pregnancy: "12", lactation: "13", upperLimit: "34"),
+        "chromium": TeenRow(female: "24", male: "35", pregnancy: "29", lactation: "44"),
+        "copper": TeenRow(female: "0.89", male: "0.89", pregnancy: "1.0", lactation: "1.3", upperLimit: "8"),
+        "iodine": TeenRow(female: "150", male: "150", pregnancy: "220", lactation: "290", upperLimit: "900"),
+        "manganese": TeenRow(female: "1.6", male: "2.2", pregnancy: "2.0", lactation: "2.6", upperLimit: "9"),
+        "molybdenum": TeenRow(female: "43", male: "43", pregnancy: "50", lactation: "50", upperLimit: "1700"),
+        "selenium": TeenRow(female: "55", male: "55", pregnancy: "60", lactation: "70", upperLimit: "400"),
     ]
 }
