@@ -769,7 +769,7 @@ final class DailyGoalsTests: XCTestCase {
     /// person rather than about the store.
     func testAnUnreadableGoalStoreStillShowsTheDaysTotalsAndSaysSo() throws {
         let journal = try makeJournalStore()
-        let refusing = InMemoryGoalStore(failNextRead: true)
+        let refusing = InMemoryGoalStore(failReads: true)
         try logWater(journal, milliliters: 300)
 
         let model = TodayViewModel(store: journal, goals: refusing, lookup: SnapshotOnlyFacts())
@@ -1172,7 +1172,7 @@ final class DailyGoalsTests: XCTestCase {
         let goals = try makeGoalStore()
         try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
         try logOats(journal, grams: 400)
-        let connections = ConnectionsPrivacyViewModel(
+        let connections = ConnectionsPrivacyViewModel(goals: goals,
             store: journal, erasers: [journal, goals])
         XCTAssertTrue(connections.canEraseAll)
 
@@ -1211,6 +1211,33 @@ final class DailyGoalsTests: XCTestCase {
         XCTAssertEqual(model.sections[3].rows.count, 14)
         XCTAssertEqual(model.sections[4].rows.map(\.nutrient), ["creatine-monohydrate"])
         XCTAssertEqual(model.sections[4].rows.first?.detail, "Added by a scanned label")
+    }
+
+    /// A stored key outside the fixed list, with no snapshot behind it, is listed under "From your labels" and can be
+    /// edited and removed the way a fixed-list goal is. Once removed, nothing names it, so it leaves the screen.
+    func testAStoredExtraKeyIsListedUnderLabelsAndCanBeEditedAndRemoved() throws {
+        let goals = try makeGoalStore()
+        let key = "creatine-monohydrate"
+        XCTAssertFalse(NutrientGoalChoices.keys.contains(key))
+        try goals.setGoal(NutrientGoal(nutrient: key, target: Decimal(5), unit: .g))
+
+        let model = GoalsViewModel(store: goals)
+        model.load()
+
+        let labels = try XCTUnwrap(model.sections.first { $0.title == "From your labels" })
+        XCTAssertEqual(labels.rows.map(\.nutrient), [key])
+        let row = try XCTUnwrap(labels.rows.first)
+        XCTAssertEqual(row.targetText, "5 g")
+        XCTAssertTrue(row.hasTarget)
+        XCTAssertEqual(row.unit, .g)
+
+        model.userEditedDraft("7", for: key)
+        XCTAssertTrue(model.commitTarget(for: key))
+        XCTAssertEqual(try goals.goal(for: key)?.target, Decimal(7))
+
+        XCTAssertTrue(model.removeTarget(for: key))
+        XCTAssertNil(try goals.goal(for: key))
+        XCTAssertFalse(model.sections.flatMap(\.rows).contains { $0.nutrient == key })
     }
 
     /// Leaving a blank field keeps the goal (#506). Return on a blank field removes it, through `submitTarget`.
@@ -1383,7 +1410,7 @@ extension DailyGoalsTests {
         model.load(now: when)
 
         XCTAssertTrue(model.calorieRemaining.isPartial)
-        XCTAssertEqual(model.calorieRemaining.partialNote, "1 entry has no energy value")
+        XCTAssertEqual(model.calorieRemaining.partialNote, "1 entry has no calories")
     }
 
     /// No energy goal: there is no Remaining, but Food is still shown.

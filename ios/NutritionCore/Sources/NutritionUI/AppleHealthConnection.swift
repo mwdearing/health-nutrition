@@ -126,10 +126,10 @@ public final class AppleHealthConnectionViewModel: ObservableObject {
         case .unavailable:
             return "The Health app is not available on this device."
         case .notConnected:
-            return "Writes what you log to the Health app. Reads nutrition, calories burned, steps, weight and caffeine."
+            return "Writes what you log to the Health app. Reads nutrition, calories burned, steps, weight, height and caffeine."
         case .needsReconnect:
             return "This version can write more nutrients than Health has been asked about. "
-                + "Entries wait on this phone until you answer."
+                + "Entries wait on this device until you answer."
         case .connected:
             return "The nutrients and water of the entries you log are written to Health. "
                 + "To stop, \(Self.healthAppPath)."

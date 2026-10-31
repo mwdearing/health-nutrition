@@ -400,6 +400,19 @@ public struct JournalExportFavorite: Sendable, Hashable, Codable {
     }
 }
 
+/// One daily goal, from version 8: the nutrient key, its target as exact decimal text and the unit symbol.
+public struct JournalExportGoal: Sendable, Hashable, Codable {
+    public var nutrient: String
+    public var target: String
+    public var unit: String
+
+    public init(nutrient: String, target: String, unit: String) {
+        self.nutrient = nutrient
+        self.target = target
+        self.unit = unit
+    }
+}
+
 /// The unit one component of an entry or a favorite was logged in, from version 6: `intake_id` (the id of the
 /// entry, or of the favorite made from it), `component_id` and the unit's `unit` symbol (`tsp`, `tbsp`, `cup` or
 /// `fl oz`). The component's own amount is still stored in milliliters.
@@ -473,14 +486,14 @@ public struct JournalExportSavedMeal: Sendable, Hashable, Codable {
 /// than restore it without them.
 public struct JournalExport: Sendable, Hashable, Codable {
     /// The only schema version this build writes. Bump it when the shape changes.
-    public static let currentSchemaVersion = 7
+    public static let currentSchemaVersion = 8
 
     /// Every version this build reads, in the order they were written.
     ///
     /// Version 1 is here because its documents are still backups people hold: it has no product kind and
     /// nothing else this build cannot read, so a reader that refused it would refuse a person's own
     /// backup. Anything outside this set is refused by value rather than by shape.
-    public static let readableSchemaVersions: Set<Int> = [1, 2, 3, 4, 5, 6, currentSchemaVersion]
+    public static let readableSchemaVersions: Set<Int> = [1, 2, 3, 4, 5, 6, 7, currentSchemaVersion]
 
     public var schemaVersion: Int
     public var exportedAt: Date
@@ -501,6 +514,8 @@ public struct JournalExport: Sendable, Hashable, Codable {
     /// The unit each component was logged in, from version 6, sorted by intake then component. Empty for a document
     /// of an earlier version, which has no such field, so every amount in it reads in the unit it is stored in.
     public var loggedUnits: [JournalExportLoggedUnit]
+    /// The daily goals, from version 8, sorted by nutrient. Empty for a document of an earlier version.
+    public var goals: [JournalExportGoal]
 
     enum CodingKeys: String, CodingKey {
         case schemaVersion = "schema_version"
@@ -513,14 +528,17 @@ public struct JournalExport: Sendable, Hashable, Codable {
         case savedMeals = "saved_meals"
         case keptOutOfLibrary = "kept_out_of_library"
         case loggedUnits = "logged_units"
+        case goals
     }
 
     public init(
         schemaVersion: Int = JournalExport.currentSchemaVersion, exportedAt: Date, appVersion: String,
         intakes: [JournalExportIntake], tombstones: [JournalExportTombstone], favorites: [JournalExportFavorite],
         products: [JournalExportProvenance] = [], savedMeals: [JournalExportSavedMeal] = [],
-        keptOutOfLibrary: [String] = [], loggedUnits: [JournalExportLoggedUnit] = []
+        keptOutOfLibrary: [String] = [], loggedUnits: [JournalExportLoggedUnit] = [],
+        goals: [JournalExportGoal]
     ) {
+        self.goals = goals
         self.schemaVersion = schemaVersion
         self.exportedAt = exportedAt
         self.appVersion = appVersion
@@ -550,6 +568,8 @@ public struct JournalExport: Sendable, Hashable, Codable {
             ? try container.decode([String].self, forKey: .keptOutOfLibrary) : []
         loggedUnits = schemaVersion >= 6
             ? try container.decode([JournalExportLoggedUnit].self, forKey: .loggedUnits) : []
+        // Absent means no goals, so a backup written before version 8, or one that simply has none, still reads.
+        goals = try container.decodeIfPresent([JournalExportGoal].self, forKey: .goals) ?? []
     }
 
     /// `saved_meals` is written only for version 4 and later, so a document of an earlier version keeps the
@@ -566,6 +586,7 @@ public struct JournalExport: Sendable, Hashable, Codable {
         if schemaVersion >= 4 { try container.encode(savedMeals, forKey: .savedMeals) }
         if schemaVersion >= 5 { try container.encode(keptOutOfLibrary, forKey: .keptOutOfLibrary) }
         if schemaVersion >= 6 { try container.encode(loggedUnits, forKey: .loggedUnits) }
+        if schemaVersion >= 8 { try container.encode(goals, forKey: .goals) }
     }
 }
 
@@ -777,8 +798,11 @@ public enum JournalExporter {
     /// mid-export cannot leave an entry in neither the intakes nor the tombstones.
     public static func makeExport(
         store: JournalStore, favorites: FavoritesStore? = nil, savedMeals: JournalSavedMealsStore? = nil,
-        appVersion: String, exportedAt: Date
+        goals: GoalStore, appVersion: String, exportedAt: Date
     ) throws -> JournalExport {
+        let goalList = try goals.goals().map {
+            JournalExportGoal(nutrient: $0.nutrient, target: DecimalText.encode($0.target), unit: $0.unit.symbol)
+        }.sorted { $0.nutrient < $1.nutrient }
         let snapshot: JournalSnapshot?
         if let source = store as? JournalSnapshotSource {
             snapshot = try source.readJournalSnapshot()
@@ -882,7 +906,7 @@ public enum JournalExporter {
             favorites: favoriteList.sorted { $0.id < $1.id },
             products: productsByID.values.sorted { $0.snapshotID < $1.snapshotID },
             savedMeals: savedMealList,
-            keptOutOfLibrary: keptOutOfLibraryIDs.sorted(), loggedUnits: loggedUnitList)
+            keptOutOfLibrary: keptOutOfLibraryIDs.sorted(), loggedUnits: loggedUnitList, goals: goalList)
         try validateExportRequiredFields(document)
         return document
     }

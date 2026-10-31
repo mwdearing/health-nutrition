@@ -7,7 +7,7 @@ final class HealthSharePurposeTests: XCTestCase {
         let purpose = Bundle.main.object(forInfoDictionaryKey: "NSHealthShareUsageDescription") as? String
         XCTAssertEqual(
             purpose,
-            "If you tap Show steps, activity and weight on Today, HealthNutrition reads your steps, active energy and weight to show them there. When you connect Apple Health, it also reads the nutrients and water other apps logged to Health, so your totals match Health. Nothing else is read except the nutrient samples other apps logged and the samples it wrote, which it looks up to update or remove them when you edit or delete an entry."
+            "If you tap Show steps, activity and weight on Today, HealthNutrition reads your steps, active energy and weight to show them there, and your height to fill it in when you set goals. When you connect Apple Health, it also reads the nutrients and water other apps logged to Health, so your totals match Health. Nothing else is read except the nutrient samples other apps logged and the samples it wrote, which it looks up to update or remove them when you edit or delete an entry."
         )
     }
 }

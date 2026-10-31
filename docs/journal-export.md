@@ -117,6 +117,12 @@ What a restore writes:
   either half of such a file would attach the wrong product to the entry and drop the other on the next
   export.
 - **Favorites**, as the templates they are, with their decimal text kept exactly as it was written.
+- **Goals**. From version 8 the file carries the daily goals. Each is written only when the device has no
+  goal for that nutrient yet, so a goal already on the device is never replaced. A file that lists a nutrient
+  twice, an empty key, a key under the store's reserved receipt prefix, or a target or unit this build cannot
+  read is `corrupt`. If a later restore step fails, the undo removes only the goals this restore wrote that
+  still hold the value it set. A goal that was changed since the restore, cannot be read, or cannot be removed is left behind,
+  and the restore is then reported as partial rather than undone. The weight plan is not in the file.
 
 Amounts are read as exact decimal text and stored as `Decimal`, never as a binary float. A component whose
 `value_state` is `unknown` is **refused** with `corrupt`: the journal keeps a missing amount as a

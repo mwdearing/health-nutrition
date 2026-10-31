@@ -267,7 +267,7 @@ public struct AddIntakeView: View {
                 }
                 if model.canChooseLibrary {
                     Toggle(SaveToLibraryAccessibility.label, isOn: $model.savesToLibrary)
-                        .accessibilityHint(Text(SaveToLibraryAccessibility.hint ?? ""))
+                        .accessibilityHintIfPresent(SaveToLibraryHint.hint(for: SaveToLibraryAccessibility.hint))
                     Text("Also keep this product in Library.")
                         .font(.footnote)
                         .foregroundStyle(TokenColors.textSecondary)
@@ -375,9 +375,30 @@ extension View {
     }
 }
 
+/// The Save to Library switch's accessibility hint, or nil when it should have none. A nil hint must not reach
+/// the element as an empty string, because that is still an applied hint (#644).
+public enum SaveToLibraryHint {
+    public static func hint(for hint: String?) -> String? {
+        guard let hint, !hint.isEmpty else { return nil }
+        return hint
+    }
+}
+
 /// The Save to Library switch's spoken text. The label says what the switch does, so it has no hint: a hint
 /// would repeat or contradict the label (#527). Kept here, so a test can pin the hint without a UI tree.
 public enum SaveToLibraryAccessibility {
     public static let label = "Save to Library"
     public static let hint: String? = nil
+}
+
+extension View {
+    /// Applies the hint only when there is one, so a nil hint leaves the element with no hint at all (#644).
+    @ViewBuilder
+    func accessibilityHintIfPresent(_ hint: String?) -> some View {
+        if let hint {
+            accessibilityHint(Text(hint))
+        } else {
+            self
+        }
+    }
 }
