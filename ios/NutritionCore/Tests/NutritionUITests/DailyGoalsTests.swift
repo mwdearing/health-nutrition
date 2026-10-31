@@ -136,7 +136,7 @@ final class DailyGoalsTests: XCTestCase {
         // 40 g of a product stating 13 g per 100 g carries 5.2 g.
         try logOats(journal, grams: 40)
 
-        let model = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts())
+        let model = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts(), timeZoneIdentifier: "UTC")
         model.load(now: when)
 
         XCTAssertEqual(line(model, "protein"), "Protein 5.2 g of 60 g")
@@ -153,7 +153,7 @@ final class DailyGoalsTests: XCTestCase {
         try logOats(journal, grams: 400)
         try logOats(journal, grams: 200)
 
-        let model = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts())
+        let model = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts(), timeZoneIdentifier: "UTC")
         model.load(now: when)
 
         XCTAssertEqual(line(model, "protein"), "Protein 78 g of 60 g")
@@ -166,7 +166,7 @@ final class DailyGoalsTests: XCTestCase {
         try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(39), unit: .g))
         try logOats(journal, grams: 300)
 
-        let model = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts())
+        let model = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts(), timeZoneIdentifier: "UTC")
         model.load(now: when)
 
         XCTAssertEqual(line(model, "protein"), "Protein 39 g of 39 g")
@@ -624,7 +624,7 @@ final class DailyGoalsTests: XCTestCase {
         try goals.setGoal(NutrientGoal(nutrient: "water", target: Decimal(2000), unit: .mL))
         try logWater(journal, milliliters: 750)
 
-        let model = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts())
+        let model = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts(), timeZoneIdentifier: "UTC")
         model.load(now: when)
 
         XCTAssertEqual(line(model, "water"), "Water 750 mL of 2,000 mL")
@@ -637,7 +637,7 @@ final class DailyGoalsTests: XCTestCase {
         try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
         try logOats(journal, grams: 400)
 
-        let model = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts())
+        let model = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts(), timeZoneIdentifier: "UTC")
         model.load(now: when)
 
         // Fiber is in the default tracked set and has no goal, so it is tracked and stated plainly.
@@ -652,7 +652,7 @@ final class DailyGoalsTests: XCTestCase {
         let goals = try makeGoalStore()
         try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
         try logOats(journal, grams: 400)
-        let model = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts())
+        let model = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts(), timeZoneIdentifier: "UTC")
         model.load(now: when)
         XCTAssertEqual(line(model, "protein"), "Protein 52 g of 60 g")
 
@@ -674,7 +674,7 @@ final class DailyGoalsTests: XCTestCase {
         let (goals, url) = try makeGoalStoreWithURL()
         try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
         try logOats(journal, grams: 400)
-        let first = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts())
+        let first = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts(), timeZoneIdentifier: "UTC")
         first.load(now: when)
         XCTAssertEqual(line(first, "protein"), "Protein 52 g of 60 g")
 
@@ -682,7 +682,7 @@ final class DailyGoalsTests: XCTestCase {
         goals.close()
         let reopened = try SwiftDataGoalStore(url: url)
         addTeardownBlock { reopened.close() }
-        let afterRelaunch = TodayViewModel(store: journal, goals: reopened, lookup: SnapshotOnlyFacts())
+        let afterRelaunch = TodayViewModel(store: journal, goals: reopened, lookup: SnapshotOnlyFacts(), timeZoneIdentifier: "UTC")
         afterRelaunch.load(now: when)
 
         XCTAssertEqual(line(afterRelaunch, "protein"), "Protein 52 g of 60 g")
@@ -696,11 +696,11 @@ final class DailyGoalsTests: XCTestCase {
         let goals = try makeGoalStore()
         try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
         try logOats(journal, grams: 400)
-        let first = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts())
+        let first = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts(), timeZoneIdentifier: "UTC")
         first.load(now: when)
         XCTAssertEqual(line(first, "protein"), "Protein 52 g of 60 g")
 
-        let rebuilt = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts())
+        let rebuilt = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts(), timeZoneIdentifier: "UTC")
         rebuilt.load(now: when)
 
         XCTAssertEqual(line(rebuilt, "protein"), "Protein 52 g of 60 g")
@@ -755,7 +755,7 @@ final class DailyGoalsTests: XCTestCase {
         let journal = try makeJournalStore()
         try logWater(journal, milliliters: 300)
 
-        let model = TodayViewModel(store: journal, goals: nil, lookup: SnapshotOnlyFacts())
+        let model = TodayViewModel(store: journal, goals: nil, lookup: SnapshotOnlyFacts(), timeZoneIdentifier: "UTC")
         model.load(now: when)
 
         XCTAssertEqual(line(model, "water"), "Water 300 mL")
@@ -772,7 +772,7 @@ final class DailyGoalsTests: XCTestCase {
         let refusing = InMemoryGoalStore(failReads: true)
         try logWater(journal, milliliters: 300)
 
-        let model = TodayViewModel(store: journal, goals: refusing, lookup: SnapshotOnlyFacts())
+        let model = TodayViewModel(store: journal, goals: refusing, lookup: SnapshotOnlyFacts(), timeZoneIdentifier: "UTC")
         model.load(now: when)
 
         XCTAssertEqual(line(model, "water"), "Water 300 mL")
@@ -785,7 +785,7 @@ final class DailyGoalsTests: XCTestCase {
         let journal = try makeJournalStore()
         let goals = try makeGoalStore()
         try logWater(journal, milliliters: 300)
-        let model = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts())
+        let model = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts(), timeZoneIdentifier: "UTC")
 
         model.load(now: when)
         XCTAssertNil(model.errorMessage)
@@ -803,7 +803,7 @@ final class DailyGoalsTests: XCTestCase {
         try goals.setGoal(NutrientGoal(nutrient: "zinc", target: Decimal(11), unit: .mg))
         try logWater(journal, milliliters: 300)
 
-        let model = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts())
+        let model = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts(), timeZoneIdentifier: "UTC")
         model.load(now: when)
 
         let zinc = try XCTUnwrap(model.progress.first { $0.nutrient == "zinc" })
@@ -820,7 +820,7 @@ final class DailyGoalsTests: XCTestCase {
         try goals.setGoal(NutrientGoal(nutrient: "zinc", target: Decimal(11), unit: .mg))
         try logOats(journal, grams: 100)
 
-        let model = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts())
+        let model = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts(), timeZoneIdentifier: "UTC")
         model.load(now: when)
 
         XCTAssertEqual(
@@ -840,7 +840,7 @@ final class DailyGoalsTests: XCTestCase {
         try logWater(journal, milliliters: 750)
         try logOats(journal, grams: 100)
 
-        let model = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts())
+        let model = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts(), timeZoneIdentifier: "UTC")
         model.load(now: when)
 
         XCTAssertFalse(model.coverage.contains { $0.nutrient == "water" })
@@ -859,11 +859,11 @@ final class DailyGoalsTests: XCTestCase {
         let journal = try makeJournalStore()
         try logWater(journal, milliliters: 750)
         try logOats(journal, grams: 100)
-        let withoutGoal = TodayViewModel(store: journal, lookup: SnapshotOnlyFacts())
+        let withoutGoal = TodayViewModel(store: journal, lookup: SnapshotOnlyFacts(), timeZoneIdentifier: "UTC")
         withoutGoal.load(now: when)
         let goals = try makeGoalStore()
         try goals.setGoal(NutrientGoal(nutrient: "water", target: Decimal(2000), unit: .mL))
-        let withGoal = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts())
+        let withGoal = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts(), timeZoneIdentifier: "UTC")
         withGoal.load(now: when)
 
         XCTAssertEqual(withGoal.coverage.map(\.nutrient), withoutGoal.coverage.map(\.nutrient))
@@ -882,7 +882,7 @@ final class DailyGoalsTests: XCTestCase {
         // 200 g of a product stating 400 Calories per 100 g carries 800 Calories.
         try logBar(journal, grams: 200)
 
-        let model = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts())
+        let model = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts(), timeZoneIdentifier: "UTC")
         model.load(now: when)
 
         XCTAssertEqual(line(model, "energy"), "Energy 800 Calories of 2,000 Calories")
@@ -942,7 +942,7 @@ final class DailyGoalsTests: XCTestCase {
             product: snapshot, now: when)
         try goals.setGoal(NutrientGoal(nutrient: "creatine-monohydrate", target: Decimal(5), unit: .g))
 
-        let model = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts())
+        let model = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts(), timeZoneIdentifier: "UTC")
         model.load(now: when)
 
         XCTAssertEqual(line(model, "creatine-monohydrate"), "Creatine Monohydrate 3 g of 5 g")
@@ -980,7 +980,7 @@ final class DailyGoalsTests: XCTestCase {
             product: snapshot, now: when)
         try goals.setGoal(NutrientGoal(nutrient: "dha", target: Decimal(1), unit: .g))
 
-        let model = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts())
+        let model = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts(), timeZoneIdentifier: "UTC")
         model.load(now: when)
 
         XCTAssertEqual(line(model, "dha"), "DHA 500 mg of 1 g")
@@ -1370,7 +1370,7 @@ extension DailyGoalsTests {
         preferences.setAddsActiveEnergyToGoal(true)
 
         let model = TodayViewModel(
-            store: journal, goals: goals, lookup: SnapshotOnlyFacts(), preferences: preferences)
+            store: journal, goals: goals, lookup: SnapshotOnlyFacts(), timeZoneIdentifier: "UTC", preferences: preferences)
         model.activeEnergyKcal = 120
         model.load(now: when)
 
@@ -1389,7 +1389,7 @@ extension DailyGoalsTests {
         preferences.setAddsActiveEnergyToGoal(false)
 
         let model = TodayViewModel(
-            store: journal, goals: goals, lookup: SnapshotOnlyFacts(), preferences: preferences)
+            store: journal, goals: goals, lookup: SnapshotOnlyFacts(), timeZoneIdentifier: "UTC", preferences: preferences)
         model.activeEnergyKcal = 120
         model.load(now: when)
 
@@ -1406,7 +1406,7 @@ extension DailyGoalsTests {
         try logBar(journal, grams: 100)
         try logOats(journal, grams: 50)
 
-        let model = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts())
+        let model = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts(), timeZoneIdentifier: "UTC")
         model.load(now: when)
 
         XCTAssertTrue(model.calorieRemaining.isPartial)
@@ -1418,7 +1418,7 @@ extension DailyGoalsTests {
         let journal = try makeJournalStore()
         try logBar(journal, grams: 100)
 
-        let model = TodayViewModel(store: journal, lookup: SnapshotOnlyFacts())
+        let model = TodayViewModel(store: journal, lookup: SnapshotOnlyFacts(), timeZoneIdentifier: "UTC")
         model.load(now: when)
 
         XCTAssertNil(model.calorieRemaining.remaining)
@@ -1435,7 +1435,7 @@ extension DailyGoalsTests {
         try goals.setGoal(NutrientGoal(nutrient: key, target: Decimal(5), unit: .g))
         try logOats(journal, grams: 40)
 
-        let model = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts())
+        let model = TodayViewModel(store: journal, goals: goals, lookup: SnapshotOnlyFacts(), timeZoneIdentifier: "UTC")
         model.load(now: when)
 
         XCTAssertTrue(try goals.goals().contains { $0.nutrient == key }, "the stored goal still loads")
