@@ -347,7 +347,10 @@ public enum JournalImporter {
                 }
                 try addMissingGoals(recorded, into: goalsTarget, receipt: digest)
                 try goalsTarget.markGoalRestoreReceiptDone(digest)
-                goalsWritten = try goalsTarget.goalRestoreWrittenGoals(digest).count
+                // Every row is written by now, so a ledger that cannot be read is a cleanup to retry (#828).
+                do { goalsWritten = try goalsTarget.goalRestoreWrittenGoals(digest).count } catch {
+                    throw JournalImportError.cleanupIncomplete
+                }
             }
             // A flag that outlived a finished resume would let a later import of this file write rows the
             // person deleted since, so a failure to clear it is reported rather than swallowed.

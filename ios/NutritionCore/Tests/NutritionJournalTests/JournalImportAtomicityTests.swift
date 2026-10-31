@@ -339,6 +339,34 @@ final class JournalImportAtomicityTests: JournalImportTestCase {
         XCTAssertNil(try journal.restoreInProgressDigest())
     }
 
+    /// A resumed restore whose goal ledger cannot be read once its goals are written reports the cleanup, not a bad file.
+    func testAResumeWhoseGoalLedgerCannotBeReadReportsCleanupIncomplete() throws {
+        let directory = try self.directory()
+        let base = try SwiftDataGoalStore(url: directory.appendingPathComponent("goals.store"))
+        addTeardownBlock { base.close() }
+        var root = try XCTUnwrap(try JSONSerialization.jsonObject(with: try exportData(favorites: false)) as? [String: Any])
+        root["goals"] = [
+            ["nutrient": "protein", "target": "60", "unit": "g"],
+            ["nutrient": "energy", "target": "2000", "unit": "kcal"],
+        ]
+        let data = try JSONSerialization.data(withJSONObject: root)
+        let journal = try store(directory)
+        var calls = 0
+        let refusing = ScriptedGoalStore(base: base, refusesRemoval: true) { _, _ in
+            calls += 1
+            if calls == 2 { throw JournalImportError.corrupt("stopped") }
+        }
+        XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: nil, goals: refusing))
+        XCTAssertNotNil(try journal.restoreInProgressDigest(), "the flag is kept for the goal resume")
+
+        let ledgerFails = ScriptedGoalStore(base: base) { _, _ in }
+        ledgerFails.failsFinishedLedgerRead = true
+        XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: nil, goals: ledgerFails)) {
+            XCTAssertEqual($0 as? JournalImportError, .cleanupIncomplete)
+        }
+        XCTAssertNotNil(try journal.restoreInProgressDigest())
+    }
+
     /// A retry whose flag clear fails again still reports the cleanup, not a bad file or a full journal.
     func testARetryWhoseFlagClearFailsAgainReportsCleanupIncomplete() throws {
         let data = try exportData()
