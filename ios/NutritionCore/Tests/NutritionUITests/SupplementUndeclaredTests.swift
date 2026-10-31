@@ -28,6 +28,35 @@ final class SupplementUndeclaredTests: XCTestCase {
         XCTAssertFalse(total.coverage.hasUnknown, "an undeclared nutrient of a typed supplement must not make coverage unknown")
     }
 
+    /// The parity the first test claims: a snapshot-backed supplement that does not state the nutrient reads the same.
+    func testATypedAndASnapshotBackedSupplementReadTheSameForAnUndeclaredNutrient() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let store = try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
+        try store.create(
+            Intake(id: UUID().uuidString.lowercased(), category: "supplement", occurredAt: when, timeZoneIdentifier: "UTC"),
+            components: [IntakeComponent(componentID: "gummy", name: "Gummy", amount: Decimal(1), unit: .g)],
+            product: nil, now: when)
+        try store.create(
+            Intake(id: UUID().uuidString.lowercased(), category: "supplement", occurredAt: when, timeZoneIdentifier: "UTC"),
+            components: [IntakeComponent(componentID: "multi", name: "Daily multi", amount: 1, unit: .tablet)],
+            product: ProductDefinition(
+                snapshotID: "snap-multi", productID: "test", name: "Daily multi",
+                labelBasis: "per serving (1 tablet)", catalogOrigin: "test", catalogVersion: "unknown",
+                kind: .supplement, nutrients: [:]),
+            now: when)
+        let intakes = try store.activeIntakes()
+        XCTAssertEqual(intakes.count, 2)
+        for intake in intakes {
+            let totals = try DailyTotalsBuilder.totals(
+                for: [intake], store: store, lookup: SnapshotNutrientFacts(), nutrients: ["vitaminC"])
+            let total = try XCTUnwrap(totals.total(for: "vitaminC"))
+            XCTAssertFalse(total.coverage.hasUnknown, "an undeclared nutrient leaves coverage known for either supplement")
+            XCTAssertEqual(total.coverage.totalCount, 0, "neither supplement counts toward the nutrient")
+        }
+    }
+
     /// A supplement whose snapshot cannot be read is not taken for a typed one: the snapshot may declare the
     /// nutrient, so coverage stays unknown rather than looking complete.
     func testASupplementWhoseSnapshotCannotBeReadKeepsCoverageUnknown() throws {
