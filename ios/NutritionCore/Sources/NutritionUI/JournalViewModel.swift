@@ -140,7 +140,6 @@ public final class JournalViewModel: ObservableObject {
         guard let reader = healthDayReader else { return }
         let todayKey = Self.dayKey(now, zone: dayZone)
         // A past day already read stays read. Not connected is not kept, so connecting Health later reads it then.
-        if key != todayKey, let cached = outsideIntakeByDay[key], cached != .notConnected { return }
         guard let day = Self.dayInterval(forKey: key, zone: dayZone) else { return }
         let outside = await reader(day.start, key == todayKey ? now : day.end)
         guard outside != outsideIntakeByDay[key] else { return }
