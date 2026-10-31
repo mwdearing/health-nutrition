@@ -125,17 +125,33 @@ public struct JournalWeekSummary: Equatable {
     }
 }
 
+/// One read of Apple Health for a Diary day. `complete` is false when a query failed, so the day is read again later
+/// rather than kept with figures that are short.
+public struct HealthDayRead: Equatable, Sendable {
+    public let outside: HealthIntakeTotals.Outside
+    public let complete: Bool
+
+    public init(_ outside: HealthIntakeTotals.Outside, complete: Bool = true) {
+        self.outside = outside
+        self.complete = complete
+    }
+}
+
 @MainActor
 public final class JournalViewModel: ObservableObject {
     /// What other apps logged to Apple Health on each day, by the day's yyyy-MM-dd key. The app sets it after reading
     /// Health for the days on screen; a day without an entry here reads journal-only, as before.
     public internal(set) var outsideIntakeByDay: [String: HealthIntakeTotals.Outside] = [:]
     /// For each day in `outsideIntakeByDay`, the instant its read covered through and the zone it was read in. A
-    /// day read as today, before midnight, or in another zone, is read again rather than kept.
+    /// day read as today, before midnight, in another zone, or by a read that did not complete, is read again.
     private var healthReadMarks: [String: (through: Date, zoneID: String)] = [:]
+    /// The latest read started for each day. A read that finishes after a newer one started for the same day, or
+    /// after the totals were forgotten, is dropped rather than written over newer figures.
+    private var healthReadGenerations: [String: Int] = [:]
+    private var healthReadEpoch = 0
     /// Reads what other apps logged to Apple Health between two instants. The app sets it; nil keeps the Diary
     /// journal-only.
-    public var healthDayReader: (@MainActor (Date, Date) async -> HealthIntakeTotals.Outside)?
+    public var healthDayReader: (@MainActor (Date, Date) async -> HealthDayRead)?
 
     /// Reads Apple Health for one Diary day and adds it to that day's header. A past day is read once and kept;
     /// today is read again each time, because more can still be logged elsewhere.
@@ -144,22 +160,40 @@ public final class JournalViewModel: ObservableObject {
         let todayKey = Self.dayKey(now, zone: dayZone)
         let zoneID = dayZone.identifier
         guard let day = Self.dayInterval(forKey: key, zone: dayZone) else { return }
-        // A past day already read through its end, in this zone, stays read. Not connected is not kept, so connecting
-        // Health later reads it then; a day last read as today, or in another zone, is read again in full.
+        // A past day already read in full through its end, in this zone, stays read. Not connected is not kept, so
+        // connecting Health later reads it then; a day last read as today, in another zone, or by a read with a failed
+        // query, is read again in full.
         if key != todayKey, let cached = outsideIntakeByDay[key], cached != .notConnected,
            let mark = healthReadMarks[key], mark.through >= day.end, mark.zoneID == zoneID {
             return
         }
         let through = key == todayKey ? now : day.end
-        let outside = await reader(day.start, through)
-        healthReadMarks[key] = (through, zoneID)
-        guard outside != outsideIntakeByDay[key] else { return }
-        outsideIntakeByDay[key] = outside
+        let generation = (healthReadGenerations[key] ?? 0) + 1
+        healthReadGenerations[key] = generation
+        let epoch = healthReadEpoch
+        let read = await reader(day.start, through)
+        guard healthReadGenerations[key] == generation, healthReadEpoch == epoch else { return }
+        if read.complete {
+            healthReadMarks[key] = (through, zoneID)
+        } else {
+            healthReadMarks[key] = nil
+        }
+        guard read.outside != outsideIntakeByDay[key] else { return }
+        outsideIntakeByDay[key] = read.outside
         // A background Health read must not clear a copy's Undo notice, which `load` resets for a person's own reload.
         let notice = copyNotice, failed = copyFailed
         load(now: now)
         copyNotice = notice
         copyFailed = failed
+    }
+
+    /// Forgets every day's Apple Health totals, for Erase all data: no header keeps figures read before the erase, and
+    /// a read still running when it happens is dropped.
+    public func forgetHealthTotals() {
+        outsideIntakeByDay = [:]
+        healthReadMarks = [:]
+        healthReadGenerations = [:]
+        healthReadEpoch += 1
     }
 
     /// Reads today's Apple Health totals again, for a reload while the Diary is open: more can be logged elsewhere.
@@ -896,10 +930,11 @@ public final class JournalViewModel: ObservableObject {
     /// The day's energy as "1240 kcal", or nil when the day cannot total it. Never a zero for unknown. `outside` is
     /// the energy other apps logged to Apple Health that day, added as Today adds it.
     static func energyText(totals: DailyTotals, outside: HealthIntakeTotals.Outside = .notConnected) -> String? {
-        let journalLine = NutrientProgressLine.make(
+        let journalLine = NutrientProgressLine.make(nutrient: energyKey, total: totals.total(for: energyKey), goal: nil)
+        let countedLine = NutrientProgressLine.make(
             nutrient: energyKey, total: totals.total(for: energyKey), goal: nil,
             knownSum: totals.knownSum(for: energyKey), missingCount: totals.missingCount(for: energyKey))
-        let combined = HealthIntakeTotals.combine([journalLine], outside: outside).first ?? journalLine
+        let combined = HealthIntakeTotals.combine([countedLine], outside: outside).first ?? countedLine
         // An exact figure only: a combined day that is partial (a Health read that did not complete, or journal entries
         // with no energy) keeps the journal-only figure the header showed before, rather than a figure that is short.
         let line: NutrientProgressLine

@@ -79,7 +79,7 @@ final class DiaryHealthTotalsTests: XCTestCase {
         var asked: [(Date, Date)] = []
         model.healthDayReader = { start, end in
             asked.append((start, end))
-            return .read(values: ["energy": 620], readKeys: ["energy"])
+            return HealthDayRead(.read(values: ["energy": 620], readKeys: ["energy"]))
         }
         model.load(now: now)
         await model.loadHealthTotals(forDayKey: key, now: now)
@@ -94,7 +94,7 @@ final class DiaryHealthTotalsTests: XCTestCase {
         var reads = 0
         model.healthDayReader = { _, _ in
             reads += 1
-            return .read(values: [:], readKeys: ["energy"])
+            return HealthDayRead(.read(values: [:], readKeys: ["energy"]))
         }
         let tomorrow = now.addingTimeInterval(86_400)
         await model.loadHealthTotals(forDayKey: key, now: tomorrow)
@@ -112,7 +112,7 @@ final class DiaryHealthTotalsTests: XCTestCase {
         var reads = 0
         model.healthDayReader = { _, _ in
             reads += 1
-            return connected ? .read(values: ["energy": 620], readKeys: ["energy"]) : .notConnected
+            return HealthDayRead(connected ? .read(values: ["energy": 620], readKeys: ["energy"]) : .notConnected)
         }
         let tomorrow = now.addingTimeInterval(86_400)
         await model.loadHealthTotals(forDayKey: key, now: tomorrow)
@@ -171,7 +171,7 @@ final class DiaryHealthTotalsTests: XCTestCase {
         var reads = 0
         model.healthDayReader = { _, _ in
             reads += 1
-            return .read(values: [:], readKeys: ["energy"])
+            return HealthDayRead(.read(values: [:], readKeys: ["energy"]))
         }
         await model.loadHealthTotals(forDayKey: key, now: now)
         let tomorrow = now.addingTimeInterval(86_400)
@@ -188,7 +188,7 @@ final class DiaryHealthTotalsTests: XCTestCase {
         var reads = 0
         model.healthDayReader = { _, _ in
             reads += 1
-            return .read(values: [:], readKeys: ["energy"])
+            return HealthDayRead(.read(values: [:], readKeys: ["energy"]))
         }
         await model.loadHealthTotals(forDayKey: "2020-01-15", now: now)
         await model.loadHealthTotals(forDayKey: "2020-01-15", now: now)
@@ -210,8 +210,71 @@ final class DiaryHealthTotalsTests: XCTestCase {
         let pastKey = JournalViewModel.dayKey(yesterday, zone: TimeZone(identifier: "UTC")!)
         XCTAssertNotNil(model.copyDayToToday(pastKey, now: now))
         let notice = try XCTUnwrap(model.copyNotice)
-        model.healthDayReader = { _, _ in .read(values: ["energy": 620], readKeys: ["energy"]) }
+        model.healthDayReader = { _, _ in HealthDayRead(.read(values: ["energy": 620], readKeys: ["energy"])) }
         await model.loadHealthTotals(forDayKey: JournalViewModel.dayKey(now, zone: TimeZone(identifier: "UTC")!), now: now)
         XCTAssertEqual(model.copyNotice, notice)
     }
+
+    /// A past day whose read had a failed query is read again, so a passing failure does not stick.
+    func testAPastDayWithAFailedQueryIsReadAgain() async throws {
+        let (model, key) = try waterOnlyDay()
+        var reads = 0
+        model.healthDayReader = { _, _ in
+            reads += 1
+            return HealthDayRead(.read(values: [:], readKeys: []), complete: reads > 1)
+        }
+        let tomorrow = now.addingTimeInterval(86_400)
+        await model.loadHealthTotals(forDayKey: key, now: tomorrow)
+        await model.loadHealthTotals(forDayKey: key, now: tomorrow)
+        await model.loadHealthTotals(forDayKey: key, now: tomorrow)
+        XCTAssertEqual(reads, 2, "read again after the failed read, then kept")
+    }
+
+    /// An older read that finishes after a newer one for the same day does not overwrite the newer figures.
+    func testAnOlderReadFinishingLateDoesNotOverwriteANewerOne() async throws {
+        let (model, key) = try waterOnlyDay()
+        var calls = 0
+        var releaseFirst: CheckedContinuation<Void, Never>?
+        model.healthDayReader = { _, _ in
+            calls += 1
+            if calls == 1 {
+                await withCheckedContinuation { releaseFirst = $0 }
+                return HealthDayRead(.read(values: ["energy": 100], readKeys: ["energy"]))
+            }
+            return HealthDayRead(.read(values: ["energy": 620], readKeys: ["energy"]))
+        }
+        model.load(now: now)
+        let first = Task { await model.loadHealthTotals(forDayKey: key, now: now) }
+        while releaseFirst == nil { await Task.yield() }
+        await model.loadHealthTotals(forDayKey: key, now: now)
+        releaseFirst?.resume()
+        await first.value
+        XCTAssertEqual(model.sections.first { $0.id == key }?.energyText, "620 Calories")
+    }
+
+    /// Erase all data forgets every day's Health figures, and a read still running then is dropped.
+    func testForgettingHealthTotalsClearsHeadersAndDropsARunningRead() async throws {
+        let (model, key) = try waterOnlyDay()
+        model.healthDayReader = { _, _ in HealthDayRead(.read(values: ["energy": 620], readKeys: ["energy"])) }
+        model.load(now: now)
+        let tomorrow = now.addingTimeInterval(86_400)
+        await model.loadHealthTotals(forDayKey: key, now: tomorrow)
+        XCTAssertNotNil(model.outsideIntakeByDay[key])
+
+        var release: CheckedContinuation<Void, Never>?
+        model.healthDayReader = { _, _ in
+            await withCheckedContinuation { release = $0 }
+            return HealthDayRead(.read(values: ["energy": 620], readKeys: ["energy"]))
+        }
+        model.forgetHealthTotals()
+        let running = Task { await model.loadHealthTotals(forDayKey: key, now: tomorrow) }
+        while release == nil { await Task.yield() }
+        model.forgetHealthTotals()
+        release?.resume()
+        await running.value
+        XCTAssertTrue(model.outsideIntakeByDay.isEmpty)
+        model.load(now: now)
+        XCTAssertNil(model.sections.first { $0.id == key }?.energyText)
+    }
+
 }
