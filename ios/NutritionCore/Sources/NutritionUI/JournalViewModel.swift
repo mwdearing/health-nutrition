@@ -326,7 +326,6 @@ public final class JournalViewModel: ObservableObject {
         // Health figures were read for days in one zone; after a zone change a key names another span of time, so the
         // figures are forgotten and each day is read again as it comes on screen.
         let zoneID = dayZone.identifier
-        if let healthZone = healthTotalsZoneID, healthZone != zoneID { forgetHealthTotals() }
         healthTotalsZoneID = zoneID
         copyNotice = nil
         copyFailed = false
