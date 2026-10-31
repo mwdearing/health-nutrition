@@ -298,8 +298,8 @@ public final class TodayViewModel: ObservableObject {
                 let kind = ProductKindResolution.kind(
                     snapshotID: current?.productSnapshotID, snapshotKind: { _ in snapshot?.kind }, category: intake.category)
                 // The same per-entry decision the Diary's totals make, so both screens agree on that day's water.
-                let distrusted = DailyTotalsBuilder.isDistrusted(
-                    (components, snapshot, intake.category), lookup: lookup)
+                // MUTATION (proof only, not for merge): Today ignores distrust, as before #1137.
+                let distrusted = false
                 if intake.category == "water" {
                     waterEntries += 1
                     // A distrusted drink's water is unknown, as in the Diary: none of it is added. A component that
