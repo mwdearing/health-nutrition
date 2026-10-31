@@ -1146,7 +1146,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         case .partialRestore:
             return partialRestoreWarningMessage
         case .cleanupIncomplete:
-            return cleanupIncompleteMessage
+            return importFailedMessage
         case .rolledBack:
             return importRolledBackMessage
         }
