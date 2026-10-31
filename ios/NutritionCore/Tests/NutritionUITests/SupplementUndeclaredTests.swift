@@ -27,4 +27,27 @@ final class SupplementUndeclaredTests: XCTestCase {
         // Coverage changes: the undeclared nutrient no longer makes the day's coverage unknown.
         XCTAssertFalse(total.coverage.hasUnknown, "an undeclared nutrient of a typed supplement must not make coverage unknown")
     }
+
+    /// A supplement whose snapshot cannot be read is not taken for a typed one: the snapshot may declare the
+    /// nutrient, so coverage stays unknown rather than looking complete.
+    func testASupplementWhoseSnapshotCannotBeReadKeepsCoverageUnknown() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let inner = try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
+        try inner.create(
+            Intake(id: UUID().uuidString.lowercased(), category: "supplement", occurredAt: when, timeZoneIdentifier: "UTC"),
+            components: [IntakeComponent(componentID: "multi", name: "Daily multi", amount: 1, unit: .tablet)],
+            product: ProductDefinition(
+                snapshotID: "snap-multi", productID: "test", name: "Daily multi",
+                labelBasis: "per serving (1 tablet)", catalogOrigin: "test", catalogVersion: "unknown",
+                kind: .supplement, nutrients: ["vitaminC": .known(90, .mg)]),
+            now: when)
+        let store = SnapshotReadFailingStore(inner: inner)
+        store.failsProducts = true
+        let totals = try DailyTotalsBuilder.totals(
+            for: try inner.activeIntakes(), store: store, lookup: SnapshotNutrientFacts(), nutrients: ["vitaminC"])
+        let total = try XCTUnwrap(totals.total(for: "vitaminC"))
+        XCTAssertTrue(total.coverage.hasUnknown, "a supplement whose snapshot cannot be read must keep coverage unknown")
+    }
 }

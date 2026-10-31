@@ -86,14 +86,15 @@ public enum DailyTotalsBuilder {
     ) throws -> DailyTotals {
         // One snapshot is read once per build, however many intakes and nutrients refer to it.
         var snapshots: [String: ProductDefinition?] = [:]
-        var entries: [(components: [IntakeComponent], snapshot: ProductDefinition?, category: String)] = []
+        var entries: [(components: [IntakeComponent], snapshot: ProductDefinition?, category: String, typed: Bool)] = []
         for intake in intakes {
             let revisions = try store.revisions(of: intake.id)
             guard let current = revisions.first(where: { $0.number == intake.currentRevision }) else {
                 continue
             }
             let snapshot = Self.snapshot(of: current, in: &snapshots, using: store)
-            entries.append((current.components, snapshot, intake.category))
+            // Typed means the revision names no snapshot, so a snapshot that could not be read is not mistaken for one.
+            entries.append((current.components, snapshot, intake.category, current.productSnapshotID == nil))
         }
         // Decided once per entry over a fixed universe of nutrients, so the answer does not depend on which nutrients
         // a caller asks for. Every caller, the meal section included, gets the same answer for the same entry.
@@ -138,7 +139,7 @@ public enum DailyTotalsBuilder {
     /// product's lookup values are not re-read here: the snapshot scan already covers every value the lookup can
     /// answer from it.
     static func isDistrusted(
-        _ entry: (components: [IntakeComponent], snapshot: ProductDefinition?, category: String),
+        _ entry: (components: [IntakeComponent], snapshot: ProductDefinition?, category: String, typed: Bool),
         lookup: NutrientFactsLookup
     ) -> Bool {
         if entry.components.contains(where: { $0.amount < 0 }) { return true }
@@ -179,7 +180,7 @@ public enum DailyTotalsBuilder {
 
     /// What one entry contributes to one nutrient's day.
     private static func contributions(
-        of entry: (components: [IntakeComponent], snapshot: ProductDefinition?, category: String),
+        of entry: (components: [IntakeComponent], snapshot: ProductDefinition?, category: String, typed: Bool),
         nutrient: String,
         lookup: NutrientFactsLookup,
         distrusted: Bool = false
@@ -249,7 +250,7 @@ public enum DailyTotalsBuilder {
         }
         // A typed supplement contributes the nutrients it declares, as a snapshot-backed one does: an
         // undeclared nutrient supplies no contribution (#805).
-        guard entry.category == ProductKindResolution.supplementCategory else { return values }
+        guard entry.typed, entry.category == ProductKindResolution.supplementCategory else { return values }
         return values.filter { value in
             if case .unknown = value { return false }
             return true
