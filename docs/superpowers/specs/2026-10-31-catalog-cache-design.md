@@ -54,7 +54,9 @@ Either way a withdrawal, rejection or recall reaches a phone's cache only when t
 so a phone that stays offline keeps showing what it saved. Option A makes that visible rather than hiding it: every
 cached product shows when it was saved ("Saved on this phone on Oct 31", choice 6), and after 90 days without the
 catalog confirming it, the product is still shown but without its verification badge until it is fetched again. That
-90-day limit is part of the owner decision.
+90-day limit is part of the owner decision. A product the phone has been told is withdrawn, rejected or recalled is
+deleted from the cache at once, so it is never offered offline afterwards; only a withdrawal the phone has not yet
+heard about can still show, and then with its saved date.
 
 ### 4. Search order and the offline state — owner decision (copy)
 
@@ -63,6 +65,12 @@ catalog confirming it, the product is still shown but without its verification b
   catalog cannot be reached the screen shows what the device and cache have, with one line under them. The proposed
   wording, for approval: "Can't reach the shared catalog. Showing products saved on this phone."
 - B. Keep the catalog results and the cached ones in separate sections.
+
+Barcode lookups follow the same order: the cache is checked first, so a saved product is found offline. Today any
+catalog failure on a barcode reads "No product found for that barcode." **Owner decision:** (A, recommended) when the
+catalog cannot be reached and the barcode is not saved, show the same line as search, "Can't reach the shared catalog.
+Showing products saved on this phone.", so an outage is not mistaken for a missing product; (B) keep "No product found
+for that barcode." for every failure, as now.
 
 ### 5. Signed-out use — owner decision
 
@@ -89,7 +97,8 @@ keep their existing rules (an upload that fails is not retried; a publication st
 Mock-server tests in the providers and UI layers, with no network: a lookup that succeeds fills the cache; the same
 lookup offline is answered from the cache with its attribution; a withdrawal reply removes the cached product; sign-out
 and Erase all data leave the cache empty; the cache cap drops the oldest-opened product; a logged entry's snapshot does
-not change when its cached product is refreshed.
+not change when its cached product is refreshed; an offline barcode miss shows the chosen line; a product the phone
+was told is withdrawn is gone from the cache and from offline search.
 
 ## Not in this design
 
