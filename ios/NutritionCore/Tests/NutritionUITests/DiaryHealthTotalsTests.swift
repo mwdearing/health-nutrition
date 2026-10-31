@@ -330,4 +330,23 @@ final class DiaryHealthTotalsTests: XCTestCase {
         XCTAssertEqual(day.start, calendar.startOfDay(for: noon))
         XCTAssertEqual(day.end.timeIntervalSince(day.start), 23 * 3600)
     }
+
+    /// After the Diary's zone changes, a past day's Health figures read for the old zone no longer show.
+    func testAZoneChangeForgetsHealthFiguresForTheOldZone() async throws {
+        let journal = try makeJournal()
+        try journal.create(
+            Intake(id: UUID().uuidString.lowercased(), category: "water", occurredAt: now, timeZoneIdentifier: "UTC"),
+            components: [IntakeComponent(componentID: "water", name: "Example water", amount: 250, unit: .mL)],
+            product: nil, now: now)
+        var zone = "UTC"
+        let model = JournalViewModel(store: journal, timeZoneProvider: { zone }, locale: Locale(identifier: "en_US"))
+        model.healthDayReader = { _, _ in HealthDayRead(.read(values: ["energy": 620], readKeys: ["energy"])) }
+        model.load(now: now)
+        let key = JournalViewModel.dayKey(now, zone: TimeZone(identifier: "UTC")!)
+        await model.loadHealthTotals(forDayKey: key, now: now.addingTimeInterval(3 * 86_400))
+        XCTAssertNotNil(model.outsideIntakeByDay[key])
+        zone = "Asia/Tokyo"
+        model.load(now: now)
+        XCTAssertTrue(model.outsideIntakeByDay.isEmpty, "figures read for UTC days are forgotten")
+    }
 }

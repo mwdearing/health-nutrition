@@ -149,6 +149,8 @@ public final class JournalViewModel: ObservableObject {
     /// after the totals were forgotten, is dropped rather than written over newer figures.
     private var healthReadGenerations: [String: Int] = [:]
     private var healthReadEpoch = 0
+    /// The zone the Diary was last built in, so a zone change forgets Health figures read for the old zone's days.
+    private var healthTotalsZoneID: String?
     /// Reads what other apps logged to Apple Health between two instants. The app sets it; nil keeps the Diary
     /// journal-only.
     public var healthDayReader: (@MainActor (Date, Date) async -> HealthDayRead)?
@@ -215,8 +217,8 @@ public final class JournalViewModel: ObservableObject {
         // start of day; the end is the next day's start.
         guard let noon = calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2], hour: 12)),
               let nextNoon = calendar.date(byAdding: .day, value: 1, to: noon),
-              case let start = calendar.startOfDay(for: noon),
-              case let end = calendar.startOfDay(for: nextNoon),
+              let start = Optional(calendar.startOfDay(for: noon)),
+              let end = Optional(calendar.startOfDay(for: nextNoon)),
               // A key that names no real day (2026-02-31) would be normalised to another day, so it is refused.
               dayKey(start, zone: zone) == key
         else { return nil }
@@ -321,6 +323,11 @@ public final class JournalViewModel: ObservableObject {
     /// Groups active intakes by the local day of each intake's own time zone, newest first.
     public func load(now: Date) {
         defer { loadCount += 1 }
+        // Health figures were read for days in one zone; after a zone change a key names another span of time, so the
+        // figures are forgotten and each day is read again as it comes on screen.
+        let zoneID = dayZone.identifier
+        if let healthZone = healthTotalsZoneID, healthZone != zoneID { forgetHealthTotals() }
+        healthTotalsZoneID = zoneID
         copyNotice = nil
         copyFailed = false
         do {
