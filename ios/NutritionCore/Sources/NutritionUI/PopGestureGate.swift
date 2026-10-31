@@ -5,58 +5,66 @@ import UIKit
 
 /// Turns the edge swipe-back off while a pushed form holds typed input. Hiding the Back button does not
 /// stop the edge gesture, so the gesture is switched off on the navigation controller that hosts the form,
-/// and the form's own Back or Cancel asks instead. It is switched back on when the form goes away.
-/// Holds the gate's state and applies it when it is in a navigation stack: on appearing, and on every change.
-/// Applying from a lifecycle callback rather than from the SwiftUI update means the recognizer is reached once the
-/// controller is actually in the hierarchy, not on an update that may run before it is.
-final class PopGateController: UIViewController {
+/// and the form's own Back or Cancel asks instead.
+///
+/// The gate is a plain view inside the form. When it enters a window it walks its responder chain to the
+/// view controller that owns it and switches that controller's stack. When it leaves the window, because the
+/// form was popped or another screen was pushed over it, it switches the gesture back on, so the screen on top
+/// can still be swiped away; coming back on screen applies the form's state again.
+final class PopGateView: UIView {
     var blocked = false {
-        didSet { apply() }
+        didSet { if blocked != oldValue { apply() } }
     }
 
-    override func viewDidAppear(_ animated: Bool) {
-        super.viewDidAppear(animated)
-        apply()
+    private weak var gatedStack: UINavigationController?
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window == nil {
+            release()
+        } else {
+            apply()
+        }
     }
 
-    override func viewWillDisappear(_ animated: Bool) {
-        super.viewWillDisappear(animated)
-        navigationController?.interactivePopGestureRecognizer?.isEnabled = true
-    }
-
-    func apply() {
-        // The controller is not always parented under the navigation stack, so reach the visible stack from the window.
-        let nav = navigationController ?? PopGateController.visibleNavigationController(from: view.window)
-        nav?.interactivePopGestureRecognizer?.isEnabled = !blocked
-    }
-
-    /// The navigation controller that is on screen: the window's root, through a tab bar's selection, down to a stack.
-    static func visibleNavigationController(from window: UIWindow?) -> UINavigationController? {
-        var current = window?.rootViewController
-        while let controller = current {
-            if let nav = controller as? UINavigationController { return nav.visibleViewController?.navigationController ?? nav }
-            if let tabs = controller as? UITabBarController { current = tabs.selectedViewController; continue }
-            current = controller.presentedViewController ?? controller.children.last
+    /// The navigation controller of the nearest view controller that owns this view, if any.
+    var owningNavigationController: UINavigationController? {
+        var responder: UIResponder? = next
+        while let current = responder {
+            if let controller = current as? UIViewController, let nav = controller.navigationController { return nav }
+            responder = current.next
         }
         return nil
     }
+
+    func apply() {
+        guard window != nil, let nav = owningNavigationController else { return }
+        gatedStack = nav
+        nav.interactivePopGestureRecognizer?.isEnabled = !blocked
+    }
+
+    func release() {
+        gatedStack?.interactivePopGestureRecognizer?.isEnabled = true
+        gatedStack = nil
+    }
 }
 
-struct PopGestureGate: UIViewControllerRepresentable {
+struct PopGestureGate: UIViewRepresentable {
     let blocked: Bool
 
-    func makeUIViewController(context: Context) -> PopGateController {
-        let controller = PopGateController()
-        controller.blocked = blocked
-        return controller
+    func makeUIView(context: Context) -> PopGateView {
+        let view = PopGateView()
+        view.isUserInteractionEnabled = false
+        view.blocked = blocked
+        return view
     }
 
-    func updateUIViewController(_ controller: PopGateController, context: Context) {
-        controller.blocked = blocked
+    func updateUIView(_ view: PopGateView, context: Context) {
+        view.blocked = blocked
     }
 
-    static func dismantleUIViewController(_ controller: PopGateController, coordinator: ()) {
-        controller.blocked = false
+    static func dismantleUIView(_ view: PopGateView, coordinator: ()) {
+        view.release()
     }
 }
 
