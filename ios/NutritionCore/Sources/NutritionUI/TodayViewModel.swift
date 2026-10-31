@@ -132,6 +132,9 @@ public final class TodayViewModel: ObservableObject {
     /// Calories left today: the stored goal, less food, plus burned when the setting counts it. Nil fields are
     /// not stated; `remaining` is nil without a goal or without a known food total.
     @Published public private(set) var calorieRemaining: CalorieRemaining = .none
+    /// True only after a load that read the goals and found no calorie goal. False before the first load,
+    /// after a failed goal read and after a failed load, so Today never asks for a goal it could not see.
+    @Published public private(set) var calorieGoalKnownAbsent = false
     /// Today's active energy from Apple Health, set by the activity card after it reads. Only used
     /// when the person switched on adding it to the calorie goal.
     public var activeEnergyKcal: Decimal?
@@ -458,6 +461,7 @@ public final class TodayViewModel: ObservableObject {
             }
             let burnedCounted = (preferences as? ActivityGoalPreferences)?.addsActiveEnergyToGoal == true
             let foodLine = progress.first { $0.nutrient == Self.energyKey }
+            calorieGoalKnownAbsent = !goalsUnreadable && storedEnergyTarget == nil
             calorieRemaining = CalorieRemaining.make(
                 goal: storedEnergyTarget,
                 food: foodLine.flatMap { line -> Decimal? in
@@ -477,6 +481,7 @@ public final class TodayViewModel: ObservableObject {
             rows = []
             mealSections = []
             calorieRemaining = .none
+            calorieGoalKnownAbsent = false
             waterTotalMilliliters = 0
             waterEntryCount = 0
             waterSkippedCount = 0
