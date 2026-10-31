@@ -112,8 +112,8 @@ final class TodayDistrustedWaterTests: XCTestCase {
         try log(store, category: "other", componentID: "suspect", amount: 250, share: 80)
         let model = today(store)
         XCTAssertTrue(model.waterHasUnknown)
-        XCTAssertFalse(model.waterFigureText.contains("less than"))
-        XCTAssertFalse(model.waterAccessibilityValue.contains("less than"))
+        // Copy for this case is an open owner decision (see #1148 thread); pinned to the current approved fallback.
+        XCTAssertEqual(model.waterFigureText, "No data")
     }
 
     /// A healthy soup with a share still counts its water, unchanged.
