@@ -123,4 +123,20 @@ final class AppleHealthConnectionTests: XCTestCase {
 
         XCTAssertEqual(model.state, .turnedOff)
     }
+
+    /// A change in Health's answer is reported once, so the Diary can forget figures read under the old access
+    /// (#1107); a refresh with the same answer reports nothing.
+    func testRefreshReportsAStateChangeOnce() {
+        let connector = FakeConnector(access(0, 15, 0))
+        let model = AppleHealthConnectionViewModel(connector: connector)
+        var reported: [AppleHealthConnectionState] = []
+        model.onStateChange = { reported.append($0) }
+
+        model.refresh()
+        XCTAssertEqual(reported, [], "same answer, nothing reported")
+        connector.access = access(0, 0, 15)
+        model.refresh()
+        model.refresh()
+        XCTAssertEqual(reported, [.turnedOff])
+    }
 }
