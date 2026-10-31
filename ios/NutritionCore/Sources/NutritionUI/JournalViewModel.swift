@@ -172,7 +172,7 @@ public final class JournalViewModel: ObservableObject {
         healthReadGenerations[key] = generation
         let epoch = healthReadEpoch
         let read = await reader(day.start, through)
-        guard healthReadGenerations[key] == generation, healthReadEpoch == epoch else { return }
+        guard healthReadEpoch == epoch else { return }
         if read.complete {
             healthReadMarks[key] = (through, zoneID)
         } else {
