@@ -254,6 +254,107 @@ final class JournalImportAtomicityTests: JournalImportTestCase {
         XCTAssertNil(try journal.restoreInProgressDigest())
     }
 
+    /// A complete restore whose flag clear failed leaves its rows and receipts. A retry of the same file is refused,
+    /// as a finished restore is, and writes nothing.
+    func testARetryAfterAFailedFlagClearFinishesTheCleanupAndWritesNothing() throws {
+        let data = try exportData()
+        let target = try directory()
+        let inner = try store(target)
+        let journal = FlagClearFailsOnceJournal(inner)
+        let favoritesStore = try favorites(target)
+        journal.failNextClear = true
+
+        XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: favoritesStore)) {
+            XCTAssertEqual($0 as? JournalImportError, .cleanupIncomplete)
+        }
+        XCTAssertNotNil(try inner.restoreInProgressDigest())
+        let rowsAfterFirst = try inner.activeIntakes().map(\.id)
+        XCTAssertFalse(rowsAfterFirst.isEmpty)
+
+        // The retry the message asks for finds every receipt and the flag: it clears the flag, writes nothing again,
+        // and reports the restore (#828).
+        XCTAssertNoThrow(try JournalImporter.importExport(data, into: journal, favorites: favoritesStore))
+        XCTAssertNil(try inner.restoreInProgressDigest())
+        XCTAssertEqual(try inner.activeIntakes().map(\.id), rowsAfterFirst)
+
+        // With the flag gone, a third import is refused as a journal that is not empty.
+        XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: favoritesStore)) {
+            XCTAssertEqual($0 as? JournalImportError, .notEmpty)
+        }
+    }
+
+    /// The retry reports the whole restore, goals included, counted from the receipt before it is removed.
+    func testARetryAfterAFailedFlagClearReportsTheRestoresGoals() throws {
+        let target = try directory()
+        let goals = try SwiftDataGoalStore(url: target.appendingPathComponent("goals.store"))
+        addTeardownBlock { goals.close() }
+        var root = try XCTUnwrap(try JSONSerialization.jsonObject(with: try exportData()) as? [String: Any])
+        root["goals"] = [["nutrient": "protein", "target": "60", "unit": "g"]]
+        let data = try JSONSerialization.data(withJSONObject: root)
+        let inner = try store(target)
+        let journal = FlagClearFailsOnceJournal(inner)
+        let favoritesStore = try favorites(target)
+        journal.failNextClear = true
+        XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: favoritesStore, goals: goals)) {
+            XCTAssertEqual($0 as? JournalImportError, .cleanupIncomplete)
+        }
+
+        var summary: JournalImportSummary?
+        XCTAssertNoThrow(summary = try JournalImporter.importExport(data, into: journal, favorites: favoritesStore, goals: goals))
+        XCTAssertEqual(summary?.goals, 1)
+        XCTAssertEqual(summary?.intakes, try inner.activeIntakes().count)
+        XCTAssertEqual(try goals.goals().count, 1, "no goal is added again")
+        XCTAssertNil(try inner.restoreInProgressDigest())
+    }
+
+    /// A goal ledger that cannot be read after every row is written reports the cleanup on the first run and on a
+    /// retry, and keeps the flag; once it reads, the retry finishes.
+    func testAnUnreadableGoalLedgerReportsCleanupIncompleteAndARetryFinishes() throws {
+        let target = try directory()
+        let base = try SwiftDataGoalStore(url: target.appendingPathComponent("goals.store"))
+        addTeardownBlock { base.close() }
+        let goals = ScriptedGoalStore(base: base) { _, _ in }
+        goals.failsFinishedLedgerRead = true
+        var root = try XCTUnwrap(try JSONSerialization.jsonObject(with: try exportData()) as? [String: Any])
+        root["goals"] = [["nutrient": "protein", "target": "60", "unit": "g"]]
+        let data = try JSONSerialization.data(withJSONObject: root)
+        let journal = try store(target)
+        let favoritesStore = try favorites(target)
+
+        XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: favoritesStore, goals: goals)) {
+            XCTAssertEqual($0 as? JournalImportError, .cleanupIncomplete)
+        }
+        XCTAssertFalse(try journal.activeIntakes().isEmpty)
+        XCTAssertNotNil(try journal.restoreInProgressDigest())
+
+        XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: favoritesStore, goals: goals)) {
+            XCTAssertEqual($0 as? JournalImportError, .cleanupIncomplete)
+        }
+        XCTAssertNotNil(try journal.restoreInProgressDigest())
+
+        goals.failsFinishedLedgerRead = false
+        var summary: JournalImportSummary?
+        XCTAssertNoThrow(summary = try JournalImporter.importExport(data, into: journal, favorites: favoritesStore, goals: goals))
+        XCTAssertEqual(summary?.goals, 1)
+        XCTAssertNil(try journal.restoreInProgressDigest())
+    }
+
+    /// A retry whose flag clear fails again still reports the cleanup, not a bad file or a full journal.
+    func testARetryWhoseFlagClearFailsAgainReportsCleanupIncomplete() throws {
+        let data = try exportData()
+        let target = try directory()
+        let inner = try store(target)
+        let journal = FlagClearFailsOnceJournal(inner)
+        let favoritesStore = try favorites(target)
+        journal.failNextClear = true
+        XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: favoritesStore))
+        journal.failNextClear = true
+        XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: favoritesStore)) {
+            XCTAssertEqual($0 as? JournalImportError, .cleanupIncomplete)
+        }
+        XCTAssertNotNil(try inner.restoreInProgressDigest())
+    }
+
     /// A flag that cannot be removed fails the erase before any journal row is deleted, so the screen can
     /// report it and nothing a re-import could bring back is half-erased.
     func testAnEraseStopsBeforeDeletingWhenTheRestoreFlagCannotBeRemoved() throws {
@@ -552,4 +653,73 @@ final class JournalImportAtomicityTests: JournalImportTestCase {
         XCTAssertEqual(try base.goal(for: "protein")?.target, Decimal(99), "the person's change stays")
         XCTAssertNotNil(try journal.restoreInProgressDigest(), "the flag stays while a goal from the file remains")
     }
+}
+
+/// The real journal store with one failure: the first restore-in-progress clear throws, as a disk error would.
+/// Every other call is forwarded unchanged, so the importer runs its real second phase.
+private final class FlagClearFailsOnceJournal: JournalStore, JournalRestoreTarget, JournalRestoreProgress,
+    JournalTombstoneSource, @unchecked Sendable
+{
+    struct ClearFailure: Error {}
+    let inner: SwiftDataJournalStore
+    var failNextClear = false
+
+    init(_ inner: SwiftDataJournalStore) { self.inner = inner }
+
+    var failNextSaveForTesting: Bool {
+        get { inner.failNextSaveForTesting }
+        set { inner.failNextSaveForTesting = newValue }
+    }
+    func create(
+        _ intake: Intake, components: [IntakeComponent], product: ProductDefinition?, now: Date
+    ) throws -> IntakeRevision {
+        try inner.create(intake, components: components, product: product, now: now)
+    }
+    func edit(
+        intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
+        now: Date, occurredAt: Date?, timeZoneIdentifier: String?
+    ) throws -> IntakeRevision {
+        try inner.edit(
+            intakeID: intakeID, components: components, product: product, changeReason: changeReason, now: now,
+            occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier)
+    }
+    func editRemovingUnits(
+        intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String,
+        now: Date, occurredAt: Date?, timeZoneIdentifier: String?, unitRemovals: [String]
+    ) throws -> IntakeRevision {
+        try inner.editRemovingUnits(
+            intakeID: intakeID, components: components, product: product, changeReason: changeReason, now: now,
+            occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier, unitRemovals: unitRemovals)
+    }
+    func delete(intakeID: String, now: Date) throws { try inner.delete(intakeID: intakeID, now: now) }
+    func deleteSequenced(intakeID: String, now: Date) throws -> UInt64 {
+        try inner.deleteSequenced(intakeID: intakeID, now: now)
+    }
+    func createSequenced(
+        _ intake: Intake, components: [IntakeComponent], product: ProductDefinition?, now: Date
+    ) throws -> (IntakeRevision, UInt64) {
+        try inner.createSequenced(intake, components: components, product: product, now: now)
+    }
+    var deleteSequence: UInt64 { inner.deleteSequence }
+    func undoDelete(intakeID: String) throws { try inner.undoDelete(intakeID: intakeID) }
+    func activeIntakes() throws -> [Intake] { try inner.activeIntakes() }
+    func revisions(of intakeID: String) throws -> [IntakeRevision] { try inner.revisions(of: intakeID) }
+    func projections(of intakeID: String) throws -> [DestinationProjection] { try inner.projections(of: intakeID) }
+    func pendingOutbox() throws -> [OutboxOperation] { try inner.pendingOutbox() }
+    func product(snapshotID: String) throws -> ProductDefinition? { try inner.product(snapshotID: snapshotID) }
+    func activeIntakesFromBackground() async throws -> [Intake] { try await inner.activeIntakesFromBackground() }
+    func close() { inner.close() }
+
+    func restore(_ plan: JournalRestorePlan) throws -> JournalRestoreReceipt { try inner.restore(plan) }
+    func undoRestore(_ receipt: JournalRestoreReceipt) throws { try inner.undoRestore(receipt) }
+    func markRestoreInProgress(fileDigest: String) throws { try inner.markRestoreInProgress(fileDigest: fileDigest) }
+    func restoreInProgressDigest() throws -> String? { try inner.restoreInProgressDigest() }
+    func clearRestoreInProgress() throws {
+        if failNextClear {
+            failNextClear = false
+            throw ClearFailure()
+        }
+        try inner.clearRestoreInProgress()
+    }
+    func deletedIntakes() throws -> [Intake] { try inner.deletedIntakes() }
 }
