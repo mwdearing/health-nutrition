@@ -276,5 +276,4 @@ final class DiaryHealthTotalsTests: XCTestCase {
         model.load(now: now)
         XCTAssertNil(model.sections.first { $0.id == key }?.energyText)
     }
-
 }
