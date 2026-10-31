@@ -302,16 +302,16 @@ public final class TodayViewModel: ObservableObject {
                     (components, snapshot, intake.category), lookup: lookup)
                 if intake.category == "water" {
                     waterEntries += 1
-                    if distrusted {
-                        // A distrusted drink's water is unknown, as in the Diary: none of it is added.
-                        unknownWater = true
-                    }
-                    for component in components where !distrusted {
+                    // A distrusted drink's water is unknown, as in the Diary: none of it is added. A component that
+                    // could not count anyway is still reported as skipped.
+                    if distrusted { unknownWater = true }
+                    for component in components {
                         if component.unit.dimension == .volume,
                             Self.isPositive(component.amount),
                             let converted = try? Quantity(value: component.amount, unit: component.unit).converted(to: .mL),
                             Self.isPositive(converted.value)
                         {
+                            guard !distrusted else { continue }
                             // A water entry counts its full volume, or volume times its stored share when one is set.
                             waterTotal += converted.value * (component.hydrationPercent ?? 100) / 100
                             countedWater += 1
