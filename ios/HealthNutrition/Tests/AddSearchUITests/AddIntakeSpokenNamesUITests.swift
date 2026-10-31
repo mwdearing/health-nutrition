@@ -49,8 +49,8 @@ final class AddIntakeSpokenNamesUITests: XCTestCase {
     }
 
     /// Opens Add and then "Type it in", the path to the form with the amount field. The Add and "Type it in" taps
-    /// wait for their targets to be hittable, and the form's own "Log entry" bar confirms it opened, with one more tap if the first was
-    /// dropped during Add's presentation; a tap that lands mid-animation otherwise leaves no form to query.
+    /// wait for their targets to be hittable, and the form's own "Log entry" bar confirms it opened, with one more tap on "Type it in"
+    /// if that tap was dropped during Add's presentation; a tap that lands mid-animation otherwise leaves no form to query.
     private func openTypedInEntryForm(_ app: XCUIApplication) throws {
         let getStarted = app.buttons["Get started"]
         if getStarted.waitForExistence(timeout: 5) { getStarted.tap() }
