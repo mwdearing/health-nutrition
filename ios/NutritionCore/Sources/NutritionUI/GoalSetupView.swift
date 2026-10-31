@@ -38,6 +38,7 @@ public struct GoalSetupView: View {
             }
         }
         .onDisappear { model.clearAnswers() }
+        .onChange(of: model.unitSystem) { _, _ in model.unitSystemDidChange() }
     }
 
     @ViewBuilder

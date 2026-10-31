@@ -214,10 +214,15 @@ final class HealthIntakeTotalsTests: XCTestCase {
         XCTAssertEqual(combined.first?.knownSum, .known(100, .iu))
     }
 
-    func testWaterLineIsNeverCombined() {
+    /// Water other apps logged to Health is added to the water line like any other nutrient (Mike, 2026-10-30), so
+    /// the water goal bar agrees with Today's water figure. This app's own water samples are left out by the reader.
+    func testWaterLineAddsHealthWaterFromOtherApps() {
         let water = line(DailyTotalsBuilder.waterKey, known: 500, unit: .mL)
-        let combined = HealthIntakeTotals.combine([water], outside: .read(values: [DailyTotalsBuilder.waterKey: 250], readKeys: [DailyTotalsBuilder.waterKey]))
-        XCTAssertEqual(combined, [water])
+        let combined = HealthIntakeTotals.combine(
+            [water],
+            outside: .read(values: [DailyTotalsBuilder.waterKey: 250], readKeys: [DailyTotalsBuilder.waterKey]))
+        XCTAssertEqual(combined.first?.amount, .known(750, .mL))
+        XCTAssertEqual(combined.first?.isPartial, false)
     }
 
     func testReadingsMapToOutsideState() {

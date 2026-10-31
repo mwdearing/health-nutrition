@@ -30,7 +30,7 @@ final class FirstDayChecklistReadFailureTests: XCTestCase {
 
     /// The goal read throws: the card is hidden and has no rows, so no step is shown as not done.
     func testChecklistHidesWhenTheGoalReadFails() throws {
-        let goals = InMemoryGoalStore(failNextRead: true)
+        let goals = InMemoryGoalStore(failReads: true)
         let model = FirstDayChecklistModel(
             store: try makeJournal(), goals: goals, preferences: InMemoryDisplayPreferences())
 

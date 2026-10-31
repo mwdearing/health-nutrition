@@ -6,6 +6,7 @@ final class LibrarySharedProductsUITests: XCTestCase {
     func testSearchWithNoMatchOffersFindSharedProducts() throws {
         let app = XCUIApplication()
         app.launch()
+        addTeardownBlock { app.terminate() }
 
         let getStarted = app.buttons["Get started"]
         if getStarted.waitForExistence(timeout: 5) { getStarted.tap() }
@@ -16,7 +17,12 @@ final class LibrarySharedProductsUITests: XCTestCase {
 
         let search = app.textFields["Search on this device"]
         XCTAssertTrue(search.waitForExistence(timeout: 10), "Library search field is not on screen")
+        // On a slow runner a tap can land while Library is still settling and leave the field without keyboard
+        // focus, and typing then fails. The tap is checked by the field taking focus, with one more tap if it has not.
+        func searchHasFocus() -> Bool { (search.value(forKey: "hasKeyboardFocus") as? Bool) == true }
         search.tap()
+        if !waitUntil(timeout: 10, searchHasFocus) { search.tap() }
+        XCTAssertTrue(waitUntil(timeout: 10, searchHasFocus), "the Library search field did not take keyboard focus")
         search.typeText("zzqxnomatch")
 
         let findShared = app.buttons["Find shared products"]
@@ -28,4 +34,14 @@ final class LibrarySharedProductsUITests: XCTestCase {
         XCTAssertTrue(productField.waitForExistence(timeout: 10),
                       "Find shared products did not open product search")
     }
+}
+
+/// Polls `condition` until it holds or `timeout` seconds pass; true when it held.
+private func waitUntil(timeout: TimeInterval, _ condition: () -> Bool) -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        if condition() { return true }
+        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+    }
+    return condition()
 }

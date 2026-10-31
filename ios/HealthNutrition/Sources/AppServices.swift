@@ -121,8 +121,9 @@ final class AppServices {
         // no snapshot and stays unknown, never zero.
         today = TodayViewModel(
             store: journalStore, goals: goalStore, lookup: SnapshotNutrientFacts(), preferences: displayPreferences)
-        journal = JournalViewModel(
+        let journalModel = JournalViewModel(
             store: journalStore, goals: goalStore, lookup: SnapshotNutrientFacts(), preferences: displayPreferences)
+        journal = journalModel
         library = LibraryViewModel(store: journalStore, favorites: favoritesStore, productStore: journalStore,
             productSharing: CustomProductSharingModel(store: journalStore, coordinator: productSharing, service: products),
             preferences: displayPreferences)
@@ -172,6 +173,8 @@ final class AppServices {
             afterSuccessfulErase: {
                 displayPreferences.clearProductSharingPausesAfterErase()
                 HealthKitReader.forgetReadAccess()
+                // No Diary header keeps Apple Health figures read before the erase.
+                journalModel.forgetHealthTotals()
                 account?.refreshAfterErase()
                 // The list is read again so no screen shows a meal the erase removed, and an Undo offer
                 // for entries the erase already removed goes with it.
@@ -227,9 +230,13 @@ final class AppServices {
         appleHealth = AppleHealthConnectionViewModel(connector: healthKitDeliveryStatus)
         firstDayChecklist = FirstDayChecklistModel(
             store: journalStore, goals: goalStore, preferences: displayPreferences, health: appleHealth)
+        // One reader for Today's activity card and the Diary's day headers, so both ask Health the same way.
+        let healthReader = HealthKitReader()
         bodyActivity = BodyActivityViewModel(
-            reader: HealthKitReader(), unitSystem: { [displayPreferences] in displayPreferences.unitSystem },
+            reader: healthReader, unitSystem: { [displayPreferences] in displayPreferences.unitSystem },
             weightPlan: { [goalStore] in try? goalStore.weightPlan() })
+        // Each Diary day header adds what other apps logged to Apple Health that day, read as the day comes on screen.
+        journal.healthDayReader = { start, end in await healthReader.outsideIntakeDay(from: start, to: end) }
         goals.latestHeightCentimeters = { [bodyActivity] in bodyActivity.readings.latestHeightCm }
         // Set after every stored property, so the Library can link to the supplement list.
         library.supplementStack = supplementStack

@@ -41,6 +41,8 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
         "Some goals may not have been put back. Check your targets on the Goals screen."
     public static let justTrackExistingNotice = "Your current targets are unchanged. You can change or remove them on the Goals screen."
     public static let genericErrorNotice = "Check your answers and try again."
+    /// The notice a save gives when a field cannot be saved.
+    static let fieldsNotice = "Enter a number above zero."
     public static let saveFailedNotice = "Could not save your goals. Try again."
     public static let invalidFieldNotice = "Enter a number greater than zero."
     public static let goalWeightBelowNotice = "To lose weight, your goal weight must be below your current weight."
@@ -85,11 +87,26 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
     private var filledHeightFromHealth = false
     private let now: () -> Date
     private let calendar: Calendar
+    /// A weight shown after a unit switch: the text in the field and the exact kilograms it stands for.
+    private typealias ConvertedWeight = (text: String, kilograms: Decimal)
+    /// A height shown after a unit switch: the exact centimeters, and the text in the centimeter field or in
+    /// the feet and inches fields that show them.
+    private typealias ConvertedHeight = (centimeters: Decimal, centimetersText: String, feetText: String, inchesText: String)
+    /// The unit system the weight and height fields are in. A switch while the sheet is open converts them.
+    private var textUnitSystem: UnitSystem
+    private var convertedCurrentWeight: ConvertedWeight?
+    private var convertedGoalWeight: ConvertedWeight?
+    private var convertedHeight: ConvertedHeight?
+    /// Height text that did not read as a number, as it stands in each unit, so switching back shows it as typed.
+    private var carriedHeight: (metric: String, feet: String, inches: String)?
+    /// The drafts exactly as the last estimate wrote them, so a pace change can tell untouched drafts from edited ones.
+    private var estimatedTargets: [String: String]?
 
     public init(goals: GoalsViewModel, now: @escaping () -> Date = { Date() }, calendar: Calendar = .current) {
         self.goals = goals
         self.now = now
         self.calendar = calendar
+        self.textUnitSystem = goals.unitSystem
         fillHeightFromHealth()
     }
 
@@ -120,6 +137,94 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
 
     /// The unit system the answers are asked in.
     public var unitSystem: UnitSystem { goals.unitSystem }
+
+    /// Moves the typed current and goal weights and the height into the unit system now in force, so a value
+    /// typed in one unit shows in the other. The sheet calls it when the unit system changes, and `save()`
+    /// calls it first. Weights show one decimal place, as the Body screen shows them; the height shows whole
+    /// centimeters, or whole inches with feet. The exact kilograms and centimeters are kept with the text, so a
+    /// switch back or a save uses the value the person typed, not the rounded text. The selected pace moves to
+    /// the nearest option in the new unit, so a pace stays selected.
+    public func unitSystemDidChange() {
+        let pounds = unitSystem == .usCustomary
+        guard pounds != (textUnitSystem == .usCustomary) else { return }
+        let wasPounds = !pounds
+        let current = Self.displayed(
+            Self.kilograms(
+                typed: wasPounds ? weightPoundsText : weightKilogramsText, pounds: wasPounds,
+                known: convertedCurrentWeight),
+            pounds: pounds)
+        let goal = Self.displayed(
+            Self.kilograms(
+                typed: wasPounds ? goalWeightPoundsText : goalWeightKilogramsText, pounds: wasPounds,
+                known: convertedGoalWeight),
+            pounds: pounds)
+        let height = Self.displayedHeight(
+            wasPounds
+                ? Self.centimeters(feetText: heightFeetText, inchesText: heightInchesText, known: convertedHeight)
+                : Self.centimeters(metricText: heightCentimetersText, known: convertedHeight))
+        // Text that does not read as a number is carried over as typed, so the person sees it and can fix it.
+        if pounds {
+            weightPoundsText = current?.text ?? weightKilogramsText
+            goalWeightPoundsText = goal?.text ?? goalWeightKilogramsText
+            if let height {
+                carriedHeight = nil
+                heightFeetText = height.feetText
+                heightInchesText = height.inchesText
+            } else if let carried = carriedHeight, carried.metric == heightCentimetersText,
+                      carried.feet == heightFeetText, carried.inches == heightInchesText {
+                (heightFeetText, heightInchesText) = (carried.feet, carried.inches)
+            } else {
+                carriedHeight = (metric: heightCentimetersText, feet: heightCentimetersText, inches: "")
+                (heightFeetText, heightInchesText) = (heightCentimetersText, "")
+            }
+        } else {
+            weightKilogramsText = current?.text ?? weightPoundsText
+            goalWeightKilogramsText = goal?.text ?? goalWeightPoundsText
+            if let height {
+                carriedHeight = nil
+                heightCentimetersText = height.centimetersText
+            } else if let carried = carriedHeight, carried.feet == heightFeetText, carried.inches == heightInchesText {
+                heightCentimetersText = carried.metric
+            } else {
+                // The feet and inches keep their units, so the carried text never reads as centimeters.
+                let metric = [(heightFeetText, "ft"), (heightInchesText, "in")].filter { !$0.0.isEmpty }
+                    .map { "\($0.0) \($0.1)" }.joined(separator: " ")
+                carriedHeight = (metric: metric, feet: heightFeetText, inches: heightInchesText)
+                heightCentimetersText = metric
+            }
+        }
+        convertedCurrentWeight = current
+        convertedGoalWeight = goal
+        convertedHeight = height
+        // The pace is kilograms and the options differ by unit, so the pace becomes the option nearest to it in
+        // the unit now in force. Each unit's four options are the same steps, slowest to fastest, and the
+        // nearest kilogram value lands on the same step in the other unit (1 lb, 0.45 kg, is nearest 0.5 kg).
+        let previousPace = selectedPaceKilograms
+        if let pace = selectedPaceKilograms,
+           let nearest = paceOptions.min(by: { abs($0.kilogramsPerWeek - pace) < abs($1.kilogramsPerWeek - pace) }) {
+            selectedPaceKilograms = nearest.kilogramsPerWeek
+        }
+        textUnitSystem = unitSystem
+        // At the results step the drafts were estimated for the old pace. Estimate them again for the new pace;
+        // a draft the person edited (its text differs from the old estimate) is kept as typed.
+        if step == .results, selectedPaceKilograms != previousPace, let estimated = estimatedTargets {
+            let edited = draftTargets.filter { estimated[$0.key] != $0.value }
+            let notices = (fields: fieldErrors, result: resultError)
+            calculate()
+            if !draftTargets.isEmpty {
+                for (key, text) in edited { draftTargets[key] = text }
+                // A field whose text is unchanged keeps the notice a save gave it: an edited draft, or a field
+                // the estimate does not write. A draft the estimate rewrote starts without one.
+                let kept = notices.fields.filter { edited[$0.key] != nil || draftTargets[$0.key] == nil }
+                fieldErrors.merge(kept) { _, saved in saved }
+                // The notice for fields that cannot be saved comes back only with a field it names; any other
+                // notice from a save, such as a failed write, still applies after the switch.
+                if resultError == nil, let result = notices.result, result != Self.fieldsNotice || !kept.isEmpty {
+                    resultError = result
+                }
+            }
+        }
+    }
 
     /// The steps for the aim chosen so far. Before an aim is chosen, the longest path is shown.
     public var steps: [GoalSetupStep] {
@@ -344,6 +449,7 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
     /// write fails, the goals already changed are put back exactly as they were read.
     @discardableResult
     public func save() -> Bool {
+        unitSystemDidChange()
         guard aim != .justTrack, step == .results, !draftTargets.isEmpty else { return false }
         fieldErrors = [:]
         for key in Self.targetKeys {
@@ -366,7 +472,7 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
             fieldErrors[entry.nutrient] = Self.invalidFieldNotice
         }
         guard fieldErrors.isEmpty else {
-            resultError = "Enter a number above zero."
+            resultError = Self.fieldsNotice
             return false
         }
         resultError = nil
@@ -480,6 +586,7 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
     /// person typed outlives the sheet.
     public func clearAnswers() {
         step = .aim
+        carriedHeight = nil
         aim = nil
         sex = nil
         ageText = ""
@@ -490,6 +597,10 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
         weightPoundsText = ""
         goalWeightKilogramsText = ""
         goalWeightPoundsText = ""
+        convertedCurrentWeight = nil
+        convertedGoalWeight = nil
+        convertedHeight = nil
+        textUnitSystem = unitSystem
         activity = nil
         selectedPaceKilograms = nil
         clearVitaminChoice()
@@ -505,6 +616,7 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
     /// Estimates the results from the answers, filling the drafts the person may then edit.
     private func calculate() {
         draftTargets = [:]
+        estimatedTargets = nil
         resultError = nil
         fieldErrors = [:]
         adjustmentNote = nil
@@ -518,6 +630,7 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
                 "fat": DecimalFormatting.text(estimate.fatGrams),
                 "fiber": DecimalFormatting.text(estimate.fiberGrams),
             ]
+            estimatedTargets = draftTargets
             adjustmentNote = estimate.adjustmentNote
         } catch let error as GoalEstimateError {
             resultError = message(for: error)
@@ -574,12 +687,37 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
 
     private func heightCentimeters() -> Decimal? {
         if unitSystem == .usCustomary {
-            guard let feet = Self.wholeOrZero(heightFeetText),
-                  let inches = Self.inchesOrNone(heightInchesText)
-            else { return nil }
-            return (feet * 12 + inches) * Self.centimetersPerInch
+            return Self.centimeters(feetText: heightFeetText, inchesText: heightInchesText, known: convertedHeight)
         }
-        return AmountParser.parseTyped(heightCentimetersText)
+        return Self.centimeters(metricText: heightCentimetersText, known: convertedHeight)
+    }
+
+    /// The centimeters a centimeter field stands for. A field still showing the text of a switch keeps the exact
+    /// centimeters that text was converted from; any other text is read as typed.
+    private static func centimeters(metricText: String, known: ConvertedHeight?) -> Decimal? {
+        if let known, known.centimetersText == metricText { return known.centimeters }
+        return AmountParser.parseTyped(metricText)
+    }
+
+    /// The centimeters that feet and inches stand for. A field still showing the text of a switch keeps the exact
+    /// centimeters that text was converted from; any other text is read as feet and inches.
+    private static func centimeters(feetText: String, inchesText: String, known: ConvertedHeight?) -> Decimal? {
+        if let known, known.feetText == feetText, known.inchesText == inchesText { return known.centimeters }
+        guard let feet = wholeOrZero(feetText), let inches = inchesOrNone(inchesText) else { return nil }
+        return (feet * 12 + inches) * centimetersPerInch
+    }
+
+    /// A height shown in the unit system now in force, with the centimeters it was converted from. Centimeters
+    /// round to whole centimeters, and inches round to whole inches, as the height from Health does.
+    private static func displayedHeight(_ centimeters: Decimal?) -> ConvertedHeight? {
+        guard let centimeters else { return nil }
+        let totalInches = rounded(centimeters / centimetersPerInch, scale: 0, .plain)
+        let feet = rounded(totalInches / 12, scale: 0, .down)
+        return (
+            centimeters: centimeters,
+            centimetersText: DecimalFormatting.text(rounded(centimeters, scale: 0, .plain)),
+            feetText: DecimalFormatting.text(feet),
+            inchesText: DecimalFormatting.text(totalInches - feet * 12))
     }
 
     /// Feet typed as a number, where zero is read as zero rather than refused.
@@ -618,19 +756,30 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
     }
 
     private func weightKilograms() -> Decimal? {
-        if unitSystem == .usCustomary {
-            guard let pounds = AmountParser.parseTyped(weightPoundsText) else { return nil }
-            return pounds * Self.kilogramsPerPound
-        }
-        return AmountParser.parseTyped(weightKilogramsText)
+        let pounds = unitSystem == .usCustomary
+        return Self.kilograms(
+            typed: pounds ? weightPoundsText : weightKilogramsText, pounds: pounds, known: convertedCurrentWeight)
     }
 
     /// The goal weight in kilograms, read in the unit system's field, with no range check.
     private func goalWeightKilograms() -> Decimal? {
-        if unitSystem == .usCustomary {
-            guard let pounds = AmountParser.parseTyped(goalWeightPoundsText) else { return nil }
-            return pounds * Self.kilogramsPerPound
-        }
-        return AmountParser.parseTyped(goalWeightKilogramsText)
+        let pounds = unitSystem == .usCustomary
+        return Self.kilograms(
+            typed: pounds ? goalWeightPoundsText : goalWeightKilogramsText, pounds: pounds, known: convertedGoalWeight)
+    }
+
+    /// The kilograms a weight field stands for. A field still showing the text of a switch keeps the exact
+    /// kilograms that text was converted from; any other text is read in the field's unit.
+    private static func kilograms(typed text: String, pounds: Bool, known: ConvertedWeight?) -> Decimal? {
+        if let known, known.text == text { return known.kilograms }
+        guard let value = AmountParser.parseTyped(text) else { return nil }
+        return pounds ? value * kilogramsPerPound : value
+    }
+
+    /// A weight shown in the unit system now in force, with the kilograms it was converted from.
+    private static func displayed(_ kilograms: Decimal?, pounds: Bool) -> ConvertedWeight? {
+        guard let kilograms else { return nil }
+        let shown = pounds ? kilograms / kilogramsPerPound : kilograms
+        return (text: BodyActivityViewModel.oneDecimal(shown), kilograms: kilograms)
     }
 }

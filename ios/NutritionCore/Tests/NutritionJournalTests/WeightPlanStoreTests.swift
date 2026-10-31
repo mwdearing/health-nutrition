@@ -207,7 +207,7 @@ final class WeightPlanStoreTests: XCTestCase {
     }
 
     func testTheInMemoryStoreThrowsOnAFailedRead() {
-        let store = InMemoryWeightPlanStore(plan: loseWeightPlan(), failNextRead: true)
+        let store = InMemoryWeightPlanStore(plan: loseWeightPlan(), failReads: true)
 
         XCTAssertThrowsError(try store.weightPlan())
     }
