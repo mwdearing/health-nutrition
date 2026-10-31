@@ -660,7 +660,10 @@ final class AccountViewModelTests: XCTestCase {
         XCTAssertTrue(secondStarted, "the second sign-out started")
         // The second call returns at the in-flight guard without waiting on the gate, so awaiting it here proves the
         // guard ran before the checks below; a broken guard would block on the gate and fail the bounded wait.
-        guard await finished(second) != nil else { return XCTFail("the second sign-out did not return at the guard") }
+        guard await finished(second) != nil else {
+            gate.open()  // release the blocked sign-outs so the failure leaves nothing parked on the gate
+            return XCTFail("the second sign-out did not return at the guard")
+        }
         XCTAssertEqual(service.signOutCount, 1)
         XCTAssertTrue(model.isBusy)
         await model.signInWithApple(idToken: "test-apple-token", nonce: "test-raw-nonce")
