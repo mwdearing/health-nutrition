@@ -461,7 +461,7 @@ public final class TodayViewModel: ObservableObject {
             }
             let burnedCounted = (preferences as? ActivityGoalPreferences)?.addsActiveEnergyToGoal == true
             let foodLine = progress.first { $0.nutrient == Self.energyKey }
-            calorieGoalKnownAbsent = !goalsUnreadable && storedEnergyTarget == nil
+            calorieGoalKnownAbsent = storedEnergyTarget == nil
             calorieRemaining = CalorieRemaining.make(
                 goal: storedEnergyTarget,
                 food: foodLine.flatMap { line -> Decimal? in

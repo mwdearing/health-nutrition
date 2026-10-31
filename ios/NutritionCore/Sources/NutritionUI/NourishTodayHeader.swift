@@ -87,7 +87,7 @@ public struct NourishTodayHeader: View {
     /// and nil unless the last load read the goals and found no calorie goal: a failed goal read or a day that
     /// has not loaded yet is not a person without a goal.
     static func goalPrompt(_ calories: CalorieRemaining, goalKnownAbsent: Bool) -> String? {
-        calories.goal == nil && goalKnownAbsent ? "Set a calorie goal to see what's left" : nil
+        calories.goal == nil ? "Set a calorie goal to see what's left" : nil
     }
 
     /// The figures the calorie summary shows. Food is a dash until something is logged, never 0. Remaining is hidden
