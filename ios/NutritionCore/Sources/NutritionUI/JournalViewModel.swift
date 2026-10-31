@@ -215,10 +215,8 @@ public final class JournalViewModel: ObservableObject {
         calendar.timeZone = zone
         // From noon, so a zone whose clocks change at midnight (that midnight does not exist) still gets its real
         // start of day; the end is the next day's start.
-        guard let noon = calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2], hour: 12)),
-              let nextNoon = calendar.date(byAdding: .day, value: 1, to: noon),
-              let start = Optional(calendar.startOfDay(for: noon)),
-              let end = Optional(calendar.startOfDay(for: nextNoon)),
+        guard let start = calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2])),
+              let end = calendar.date(byAdding: .day, value: 1, to: start),
               // A key that names no real day (2026-02-31) would be normalised to another day, so it is refused.
               dayKey(start, zone: zone) == key
         else { return nil }
