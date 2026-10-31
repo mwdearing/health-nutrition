@@ -67,7 +67,7 @@ final class AddIntakeSpokenNamesUITests: XCTestCase {
         XCTAssertTrue(typeItReady, "Type it in is not tappable on Add")
         typeIt.tap()
         let form = app.navigationBars["Log entry"]
-        // Retry only when the form is still absent and Add is still in front; re-checking
+        // Retry only when the form is still absent and "Type it in" is still hittable; re-checking
         // the form right before the tap keeps a slow but successful open from a second tap.
         if !form.waitForExistence(timeout: 10), !form.exists, typeIt.exists, typeIt.isHittable { typeIt.tap() }
         XCTAssertTrue(form.waitForExistence(timeout: 20), "the typed-in entry form did not open")
