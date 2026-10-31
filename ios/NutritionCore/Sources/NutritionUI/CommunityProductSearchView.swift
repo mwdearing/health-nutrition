@@ -262,7 +262,6 @@ public struct CommunityProductSearchView: View {
     /// Puts the keyboard away before a row opens the next screen. A screen presented over this one hands focus back to
     /// the field when it closes, which raised the keyboard on Back (#944), so the field gives focus up first.
     private func leaveSearch(_ open: () -> Void) {
-        searchFocused = false
         open()
     }
     private func search() {
