@@ -80,7 +80,7 @@ public struct CommunityProductSearchView: View {
             // A saved meal can mix foods, drinks and supplements, so meals are offered only under All kinds; a
             // warning about entries a failed log left behind shows under any kind.
             if let savedMeals = library?.savedMeals, onPick != nil {
-                SavedMealSections(model: savedMeals, query: query, showsMeals: kind == nil, onLog: { mealToLog = $0 })
+                SavedMealSections(model: savedMeals, query: query, showsMeals: kind == nil, onLog: { meal in leaveSearch { mealToLog = meal } })
             }
             if let library, let onPick {
                 LibrarySearchSections(
