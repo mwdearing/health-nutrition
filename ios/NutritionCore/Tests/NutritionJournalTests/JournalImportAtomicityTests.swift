@@ -283,6 +283,30 @@ final class JournalImportAtomicityTests: JournalImportTestCase {
         }
     }
 
+    /// The retry reports the whole restore, goals included, counted from the receipt before it is removed.
+    func testARetryAfterAFailedFlagClearReportsTheRestoresGoals() throws {
+        let target = try directory()
+        let goals = try SwiftDataGoalStore(url: target.appendingPathComponent("goals.store"))
+        addTeardownBlock { goals.close() }
+        var root = try XCTUnwrap(try JSONSerialization.jsonObject(with: try exportData()) as? [String: Any])
+        root["goals"] = [["nutrient": "protein", "target": "60", "unit": "g"]]
+        let data = try JSONSerialization.data(withJSONObject: root)
+        let inner = try store(target)
+        let journal = FlagClearFailsOnceJournal(inner)
+        let favoritesStore = try favorites(target)
+        journal.failNextClear = true
+        XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: favoritesStore, goals: goals)) {
+            XCTAssertEqual($0 as? JournalImportError, .cleanupIncomplete)
+        }
+
+        var summary: JournalImportSummary?
+        XCTAssertNoThrow(summary = try JournalImporter.importExport(data, into: journal, favorites: favoritesStore, goals: goals))
+        XCTAssertEqual(summary?.goals, 1)
+        XCTAssertEqual(summary?.intakes, try inner.activeIntakes().count)
+        XCTAssertEqual(try goals.goals().count, 1, "no goal is added again")
+        XCTAssertNil(try inner.restoreInProgressDigest())
+    }
+
     /// A retry whose flag clear fails again still reports the cleanup, not a bad file or a full journal.
     func testARetryWhoseFlagClearFailsAgainReportsCleanupIncomplete() throws {
         let data = try exportData()

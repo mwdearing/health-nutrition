@@ -315,11 +315,13 @@ public enum JournalImporter {
             // restore whose last clear failed (#828). Finishing it writes nothing, so the retry the screen asks for
             // completes instead of being refused as a journal that is not empty.
             if savedMealsWritten && favoritesWritten && !goalsPending {
+                // Counted before the receipt is removed, since the ledger lives in it.
+                let written = try goalsTarget.map { try $0.goalRestoreWrittenGoals(digest).count } ?? 0
                 try clearFlagAfterRestore(progress)
                 try? favoritesTarget?.removeRestoreReceipt(digest)
                 try? savedMealsTarget?.removeSavedMealsRestoreReceipt(digest)
                 try? goalsTarget?.removeGoalRestoreReceipt(digest)
-                return summary(of: plan, goals: (try? goalsTarget?.goalRestoreWrittenGoals(digest).count) ?? 0)
+                return summary(of: plan, goals: written)
             }
             if let savedMealsTarget, !savedMealsWritten {
                 try savedMealsTarget.restoreJournalSavedMeals(plan.savedMeals, receipt: digest)
