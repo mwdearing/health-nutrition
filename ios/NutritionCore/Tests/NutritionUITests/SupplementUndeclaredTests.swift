@@ -79,4 +79,35 @@ final class SupplementUndeclaredTests: XCTestCase {
         let total = try XCTUnwrap(totals.total(for: "vitaminC"))
         XCTAssertTrue(total.coverage.hasUnknown, "a supplement whose snapshot cannot be read must keep coverage unknown")
     }
+
+    /// A lookup that states one negative value, which distrusts the entry, and nothing else.
+    private struct NegativeVitaminDFacts: NutrientFactsLookup {
+        func value(for component: IntakeComponent, nutrient: String) -> NutrientValue {
+            nutrient == "vitaminD" ? .known(-1, .mcg) : .unknown
+        }
+        func value(for component: IntakeComponent, snapshot: ProductDefinition?, nutrient: String) -> NutrientValue {
+            value(for: component, nutrient: nutrient)
+        }
+    }
+
+    /// A distrusted typed supplement reads like a distrusted snapshot-backed one: the nutrient it does not declare
+    /// adds nothing, and the one it declares is unknown.
+    func testADistrustedTypedSupplementsUndeclaredNutrientContributesNothing() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let store = try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
+        try store.create(
+            Intake(id: UUID().uuidString.lowercased(), category: "supplement", occurredAt: when, timeZoneIdentifier: "UTC"),
+            components: [IntakeComponent(componentID: "drop", name: "Vitamin D drop", amount: Decimal(1), unit: .g)],
+            product: nil, now: when)
+        let intakes = try store.activeIntakes()
+        let entry = (components: try XCTUnwrap(store.revisions(of: try XCTUnwrap(intakes.first).id).first).components,
+                     snapshot: nil as ProductDefinition?, category: "supplement", typed: true)
+        XCTAssertTrue(DailyTotalsBuilder.isDistrusted(entry, lookup: NegativeVitaminDFacts()), "the entry must be distrusted")
+        let totals = try DailyTotalsBuilder.totals(
+            for: intakes, store: store, lookup: NegativeVitaminDFacts(), nutrients: ["vitaminC", "vitaminD"])
+        XCTAssertFalse(try XCTUnwrap(totals.total(for: "vitaminC")).coverage.hasUnknown)
+        XCTAssertTrue(try XCTUnwrap(totals.total(for: "vitaminD")).coverage.hasUnknown)
+    }
 }

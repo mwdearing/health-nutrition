@@ -216,6 +216,17 @@ public enum DailyTotalsBuilder {
             if nutrient == waterKey {
                 return entry.components.contains(where: { $0.hydrationPercent != nil }) ? [.unknown] : []
             }
+            // A typed supplement answers like a snapshot-backed one: a nutrient none of its components declares
+            // contributes nothing, and a declared one is unknown because the entry is distrusted (#805).
+            if entry.typed, entry.category == ProductKindResolution.supplementCategory {
+                let declared = entry.components.contains { component in
+                    if case .unknown = Self.value(for: component, snapshot: nil, nutrient: nutrient, lookup: lookup) {
+                        return false
+                    }
+                    return true
+                }
+                return declared ? [.unknown] : []
+            }
             guard let snapshot = entry.snapshot, snapshot.kind == .supplement,
                 let component = entry.components.first
             else { return [.unknown] }
