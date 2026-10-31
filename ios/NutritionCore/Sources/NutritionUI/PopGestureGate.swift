@@ -23,6 +23,7 @@ final class PopGateView: UIView {
         if window == nil {
             release()
         } else {
+            retriesLeft = 3
             apply()
         }
     }
@@ -38,10 +39,21 @@ final class PopGateView: UIView {
     }
 
     func apply() {
-        guard window != nil, let nav = owningNavigationController else { return }
+        guard window != nil else { return }
+        guard let nav = owningNavigationController else {
+            // SwiftUI can attach this view before its hosting controller has joined the stack, so the responder
+            // chain is not complete yet. Retry on the next run loop turn, a few times at most.
+            if retriesLeft > 0 {
+                retriesLeft -= 1
+                DispatchQueue.main.async { [weak self] in self?.apply() }
+            }
+            return
+        }
         gatedStack = nav
         nav.interactivePopGestureRecognizer?.isEnabled = !blocked
     }
+
+    private var retriesLeft = 3
 
     func release() {
         gatedStack?.interactivePopGestureRecognizer?.isEnabled = true
