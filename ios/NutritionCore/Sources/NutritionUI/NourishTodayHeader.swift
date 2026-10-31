@@ -83,9 +83,11 @@ public struct NourishTodayHeader: View {
         ].compactMap { $0 }.joined(separator: ", ")
     }
 
-    /// The prompt shown in place of Calories remaining while no energy goal is stored. Nil once a goal exists.
-    static func goalPrompt(_ calories: CalorieRemaining) -> String? {
-        calories.goal == nil ? "Set a calorie goal to see what's left" : nil
+    /// The prompt shown in place of Calories remaining while no energy goal is stored. Nil once a goal exists,
+    /// and nil unless the last load read the goals and found no calorie goal: a failed goal read or a day that
+    /// has not loaded yet is not a person without a goal.
+    static func goalPrompt(_ calories: CalorieRemaining, goalKnownAbsent: Bool) -> String? {
+        calories.goal == nil && goalKnownAbsent ? "Set a calorie goal to see what's left" : nil
     }
 
     /// The figures the calorie summary shows. Food is a dash until something is logged, never 0. Remaining is hidden
@@ -123,6 +125,7 @@ public struct NourishTodayHeader: View {
         let partial = calories.partialNote
         let spoken = Self.spokenSummary(
             calories, partial: partial, footnote: Self.summaryFootnote(calories, ringFootnote: ringFootnote))
+        let prompt = Self.goalPrompt(calories, goalKnownAbsent: model.calorieGoalKnownAbsent)
         return VStack(alignment: .center, spacing: DesignSpacing.s) {
             if let remaining = figures.remaining {
                 Text(remaining)
@@ -139,7 +142,7 @@ public struct NourishTodayHeader: View {
                         .multilineTextAlignment(.center)
                         .accessibilityIdentifier("calorieGoalLine")
                 }
-            } else if let prompt = Self.goalPrompt(calories), let onEditGoals {
+            } else if let prompt, let onEditGoals {
                 Button(prompt) { onEditGoals() }
                     .font(.headline)
                     .foregroundStyle(TokenColors.accent)
@@ -173,6 +176,12 @@ public struct NourishTodayHeader: View {
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(spoken)
+        // The group hides its children from VoiceOver, so the goal prompt is offered as a named action on it.
+        .accessibilityActions {
+            if let prompt, let onEditGoals {
+                Button(prompt) { onEditGoals() }
+            }
+        }
     }
 
     public var body: some View {
