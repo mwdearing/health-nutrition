@@ -48,8 +48,8 @@ final class AddIntakeSpokenNamesUITests: XCTestCase {
         XCTAssertTrue(lookUp.waitForExistence(timeout: 10), "the Look up button lost its name")
     }
 
-    /// Opens Add and then "Type it in", the path to the form with the amount field. Each tap waits for its target
-    /// to be hittable, and the form's own "Log entry" bar confirms it opened, with one more tap if the first was
+    /// Opens Add and then "Type it in", the path to the form with the amount field. The Add and "Type it in" taps
+    /// wait for their targets to be hittable, and the form's own "Log entry" bar confirms it opened, with one more tap if the first was
     /// dropped during Add's presentation; a tap that lands mid-animation otherwise leaves no form to query.
     private func openTypedInEntryForm(_ app: XCUIApplication) throws {
         let getStarted = app.buttons["Get started"]
@@ -64,7 +64,7 @@ final class AddIntakeSpokenNamesUITests: XCTestCase {
 
         let typeIt = app.buttons["Type it in"]
         let typeItReady = waitUntil(timeout: 20) { typeIt.exists && typeIt.isHittable }
-        XCTAssertTrue(typeItReady, "Type it in is not tappable on Add")
+        guard typeItReady else { return XCTFail("Type it in is not tappable on Add") }
         typeIt.tap()
         let form = app.navigationBars["Log entry"]
         // Retry only when the form is still absent and "Type it in" is still hittable; re-checking
