@@ -70,7 +70,7 @@ revision.
 - **A. Recommended: cached exactly as received.** Each cached product keeps the source, licence and verification
   source the catalog sent (`community` or `owner_reviewed`), and the screen shows the same attribution line and badge
   as for a live result. A cached product also shows when it was cached. The proposed wording, for approval:
-  "Saved on this phone on 31 Oct". A missing or unknown source still fails closed, as it does live.
+  "Saved on this phone on Oct 31". A missing or unknown source still fails closed, as it does live.
 
 ### 7. Operations that must keep working offline
 
