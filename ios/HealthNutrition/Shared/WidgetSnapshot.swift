@@ -101,12 +101,12 @@ enum WidgetFigure {
     static let largest = 1_000_000_000.0
     static let millilitersPerUSFluidOunce = 29.5735295625
 
-    /// A whole number in the person's number format ("1,200"), as Today draws its calorie figures, or nil when the
-    /// value is missing, not finite or too large to be a daily total.
+    /// A whole number grouped in en_US ("1,200"), as Today draws its figures (AmountDisplay), or nil when the value is
+    /// missing, not finite or too large to be a daily total.
     static func groupedWholeNumber(_ value: Double?) -> String? {
         guard let value, value.isFinite, abs(value) <= largest else { return nil }
         // Adding zero turns a rounded -0 into 0, so a hair under zero never reads "-0".
-        return (value.rounded() + 0).formatted(.number.precision(.fractionLength(0)))
+        return (value.rounded() + 0).formatted(.number.precision(.fractionLength(0)).locale(Locale(identifier: "en_US")))
     }
 
     /// A bare whole number, "+" after it when it is only the known part of the day, or a dash.
@@ -134,9 +134,9 @@ enum WidgetFigure {
         return (wholeNumber(milliliters) ?? "—") + " mL"
     }
 
+    /// A whole number grouped as Today groups it ("2,494"), so widget figures match the app (#816).
     static func wholeNumber(_ value: Double?) -> String? {
-        guard let value, value.isFinite, abs(value) <= largest else { return nil }
-        return String(Int(value.rounded()))
+        groupedWholeNumber(value)
     }
 }
 

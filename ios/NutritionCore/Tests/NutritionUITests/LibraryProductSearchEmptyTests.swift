@@ -23,10 +23,7 @@ final class LibraryProductSearchEmptyTests: XCTestCase {
 
     func testProductsSearchWithAStandaloneMatchIsNotASearchEmptyState() throws {
         let store = try makeStore()
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
-        let favorites = try SwiftDataFavoritesStore(url: directory.appendingPathComponent("favorites.store"))
+        let favorites = try SwiftDataFavoritesStore(url: try makeDirectory().appendingPathComponent("favorites.store"))
         let product = CustomProductRevision(
             localProductID: UUID(), revisionID: UUID(),
             content: .init(name: "Synthetic tea", kind: .drink, basis: .perServing))
@@ -65,10 +62,7 @@ final class LibraryProductSearchEmptyTests: XCTestCase {
 
     func testProductsSearchWithNoMatchAnywhereIsASearchEmptyState() throws {
         let store = try makeStore()
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
-        let favorites = try SwiftDataFavoritesStore(url: directory.appendingPathComponent("favorites.store"))
+        let favorites = try SwiftDataFavoritesStore(url: try makeDirectory().appendingPathComponent("favorites.store"))
 
         let model = LibraryViewModel(store: store, favorites: favorites, productStore: store, timeZoneIdentifier: "UTC")
         model.load()

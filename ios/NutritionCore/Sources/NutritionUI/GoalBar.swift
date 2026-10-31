@@ -144,7 +144,6 @@ public struct GoalBarModel: Equatable, Identifiable {
         }
         return MissingValueWording.partialNote(name: name, healthGap: line.healthGap, count: missingCount)
     }
-
 }
 
 /// A labeled bar: the nutrient and its figure above a capsule track. One accessibility element, so
@@ -168,9 +167,8 @@ public struct GoalBar: View {
                     .foregroundStyle(valueColor)
                     .multilineTextAlignment(.trailing)
             }
-            if model.state != .noGoal {
-                track
-            }
+            // Every bar keeps its track, so a nutrient with no goal stays empty and its row lines up with the others.
+            track
             if let reason = model.reason {
                 Text(reason)
                     .font(.footnote)
@@ -249,6 +247,14 @@ enum MissingValueWording {
         if count == 1 { return "1 entry has no \(name) value" }
         if count > 1 { return "\(count) entries have no \(name) value" }
         return fallback(name: name)
+    }
+
+    /// The calorie summary's count note (#486): it says "calories", whatever the energy row is named on other
+    /// screens. Nil when no entry is missing, so the caller keeps the fallback.
+    static func caloriesNote(count: Int) -> String? {
+        if count == 1 { return "1 entry has no calories" }
+        if count > 1 { return "\(count) entries have no calories" }
+        return nil
     }
 
     /// The wording for a partial line with no missing entry (a below-threshold amount).

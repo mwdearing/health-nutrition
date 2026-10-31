@@ -4,9 +4,8 @@ import SwiftData
 
 /// Rewrites a stored intake's current-revision amounts the way an older build could have stored them. It skips
 /// the store's write validation on purpose, so a test can read back a row the current store would refuse to
-/// write. It lives in the test target, and the `@testable` import needs testability on, so the
-/// negative-value tests that use it compile in Release test builds (#521 item 3); the store no longer
-/// carries a DEBUG-only seam.
+/// write. It lives in the test target and reaches the store through `@testable import`, which the test
+/// build enables; the store itself carries no test-only seam.
 enum LegacyAmountSeed {
     static func seed(storeAt url: URL, intakeID: String, amountsByComponent: [String: String]) throws {
         let schema = Schema(versionedSchema: JournalSchemaV10.self)

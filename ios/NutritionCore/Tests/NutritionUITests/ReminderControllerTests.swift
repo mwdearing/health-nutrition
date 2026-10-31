@@ -106,7 +106,7 @@ private final class TaskBox: @unchecked Sendable {
 }
 
 private let withdrawnMessage =
-    "Notifications are turned off for this app. You can allow them in the iPhone Settings app."
+    "Notifications are turned off for this app. You can allow them in the Settings app."
 
 /// The daily reminder's controller: the permission prompt, the single pending request and the launch
 /// sync, checked against a fake scheduler and an in-memory preference store.

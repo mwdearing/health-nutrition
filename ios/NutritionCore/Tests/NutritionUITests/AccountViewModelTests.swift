@@ -609,7 +609,8 @@ final class AccountViewModelTests: XCTestCase {
             let gate = CallGate()
             service.signOutGate = gate
             let logout = Task { await model.signOut() }
-            while !gate.entered { await Task.yield() }
+            await waitUntil { gate.entered }
+            XCTAssertTrue(gate.entered, "the sign-out reached the service")
 
             XCTAssertEqual(model.phase, .signedOut)
             XCTAssertFalse(model.sharingAllowed)
@@ -648,13 +649,15 @@ final class AccountViewModelTests: XCTestCase {
         let gate = CallGate()
         service.signOutGate = gate
         let first = Task { await model.signOut() }
-        while !gate.entered { await Task.yield() }
+        await waitUntil { gate.entered }
+        XCTAssertTrue(gate.entered, "the first sign-out reached the service")
         var secondStarted = false
         let second = Task {
             secondStarted = true
             await model.signOut()
         }
-        while !secondStarted { await Task.yield() }
+        await waitUntil { secondStarted }
+        XCTAssertTrue(secondStarted, "the second sign-out started")
         XCTAssertEqual(service.signOutCount, 1)
         XCTAssertTrue(model.isBusy)
         await model.signInWithApple(idToken: "test-apple-token", nonce: "test-raw-nonce")
@@ -893,7 +896,7 @@ final class AccountViewModelTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
-        return ConnectionsPrivacyViewModel(
+        return ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(),
             store: try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store")),
             preferences: InMemoryDisplayPreferences())
     }

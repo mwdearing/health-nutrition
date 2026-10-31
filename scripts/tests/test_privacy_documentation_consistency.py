@@ -153,7 +153,8 @@ def test_privacy_and_erase_copy_follow_current_source_keys_and_boundaries() -> N
         assert key.lower() in preference_section
     assert "local keychain session" in erase
     assert "does not call server sign-out, account deletion or label retraction" in " ".join(erase.split())
-    assert "forensic" in erase and "same store containers, which stay open" in " ".join(erase.split())
+    # Every store replaces its file since #228 item 1, and the doc still promises no forensic wipe.
+    assert "forensic" in erase and "each store deletes its rows, then removes its store file" in " ".join(erase.split())
     assert "export copies outside the app" in erase and "cannot remove it" in erase
 
     assert "open food facts" in privacy and "community catalog" in privacy

@@ -25,7 +25,11 @@ public enum JournalImportError: Error, Sendable, Equatable {
     case corrupt(String)
     /// Favorites could not be restored and the journal refused its narrow undo. These counts describe
     /// rows from the restore that may remain; no entry content or underlying store error is exposed.
-    case partialRestore(retainedIntakes: Int, retainedTombstones: Int)
+    /// The counts are what this file's entries still hold in the journal; nil when the journal could not be read, so the
+    /// count is unknown rather than zero.
+    case partialRestore(retainedIntakes: Int?, retainedTombstones: Int?)
+    /// A write failed after the journal was written, and the undo put everything back. Nothing from the file remains.
+    case rolledBack
 }
 
 /// What one import wrote. Counts, not content: the journal itself is the record of what was restored.
@@ -44,9 +48,11 @@ public struct JournalImportSummary: Sendable, Equatable {
     public var savedMeals: Int
     /// Restored entries whose product is kept out of Library > Products.
     public var keptOutOfLibrary: Int
+    /// Goals written, for a nutrient that had no goal on the device. A goal already there is not counted.
+    public var goals: Int
 
     public init(intakes: Int, revisions: Int, tombstones: Int, favorites: Int, products: Int, savedMeals: Int = 0,
-                keptOutOfLibrary: Int = 0) {
+                keptOutOfLibrary: Int = 0, goals: Int = 0) {
         self.intakes = intakes
         self.revisions = revisions
         self.tombstones = tombstones
@@ -54,6 +60,7 @@ public struct JournalImportSummary: Sendable, Equatable {
         self.products = products
         self.savedMeals = savedMeals
         self.keptOutOfLibrary = keptOutOfLibrary
+        self.goals = goals
     }
 }
 
@@ -142,6 +149,12 @@ enum JournalImportV5Keys {
 
 /// The keys each object in a version 6 export has, taken from `contracts/journal-export/v6.schema.json`.
 ///
+/// Version 8 is version 6 with `goals` at the root: one daily goal per nutrient, as a nutrient key, a target and a unit.
+enum JournalImportV8Keys {
+    static let root: Set<String> = JournalImportV6Keys.root.union(["goals"])
+    static let goal: Set<String> = ["nutrient", "target", "unit"]
+}
+
 /// Version 6 is version 5 with `logged_units` at the root: the unit each spoon, cup or fluid-ounce component was
 /// logged in. Every other object is as it was in version 5.
 enum JournalImportV6Keys {
@@ -192,7 +205,7 @@ public enum JournalImporter {
     /// journal is written.
     public static func importExport(
         _ data: Data, into store: JournalStore, favorites: FavoritesStore?,
-        savedMeals: JournalSavedMealsStore? = nil, limits: JournalImportLimits = .default
+        savedMeals: JournalSavedMealsStore? = nil, goals: GoalStore? = nil, limits: JournalImportLimits = .default
     ) throws -> JournalImportSummary {
         try limits.validate(data)
         let document = try readDocument(data)
@@ -224,6 +237,19 @@ public enum JournalImporter {
             }
             savedMealsTarget = savedMeals
         }
+        // The same holds for goals, from version 8.
+        let goalsTarget: GoalStore?
+        if plan.goals.isEmpty {
+            goalsTarget = nil
+        } else {
+            guard let goals else {
+                throw JournalImportError.corrupt(
+                    "the export carries \(plan.goals.count) goals and no goals store was given")
+            }
+            goalsTarget = goals
+        }
+        // The goals this restore wrote, from any run, as the receipt's ledger holds them. Set once the goals are done.
+        var goalsWritten = 0
 
         // **One import at a time.** The flag below belongs to the run that wrote it, and a second import running
         // alongside could resume over a journal the first is about to undo, or clear a flag the first still
@@ -235,7 +261,7 @@ public enum JournalImporter {
 
         // The second phase is everything written after the journal: the saved meals, then the favorites. The
         // flag below covers it whenever it has anything to write.
-        let hasSecondPhase = favoritesTarget != nil || savedMealsTarget != nil
+        let hasSecondPhase = favoritesTarget != nil || savedMealsTarget != nil || goalsTarget != nil
         let progress = hasSecondPhase ? store as? JournalRestoreProgress : nil
         let digest = fileDigest(data)
         // A file with no entries and no deleted ones writes nothing to the journal, so a stop after its saved meals
@@ -272,12 +298,41 @@ public enum JournalImporter {
             }
             // A flag that outlived every part of the second phase (a stop after the last save, before the flag
             // was cleared) is not an unfinished restore, however much of it was deleted since.
-            guard !(savedMealsWritten && favoritesWritten) else { throw JournalImportError.notEmpty }
+            // The goals part is unfinished while its receipt is not marked done. With no receipt, the restore stopped
+            // before recording, so it is unfinished while a goal it would set is still missing.
+            var goalsPending = false
+            if let goalsTarget {
+                switch try goalsTarget.goalRestoreReceiptDone(digest) {
+                case .some(let done): goalsPending = !done
+                case .none:
+                    // A read that fails is a failed resume, not a goal that is missing.
+                    for goal in plan.goals where try goalsTarget.goal(for: goal.nutrient) == nil {
+                        goalsPending = true
+                    }
+                }
+            }
+            guard !(savedMealsWritten && favoritesWritten && !goalsPending) else { throw JournalImportError.notEmpty }
             if let savedMealsTarget, !savedMealsWritten {
                 try savedMealsTarget.restoreJournalSavedMeals(plan.savedMeals, receipt: digest)
             }
             if let favoritesTarget, !favoritesWritten {
                 try favoritesTarget.restore(plan.favorites, receipt: digest)
+            }
+            // Goals are add-only, so writing the missing ones again is safe whatever was written before the stop.
+            // A receipt marked done means every goal was written already, so nothing is added again, even if the person
+            // has since deleted one. A receipt not yet marked done names what the stopped run recorded, and resume adds
+            // exactly those. No receipt means it never reached the goals, so the missing ones are recorded now, first.
+            if let goalsTarget, try goalsTarget.goalRestoreReceiptDone(digest) != true {
+                let recorded: [NutrientGoal]
+                if let existing = try goalsTarget.goalRestoreReceipt(digest) {
+                    recorded = existing
+                } else {
+                    recorded = try plan.goals.filter { try goalsTarget.goal(for: $0.nutrient) == nil }
+                    try goalsTarget.recordGoalRestoreReceipt(digest, goals: recorded)
+                }
+                try addMissingGoals(recorded, into: goalsTarget, receipt: digest)
+                try goalsTarget.markGoalRestoreReceiptDone(digest)
+                goalsWritten = try goalsTarget.goalRestoreWrittenGoals(digest).count
             }
             // A flag that outlived a finished resume would let a later import of this file write rows the
             // person deleted since, so a failure to clear it is reported rather than swallowed.
@@ -285,7 +340,8 @@ public enum JournalImporter {
             // The flag is gone, so the receipts have nothing left to answer; one left by a stop here is harmless.
             try? favoritesTarget?.removeRestoreReceipt(digest)
             try? savedMealsTarget?.removeSavedMealsRestoreReceipt(digest)
-            return summary(of: plan)
+            try? goalsTarget?.removeGoalRestoreReceipt(digest)
+            return summary(of: plan, goals: goalsWritten)
         }
 
         // Saved meals are restored only into an empty list: merging a file's meals into the phone's would have
@@ -312,6 +368,20 @@ public enum JournalImporter {
         if hasSecondPhase {
             var savedMealsWritten = false
             do {
+                // Goals first, add-only and write-ahead: the goals this restore will set are recorded under its receipt
+                // before the first is written, so a stop after the record can be finished or undone from the record.
+                // A receipt already on the store names what a stopped run recorded, so it is reused: recomputing the missing
+                // goals from the store would add back one the person has since deleted.
+                if let goalsTarget {
+                    let recorded: [NutrientGoal]
+                    if let existing = try goalsTarget.goalRestoreReceipt(digest) {
+                        recorded = existing
+                    } else {
+                        recorded = try plan.goals.filter { try goalsTarget.goal(for: $0.nutrient) == nil }
+                        try goalsTarget.recordGoalRestoreReceipt(digest, goals: recorded)
+                    }
+                    try addMissingGoals(recorded, into: goalsTarget, receipt: digest)
+                }
                 // Saved meals first: a replace of an empty list can be written again, so a resume after a stop
                 // between the two saves only has the favorites left to write.
                 if let savedMealsTarget {
@@ -322,30 +392,64 @@ public enum JournalImporter {
             } catch let secondPhaseFailure {
                 // The journal is undone or reported as partial, so there is no unfinished restore of this file
                 // to finish, and a flag left here could only be misread later.
-                defer { try? progress?.clearRestoreInProgress() }
-                // The list was empty before this restore, so putting it back is emptying it, but only while it
-                // still holds exactly what this restore wrote: a meal saved meanwhile is not thrown away.
+                // A removal that failed leaves a goal receipt behind, so the flag stays set for a resume to finish it.
+                var keepFlag = false
+                defer { if !keepFlag { try? progress?.clearRestoreInProgress() } }
+                // Saved meals come back first. A meal the phone keeps stops the rest, and the flag stays set, so a
+                // re-import of this file finishes the job add-only.
                 var savedMealsLeft = false
                 if let savedMealsTarget, savedMealsWritten {
                     do { try savedMealsTarget.clearRestoredSavedMeals(plan.savedMeals) } catch { savedMealsLeft = true }
                 }
                 let retainedIntakes = receipt.intakes.filter { $0.lifecycle == .active }.count
                 let retainedTombstones = receipt.intakes.filter { $0.lifecycle == .deleted }.count
-                // Saved meals that could not be taken back still name the product snapshots this restore wrote,
-                // which the journal's undo would remove. So the journal stays as well, and the restore is reported
-                // as partial: both are there, and the person can check them before importing again.
-                guard !savedMealsLeft else {
+                if savedMealsLeft {
+                    keepFlag = true
                     throw JournalImportError.partialRestore(
                         retainedIntakes: retainedIntakes, retainedTombstones: retainedTombstones)
                 }
+                // The journal is undone next. A failed undo keeps the flag and touches no goal.
                 do {
                     try journal.undoRestore(receipt)
                 } catch {
+                    // A failed undo may have removed some entries, so the count is read from the journal, not the receipt.
+                    keepFlag = true
+                    let remaining = retainedCounts(in: store)
                     throw JournalImportError.partialRestore(
-                        retainedIntakes: retainedIntakes, retainedTombstones: retainedTombstones)
+                        retainedIntakes: remaining?.intakes, retainedTombstones: remaining?.tombstones)
                 }
-                throw secondPhaseFailure
+                // Goals come last, and only the ones this run wrote. A goal that cannot be removed keeps its receipt and the flag.
+                // Every goal this restore wrote, from any run, is in the receipt's ledger, so the undo removes exactly those.
+                // A ledger that cannot be read leaves the goals unknown, which keeps the flag.
+                var goalsLeft = false
+                if let goalsTarget {
+                    if let written = try? goalsTarget.goalRestoreWrittenGoals(digest) {
+                        goalsLeft = !undoGoals(written, in: goalsTarget)
+                    } else {
+                        goalsLeft = true
+                    }
+                }
+                // The journal undo above succeeded, so no entry of this file remains to be counted.
+                if goalsLeft {
+                    keepFlag = true
+                    throw JournalImportError.partialRestore(retainedIntakes: 0, retainedTombstones: 0)
+                }
+                // A receipt that cannot be removed keeps the flag, so a resume can still finish or clear it.
+                do { try goalsTarget?.removeGoalRestoreReceipt(digest) } catch {
+                    keepFlag = true
+                    throw JournalImportError.partialRestore(retainedIntakes: 0, retainedTombstones: 0)
+                }
+                // A saved meal the phone keeps is not a transient failure: a retry meets the same meal, so its own message stays.
+                if case JournalImportError.savedMealsNotEmpty = secondPhaseFailure { throw secondPhaseFailure }
+                // The undo ran and left nothing behind, so the person is told nothing was imported, not that the file was bad.
+                throw JournalImportError.rolledBack
             }
+            // The goals are all written, so the receipt is marked done before the flag clears: a resume that still finds
+            // the flag then adds nothing, even after the person has deleted a goal. A failed mark keeps the flag, so the
+            // restore is finished from its receipt rather than re-derived from the store.
+            try goalsTarget?.markGoalRestoreReceiptDone(digest)
+            // Counted before the receipt is removed, since the ledger lives in it.
+            if let goalsTarget { goalsWritten = try goalsTarget.goalRestoreWrittenGoals(digest).count }
             // A flag that cannot be cleared is reported rather than swallowed. It cannot start a resume over this
             // second phase: every part of it now has its receipt.
             // The restore itself is complete, so a flag that cannot be cleared is reported as its own outcome, not as a
@@ -353,8 +457,9 @@ public enum JournalImporter {
             do { try progress?.clearRestoreInProgress() } catch { throw JournalImportError.cleanupIncomplete }
             try? favoritesTarget?.removeRestoreReceipt(digest)
             try? savedMealsTarget?.removeSavedMealsRestoreReceipt(digest)
+            try? goalsTarget?.removeGoalRestoreReceipt(digest)
         }
-        return summary(of: plan)
+        return summary(of: plan, goals: goalsWritten)
     }
 
     private static let importLock = NSLock()
@@ -374,7 +479,7 @@ public enum JournalImporter {
         return Set(deleted.map(\.id)) == Set(plan.tombstones.map(\.id)) && deleted.count == plan.tombstones.count
     }
 
-    private static func summary(of plan: JournalRestorePlan) -> JournalImportSummary {
+    private static func summary(of plan: JournalRestorePlan, goals: Int) -> JournalImportSummary {
         JournalImportSummary(
             intakes: plan.entries.count,
             revisions: plan.entries.reduce(0) { $0 + $1.revisions.count },
@@ -384,7 +489,7 @@ public enum JournalImporter {
             savedMeals: plan.savedMeals.count,
             keptOutOfLibrary: plan.entries.reduce(0) { count, entry in
                 count + (plan.keptOutOfLibrary.contains(entry.intake.id) ? 1 : 0)
-            })
+            }, goals: goals)
     }
 
     /// Whether the journal holds any intake, live or deleted.
@@ -454,7 +559,7 @@ public enum JournalImporter {
     static func validateShape(_ root: [String: Any], version: Int) throws {
         let provenanceKeys = version >= 2 ? JournalImportV2Keys.provenance : JournalImportV1Keys.provenance
         let revisionKeys = version >= 3 ? JournalImportV3Keys.revision : JournalImportV1Keys.revision
-        let rootKeys = version >= 6 ? JournalImportV6Keys.root : version >= 5 ? JournalImportV5Keys.root : version >= 4 ? JournalImportV4Keys.root : JournalImportV1Keys.root
+        let rootKeys = version >= 8 ? JournalImportV8Keys.root : version >= 6 ? JournalImportV6Keys.root : version >= 5 ? JournalImportV5Keys.root : version >= 4 ? JournalImportV4Keys.root : JournalImportV1Keys.root
         try checkObject(root, keys: rootKeys, path: "$", version: version)
         try checkMinimumLengthOne(root, keys: ["app_version"], path: "$", version: version)
         for (index, item) in try objects(root["intakes"], path: "$.intakes").enumerated() {
@@ -506,6 +611,13 @@ public enum JournalImporter {
             try checkMinimumLengthOne(
                 favorite, keys: ["id", "display_name", "category"], path: path, version: version)
             try checkComponents(favorite["components"], path: "\(path).components", version: version)
+        }
+        if version >= 8 {
+            for (index, item) in try objects(root["goals"], path: "$.goals").enumerated() {
+                let path = "$.goals[\(index)]"
+                try checkObject(
+                    try object(item, path: path), keys: JournalImportV8Keys.goal, path: path, version: version)
+            }
         }
         if version >= 6 {
             for (index, item) in try objects(root["logged_units"], path: "$.logged_units").enumerated() {
@@ -746,7 +858,70 @@ public enum JournalImporter {
             products: productsByID.values.sorted { $0.snapshotID < $1.snapshotID }, favorites: favorites,
             savedMeals: try restoredSavedMeals(document.savedMeals, products: productsByID),
             keptOutOfLibrary: document.keptOutOfLibrary,
-            loggedUnits: try restoredLoggedUnits(document.loggedUnits))
+            loggedUnits: try restoredLoggedUnits(document.loggedUnits),
+            goals: try restoredGoals(document.goals))
+    }
+
+    /// The goals a version 8 file carries. A goal the file lists twice, or one with a name, target or unit this
+    /// build cannot read, refuses the whole file.
+    private static func restoredGoals(_ items: [JournalExportGoal]) throws -> [NutrientGoal] {
+        var seen = Set<String>()
+        return try items.map { item in
+            // The "restore-receipt:" prefix is the goal table's own receipt rows, so a goal can never use it.
+            guard !item.nutrient.isEmpty, item.nutrient.unicodeScalars.count <= 64, !item.nutrient.hasPrefix("restore-receipt:"),
+                  seen.insert(item.nutrient).inserted
+            else {
+                throw JournalImportError.corrupt("the export lists a goal with no name or more than once")
+            }
+            guard DecimalText.isValidDecimalText(item.target), let target = DecimalText.decode(item.target),
+                  let unit = try? MeasureUnit(symbol: item.unit)
+            else {
+                throw JournalImportError.corrupt("the goal \(item.nutrient) has a target or unit this build cannot read")
+            }
+            let goal = NutrientGoal(nutrient: item.nutrient, target: target, unit: unit)
+            try goal.validate()
+            return goal
+        }
+    }
+
+    /// Removes the goals a restore recorded, but only where the device still holds exactly the value it set. A
+    /// goal the person set or changed since is left alone, and a recorded nutrient with no goal is a no-op. Returns
+    /// false when a removal failed, so the caller reports the restore as partial rather than clean.
+    static func undoGoals(_ recorded: [NutrientGoal], in store: GoalStore?) -> Bool {
+        guard let store else { return true }
+        var clean = true
+        for planned in recorded {
+            // A goal that cannot be read may be one this run wrote, so it is left behind rather than taken as not ours.
+            let current: NutrientGoal?
+            do { current = try store.goal(for: planned.nutrient) } catch { clean = false; continue }
+            // A goal the person has since changed is theirs now, so it stays. It is still a goal from the file that is left
+            // behind, so the undo is not clean. A goal already gone needs nothing.
+            guard let current else { continue }
+            guard current == planned else { clean = false; continue }
+            do { try store.removeGoal(nutrient: planned.nutrient) } catch { clean = false }
+        }
+        return clean
+    }
+
+    /// `added` is filled as it goes, so a failure part-way leaves the nutrients already set in it for an undo.
+    /// What the journal still holds, read after a failed undo. Nil when it cannot be read: an unreadable journal is an
+    /// unknown count, never zero.
+    static func retainedCounts(in store: JournalStore) -> (intakes: Int, tombstones: Int)? {
+        do {
+            let intakes = try store.activeIntakes().count
+            let tombstones = try (store as? JournalTombstoneSource)?.deletedIntakes().count ?? 0
+            return (intakes, tombstones)
+        } catch {
+            return nil
+        }
+    }
+
+    /// Each goal is written with its receipt entry in one save, so a goal the person deletes after its write is never
+    /// added again by a resume, and a goal the person already holds is left as it is.
+    static func addMissingGoals(_ goals: [NutrientGoal], into store: GoalStore, receipt: String) throws {
+        for goal in goals {
+            _ = try store.writeRestoredGoal(goal, receipt: receipt)
+        }
     }
 
     /// The units a version 6 file carries, refused as a whole when one is not a unit this build knows.
