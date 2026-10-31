@@ -122,7 +122,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     public static let importFailedMessage = "Could not import that file."
     /// A restore that finished but could not clean up its flag. The rows are there; the person is told to retry.
     /// Wording approved by Mike on 2026-10-31 (#828).
-    public static let cleanupIncompleteMessage = "Restored. Could not finish cleaning up; try again to be sure."
+    public static let cleanupIncompleteMessage = "Could not import that file."
     /// The approved rollback wording: a write failed, and the undo put everything back.
     public static let importRolledBackMessage = "Nothing was imported. Try again."
     /// What the importer refused and why, in the words a person can act on.
