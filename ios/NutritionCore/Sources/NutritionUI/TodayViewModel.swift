@@ -118,6 +118,10 @@ public final class TodayViewModel: ObservableObject {
     @Published public private(set) var waterTotalMilliliters: Decimal = 0
     /// Water components skipped because their unit is not a volume (never counted as zero).
     @Published public private(set) var waterSkippedCount: Int = 0
+    /// True when an entry's water is in the day but cannot be counted: a distrusted entry (a negative logged,
+    /// stated or lookup value) that is a drink or carries a water share. The Diary marks that day's water unknown,
+    /// so Today shows the known part as "at least" and never adds the suspect amount (#1137).
+    @Published public private(set) var waterHasUnknown: Bool = false
     /// Stored intakes left out of Today because their time zone identifier is not a valid time zone.
     @Published public private(set) var skippedIntakeCount: Int = 0
     @Published public private(set) var coverage: [CoverageLine] = []
@@ -278,6 +282,7 @@ public final class TodayViewModel: ObservableObject {
             var waterEntries = 0
             // Water components that counted as a volume: the only water that is known.
             var countedWater = 0
+            var unknownWater = false
             // One snapshot is read once per load, however many components and nutrients refer to it.
             var snapshots: [String: ProductDefinition?] = [:]
             let loggedUnits = try LoggedUnitIndex.loadOrThrow(from: store)
@@ -292,9 +297,16 @@ public final class TodayViewModel: ObservableObject {
                 // an entry with a snapshot states its kind through that snapshot (#416, #364).
                 let kind = ProductKindResolution.kind(
                     snapshotID: current?.productSnapshotID, snapshotKind: { _ in snapshot?.kind }, category: intake.category)
+                // The same per-entry decision the Diary's totals make, so both screens agree on that day's water.
+                let distrusted = DailyTotalsBuilder.isDistrusted(
+                    (components, snapshot, intake.category), lookup: lookup)
                 if intake.category == "water" {
                     waterEntries += 1
-                    for component in components {
+                    if distrusted {
+                        // A distrusted drink's water is unknown, as in the Diary: none of it is added.
+                        unknownWater = true
+                    }
+                    for component in components where !distrusted {
                         if component.unit.dimension == .volume,
                             Self.isPositive(component.amount),
                             let converted = try? Quantity(value: component.amount, unit: component.unit).converted(to: .mL),
@@ -310,7 +322,11 @@ public final class TodayViewModel: ObservableObject {
                 } else {
                     // A volume component with a stored water share counts volume times share, whatever its product kind.
                     // A component with no stored share (logged before shares) adds no water, as on main.
-                    for component in components where component.unit.dimension == .volume {
+                    if distrusted, components.contains(where: { $0.hydrationPercent != nil }) {
+                        // A distrusted entry that carries a water share makes the day's water unknown in the Diary.
+                        unknownWater = true
+                    }
+                    for component in components where component.unit.dimension == .volume && !distrusted {
                         guard Self.isPositive(component.amount),
                             let converted = try? Quantity(value: component.amount, unit: component.unit).converted(to: .mL),
                             Self.isPositive(converted.value),
@@ -353,6 +369,7 @@ public final class TodayViewModel: ObservableObject {
             dateSubtitle = Self.makeDateSubtitle(now, zoneIdentifier: TimeZone.current.identifier)
             waterTotalMilliliters = waterTotal + Self.outsideWaterMilliliters(outsideIntake)
             waterSkippedCount = skipped
+            waterHasUnknown = unknownWater
             skippedIntakeCount = skippedIntakes
             // A goal store that cannot be read is not a person with no goals, so the failure is
             // carried out to the screen rather than swallowed into an empty goal list: a target the
@@ -480,6 +497,7 @@ public final class TodayViewModel: ObservableObject {
             waterTotalMilliliters = 0
             waterEntryCount = 0
             waterSkippedCount = 0
+            waterHasUnknown = false
             skippedIntakeCount = 0
             coverage = []
             progress = []
@@ -670,10 +688,24 @@ public final class TodayViewModel: ObservableObject {
     /// Spoken summary of the water total for assistive technology. Built from the same bound-aware
     /// figures as the label, so an amount too small for the shown unit is spoken as less than that
     /// rather than as a zero that is not there.
+    /// A day with water that cannot be counted reads its known part as "at least 200 mL"; with nothing known
+    /// it reads "No data", never a zero that is not there (#1137).
     public var waterAccessibilityValue: String {
-        "\(waterTotalDisplay.spokenAmount) "
+        let spoken = "\(waterTotalDisplay.spokenAmount) "
             + "\(AmountDisplay.spokenName(for: waterTotalDisplay.unit)) today"
+        guard waterHasUnknown else { return spoken }
+        return waterTotalMilliliters > 0 ? "at least \(spoken)" : Self.waterNoDataText
     }
+
+    /// The water figure on the card when no water goal is set: the total, "at least" the known part when some
+    /// of the day's water cannot be counted, or "No data" when none of it can (#1137).
+    public var waterFigureText: String {
+        guard waterHasUnknown else { return waterTotalDisplay.text }
+        return waterTotalMilliliters > 0 ? "at least \(waterTotalDisplay.text)" : Self.waterNoDataText
+    }
+
+    /// The existing approved text for a figure with nothing known (GoalBar).
+    static let waterNoDataText = "No data"
 
     /// The meal sections for a list of rows. Water rows are left out; a meal that is not one of the four
     /// the app names, or none at all, is Other.
