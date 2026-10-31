@@ -32,7 +32,7 @@ LOCAL_ZONE = ZoneInfo("America/Chicago")
 # Chicago hours that count as the noon and midnight builds: the hour of the firing and the one after, so a firing
 # that GitHub starts up to an hour late still builds. The six-hour spacing below keeps the second firing of a pair
 # (which also lands in these hours) from building again.
-LOCAL_HOURS = (11, 12, 23, 0)
+LOCAL_HOURS = (11, 12, 13, 14, 15, 23, 0, 1, 2, 3)
 MIN_SPACING = timedelta(hours=6)
 
 

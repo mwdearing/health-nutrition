@@ -11,6 +11,10 @@ final class SupplementEntityQueryGateTests: XCTestCase {
         XCTAssertFalse(SupplementEntityQuery.readsTheList(isUnlocked: true, isBusy: true))
     }
 
+    func testTheListIsNotReadWhenLockedAndBusy() {
+        XCTAssertFalse(SupplementEntityQuery.readsTheList(isUnlocked: false, isBusy: true))
+    }
+
     func testTheListIsReadWhenUnlockedAndNotBusy() {
         XCTAssertTrue(SupplementEntityQuery.readsTheList(isUnlocked: true, isBusy: false))
     }

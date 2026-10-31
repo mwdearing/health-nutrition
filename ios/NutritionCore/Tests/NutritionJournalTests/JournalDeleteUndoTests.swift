@@ -49,6 +49,19 @@ final class JournalDeleteUndoTests: XCTestCase {
         XCTAssertTrue(current.allSatisfy { $0.desiredAction == .upsert })
     }
 
+    /// Every handler hears a delete: a second caller adds to the first rather than replacing it (#477).
+    func testEveryDeleteHandlerIsCalledInTheOrderAdded() throws {
+        let store = try makeStore()
+        try createIntake(store)
+        let calls = LockedCalls()
+        store.addOnDeleteCommitted { id, sequence in calls.append("first \(id) \(sequence)") }
+        store.addOnDeleteCommitted { id, sequence in calls.append("second \(id) \(sequence)") }
+
+        let sequence = try store.deleteSequenced(intakeID: intakeID, now: Date())
+
+        XCTAssertEqual(calls.values, ["first \(intakeID) \(sequence)", "second \(intakeID) \(sequence)"])
+    }
+
     func testFailedDeleteLeavesNoGapInTheCommitSequence() throws {
         let store = try makeStore()
         try createIntake(store)
@@ -117,4 +130,12 @@ final class JournalDeleteUndoTests: XCTestCase {
         let reopened = try SwiftDataJournalStore(url: url, enabledDestinations: [.healthKit, .relay])
         XCTAssertEqual(try pendingDeletes(reopened).count, 2)
     }
+}
+
+/// Records handler calls across the store's lock.
+private final class LockedCalls: @unchecked Sendable {
+    private let lock = NSLock()
+    private var calls: [String] = []
+    var values: [String] { lock.withLock { calls } }
+    func append(_ call: String) { lock.withLock { calls.append(call) } }
 }

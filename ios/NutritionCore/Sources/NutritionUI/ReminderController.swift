@@ -38,7 +38,7 @@ public final class ReminderErasures: @unchecked Sendable {
 public final class ReminderController: ObservableObject {
     /// Shown when notifications are not allowed for the app, on the settings screen and at launch.
     public static let withdrawnMessage =
-        "Notifications are turned off for this app. You can allow them in the iPhone Settings app."
+        "Notifications are turned off for this app. You can allow them in the Settings app."
 
     /// Shown when the system would not take the reminder, for example because notifications were switched
     /// off between the check and the request.

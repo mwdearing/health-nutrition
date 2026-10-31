@@ -30,7 +30,7 @@ final class JournalImportNutrientsTests: JournalImportTestCase {
             between: data,
             and: try JournalExporter.encode(
                 try JournalExporter.makeExport(
-                    store: journal, favorites: favoritesStore, appVersion: appVersion,
+                    store: journal, favorites: favoritesStore, goals: InMemoryGoalStore(), appVersion: appVersion,
                     exportedAt: exportedAt)))
         XCTAssertNil(changedField, "keeping the stored nutrients must not change what an export writes")
     }

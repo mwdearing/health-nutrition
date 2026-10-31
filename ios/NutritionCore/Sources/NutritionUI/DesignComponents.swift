@@ -42,7 +42,8 @@ public struct Card<Content: View>: View {
 /// is hidden from VoiceOver because the input is labeled by the caption's words, so the field is read once.
 ///
 /// The box turns the accent color while the input has focus and the error color when an error is passed. The
-/// error is not read on its own: the caller gives it to the input as the hint, so the field is read once.
+/// error is read as its own line after the input, so a caller must not also give it to the input as the hint, or
+/// VoiceOver reads it twice.
 /// Focus is the field's own unless the screen passes its focus state, which it does when it also moves focus
 /// itself. `onFocusEnd` runs when focus leaves, so a screen can show an error once the person is done with a
 /// field rather than while they are still typing.
