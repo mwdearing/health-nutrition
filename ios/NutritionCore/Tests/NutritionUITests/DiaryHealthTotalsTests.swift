@@ -93,4 +93,36 @@ final class DiaryHealthTotalsTests: XCTestCase {
         await model.loadHealthTotals(forDayKey: key, now: now)
         XCTAssertEqual(reads, 3, "today is read each time")
     }
+
+    /// A past day that read "not connected" is read again later, so connecting Health later fills it in.
+    func testAPastDayThatWasNotConnectedIsReadAgain() async throws {
+        let (model, key) = try waterOnlyDay()
+        var connected = false
+        var reads = 0
+        model.healthDayReader = { _, _ in
+            reads += 1
+            return connected ? .read(values: ["energy": 620], readKeys: ["energy"]) : .notConnected
+        }
+        let tomorrow = now.addingTimeInterval(86_400)
+        await model.loadHealthTotals(forDayKey: key, now: tomorrow)
+        connected = true
+        await model.loadHealthTotals(forDayKey: key, now: tomorrow)
+        XCTAssertEqual(reads, 2)
+        XCTAssertEqual(model.sections.first { $0.id == key }?.energyText, "620 Calories")
+    }
+
+    /// A day across a daylight-saving change is that day in the zone: 23 hours when the clocks go forward.
+    func testADaylightSavingDayIsTwentyThreeHoursLong() throws {
+        let zone = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+        let day = try XCTUnwrap(JournalViewModel.dayInterval(forKey: "2026-03-08", zone: zone))
+        XCTAssertEqual(day.end.timeIntervalSince(day.start), 23 * 3600)
+    }
+
+    /// A key that names no real day is refused rather than read as some other day.
+    func testAKeyThatNamesNoRealDayIsRefused() {
+        let utc = TimeZone(identifier: "UTC")!
+        XCTAssertNil(JournalViewModel.dayInterval(forKey: "2026-02-31", zone: utc))
+        XCTAssertNil(JournalViewModel.dayInterval(forKey: "not-a-day", zone: utc))
+        XCTAssertNotNil(JournalViewModel.dayInterval(forKey: "2026-02-28", zone: utc))
+    }
 }

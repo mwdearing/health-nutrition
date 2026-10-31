@@ -139,7 +139,8 @@ public final class JournalViewModel: ObservableObject {
     public func loadHealthTotals(forDayKey key: String, now: Date) async {
         guard let reader = healthDayReader else { return }
         let todayKey = Self.dayKey(now, zone: dayZone)
-        if key != todayKey, outsideIntakeByDay[key] != nil { return }
+        // A past day already read stays read. Not connected is not kept, so connecting Health later reads it then.
+        if key != todayKey, let cached = outsideIntakeByDay[key], cached != .notConnected { return }
         guard let day = Self.dayInterval(forKey: key, zone: dayZone) else { return }
         let outside = await reader(day.start, key == todayKey ? now : day.end)
         guard outside != outsideIntakeByDay[key] else { return }
@@ -147,14 +148,22 @@ public final class JournalViewModel: ObservableObject {
         load(now: now)
     }
 
-    /// The instants a yyyy-MM-dd day starts and ends in `zone`, or nil for a key that names no day.
+    /// Reads today's Apple Health totals again, for a reload while the Diary is open: more can be logged elsewhere.
+    public func refreshTodayHealthTotals(now: Date) async {
+        await loadHealthTotals(forDayKey: Self.dayKey(now, zone: dayZone), now: now)
+    }
+
+    /// The instants a yyyy-MM-dd day starts and ends in `zone`, or nil for a key that names no day. A day across a
+    /// daylight-saving change is 23 or 25 hours long, because the end is the next day's start in the same zone.
     static func dayInterval(forKey key: String, zone: TimeZone) -> (start: Date, end: Date)? {
         let parts = key.split(separator: "-").compactMap { Int($0) }
         guard parts.count == 3 else { return nil }
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = zone
         guard let start = calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2])),
-              let end = calendar.date(byAdding: .day, value: 1, to: start)
+              let end = calendar.date(byAdding: .day, value: 1, to: start),
+              // A key that names no real day (2026-02-31) would be normalised to another day, so it is refused.
+              dayKey(start, zone: zone) == key
         else { return nil }
         return (start, end)
     }
