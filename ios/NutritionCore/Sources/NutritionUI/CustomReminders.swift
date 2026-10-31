@@ -111,7 +111,7 @@ public protocol CustomReminderScheduling: AnyObject, Sendable {
 public final class CustomReminderController: ObservableObject {
     public static let maximumCount = 10
     public static let withdrawnMessage =
-        "Notifications are turned off for this app. You can allow them in the iPhone Settings app."
+        "Notifications are turned off for this app. You can allow them in the Settings app."
     public static let refusedMessage =
         "The reminders could not be set. Check the notification settings for this app and try again."
 

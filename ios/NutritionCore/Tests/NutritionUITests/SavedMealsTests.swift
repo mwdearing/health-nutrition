@@ -52,7 +52,7 @@ private final class SecondCreateFailsStore: JournalStore, @unchecked Sendable {
     func close() { inner.close() }
 }
 
-/// Saved meals: a named group of foods kept on this phone and logged together as ordinary entries.
+/// Saved meals: a named group of foods kept on this device and logged together as ordinary entries.
 ///
 /// Synthetic names and ids only. Lowercase UUID intake ids.
 @MainActor

@@ -52,6 +52,14 @@ final class GoalBarTests: XCTestCase {
         XCTAssertEqual(model.accessibilityText, "Sodium, 1,150 milligrams")
     }
 
+    func testNoGoalBarHasNoFractionOrGoalMarkerSoItsTrackStaysEmpty() {
+        let noGoal = GoalBarModel.make(
+            line: line("sodium", .known(Decimal(1150), .mg)), hasEntries: true, missingCount: 0)
+        XCTAssertEqual(noGoal.state, .noGoal)
+        XCTAssertNil(noGoal.fraction)
+        XCTAssertNil(noGoal.goalMarker)
+    }
+
     func testGoalBarCannotTotalNeverYieldsAFractionAndNamesTheMissingEntries() {
         let one = GoalBarModel.make(
             line: line("fiber", .unknown, goal: goal("fiber", Decimal(30), .g)),

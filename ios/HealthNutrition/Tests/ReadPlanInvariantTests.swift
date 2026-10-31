@@ -27,4 +27,15 @@ final class ReadPlanInvariantTests: XCTestCase {
             }
         }
     }
+
+    /// The units the write-plan mappings use, pinned by hand. If a mapping adds a unit, this list must change with it,
+    /// and that unit must have a HealthKit unit, so no mapped nutrient can drop out of the read plan without a failure.
+    func testEveryMappedUnitIsPinnedAndHasAHealthKitUnit() {
+        let pinned: Set<String> = ["g", "mg", "mcg", "mL", "kcal"]
+        let used = Set(HealthKitWritePlanner.mappings.map(\.unit.symbol))
+        XCTAssertEqual(used, pinned, "a mapped unit changed; pin it here and give it a HealthKit unit")
+        for mapping in HealthKitWritePlanner.mappings {
+            XCTAssertNotNil(HealthKitReader.healthKitUnit(for: mapping.unit), "\(mapping.nutrientKey) has no HealthKit unit")
+        }
+    }
 }

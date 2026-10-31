@@ -647,6 +647,8 @@ struct RootView: View {
     private func reload(now: Date = Date()) {
         services.today.load(now: now)
         services.journal.load(now: now)
+        // The Diary's today header adds Apple Health, so a reload reads today's Health again.
+        Task { await services.journal.refreshTodayHealthTotals(now: now) }
         services.library.load()
         services.firstDayChecklist.load()
         Task { await services.bodyActivity.load(now: now) }

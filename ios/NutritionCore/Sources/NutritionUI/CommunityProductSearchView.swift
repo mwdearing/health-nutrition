@@ -25,8 +25,12 @@ public struct CommunityProductSearchView: View {
     /// The saved meal whose "Log to which meal" choice is up.
     @State private var mealToLog: SavedMeal?
     @FocusState private var searchFocused: Bool
-    /// Focus is taken once per screen. Going Back from a result must not raise the keyboard over it.
+    /// Focus is taken once per screen, and only once it has actually been set. A screen that closes before
+    /// its focus lands counts as having taken it, so returning to it never raises the keyboard unasked.
     @State private var didAutoFocus = false
+    /// The pending focus request: nil once it has set focus or the screen has gone. It is cancelled only when the
+    /// screen disappears.
+    @State private var focusTask: Task<Void, Never>?
     public init(model: CommunityProductSearchViewModel, onSelect: @escaping (CustomProductRevision) -> Void, onLegacy: @escaping (LegacyCustomProductDraft) -> Void, onSignIn: (() -> Void)?, onOpenFoodFacts: @escaping (LookedUpProduct, ProductKind?) -> Void = { _, _ in },
                 library: LibraryViewModel? = nil, onPick: ((RepeatTemplate) -> Void)? = nil,
                 focusSearchOnAppear: Bool = false, onSaved: @escaping () -> Void = {}) {
@@ -53,12 +57,12 @@ public struct CommunityProductSearchView: View {
                 }
                 Button("Search", action: search)
             } footer: {
-                Text("Your foods and products on this phone narrow as you type. Public food databases and shared products are searched only when you tap Search or press Return.")
+                Text("Your foods and products on this device narrow as you type. Public food databases and shared products are searched only when you tap Search or press Return.")
             }
-            if kind != .supplement { Section(header: Text("Food databases"), footer: Text("The words you search for are sent to public food databases (USDA FoodData Central and Open Food Facts). Nothing else from this phone is sent.")) {
+            if kind != .supplement { Section(header: Text("Food databases"), footer: Text("The words you search for are sent to public food databases (USDA FoodData Central and Open Food Facts). Nothing else from this device is sent.")) {
                 openFoodFactsStatus
                 ForEach(model.openFoodFactsResults, id: \.self) { product in
-                    Button { onOpenFoodFacts(product, kind) } label: {
+                    Button { leaveSearch { onOpenFoodFacts(product, kind) } } label: {
                         VStack(alignment: .leading, spacing: DesignSpacing.xs) {
                             Text(product.name ?? "Unnamed product").font(.headline)
                             if let brand = product.brand { Text(brand) }
@@ -76,14 +80,18 @@ public struct CommunityProductSearchView: View {
             // A saved meal can mix foods, drinks and supplements, so meals are offered only under All kinds; a
             // warning about entries a failed log left behind shows under any kind.
             if let savedMeals = library?.savedMeals, onPick != nil {
-                SavedMealSections(model: savedMeals, query: query, showsMeals: kind == nil, onLog: { mealToLog = $0 })
+                SavedMealSections(model: savedMeals, query: query, showsMeals: kind == nil, onLog: { meal in leaveSearch { mealToLog = meal } })
             }
-            if let library, let onPick { LibrarySearchSections(library: library, query: query, kind: kind, onPick: onPick) }
-            Section("On this phone") {
+            if let library, let onPick {
+                LibrarySearchSections(
+                    library: library, query: query, kind: kind,
+                    onPick: { template in leaveSearch { onPick(template) } })
+            }
+            Section("On this device") {
                 if model.localError { Text("Could not read local products.") }
                 else if model.localResults.isEmpty { Text("No matching local products.") }
                 ForEach(model.localResults, id: \.localProductID) { product in
-                    Button { onSelect(product) } label: {
+                    Button { leaveSearch { onSelect(product) } } label: {
                         VStack(alignment: .leading) {
                             Text(product.content.name)
                             Text(product.content.kind.displayName).font(.footnote)
@@ -95,7 +103,11 @@ public struct CommunityProductSearchView: View {
                 Section("Shared products") {
                     sharedState
                     ForEach(model.sharedResults, id: \.productID) { product in
-                        Button { do { try model.inspect(product) } catch { selectionError = "Search again to refresh this product." } } label: {
+                        Button {
+                            leaveSearch {
+                                do { try model.inspect(product) } catch { selectionError = "Search again to refresh this product." }
+                            }
+                        } label: {
                             VStack(alignment: .leading, spacing: DesignSpacing.xs) {
                                 Text(CommunityProductSearchViewModel.name(product)).font(.headline)
                                 Text(CommunityProductSearchViewModel.verificationText(product))
@@ -140,8 +152,8 @@ public struct CommunityProductSearchView: View {
                             if model.canLoadAlternatives { Button("Load more alternatives") { Task { await model.loadAlternatives() } } }
                             if let error = model.inspectionError { Text(error) }
                             if model.inspectionNeedsRefresh { Button("Refresh shared facts") { Task { await model.refreshInspection() } } }
-                            Button("Save representative on this phone") {
-                                select(product)
+                            Button("Save representative on this device") {
+                                leaveSearch { select(product) }
                                 // Only a saved product confirms; a legacy label opens an editor draft that is not saved yet.
                                 if selectionError == nil, case .custom = product.product { onSaved() }
                                 model.closeInspection()
@@ -156,24 +168,26 @@ public struct CommunityProductSearchView: View {
         }
         .navigationTitle("Search foods")
         .task { if model.state == .idle { await model.search(query: query, kind: kind) } }
-        // Focus after the push animation. Setting focus during the transition can be dropped.
-        .task {
-            guard focusSearchOnAppear, !didAutoFocus else { return }
-            // Counted as this screen's one focus even if it closes during the delay, so a return
-            // never raises the keyboard unasked.
-            didAutoFocus = true
-            // A screen left before the delay ends must not raise the keyboard on its way out.
-            guard (try? await Task.sleep(nanoseconds: 400_000_000)) != nil else { return }
-            searchFocused = true
-        }
         .onAppear {
             if onPick != nil {
                 library?.load()
                 library?.savedMeals?.load()
             }
+            requestAutoFocus()
         }
-        // The Undo window ends with this screen, as it does on the Library screen.
-        .onDisappear { library?.savedMeals?.clearUndo() }
+        // The Undo window ends with this screen, as it does on the Library screen. A focus request still
+        // waiting when the screen goes away is dropped, and the screen takes no focus on a later return.
+        .onDisappear {
+            library?.savedMeals?.clearUndo()
+            // The field keeps its focus state while a pushed screen covers it, and SwiftUI gives focus back when the
+            // screen shows again, which raises the keyboard on Back (#944). Leaving clears it.
+            searchFocused = false
+            if focusTask != nil {
+                focusTask?.cancel()
+                focusTask = nil
+                if focusSearchOnAppear { didAutoFocus = true }
+            }
+        }
         .safeAreaInset(edge: .bottom) {
             if let savedMeals = library?.savedMeals { SavedMealUndoBar(model: savedMeals) }
         }
@@ -191,7 +205,7 @@ public struct CommunityProductSearchView: View {
         } message: { saved in
             Text("Adds \(SavedMealsModel.itemsText(saved.items.count)) now, as new entries. Like any entry, they are written to Apple Health once it is connected.")
         }
-        // Typing narrows what is already on this phone. It never starts a search that leaves the phone.
+        // Typing narrows what is already on this device. It never starts a search that leaves the phone.
         .onChange(of: query) { _, text in model.filterLocal(query: text, kind: kind) }
         .onChange(of: kind) { _, selected in model.filterLocal(query: query, kind: selected) }
     }
@@ -235,6 +249,25 @@ public struct CommunityProductSearchView: View {
             Text("Shared products are temporarily unavailable.")
             Button("Retry") { Task { await model.retry() } }
         }
+    }
+    /// Focus after the push animation. Setting focus during the transition can be dropped, so the request
+    /// waits 400 ms. The screen's focus is marked taken once the request sets it; a request cancelled
+    /// before then is marked when the screen disappears.
+    private func requestAutoFocus() {
+        guard focusSearchOnAppear, !didAutoFocus, focusTask == nil else { return }
+        focusTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            guard !Task.isCancelled else { return }
+            searchFocused = true
+            didAutoFocus = true
+            focusTask = nil
+        }
+    }
+    /// Puts the keyboard away before a row opens the next screen. A screen presented over this one hands focus back to
+    /// the field when it closes, which raised the keyboard on Back (#944), so the field gives focus up first.
+    private func leaveSearch(_ open: () -> Void) {
+        searchFocused = false
+        open()
     }
     private func search() {
         // The keyboard covers the results below the form, which reads as if nothing happened.

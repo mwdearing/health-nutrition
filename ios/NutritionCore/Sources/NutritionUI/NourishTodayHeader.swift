@@ -45,7 +45,11 @@ public struct NourishTodayHeader: View {
 
     static func ringFootnote(for goal: NutrientGoal?) -> String? {
         guard let goal else { return nil }
-        return "of \(AmountDisplay.nutrient(goal.target, unit: goal.unit).text) goal"
+        // The goal is a whole amount, grouped the way the remaining figure is ("2,357"), so the footnote and the
+        // figure agree.
+        let target = AmountDisplay.nutrient(goal.target, unit: goal.unit)
+        let grouped = DisplayAmount(amount: target.amount, unit: goal.unit, groupsWholeAmount: true)
+        return "of \(grouped.text) goal"
     }
 
     private func fraction(_ bar: GoalBarModel?) -> Double {
@@ -61,7 +65,14 @@ public struct NourishTodayHeader: View {
         model.nutrientCard
     }
 
-    /// The one spoken line for the summary: remaining, food and burned as labels, then the partial note and the goal footnote.
+    /// The goal footnote the summary reads out: only while Remaining shows, because without a goal there is no
+    /// Remaining for "of N goal" to qualify.
+    static func summaryFootnote(_ calories: CalorieRemaining, ringFootnote: String?) -> String? {
+        calories.showsRemaining ? ringFootnote : nil
+    }
+
+    /// The one spoken line for the summary: remaining, food and burned as labels, then the partial note and the goal
+    /// footnote.
     static func spokenSummary(_ calories: CalorieRemaining, partial: String?, footnote: String?) -> String {
         [
             calories.remaining.map { "\(BodyActivityViewModel.whole($0)) calories remaining" },
@@ -70,6 +81,13 @@ public struct NourishTodayHeader: View {
             partial,
             footnote,
         ].compactMap { $0 }.joined(separator: ", ")
+    }
+
+    /// The prompt shown in place of Calories remaining while no energy goal is stored. Nil once a goal exists,
+    /// and nil unless the last load read the goals and found no calorie goal: a failed goal read or a day that
+    /// has not loaded yet is not a person without a goal.
+    static func goalPrompt(_ calories: CalorieRemaining, goalKnownAbsent: Bool) -> String? {
+        calories.goal == nil && goalKnownAbsent ? "Set a calorie goal to see what's left" : nil
     }
 
     /// The figures the calorie summary shows. Food is a dash until something is logged, never 0. Remaining is hidden
@@ -98,24 +116,37 @@ public struct NourishTodayHeader: View {
     /// Calories remaining in large type, with food and burned beneath, as MyFitnessPal lays them out. It is the
     /// top block on Today every day. A day without a goal shows food and burned only.
     /// Remaining is hidden without a goal; burned is hidden when there is no Health reading or the setting is off.
-    /// A partly known day reuses the existing partial note; Remaining is then an upper bound.
+    /// A partly known day shows the calorie model's own note (`calories.partialNote`); Remaining is then an upper
+    /// bound.
     private var calorieSummary: some View {
         let calories = model.calorieRemaining
         let figures = Self.summaryFigures(calories)
         // The note comes from the calorie model, which builds it from the same missing count as its partial flag.
         let partial = calories.partialNote
-        let spoken = Self.spokenSummary(calories, partial: partial, footnote: calories.showsRemaining ? ringFootnote : nil)
-        return VStack(alignment: .leading, spacing: DesignSpacing.s) {
+        let spoken = Self.spokenSummary(
+            calories, partial: partial, footnote: Self.summaryFootnote(calories, ringFootnote: ringFootnote))
+        let prompt = Self.goalPrompt(calories, goalKnownAbsent: model.calorieGoalKnownAbsent)
+        return VStack(alignment: .center, spacing: DesignSpacing.s) {
             if let remaining = figures.remaining {
                 Text(remaining)
                     .font(.largeTitle.weight(.semibold))
                     .foregroundStyle(TokenColors.textPrimary)
+                    .accessibilityIdentifier("calorieRemainingFigure")
                 Text("Calories remaining")
                     .font(.subheadline)
                     .foregroundStyle(TokenColors.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .accessibilityIdentifier("calorieRemainingLabel")
                 if let ringFootnote {
                     Text(ringFootnote).font(.footnote).foregroundStyle(TokenColors.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .accessibilityIdentifier("calorieGoalLine")
                 }
+            } else if let prompt, let onEditGoals {
+                Button(prompt) { onEditGoals() }
+                    .font(.headline)
+                    .foregroundStyle(TokenColors.accent)
+                    .accessibilityHint("Opens your goals to set a calorie goal")
             }
             HStack(alignment: .top, spacing: DesignSpacing.l) {
                 Label {
@@ -137,12 +168,20 @@ public struct NourishTodayHeader: View {
                     .accessibilityElement(children: .combine)
                 }
             }
+            .accessibilityIdentifier("calorieFoodBurnedRow")
             if let note = partial {
                 Text(note).font(.footnote).foregroundStyle(TokenColors.textSecondary)
             }
         }
+        .frame(maxWidth: .infinity)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(spoken)
+        // The group hides its children from VoiceOver, so the goal prompt is offered as a named action on it.
+        .accessibilityActions {
+            if let prompt, let onEditGoals {
+                Button(prompt) { onEditGoals() }
+            }
+        }
     }
 
     public var body: some View {
@@ -155,6 +194,8 @@ public struct NourishTodayHeader: View {
                         MacroColumn(
                             label: macro.label, figure: figure(key), fraction: fraction(macro),
                             spoken: macro.accessibilityText, note: partialNote(key))
+                        .frame(maxWidth: .infinity)
+                        .accessibilityIdentifier("macroColumn-\(macro.label)")
                     }
                 }
             }

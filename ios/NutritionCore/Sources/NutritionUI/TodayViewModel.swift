@@ -132,6 +132,9 @@ public final class TodayViewModel: ObservableObject {
     /// Calories left today: the stored goal, less food, plus burned when the setting counts it. Nil fields are
     /// not stated; `remaining` is nil without a goal or without a known food total.
     @Published public private(set) var calorieRemaining: CalorieRemaining = .none
+    /// True only after a load that read the goals and found no calorie goal. False before the first load,
+    /// after a failed goal read and after a failed load, so Today never asks for a goal it could not see.
+    @Published public private(set) var calorieGoalKnownAbsent = false
     /// Today's active energy from Apple Health, set by the activity card after it reads. Only used
     /// when the person switched on adding it to the calorie goal.
     public var activeEnergyKcal: Decimal?
@@ -351,7 +354,7 @@ public final class TodayViewModel: ObservableObject {
             mealSections = Self.makeMealSections(from: newRows)
             waterEntryCount = waterEntries
             dateSubtitle = Self.makeDateSubtitle(now, zoneIdentifier: TimeZone.current.identifier)
-            waterTotalMilliliters = waterTotal
+            waterTotalMilliliters = waterTotal + Self.outsideWaterMilliliters(outsideIntake)
             waterSkippedCount = skipped
             skippedIntakeCount = skippedIntakes
             // A goal store that cannot be read is not a person with no goals, so the failure is
@@ -449,12 +452,16 @@ public final class TodayViewModel: ObservableObject {
                 $0.nutrient == DailyTotalsBuilder.waterKey && $0.hasGoal
                     && !hiddenGoals.contains(DailyTotalsBuilder.waterKey)
             }.map { line in
-                GoalBarModel.make(
-                    line: line, hasEntries: waterEntries > 0 || countedWater > 0, missingCount: 0,
-                    skippedWaterCount: skipped, someKnown: countedWater > 0, unitSystem: self.preferences.unitSystem)
+                // Water other apps logged to Health counts as logged and known, as it does in the water figure.
+                let outsideWater = Self.outsideWaterMilliliters(outsideIntake) > 0
+                return GoalBarModel.make(
+                    line: line, hasEntries: waterEntries > 0 || countedWater > 0 || outsideWater, missingCount: 0,
+                    skippedWaterCount: skipped, someKnown: countedWater > 0 || outsideWater,
+                    unitSystem: self.preferences.unitSystem)
             }
             let burnedCounted = (preferences as? ActivityGoalPreferences)?.addsActiveEnergyToGoal == true
             let foodLine = progress.first { $0.nutrient == Self.energyKey }
+            calorieGoalKnownAbsent = !goalsUnreadable && storedEnergyTarget == nil
             calorieRemaining = CalorieRemaining.make(
                 goal: storedEnergyTarget,
                 food: foodLine.flatMap { line -> Decimal? in
@@ -474,6 +481,7 @@ public final class TodayViewModel: ObservableObject {
             rows = []
             mealSections = []
             calorieRemaining = .none
+            calorieGoalKnownAbsent = false
             waterTotalMilliliters = 0
             waterEntryCount = 0
             waterSkippedCount = 0
@@ -628,6 +636,19 @@ public final class TodayViewModel: ObservableObject {
             intakeID: intakeID, expiresAt: now.addingTimeInterval(Self.undoWindow), isDelete: true)
         load(now: now)
         return true
+    }
+
+    /// The water other apps logged to Apple Health today, in millilitres, added to Today's water the way their
+    /// nutrients are added to Today's lines. The read leaves out the samples this app wrote, so a drink logged here
+    /// is never counted twice. A read that did not complete, or Health not connected, adds nothing.
+    static func outsideWaterMilliliters(_ outside: HealthIntakeTotals.Outside) -> Decimal {
+        guard case .read(let values, let readKeys) = outside,
+              readKeys.contains(DailyTotalsBuilder.waterKey),
+              let value = values[DailyTotalsBuilder.waterKey],
+              let unit = HealthKitWritePlanner.mapping(for: DailyTotalsBuilder.waterKey)?.unit,
+              let milliliters = try? Quantity(value: value, unit: unit).converted(to: .mL)
+        else { return 0 }
+        return milliliters.value
     }
 
     /// The water total in the unit the reader chose, as it is shown on screen.
