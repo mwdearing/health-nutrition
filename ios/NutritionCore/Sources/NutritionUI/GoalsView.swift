@@ -100,7 +100,7 @@ public struct GoalsView: View {
                     set: { self.model.userEditedDraft($0, for: row.nutrient) }))
                     .font(.body)
                     .foregroundStyle(TokenColors.textPrimary)
-                    .decimalKeyboard()
+                    .decimalAmountKeyboard()
                     .focused($focusedNutrient, equals: row.nutrient)
                     .onSubmit { self.model.submitTarget(for: row.nutrient) }
                     .accessibilityLabel("Daily target for \(row.displayName)")
@@ -136,16 +136,5 @@ public struct GoalsView: View {
             .accessibilityLabel("Show \(row.displayName) on Today")
             .accessibilityHint("Turn off to hide this goal's bar on Today and in the Journal")
         }
-    }
-}
-
-private extension View {
-    @ViewBuilder
-    func decimalKeyboard() -> some View {
-        #if os(iOS)
-        self.keyboardType(.decimalPad)
-        #else
-        self
-        #endif
     }
 }

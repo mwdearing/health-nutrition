@@ -464,6 +464,138 @@ final class GoalSetupWeightPlanTests: XCTestCase {
         XCTAssertNotEqual(refreshed, before.filter { $0.key != "energy" })
     }
 
+    func testAUnitSwitchKeepsWeightAndHeightTextThatIsNotANumber() {
+        let prefs = InMemoryDisplayPreferences(unitSystem: .metric)
+        let goals = GoalsViewModel(store: GoalSetupPlanStore(), preferences: prefs)
+        goals.load()
+        let model = GoalSetupViewModel(goals: goals)
+        model.weightKilogramsText = "7o"
+        model.goalWeightKilogramsText = "6o"
+        model.heightCentimetersText = "18o"
+
+        prefs.setUnitSystem(.usCustomary)
+        model.unitSystemDidChange()
+
+        XCTAssertEqual(model.weightPoundsText, "7o")
+        XCTAssertEqual(model.goalWeightPoundsText, "6o")
+        XCTAssertEqual(model.heightFeetText, "18o")
+        XCTAssertEqual(model.heightInchesText, "")
+
+        model.heightFeetText = "5"
+        model.heightInchesText = "1x"
+        prefs.setUnitSystem(.metric)
+        model.unitSystemDidChange()
+
+        XCTAssertEqual(model.weightKilogramsText, "7o")
+        XCTAssertEqual(model.goalWeightKilogramsText, "6o")
+        XCTAssertEqual(model.heightCentimetersText, "5 ft 1x in")
+
+        // Inches with no feet do not read as a height, and the carried text must not read as centimeters.
+        prefs.setUnitSystem(.usCustomary)
+        model.unitSystemDidChange()
+        model.heightFeetText = ""
+        model.heightInchesText = "150"
+        prefs.setUnitSystem(.metric)
+        model.unitSystemDidChange()
+        XCTAssertEqual(model.heightCentimetersText, "150 in")
+    }
+
+    func testHeightTextThatIsNotANumberSurvivesARoundTrip() {
+        let prefs = InMemoryDisplayPreferences(unitSystem: .metric)
+        let goals = GoalsViewModel(store: GoalSetupPlanStore(), preferences: prefs)
+        goals.load()
+        let model = GoalSetupViewModel(goals: goals)
+        model.heightCentimetersText = "18o"
+        prefs.setUnitSystem(.usCustomary)
+        model.unitSystemDidChange()
+        prefs.setUnitSystem(.metric)
+        model.unitSystemDidChange()
+        XCTAssertEqual(model.heightCentimetersText, "18o")
+
+        prefs.setUnitSystem(.usCustomary)
+        model.unitSystemDidChange()
+        model.heightFeetText = "5"
+        model.heightInchesText = "1x"
+        prefs.setUnitSystem(.metric)
+        model.unitSystemDidChange()
+        prefs.setUnitSystem(.usCustomary)
+        model.unitSystemDidChange()
+        XCTAssertEqual(model.heightFeetText, "5")
+        XCTAssertEqual(model.heightInchesText, "1x")
+    }
+
+    func testAnOldCarriedHeightIsNotReusedForNewText() {
+        let prefs = InMemoryDisplayPreferences(unitSystem: .metric)
+        let goals = GoalsViewModel(store: GoalSetupPlanStore(), preferences: prefs)
+        goals.load()
+        let model = GoalSetupViewModel(goals: goals)
+        model.heightCentimetersText = "18o"
+        prefs.setUnitSystem(.usCustomary)
+        model.unitSystemDidChange()
+        model.clearAnswers()
+        model.heightFeetText = "18o"
+        prefs.setUnitSystem(.metric)
+        model.unitSystemDidChange()
+        XCTAssertEqual(model.heightCentimetersText, "18o ft")
+
+        model.heightCentimetersText = "152"
+        prefs.setUnitSystem(.usCustomary)
+        model.unitSystemDidChange()
+        model.heightFeetText = "18o"
+        model.heightInchesText = ""
+        prefs.setUnitSystem(.metric)
+        model.unitSystemDidChange()
+        XCTAssertEqual(model.heightCentimetersText, "18o ft")
+    }
+
+    func testAUnitSwitchAtResultsKeepsTheNoticeOnAnEditedTarget() {
+        let prefs = InMemoryDisplayPreferences(unitSystem: .metric)
+        let goals = GoalsViewModel(store: GoalSetupPlanStore(), preferences: prefs)
+        goals.load()
+        let model = GoalSetupViewModel(goals: goals)
+        answer(model, aim: .lose)
+        walk(model, to: .pace)
+        model.selectedPaceKilograms = model.paceOptions[1].kilogramsPerWeek
+        model.goalWeightKilogramsText = "75"
+        walk(model, to: .results)
+        model.draftTargets["energy"] = "-5"
+        XCTAssertFalse(model.save())
+        let fieldNotice = model.fieldErrors["energy"]
+        XCTAssertNotNil(fieldNotice)
+        XCTAssertEqual(model.resultError, "Enter a number above zero.")
+
+        prefs.setUnitSystem(.usCustomary)
+        model.unitSystemDidChange()
+
+        XCTAssertEqual(model.draftTargets["energy"], "-5")
+        XCTAssertEqual(model.fieldErrors["energy"], fieldNotice)
+        XCTAssertEqual(model.resultError, "Enter a number above zero.")
+    }
+
+    func testAUnitSwitchAtResultsKeepsTheNoticeOnAVitaminGoal() {
+        let prefs = InMemoryDisplayPreferences(unitSystem: .metric)
+        let goals = GoalsViewModel(store: GoalSetupPlanStore(), preferences: prefs)
+        goals.load()
+        let model = GoalSetupViewModel(goals: goals)
+        answer(model, aim: .lose)
+        walk(model, to: .pace)
+        model.selectedPaceKilograms = model.paceOptions[1].kilogramsPerWeek
+        model.goalWeightKilogramsText = "75"
+        walk(model, to: .results)
+        model.chooseVitamins(.own)
+        model.vitaminDrafts["iron"] = "0"
+        XCTAssertFalse(model.save())
+        let fieldNotice = model.fieldErrors["iron"]
+        XCTAssertNotNil(fieldNotice)
+
+        prefs.setUnitSystem(.usCustomary)
+        model.unitSystemDidChange()
+
+        XCTAssertEqual(model.vitaminDrafts["iron"], "0")
+        XCTAssertEqual(model.fieldErrors["iron"], fieldNotice)
+        XCTAssertEqual(model.resultError, "Enter a number above zero.")
+    }
+
     func testThePrivacyNoticeSaysWhatIsSaved() {
         XCTAssertEqual(
             GoalSetupViewModel.privacyNotice,
