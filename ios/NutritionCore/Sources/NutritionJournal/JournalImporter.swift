@@ -311,21 +311,16 @@ public enum JournalImporter {
                     }
                 }
             }
-            // Every part is written and the journal holds exactly this file: only the flag clear is left, as after a
-            // restore whose last clear failed (#828). Finishing it writes nothing, so the retry the screen asks for
-            // completes instead of being refused as a journal that is not empty.
+            // Every part is written: a flag that outlived the whole restore (a stop after the last save, or a clear
+            // that failed, #828) is not an unfinished restore, however much of it was deleted since. Nothing is written
+            // again and the import is refused as before, but the flag is cleared now, so the cleanup the screen asked
+            // the person to retry is finished and the file cannot later bring back rows deleted since.
             if savedMealsWritten && favoritesWritten && !goalsPending {
-                // Counted before the receipt is removed, since the ledger lives in it.
-                // A ledger that cannot be read leaves the rows as they are and the flag for another retry.
-                let written: Int
-                do { written = try goalsTarget.map { try $0.goalRestoreWrittenGoals(digest).count } ?? 0 } catch {
-                    throw JournalImportError.cleanupIncomplete
-                }
                 try clearFlagAfterRestore(progress)
                 try? favoritesTarget?.removeRestoreReceipt(digest)
                 try? savedMealsTarget?.removeSavedMealsRestoreReceipt(digest)
                 try? goalsTarget?.removeGoalRestoreReceipt(digest)
-                return summary(of: plan, goals: written)
+                throw JournalImportError.notEmpty
             }
             if let savedMealsTarget, !savedMealsWritten {
                 try savedMealsTarget.restoreJournalSavedMeals(plan.savedMeals, receipt: digest)

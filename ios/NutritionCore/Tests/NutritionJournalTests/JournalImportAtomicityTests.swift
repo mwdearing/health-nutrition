@@ -256,7 +256,7 @@ final class JournalImportAtomicityTests: JournalImportTestCase {
 
     /// A complete restore whose flag clear failed leaves its rows and receipts. A retry of the same file is refused,
     /// as a finished restore is, and writes nothing.
-    func testARetryAfterAFailedFlagClearFinishesTheCleanupAndWritesNothing() throws {
+    func testARetryAfterAFailedFlagClearClearsTheFlagAndWritesNothing() throws {
         let data = try exportData()
         let target = try directory()
         let inner = try store(target)
@@ -271,45 +271,18 @@ final class JournalImportAtomicityTests: JournalImportTestCase {
         let rowsAfterFirst = try inner.activeIntakes().map(\.id)
         XCTAssertFalse(rowsAfterFirst.isEmpty)
 
-        // The retry the message asks for finds every receipt and the flag: it clears the flag, writes nothing again,
-        // and reports the restore (#828).
-        XCTAssertNoThrow(try JournalImporter.importExport(data, into: journal, favorites: favoritesStore))
-        XCTAssertNil(try inner.restoreInProgressDigest())
-        XCTAssertEqual(try inner.activeIntakes().map(\.id), rowsAfterFirst)
-
-        // With the flag gone, a third import is refused as a journal that is not empty.
+        // The retry the message asks for finds every receipt and the flag: it clears the flag and writes nothing
+        // again, and the import is refused as a journal that is not empty, as a finished restore is (#828).
         XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: favoritesStore)) {
             XCTAssertEqual($0 as? JournalImportError, .notEmpty)
         }
-    }
-
-    /// The retry reports the whole restore, goals included, counted from the receipt before it is removed.
-    func testARetryAfterAFailedFlagClearReportsTheRestoresGoals() throws {
-        let target = try directory()
-        let goals = try SwiftDataGoalStore(url: target.appendingPathComponent("goals.store"))
-        addTeardownBlock { goals.close() }
-        var root = try XCTUnwrap(try JSONSerialization.jsonObject(with: try exportData()) as? [String: Any])
-        root["goals"] = [["nutrient": "protein", "target": "60", "unit": "g"]]
-        let data = try JSONSerialization.data(withJSONObject: root)
-        let inner = try store(target)
-        let journal = FlagClearFailsOnceJournal(inner)
-        let favoritesStore = try favorites(target)
-        journal.failNextClear = true
-        XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: favoritesStore, goals: goals)) {
-            XCTAssertEqual($0 as? JournalImportError, .cleanupIncomplete)
-        }
-
-        var summary: JournalImportSummary?
-        XCTAssertNoThrow(summary = try JournalImporter.importExport(data, into: journal, favorites: favoritesStore, goals: goals))
-        XCTAssertEqual(summary?.goals, 1)
-        XCTAssertEqual(summary?.intakes, try inner.activeIntakes().count)
-        XCTAssertEqual(try goals.goals().count, 1, "no goal is added again")
         XCTAssertNil(try inner.restoreInProgressDigest())
+        XCTAssertEqual(try inner.activeIntakes().map(\.id), rowsAfterFirst)
     }
 
-    /// A goal ledger that cannot be read after every row is written reports the cleanup on the first run and on a
-    /// retry, and keeps the flag; once it reads, the retry finishes.
-    func testAnUnreadableGoalLedgerReportsCleanupIncompleteAndARetryFinishes() throws {
+    /// A goal ledger that cannot be read after every row is written reports the cleanup and keeps the flag; the retry
+    /// clears the flag without writing anything again.
+    func testAnUnreadableGoalLedgerReportsCleanupIncompleteAndARetryClearsTheFlag() throws {
         let target = try directory()
         let base = try SwiftDataGoalStore(url: target.appendingPathComponent("goals.store"))
         addTeardownBlock { base.close() }
@@ -327,16 +300,12 @@ final class JournalImportAtomicityTests: JournalImportTestCase {
         XCTAssertFalse(try journal.activeIntakes().isEmpty)
         XCTAssertNotNil(try journal.restoreInProgressDigest())
 
+        // The retry reads no ledger: it clears the flag and is refused as a finished restore.
         XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: favoritesStore, goals: goals)) {
-            XCTAssertEqual($0 as? JournalImportError, .cleanupIncomplete)
+            XCTAssertEqual($0 as? JournalImportError, .notEmpty)
         }
-        XCTAssertNotNil(try journal.restoreInProgressDigest())
-
-        goals.failsFinishedLedgerRead = false
-        var summary: JournalImportSummary?
-        XCTAssertNoThrow(summary = try JournalImporter.importExport(data, into: journal, favorites: favoritesStore, goals: goals))
-        XCTAssertEqual(summary?.goals, 1)
         XCTAssertNil(try journal.restoreInProgressDigest())
+        XCTAssertEqual(try base.goals().count, 1, "no goal is added again")
     }
 
     /// A retry whose flag clear fails again still reports the cleanup, not a bad file or a full journal.
