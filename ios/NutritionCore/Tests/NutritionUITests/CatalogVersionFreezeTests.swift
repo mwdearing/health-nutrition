@@ -40,6 +40,8 @@ final class CatalogVersionFreezeTests: XCTestCase {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
         let store = try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
+        // Closed on every path, before the folder is removed by the teardown above.
+        defer { store.close() }
         let catalogID = UUID()
 
         let first = try CustomProductMapping.importedRevision(
@@ -63,7 +65,6 @@ final class CatalogVersionFreezeTests: XCTestCase {
         let revisions = try store.revisions(of: intakeID)
         XCTAssertEqual(revisions.map(\.productSnapshotID), [firstSnapshot.snapshotID], "the entry still names version 1")
         XCTAssertEqual(try store.product(snapshotID: firstSnapshot.snapshotID)?.name, "Synthetic bar")
-        store.close()
     }
     #endif
 }
