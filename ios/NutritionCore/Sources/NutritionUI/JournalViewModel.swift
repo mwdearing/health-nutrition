@@ -174,7 +174,7 @@ public final class JournalViewModel: ObservableObject {
         let read = await reader(day.start, through)
         // A read that finished after a newer one started for the day, after the totals were forgotten, or after the
         // Diary's zone changed (its day was another span of time), is dropped; the day is read again in the new zone.
-        guard healthReadGenerations[key] == generation, healthReadEpoch == epoch, dayZone.identifier == zoneID
+        guard healthReadGenerations[key] == generation, healthReadEpoch == epoch
         else { return }
         if read.complete {
             healthReadMarks[key] = (through, zoneID)
