@@ -57,6 +57,7 @@ public final class RecipeDetailViewModel: ObservableObject {
     static func valueText(_ value: NutrientValue) -> String {
         switch value {
         case .known(let amount, let unit):
+            // Recipe energy reads whole Calories like Today (#831); other units keep the gap-row figure.
             return NutrientGapRow.figure(amount, unit)
         case .unknown, .notApplicable, .belowReportingThreshold:
             return "unknown"
