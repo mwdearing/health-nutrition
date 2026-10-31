@@ -197,18 +197,28 @@ public final class JournalViewModel: ObservableObject {
     /// Reloads the Diary on each time-zone change, so its days follow the device zone without a relaunch (#648).
     /// The changes are injected so a test can send one without a system notification.
     /// A subscription reloads once when it starts, so a zone change that landed before it was made is applied (#655).
-    /// A stream that throws is started again after a pause, so later zone changes still reload (#654).
+    /// A stream that throws is started again after a pause, so later zone changes still reload (#654). The pause
+    /// doubles on each failure in a row, from one second up to a minute, so a stream that always throws does not
+    /// reload the Diary every second; a change delivered resets it.
     public func runZoneChangeReloads<Changes: AsyncSequence>(
-        _ makeChanges: @escaping () -> Changes, now: @escaping () -> Date
+        _ makeChanges: @escaping () -> Changes, now: @escaping () -> Date,
+        pause: @escaping (UInt64) async -> Void = { try? await Task.sleep(nanoseconds: $0) }
     ) async where Changes.Element == Void {
+        let firstPause: UInt64 = 1_000_000_000
+        let longestPause: UInt64 = 60_000_000_000
+        var nextPause = firstPause
         while !Task.isCancelled {
             var changes = makeChanges().makeAsyncIterator()
             load(now: now())
             do {
-                while try await changes.next() != nil { load(now: now()) }
+                while try await changes.next() != nil {
+                    nextPause = firstPause
+                    load(now: now())
+                }
                 return
             } catch {
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                await pause(nextPause)
+                nextPause = min(nextPause * 2, longestPause)
             }
         }
     }

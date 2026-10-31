@@ -58,12 +58,12 @@ final class ZoneChangeReloadTests: XCTestCase {
         journal.load(now: now)
         XCTAssertEqual(journal.dayZone.identifier, "America/New_York")
 
-        // The change lands while the subscription is being made, before anything is delivered.
-        let gap = AsyncStream<Void> { continuation in
+        // The change lands after the subscription is made and before anything is delivered.
+        await journal.runZoneChangeReloads({ () -> AsyncStream<Void> in
+            let gap = AsyncStream<Void> { $0.finish() }
             zone.identifier = "Asia/Tokyo"
-            continuation.finish()
-        }
-        await journal.runZoneChangeReloads({ gap }, now: { self.now })
+            return gap
+        }, now: { self.now })
         XCTAssertEqual(journal.dayZone.identifier, "Asia/Tokyo", "a change made before the subscription is applied")
         XCTAssertEqual(journal.todaySection?.id, "2026-10-20", "today follows Tokyo after the gap change")
     }
@@ -88,10 +88,40 @@ final class ZoneChangeReloadTests: XCTestCase {
                 continuation.yield(())
                 continuation.finish()
             }
-        }, now: { self.now })
+        }, now: { self.now }, pause: { _ in })
         XCTAssertEqual(starts.count, 2, "the failed stream is started again")
         XCTAssertEqual(journal.loadCount, loadsBefore + 3, "the first start, the restart and the change each reload")
         XCTAssertEqual(journal.dayZone.identifier, "Asia/Tokyo")
+    }
+
+    private final class PauseLog { var pauses: [UInt64] = [] }
+
+    /// #654: each failure in a row waits twice as long, up to a minute, and a delivered change starts again at a second.
+    func testAStreamThatKeepsFailingBacksOff() async throws {
+        let store = try makeStore()
+        let journal = JournalViewModel(store: store, timeZoneProvider: { "America/New_York" })
+        let starts = StartCounter()
+        let log = PauseLog()
+        await journal.runZoneChangeReloads({ () -> AsyncThrowingStream<Void, Error> in
+            starts.count += 1
+            switch starts.count {
+            case 9:
+                // One change gets through, then the stream fails again.
+                return AsyncThrowingStream<Void, Error> { continuation in
+                    continuation.yield(())
+                    continuation.finish(throwing: ZoneStreamFailure.failed)
+                }
+            case 11:
+                return AsyncThrowingStream<Void, Error> { $0.finish() }
+            default:
+                return AsyncThrowingStream<Void, Error> { $0.finish(throwing: ZoneStreamFailure.failed) }
+            }
+        }, now: { self.now }, pause: { log.pauses.append($0) })
+        let second: UInt64 = 1_000_000_000
+        XCTAssertEqual(
+            log.pauses,
+            [1, 2, 4, 8, 16, 32, 60, 60, 1, 2].map { $0 * second },
+            "the pause doubles up to a minute, and a delivered change resets it")
     }
 
     private enum ZoneStreamFailure: Error { case failed }
