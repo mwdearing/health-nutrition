@@ -103,9 +103,12 @@ final class AddTypedInputSwipeUITests: XCTestCase {
             RunLoop.current.run(until: Date().addingTimeInterval(0.2))
         }
         RunLoop.current.run(until: Date().addingTimeInterval(0.8))
+        print("DIAG-930 before-drag navbars=\(app.navigationBars.allElementsBoundByIndex.map { $0.identifier })")
         let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5))
         let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5))
         start.press(forDuration: 0.1, thenDragTo: end, withVelocity: .fast, thenHoldForDuration: 0)
+        RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+        print("DIAG-930 after-drag navbars=\(app.navigationBars.allElementsBoundByIndex.map { $0.identifier })")
 
         // The pop itself: back on Add, the Type it in tile is on screen again.
         let typeItAgain = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Type it in")).firstMatch
