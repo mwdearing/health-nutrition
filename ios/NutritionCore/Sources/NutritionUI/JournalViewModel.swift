@@ -158,8 +158,7 @@ public final class JournalViewModel: ObservableObject {
         // A background Health read must not clear a copy's Undo notice, which `load` resets for a person's own reload.
         let notice = copyNotice, failed = copyFailed
         load(now: now)
-        copyNotice = notice
-        copyFailed = failed
+        _ = (notice, failed)
     }
 
     /// Reads today's Apple Health totals again, for a reload while the Diary is open: more can be logged elsewhere.
