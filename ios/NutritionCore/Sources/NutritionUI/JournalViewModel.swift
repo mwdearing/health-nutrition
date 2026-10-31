@@ -194,8 +194,10 @@ public final class JournalViewModel: ObservableObject {
 
     /// The identity of a day row's Health read: the day and the Diary's zone, so a zone change starts a fresh read for
     /// each day on screen rather than leaving it journal-only until it scrolls away and back.
+    /// It also carries the forget count, so forgetting the figures (Erase, or a Health access change) starts a fresh
+    /// read for each day on screen.
     public func healthReadTaskID(forDayKey key: String) -> String {
-        "\(key)|\(dayZone.identifier)"
+        "\(key)|\(dayZone.identifier)|\(healthReadEpoch)"
     }
 
     /// Forgets every day's Apple Health totals, for Erase all data: no header keeps figures read before the erase, and
@@ -205,6 +207,18 @@ public final class JournalViewModel: ObservableObject {
         healthReadMarks = [:]
         healthReadGenerations = [:]
         healthReadEpoch += 1
+    }
+
+    /// Forgets every day's Apple Health figures when Health access changes in Settings, and redraws the headers at once,
+    /// so a past day read while access was on does not keep its figures until the next launch (#1107, Mike 2026-10-31).
+    /// Each day on screen is read again under the new access.
+    public func healthAccessChanged(now: Date) {
+        forgetHealthTotals()
+        // Like a background Health read, this must not clear a copy's Undo notice.
+        let notice = copyNotice, failed = copyFailed
+        load(now: now)
+        copyNotice = notice
+        copyFailed = failed
     }
 
     /// Reads today's Apple Health totals again, for a reload while the Diary is open: more can be logged elsewhere.

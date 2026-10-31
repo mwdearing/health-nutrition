@@ -83,6 +83,9 @@ public final class AppleHealthConnectionViewModel: ObservableObject {
     /// Whether the read request has been shown on this device; see `AppleHealthAccess.readAsked`.
     @Published private var readAsked: Bool
     private let connector: any AppleHealthConnecting
+    /// Called after the state changes on a refresh, so screens that show what Health holds can forget figures read under
+    /// the old access. Not called for the first read in `init`.
+    public var onStateChange: (@MainActor (AppleHealthConnectionState) -> Void)?
 
     public init(connector: any AppleHealthConnecting) {
         self.connector = connector
@@ -95,7 +98,10 @@ public final class AppleHealthConnectionViewModel: ObservableObject {
     /// foreground, because the answer can change in the Health app while this one is in the background.
     public func refresh() {
         let access = connector.currentAccess()
-        if access.state != state { state = access.state }
+        if access.state != state {
+            state = access.state
+            onStateChange?(state)
+        }
         readAsked = access.readAsked
     }
 
