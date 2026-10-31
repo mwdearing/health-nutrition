@@ -192,8 +192,6 @@ public final class JournalViewModel: ObservableObject {
     public func forgetHealthTotals() {
         outsideIntakeByDay = [:]
         healthReadMarks = [:]
-        healthReadGenerations = [:]
-        healthReadEpoch += 1
     }
 
     /// Reads today's Apple Health totals again, for a reload while the Diary is open: more can be logged elsewhere.
