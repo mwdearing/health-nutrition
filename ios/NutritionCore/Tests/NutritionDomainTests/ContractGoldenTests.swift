@@ -150,6 +150,14 @@ final class ContractGoldenTests: XCTestCase {
         XCTAssertEqual(factors, ContractArithmetic.mcgPerInternationalUnit)
     }
 
+    /// A very long amount is refused as out of range before its digits are parsed, so it cannot cost much work.
+    func testAnOverlongAmountIsRefusedBeforeItIsParsed() {
+        let long = "1" + String(repeating: "0", count: 100_000)
+        XCTAssertThrowsError(try ContractArithmetic.exact(long)) {
+            XCTAssertEqual($0 as? ContractArithmetic.Failure, .amountOutOfRange)
+        }
+    }
+
     func testARepeatingQuotientRoundsToTenFractionDigitsHalvesAwayFromZero() throws {
         XCTAssertEqual(
             ContractArithmetic.decimalString(try ContractArithmetic.quotient(

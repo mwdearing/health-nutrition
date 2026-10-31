@@ -251,7 +251,12 @@ public enum ContractArithmetic {
         return value.isNegative ? rounded.negated : rounded
     }
 
+    /// The longest decimal text that can still be in range: a sign, 128 integer digits, or a point after 127 leading
+    /// zeros and then 38 digits. Anything longer is refused before any digit is parsed, so a long string costs nothing.
+    static let longestInRangeText = 170
+
     static func exact(_ text: String) throws -> Rational {
+        guard text.utf8.count <= longestInRangeText else { throw Failure.amountOutOfRange }
         guard let value = Rational(decimal: text) else { throw Failure.unknownSymbol }
         return try bounded(value)
     }
