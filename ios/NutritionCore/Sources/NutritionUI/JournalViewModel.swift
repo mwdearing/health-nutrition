@@ -195,7 +195,7 @@ public final class JournalViewModel: ObservableObject {
     /// The identity of a day row's Health read: the day and the Diary's zone, so a zone change starts a fresh read for
     /// each day on screen rather than leaving it journal-only until it scrolls away and back.
     public func healthReadTaskID(forDayKey key: String) -> String {
-        "\(key)|\(dayZone.identifier)"
+        key
     }
 
     /// Forgets every day's Apple Health totals, for Erase all data: no header keeps figures read before the erase, and
