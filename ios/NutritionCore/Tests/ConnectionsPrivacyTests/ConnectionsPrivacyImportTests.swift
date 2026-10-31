@@ -673,6 +673,26 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         XCTAssertFalse(try journal.activeIntakes().isEmpty)
     }
 
+    /// The retry the cleanup message asks for finishes the cleanup and reports the restore, not a full journal.
+    func testARetryAfterAFailedFlagClearReportsTheRestore() async throws {
+        let journal = ImportStubStore()
+        journal.failClearRestoreForTesting = true
+        let favorites = ImportStubFavorites()
+        let model = ConnectionsPrivacyViewModel(store: journal, favorites: favorites, erasers: [journal, favorites])
+        let data = try export(includeFavorite: true)
+
+        model.importJournal(data: data)
+        await waitForImportToSettle(model)
+        XCTAssertEqual(model.importMessage, ConnectionsPrivacyViewModel.cleanupIncompleteMessage)
+
+        journal.failClearRestoreForTesting = false
+        model.importJournal(data: data)
+        await waitForImportToSettle(model)
+        XCTAssertNotNil(model.importSummary)
+        XCTAssertNotEqual(model.importMessage, ConnectionsPrivacyViewModel.importNotEmptyMessage)
+        XCTAssertNotEqual(model.importMessage, ConnectionsPrivacyViewModel.cleanupIncompleteMessage)
+    }
+
     /// The restore flag is cleared once the import has finished. A failed clear then cancels nothing, erases
     /// nothing, and offers Retry; the import completes and its rows stay.
     func testAFailedFlagClearAfterTheImportFinishesCancelsNothing() async throws {

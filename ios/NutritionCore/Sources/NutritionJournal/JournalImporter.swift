@@ -319,7 +319,7 @@ public enum JournalImporter {
                 try? favoritesTarget?.removeRestoreReceipt(digest)
                 try? savedMealsTarget?.removeSavedMealsRestoreReceipt(digest)
                 try? goalsTarget?.removeGoalRestoreReceipt(digest)
-                return summary(of: plan, goals: 0)
+                return summary(of: plan, goals: (try? goalsTarget?.goalRestoreWrittenGoals(digest).count) ?? 0)
             }
             if let savedMealsTarget, !savedMealsWritten {
                 try savedMealsTarget.restoreJournalSavedMeals(plan.savedMeals, receipt: digest)
