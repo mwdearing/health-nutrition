@@ -66,7 +66,9 @@ public struct JournalView: View {
                 ForEach(model.diarySections) { section in
                     daySection(section)
                         // Adds what other apps logged to Apple Health that day, read as the day comes on screen.
-                        .task(id: section.id) { await model.loadHealthTotals(forDayKey: section.id, now: Date()) }
+                        .task(id: model.healthReadTaskID(forDayKey: section.id)) {
+                            await model.loadHealthTotals(forDayKey: section.id, now: Date())
+                        }
                 }
                 if let skipped = model.skippedText {
                     InlineNotice(skipped, tone: .waiting)

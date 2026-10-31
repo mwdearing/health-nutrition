@@ -349,4 +349,15 @@ final class DiaryHealthTotalsTests: XCTestCase {
         model.load(now: now)
         XCTAssertTrue(model.outsideIntakeByDay.isEmpty, "figures read for UTC days are forgotten")
     }
+
+    /// A day row's Health read starts again when the Diary's zone changes, so a day on screen is read for the new zone.
+    func testADayRowsHealthReadRestartsOnAZoneChange() throws {
+        let journal = try makeJournal()
+        var zone = "UTC"
+        let model = JournalViewModel(store: journal, timeZoneProvider: { zone }, locale: Locale(identifier: "en_US"))
+        let before = model.healthReadTaskID(forDayKey: "2020-01-15")
+        XCTAssertEqual(model.healthReadTaskID(forDayKey: "2020-01-15"), before, "same day and zone, same read")
+        zone = "Asia/Tokyo"
+        XCTAssertNotEqual(model.healthReadTaskID(forDayKey: "2020-01-15"), before)
+    }
 }
