@@ -307,6 +307,38 @@ final class JournalImportAtomicityTests: JournalImportTestCase {
         XCTAssertNil(try inner.restoreInProgressDigest())
     }
 
+    /// A goal ledger that cannot be read after every row is written reports the cleanup on the first run and on a
+    /// retry, and keeps the flag; once it reads, the retry finishes.
+    func testAnUnreadableGoalLedgerReportsCleanupIncompleteAndARetryFinishes() throws {
+        let target = try directory()
+        let base = try SwiftDataGoalStore(url: target.appendingPathComponent("goals.store"))
+        addTeardownBlock { base.close() }
+        let goals = ScriptedGoalStore(base: base) { _, _ in }
+        goals.failsFinishedLedgerRead = true
+        var root = try XCTUnwrap(try JSONSerialization.jsonObject(with: try exportData()) as? [String: Any])
+        root["goals"] = [["nutrient": "protein", "target": "60", "unit": "g"]]
+        let data = try JSONSerialization.data(withJSONObject: root)
+        let journal = try store(target)
+        let favoritesStore = try favorites(target)
+
+        XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: favoritesStore, goals: goals)) {
+            XCTAssertEqual($0 as? JournalImportError, .cleanupIncomplete)
+        }
+        XCTAssertFalse(try journal.activeIntakes().isEmpty)
+        XCTAssertNotNil(try journal.restoreInProgressDigest())
+
+        XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: favoritesStore, goals: goals)) {
+            XCTAssertEqual($0 as? JournalImportError, .cleanupIncomplete)
+        }
+        XCTAssertNotNil(try journal.restoreInProgressDigest())
+
+        goals.failsFinishedLedgerRead = false
+        var summary: JournalImportSummary?
+        XCTAssertNoThrow(summary = try JournalImporter.importExport(data, into: journal, favorites: favoritesStore, goals: goals))
+        XCTAssertEqual(summary?.goals, 1)
+        XCTAssertNil(try journal.restoreInProgressDigest())
+    }
+
     /// A retry whose flag clear fails again still reports the cleanup, not a bad file or a full journal.
     func testARetryWhoseFlagClearFailsAgainReportsCleanupIncomplete() throws {
         let data = try exportData()

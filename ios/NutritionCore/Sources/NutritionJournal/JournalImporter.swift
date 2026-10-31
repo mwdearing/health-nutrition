@@ -464,7 +464,12 @@ public enum JournalImporter {
             // restore is finished from its receipt rather than re-derived from the store.
             try goalsTarget?.markGoalRestoreReceiptDone(digest)
             // Counted before the receipt is removed, since the ledger lives in it.
-            if let goalsTarget { goalsWritten = try goalsTarget.goalRestoreWrittenGoals(digest).count }
+            // Every row is written by now, so a ledger that cannot be read is a cleanup to retry, not a bad file (#828).
+            if let goalsTarget {
+                do { goalsWritten = try goalsTarget.goalRestoreWrittenGoals(digest).count } catch {
+                    throw JournalImportError.cleanupIncomplete
+                }
+            }
             // A flag that cannot be cleared is reported rather than swallowed. It cannot start a resume over this
             // second phase: every part of it now has its receipt.
             // The restore itself is complete, so a flag that cannot be cleared is reported as its own outcome, not as a
