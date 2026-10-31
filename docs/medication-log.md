@@ -8,8 +8,12 @@ dose, and it holds no list of drugs, dose ranges, titration steps or advice.
 
 ## Rules
 
-- **Units.** A medication is measured in mg or mcg only. A dose uses the medication's current
+- **Units.** A medication is measured in mg, mcg, mL or units. A dose uses the medication's current
   unit.
+- **Site.** A dose may carry an optional injection site that the person types. It is at most 40
+  characters, has no whitespace at either end and no line break. It is kept with the dose only:
+  it is never used in schedules, trends or charts, and the log's day, last-dose and schedule rules
+  never read it.
 - **Name.** A name is required, has no whitespace (space, tab or line break) at either end and no
   line break inside, and is at most 60 characters. Names are unique ignoring case across all
   medications, archived ones included.
@@ -31,13 +35,16 @@ already logged in its old unit.
 
 The medications and doses are kept in their own store file, `medications.store`, separate from
 the journal. The file uses a versioned schema (version 1.0.0) with a migration plan that lists
-that first version, and it opens without CloudKit.
+that first version, and it opens without CloudKit. The site was added to version 1.0.0 in place,
+not as a second version: no app code opens the store file yet (the app wiring lands with the
+screens), so no released build has created one in the older shape.
 
 A row that cannot be read, or that fails the same checks as a save, fails the whole read. The
 log never skips a damaged row and shows the rest as if nothing were wrong.
 
-Erase all data will remove `medications.store`. The store can already erase itself, but it is
-not yet wired into Erase all data; that wiring lands with the screens.
+Erase all data will delete the medication rows, then replace the store file and its `-wal` and
+`-shm` files with an empty one, as the other stores do. The store can already erase itself, but
+it is not yet wired into Erase all data; that wiring lands with the screens.
 
 ## Not in this slice
 
