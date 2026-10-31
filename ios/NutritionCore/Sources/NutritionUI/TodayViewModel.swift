@@ -168,7 +168,9 @@ public final class TodayViewModel: ObservableObject {
     /// goals still gets the totals, which are the larger half of the line.
     private let goals: GoalStore?
     private let trackedNutrients: [String]
-    private let timeZoneIdentifier: String
+    /// The zone "today" is read in, asked on every load and quick add: the one given in tests, otherwise the current
+    /// zone, as the Diary does, so Today follows the person after travel without a relaunch (#1139).
+    private let zoneID: () -> String
     private let makeID: () -> String
     /// Read on every quick add and every label, rather than copied into this model, so a preference
     /// changed on another screen is honored by the next tap rather than by the next launch.
@@ -179,7 +181,7 @@ public final class TodayViewModel: ObservableObject {
         goals: GoalStore? = nil,
         lookup: NutrientFactsLookup = UnknownNutrientFacts(),
         trackedNutrients: [String] = TodayViewModel.defaultTrackedNutrients,
-        timeZoneIdentifier: String = TimeZone.current.identifier,
+        timeZoneIdentifier: String? = nil,
         makeID: @escaping () -> String = { UUID().uuidString.lowercased() },
         preferences: DisplayPreferences = InMemoryDisplayPreferences()
     ) {
@@ -187,7 +189,7 @@ public final class TodayViewModel: ObservableObject {
         self.goals = goals
         self.lookup = lookup
         self.trackedNutrients = trackedNutrients
-        self.timeZoneIdentifier = timeZoneIdentifier
+        self.zoneID = IntakeRepeater.resolver(override: timeZoneIdentifier, provider: { DiaryZone.identifier() })
         self.makeID = makeID
         self.preferences = preferences
     }
@@ -253,7 +255,7 @@ public final class TodayViewModel: ObservableObject {
         return tracked + [DailyTotalsBuilder.waterKey]
     }
 
-    /// Reloads Today: active intakes on the local day of each intake's own time zone.
+    /// Reloads Today: active intakes whose own-zone day is today's date in the current zone, the Diary's today.
     public func load(now: Date) {
         // Nil while a load is in progress and after one that failed, so it only ever names a load whose totals
         // are the ones on screen; a successful load sets it again at the end.
@@ -261,8 +263,11 @@ public final class TodayViewModel: ObservableObject {
         do {
             var skippedIntakes = 0
             var intakes: [Intake] = []
+            // The Diary's today: today's date in the current zone. An entry counts when its own-zone day is that date,
+            // so Today and the Diary's today always hold the same entries (#1139, Mike 2026-10-31).
+            let todayKey = JournalViewModel.dayKey(now, zone: TimeZone(identifier: zoneID()) ?? .current)
             for intake in try store.activeIntakes() where intake.lifecycle == .active {
-                guard let sameDay = Self.isSameLocalDay(intake, as: now) else {
+                guard let sameDay = Self.isOnDay(intake, key: todayKey) else {
                     skippedIntakes += 1
                     continue
                 }
@@ -537,7 +542,7 @@ public final class TodayViewModel: ObservableObject {
             return nil
         }
         let intake = Intake(
-            id: makeID(), category: "water", occurredAt: now, timeZoneIdentifier: timeZoneIdentifier)
+            id: makeID(), category: "water", occurredAt: now, timeZoneIdentifier: zoneID())
         let component = IntakeComponent(componentID: "water", name: "Water", amount: milliliters, unit: .mL)
         do {
             // The place of the write in commit order is taken inside its own commit.
@@ -807,12 +812,11 @@ public final class TodayViewModel: ObservableObject {
         return found
     }
 
-    /// Nil when the intake's stored time zone identifier is not a valid time zone (no fallback).
-    static func isSameLocalDay(_ intake: Intake, as now: Date) -> Bool? {
+    /// Whether the intake's day, read in its own zone, is `key`. Nil when the intake's stored time zone identifier is
+    /// not a valid time zone (no fallback).
+    static func isOnDay(_ intake: Intake, key: String) -> Bool? {
         guard let zone = TimeZone(identifier: intake.timeZoneIdentifier) else { return nil }
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = zone
-        return calendar.isDate(intake.occurredAt, inSameDayAs: now)
+        return JournalViewModel.dayKey(intake.occurredAt, zone: zone) == key
     }
 
     }

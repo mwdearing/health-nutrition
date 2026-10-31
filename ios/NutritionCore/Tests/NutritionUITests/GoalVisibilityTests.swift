@@ -71,7 +71,7 @@ final class GoalVisibilityTests: XCTestCase {
         try logOats(journal, grams: 40)
         let preferences = InMemoryDisplayPreferences()
 
-        let model = TodayViewModel(store: journal, goals: goals, lookup: OatsFacts(), preferences: preferences)
+        let model = TodayViewModel(store: journal, goals: goals, lookup: OatsFacts(), timeZoneIdentifier: "UTC", preferences: preferences)
         model.load(now: when)
 
         XCTAssertEqual(Set(todayBarIDs(model)), ["protein", "fiber"])
@@ -87,7 +87,7 @@ final class GoalVisibilityTests: XCTestCase {
         let preferences = InMemoryDisplayPreferences()
         preferences.setGoalShownOnToday("protein", shown: false)
 
-        let model = TodayViewModel(store: journal, goals: goals, lookup: OatsFacts(), preferences: preferences)
+        let model = TodayViewModel(store: journal, goals: goals, lookup: OatsFacts(), timeZoneIdentifier: "UTC", preferences: preferences)
         model.load(now: when)
 
         XCTAssertEqual(todayBarIDs(model), ["fiber"])
@@ -124,7 +124,7 @@ final class GoalVisibilityTests: XCTestCase {
         preferences.setGoalShownOnToday("protein", shown: false)
         preferences.setGoalShownOnToday("protein", shown: true)
 
-        let model = TodayViewModel(store: journal, goals: goals, lookup: OatsFacts(), preferences: preferences)
+        let model = TodayViewModel(store: journal, goals: goals, lookup: OatsFacts(), timeZoneIdentifier: "UTC", preferences: preferences)
         model.load(now: when)
 
         XCTAssertEqual(todayBarIDs(model), ["protein"])
@@ -142,7 +142,7 @@ final class GoalVisibilityTests: XCTestCase {
         goalsModel.load()
         XCTAssertTrue(goalsModel.setShowsOnToday(false, for: "protein"))
 
-        let rebuilt = TodayViewModel(store: journal, goals: goals, lookup: OatsFacts(), preferences: preferences)
+        let rebuilt = TodayViewModel(store: journal, goals: goals, lookup: OatsFacts(), timeZoneIdentifier: "UTC", preferences: preferences)
         rebuilt.load(now: when)
         XCTAssertEqual(todayBarIDs(rebuilt), [])
     }
@@ -158,7 +158,7 @@ final class GoalVisibilityTests: XCTestCase {
         preferences.resetToDefaults()
 
         XCTAssertEqual(preferences.hiddenTodayGoals, [])
-        let model = TodayViewModel(store: journal, goals: goals, lookup: OatsFacts(), preferences: preferences)
+        let model = TodayViewModel(store: journal, goals: goals, lookup: OatsFacts(), timeZoneIdentifier: "UTC", preferences: preferences)
         model.load(now: when)
         XCTAssertEqual(todayBarIDs(model), ["protein"])
     }
@@ -212,7 +212,7 @@ final class GoalVisibilityTests: XCTestCase {
         try logOats(journal, grams: 40)
         let preferences = UserDefaultsDisplayPreferences(defaults: defaults)
 
-        let model = TodayViewModel(store: journal, goals: goals, lookup: OatsFacts(), preferences: preferences)
+        let model = TodayViewModel(store: journal, goals: goals, lookup: OatsFacts(), timeZoneIdentifier: "UTC", preferences: preferences)
         model.load(now: when)
 
         XCTAssertEqual(todayBarIDs(model), ["fiber"])
@@ -235,12 +235,12 @@ final class GoalVisibilityTests: XCTestCase {
         try goals.setGoal(NutrientGoal(nutrient: "water", target: Decimal(2000), unit: .mL))
         let preferences = InMemoryDisplayPreferences()
 
-        let shown = TodayViewModel(store: journal, goals: goals, lookup: OatsFacts(), preferences: preferences)
+        let shown = TodayViewModel(store: journal, goals: goals, lookup: OatsFacts(), timeZoneIdentifier: "UTC", preferences: preferences)
         shown.load(now: when)
         XCTAssertNotNil(shown.waterBar, "a water goal shows its bar until it is switched off")
 
         preferences.setGoalShownOnToday("water", shown: false)
-        let hidden = TodayViewModel(store: journal, goals: goals, lookup: OatsFacts(), preferences: preferences)
+        let hidden = TodayViewModel(store: journal, goals: goals, lookup: OatsFacts(), timeZoneIdentifier: "UTC", preferences: preferences)
         hidden.load(now: when)
         XCTAssertNil(hidden.waterBar)
     }
@@ -253,7 +253,7 @@ final class GoalVisibilityTests: XCTestCase {
         // Hidden while it had a goal; the goal is gone now, so there is no bar to hide.
         preferences.setGoalShownOnToday("protein", shown: false)
 
-        let model = TodayViewModel(store: journal, goals: goals, lookup: OatsFacts(), preferences: preferences)
+        let model = TodayViewModel(store: journal, goals: goals, lookup: OatsFacts(), timeZoneIdentifier: "UTC", preferences: preferences)
         model.load(now: when)
 
         XCTAssertTrue(model.goalBars.contains { $0.id == "protein" })
