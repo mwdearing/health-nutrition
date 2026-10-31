@@ -103,7 +103,11 @@ public struct CommunityProductSearchView: View {
                 Section("Shared products") {
                     sharedState
                     ForEach(model.sharedResults, id: \.productID) { product in
-                        Button { do { try model.inspect(product) } catch { selectionError = "Search again to refresh this product." } } label: {
+                        Button {
+                            leaveSearch {
+                                do { try model.inspect(product) } catch { selectionError = "Search again to refresh this product." }
+                            }
+                        } label: {
                             VStack(alignment: .leading, spacing: DesignSpacing.xs) {
                                 Text(CommunityProductSearchViewModel.name(product)).font(.headline)
                                 Text(CommunityProductSearchViewModel.verificationText(product))
@@ -149,7 +153,7 @@ public struct CommunityProductSearchView: View {
                             if let error = model.inspectionError { Text(error) }
                             if model.inspectionNeedsRefresh { Button("Refresh shared facts") { Task { await model.refreshInspection() } } }
                             Button("Save representative on this device") {
-                                select(product)
+                                leaveSearch { select(product) }
                                 // Only a saved product confirms; a legacy label opens an editor draft that is not saved yet.
                                 if selectionError == nil, case .custom = product.product { onSaved() }
                                 model.closeInspection()
