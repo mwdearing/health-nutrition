@@ -158,6 +158,24 @@ final class ContractGoldenTests: XCTestCase {
         }
     }
 
+    /// Zeros that do not change a value do not count against the length guard: "1." and 200 zeros is 1.
+    func testRedundantZerosDoNotMakeAnInRangeAmountTooLong() throws {
+        let padded = "0001." + String(repeating: "0", count: 200)
+        XCTAssertEqual(ContractArithmetic.decimalString(try ContractArithmetic.exact(padded)), "1")
+        // A hundred thousand trailing zeros are dropped before parsing, so they cost no arithmetic.
+        let long = "1." + String(repeating: "0", count: 100_000)
+        XCTAssertEqual(ContractArithmetic.decimalString(try ContractArithmetic.exact(long)), "1")
+    }
+
+    /// Text that is not a plain decimal is no amount the contract can hold.
+    func testMalformedAmountTextIsRefusedAsOutOfRange() {
+        for text in ["", "abc", "1e3", "5,2", ".5", "5."] {
+            XCTAssertThrowsError(try ContractArithmetic.exact(text), text) {
+                XCTAssertEqual($0 as? ContractArithmetic.Failure, .amountOutOfRange, text)
+            }
+        }
+    }
+
     func testARepeatingQuotientRoundsToTenFractionDigitsHalvesAwayFromZero() throws {
         XCTAssertEqual(
             ContractArithmetic.decimalString(try ContractArithmetic.quotient(

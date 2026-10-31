@@ -251,14 +251,44 @@ public enum ContractArithmetic {
         return value.isNegative ? rounded.negated : rounded
     }
 
-    /// The longest decimal text that can still be in range: a sign, 128 integer digits, or a point after 127 leading
-    /// zeros and then 38 digits. Anything longer is refused before any digit is parsed, so a long string costs nothing.
+    /// The longest decimal text that can still be in range once its redundant zeros are dropped: a sign, 128 integer
+    /// digits, or a point after 127 leading zeros and then 38 digits. Anything longer is refused before any digit is
+    /// parsed, so a long string costs only the one pass that trims it.
     static let longestInRangeText = 170
 
+    /// A text that is not a plain decimal is refused as out of range: it is no amount the contract can hold, and the
+    /// contract names no other error for it (its schemas refuse such text before any operation runs).
     static func exact(_ text: String) throws -> Rational {
-        guard text.utf8.count <= longestInRangeText else { throw Failure.amountOutOfRange }
-        guard let value = Rational(decimal: text) else { throw Failure.unknownSymbol }
+        guard let trimmed = significantText(text), trimmed.utf8.count <= longestInRangeText else {
+            throw Failure.amountOutOfRange
+        }
+        // The trimmed text is what is parsed, so redundant zeros cost no arithmetic either.
+        guard let value = Rational(decimal: (text.first == "-" ? "-" : "") + trimmed) else {
+            throw Failure.amountOutOfRange
+        }
         return try bounded(value)
+    }
+
+    /// The text of a plain decimal without the zeros that do not change its value (leading zeros of the integer part,
+    /// trailing zeros of the fraction), so "1." with 200 zeros after it is measured and parsed as "1". Nil when the
+    /// text is not a plain decimal: optional sign, digits, and an optional point followed by digits. One pass over
+    /// the bytes, so a long text costs no more than reading it.
+    static func significantText(_ text: String) -> String? {
+        var bytes = Array(text.utf8)
+        if bytes.first == UInt8(ascii: "-") { bytes.removeFirst() }
+        let point = bytes.firstIndex(of: UInt8(ascii: "."))
+        let integerEnd = point ?? bytes.count
+        let isDigit: (UInt8) -> Bool = { $0 >= UInt8(ascii: "0") && $0 <= UInt8(ascii: "9") }
+        guard integerEnd > 0, bytes[..<integerEnd].allSatisfy(isDigit) else { return nil }
+        var end = bytes.count
+        if let point {
+            guard point + 1 < bytes.count, bytes[(point + 1)...].allSatisfy(isDigit) else { return nil }
+            while end > point + 1, bytes[end - 1] == UInt8(ascii: "0") { end -= 1 }
+            if end == point + 1 { end = point }
+        }
+        var start = 0
+        while start < integerEnd - 1, bytes[start] == UInt8(ascii: "0") { start += 1 }
+        return String(decoding: bytes[start..<end], as: UTF8.self)
     }
 
     /// Refused, never cut: more than 38 significant digits, or a leading digit outside 10^-127 ... 10^127.
