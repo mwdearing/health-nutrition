@@ -92,6 +92,30 @@ final class TodayDistrustedWaterTests: XCTestCase {
         XCTAssertEqual(model.waterAccessibilityValue, "200 milliliters today")
     }
 
+    /// With a water goal, a day whose only water is a distrusted soup reads "No data" on the goal bar, not
+    /// "Nothing logged yet": the entry makes the day's water unknown.
+    func testTheWaterBarReadsNoDataForADistrustedSoupOnly() throws {
+        let store = try makeStore()
+        try log(store, category: "other", componentID: "suspect", amount: 250, share: 80)
+        let goals = InMemoryGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "water", target: 2000, unit: .mL))
+        let model = TodayViewModel(store: store, goals: goals, lookup: SuspectFacts(), timeZoneIdentifier: "UTC")
+        model.load(now: now)
+        let bar = try XCTUnwrap(model.waterBar)
+        XCTAssertEqual(bar.valueText, "No data")
+    }
+
+    /// A known water part too small to show must not read "at least less than ..." (a contradiction).
+    func testABelowSmallestKnownPartIsNotPrefixedWithAtLeast() throws {
+        let store = try makeStore()
+        try log(store, category: "water", componentID: "sip", amount: 0.5, share: nil)
+        try log(store, category: "other", componentID: "suspect", amount: 250, share: 80)
+        let model = today(store)
+        XCTAssertTrue(model.waterHasUnknown)
+        XCTAssertFalse(model.waterFigureText.contains("less than"))
+        XCTAssertFalse(model.waterAccessibilityValue.contains("less than"))
+    }
+
     /// A healthy soup with a share still counts its water, unchanged.
     func testATrustedSoupWithAShareStillCounts() throws {
         let store = try makeStore()

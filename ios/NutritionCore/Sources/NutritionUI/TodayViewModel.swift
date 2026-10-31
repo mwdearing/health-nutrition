@@ -469,7 +469,7 @@ public final class TodayViewModel: ObservableObject {
                 // Water other apps logged to Health counts as logged and known, as it does in the water figure.
                 let outsideWater = Self.outsideWaterMilliliters(outsideIntake) > 0
                 return GoalBarModel.make(
-                    line: line, hasEntries: waterEntries > 0 || countedWater > 0 || outsideWater, missingCount: 0,
+                    line: line, hasEntries: waterEntries > 0 || countedWater > 0 || outsideWater || unknownWater, missingCount: 0,
                     skippedWaterCount: skipped, someKnown: countedWater > 0 || outsideWater,
                     unitSystem: self.preferences.unitSystem)
             }
@@ -694,14 +694,20 @@ public final class TodayViewModel: ObservableObject {
         let spoken = "\(waterTotalDisplay.spokenAmount) "
             + "\(AmountDisplay.spokenName(for: waterTotalDisplay.unit)) today"
         guard waterHasUnknown else { return spoken }
-        return waterTotalMilliliters > 0 ? "at least \(spoken)" : Self.waterNoDataText
+        // A known part below the smallest shown amount cannot read as "at least" without a contradiction.
+        return knownWaterReadsAsAtLeast ? "at least \(spoken)" : Self.waterNoDataText
     }
 
     /// The water figure on the card when no water goal is set: the total, "at least" the known part when some
     /// of the day's water cannot be counted, or "No data" when none of it can (#1137).
     public var waterFigureText: String {
         guard waterHasUnknown else { return waterTotalDisplay.text }
-        return waterTotalMilliliters > 0 ? "at least \(waterTotalDisplay.text)" : Self.waterNoDataText
+        return knownWaterReadsAsAtLeast ? "at least \(waterTotalDisplay.text)" : Self.waterNoDataText
+    }
+
+    /// Whether the known part can be shown as "at least X": some is known and it is not below the smallest amount shown.
+    private var knownWaterReadsAsAtLeast: Bool {
+        waterTotalMilliliters > 0 && !waterTotalDisplay.isBelowSmallest
     }
 
     /// The existing approved text for a figure with nothing known (GoalBar).
