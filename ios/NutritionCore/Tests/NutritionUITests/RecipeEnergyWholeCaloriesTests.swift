@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 @testable import NutritionUI
 
+@MainActor
 final class RecipeEnergyWholeCaloriesTests: XCTestCase {
     func testRecipeEnergyReadsWholeCaloriesLikeToday() {
         let text = RecipeDetailViewModel.valueText(.known(Decimal(string: "123.5")!, .kcal))
