@@ -121,7 +121,7 @@ What a restore writes:
   goal for that nutrient yet, so a goal already on the device is never replaced. A file that lists a nutrient
   twice, an empty key, a key under the store's reserved receipt prefix, or a target or unit this build cannot
   read is `corrupt`. If a later restore step fails, the undo removes only the goals this restore wrote that
-  still hold the value it set. A goal changed since the restore, or one that cannot be read, is left behind,
+  still hold the value it set. A goal that was changed since the restore, cannot be read, or cannot be removed is left behind,
   and the restore is then reported as partial rather than undone. The weight plan is not in the file.
 
 Amounts are read as exact decimal text and stored as `Decimal`, never as a binary float. A component whose
