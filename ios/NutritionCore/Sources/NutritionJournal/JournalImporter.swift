@@ -316,7 +316,11 @@ public enum JournalImporter {
             // completes instead of being refused as a journal that is not empty.
             if savedMealsWritten && favoritesWritten && !goalsPending {
                 // Counted before the receipt is removed, since the ledger lives in it.
-                let written = try goalsTarget.map { try $0.goalRestoreWrittenGoals(digest).count } ?? 0
+                // A ledger that cannot be read leaves the rows as they are and the flag for another retry.
+                let written: Int
+                do { written = try goalsTarget.map { try $0.goalRestoreWrittenGoals(digest).count } ?? 0 } catch {
+                    throw JournalImportError.cleanupIncomplete
+                }
                 try clearFlagAfterRestore(progress)
                 try? favoritesTarget?.removeRestoreReceipt(digest)
                 try? savedMealsTarget?.removeSavedMealsRestoreReceipt(digest)
