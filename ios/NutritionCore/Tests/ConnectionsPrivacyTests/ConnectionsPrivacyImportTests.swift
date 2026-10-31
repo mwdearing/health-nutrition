@@ -663,7 +663,7 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         journal.failClearRestoreForTesting = true
         // A favorites store makes the import a second phase, which is the path that clears the flag.
         let favorites = ImportStubFavorites()
-        let model = ConnectionsPrivacyViewModel(store: journal, favorites: favorites, erasers: [journal, favorites])
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(), store: journal, favorites: favorites, erasers: [journal, favorites])
 
         model.importJournal(data: try export(includeFavorite: true))
         await waitForImportToSettle(model)
