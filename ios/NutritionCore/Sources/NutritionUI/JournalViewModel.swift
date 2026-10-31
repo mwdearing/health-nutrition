@@ -161,9 +161,7 @@ public final class JournalViewModel: ObservableObject {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = zone
         guard let start = calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2])),
-              let end = calendar.date(byAdding: .day, value: 1, to: start),
-              // A key that names no real day (2026-02-31) would be normalised to another day, so it is refused.
-              dayKey(start, zone: zone) == key
+              let end = calendar.date(byAdding: .day, value: 1, to: start)
         else { return nil }
         return (start, end)
     }
