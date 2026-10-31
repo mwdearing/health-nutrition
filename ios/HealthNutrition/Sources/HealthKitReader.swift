@@ -74,6 +74,14 @@ final class HealthKitReader: BodyActivityReading {
         return readings
     }
 
+    /// One Diary day's totals from samples other apps wrote, for that day's header, and whether every query succeeded,
+    /// so a day with a failed query is read again. Not connected until read access was asked for, as on Today.
+    func outsideIntakeDay(from start: Date, to end: Date) async -> HealthDayRead {
+        guard HKHealthStore.isHealthDataAvailable(), hasAskedForReadAccess else { return HealthDayRead(.notConnected) }
+        let outside = await outsideNutrientTotals(from: start, to: end)
+        return HealthDayRead(.read(values: outside.totals, readKeys: outside.readKeys), complete: !outside.failed)
+    }
+
     /// Today's total for a cumulative type, or nil when Health holds none (or reading was refused).
     private func sum(
         _ identifier: HKQuantityTypeIdentifier, unit: HKUnit, from start: Date, to end: Date
