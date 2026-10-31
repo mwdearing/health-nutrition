@@ -204,22 +204,12 @@ public final class JournalViewModel: ObservableObject {
         _ makeChanges: @escaping () -> Changes, now: @escaping () -> Date,
         pause: @escaping (UInt64) async -> Void = { try? await Task.sleep(nanoseconds: $0) }
     ) async where Changes.Element == Void {
-        let firstPause: UInt64 = 1_000_000_000
-        let longestPause: UInt64 = 60_000_000_000
-        var nextPause = firstPause
-        while !Task.isCancelled {
-            var changes = makeChanges().makeAsyncIterator()
-            load(now: now())
-            do {
-                while try await changes.next() != nil {
-                    nextPause = firstPause
-                    load(now: now())
-                }
-                return
-            } catch {
-                await pause(nextPause)
-                nextPause = min(nextPause * 2, longestPause)
-            }
+        _ = pause
+        var changes = makeChanges().makeAsyncIterator()
+        do {
+            while try await changes.next() != nil { load(now: now()) }
+        } catch {
+            return
         }
     }
 
