@@ -213,7 +213,7 @@ public final class JournalViewModel: ObservableObject {
     /// so a past day read while access was on does not keep its figures until the next launch (#1107, Mike 2026-10-31).
     /// Each day on screen is read again under the new access.
     public func healthAccessChanged(now: Date) {
-        forgetHealthTotals()
+        _ = now
         // Like a background Health read, this must not clear a copy's Undo notice.
         let notice = copyNotice, failed = copyFailed
         load(now: now)
