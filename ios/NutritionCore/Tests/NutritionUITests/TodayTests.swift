@@ -290,15 +290,18 @@ final class TodayTests: XCTestCase {
         XCTAssertNil(MealLabel.displayName(for: try store.activeIntakes().first?.meal))
     }
 
-    func testTodayShowsOnlyTheLocalDayOfEachIntakeTimeZone() throws {
+    /// An entry is on Today when its own-zone day is today's date in Today's zone, the Diary's today (#1139).
+    func testTodayShowsEntriesWhoseOwnZoneDayIsTodaysDate() throws {
         let store = try makeStore()
         _ = try addFood(store, name: "Today UTC", id: "a", at: now.addingTimeInterval(-3600))
         _ = try addFood(store, name: "Yesterday UTC", id: "b", at: now.addingTimeInterval(-86_400))
-        // 12 hours earlier is still the same UTC day, but a different day in Auckland (UTC+13).
-        _ = try addFood(store, name: "Auckland yesterday", id: "c", at: now.addingTimeInterval(-43_200), zone: "Pacific/Auckland")
+        // 12 hours earlier is 23:13 on 2023-11-14 in Auckland (UTC+13): its own day is the UTC today's date.
+        _ = try addFood(store, name: "Auckland same date", id: "c", at: now.addingTimeInterval(-43_200), zone: "Pacific/Auckland")
+        // 2 hours earlier is 09:13 on 2023-11-15 in Auckland: its own day is tomorrow's date, so not today.
+        _ = try addFood(store, name: "Auckland next date", id: "d", at: now.addingTimeInterval(-7_200), zone: "Pacific/Auckland")
         let model = TodayViewModel(store: store, timeZoneIdentifier: "UTC")
         model.load(now: now)
-        XCTAssertEqual(model.rows.map(\.title), ["Today UTC"])
+        XCTAssertEqual(model.rows.map(\.title), ["Today UTC", "Auckland same date"])
     }
 
     func testWaterTotalIsExactDecimalAndSkipsUnknownUnits() throws {
