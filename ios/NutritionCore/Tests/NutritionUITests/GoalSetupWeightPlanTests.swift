@@ -596,6 +596,25 @@ final class GoalSetupWeightPlanTests: XCTestCase {
         XCTAssertEqual(model.resultError, "Enter a number above zero.")
     }
 
+    func testAUnitSwitchAtResultsKeepsAFailedSaveNotice() {
+        let prefs = InMemoryDisplayPreferences(unitSystem: .metric)
+        let goals = GoalsViewModel(store: GoalSetupPlanStore(refusesPlanWrites: true), preferences: prefs)
+        goals.load()
+        let model = GoalSetupViewModel(goals: goals)
+        answer(model, aim: .lose)
+        walk(model, to: .pace)
+        model.selectedPaceKilograms = model.paceOptions[1].kilogramsPerWeek
+        model.goalWeightKilogramsText = "75"
+        walk(model, to: .results)
+        XCTAssertFalse(model.save())
+        XCTAssertEqual(model.resultError, GoalSetupViewModel.saveFailedNotice)
+
+        prefs.setUnitSystem(.usCustomary)
+        model.unitSystemDidChange()
+
+        XCTAssertEqual(model.resultError, GoalSetupViewModel.saveFailedNotice)
+    }
+
     func testThePrivacyNoticeSaysWhatIsSaved() {
         XCTAssertEqual(
             GoalSetupViewModel.privacyNotice,

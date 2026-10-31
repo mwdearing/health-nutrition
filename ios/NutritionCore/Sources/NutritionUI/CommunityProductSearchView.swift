@@ -62,7 +62,7 @@ public struct CommunityProductSearchView: View {
             if kind != .supplement { Section(header: Text("Food databases"), footer: Text("The words you search for are sent to public food databases (USDA FoodData Central and Open Food Facts). Nothing else from this device is sent.")) {
                 openFoodFactsStatus
                 ForEach(model.openFoodFactsResults, id: \.self) { product in
-                    Button { onOpenFoodFacts(product, kind) } label: {
+                    Button { leaveSearch { onOpenFoodFacts(product, kind) } } label: {
                         VStack(alignment: .leading, spacing: DesignSpacing.xs) {
                             Text(product.name ?? "Unnamed product").font(.headline)
                             if let brand = product.brand { Text(brand) }
@@ -80,14 +80,18 @@ public struct CommunityProductSearchView: View {
             // A saved meal can mix foods, drinks and supplements, so meals are offered only under All kinds; a
             // warning about entries a failed log left behind shows under any kind.
             if let savedMeals = library?.savedMeals, onPick != nil {
-                SavedMealSections(model: savedMeals, query: query, showsMeals: kind == nil, onLog: { mealToLog = $0 })
+                SavedMealSections(model: savedMeals, query: query, showsMeals: kind == nil, onLog: { meal in leaveSearch { mealToLog = meal } })
             }
-            if let library, let onPick { LibrarySearchSections(library: library, query: query, kind: kind, onPick: onPick) }
+            if let library, let onPick {
+                LibrarySearchSections(
+                    library: library, query: query, kind: kind,
+                    onPick: { template in leaveSearch { onPick(template) } })
+            }
             Section("On this device") {
                 if model.localError { Text("Could not read local products.") }
                 else if model.localResults.isEmpty { Text("No matching local products.") }
                 ForEach(model.localResults, id: \.localProductID) { product in
-                    Button { onSelect(product) } label: {
+                    Button { leaveSearch { onSelect(product) } } label: {
                         VStack(alignment: .leading) {
                             Text(product.content.name)
                             Text(product.content.kind.displayName).font(.footnote)
@@ -171,6 +175,9 @@ public struct CommunityProductSearchView: View {
         // waiting when the screen goes away is dropped, and the screen takes no focus on a later return.
         .onDisappear {
             library?.savedMeals?.clearUndo()
+            // The field keeps its focus state while a pushed screen covers it, and SwiftUI gives focus back when the
+            // screen shows again, which raises the keyboard on Back (#944). Leaving clears it.
+            searchFocused = false
             if focusTask != nil {
                 focusTask?.cancel()
                 focusTask = nil
@@ -251,6 +258,12 @@ public struct CommunityProductSearchView: View {
             didAutoFocus = true
             focusTask = nil
         }
+    }
+    /// Puts the keyboard away before a row opens the next screen. A screen presented over this one hands focus back to
+    /// the field when it closes, which raised the keyboard on Back (#944), so the field gives focus up first.
+    private func leaveSearch(_ open: () -> Void) {
+        searchFocused = false
+        open()
     }
     private func search() {
         // The keyboard covers the results below the form, which reads as if nothing happened.
