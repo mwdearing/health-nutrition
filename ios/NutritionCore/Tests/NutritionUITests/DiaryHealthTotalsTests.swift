@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import NutritionDomain
 import NutritionJournal
@@ -65,11 +66,23 @@ final class DiaryHealthTotalsTests: XCTestCase {
         XCTAssertEqual(bar.fraction, Decimal(string: "0.5"))
     }
 
-    /// Health read for one day never changes another day's header.
+    /// Health read for one day never changes another day's header, while it does change its own day's.
     func testHealthForOneDayLeavesOtherDaysJournalOnly() throws {
-        let (model, key) = try waterOnlyDay()
-        model.outsideIntakeByDay["1999-01-01"] = .read(values: ["energy": 620], readKeys: ["energy"])
+        let journal = try makeJournal()
+        let yesterday = now.addingTimeInterval(-86_400)
+        for occurredAt in [yesterday, now] {
+            try journal.create(
+                Intake(id: UUID().uuidString.lowercased(), category: "water", occurredAt: occurredAt,
+                       timeZoneIdentifier: "UTC"),
+                components: [IntakeComponent(componentID: "water", name: "Example water", amount: 250, unit: .mL)],
+                product: nil, now: occurredAt)
+        }
+        let model = JournalViewModel(store: journal, timeZoneIdentifier: "UTC", locale: Locale(identifier: "en_US"))
+        let utc = TimeZone(identifier: "UTC")!
+        let key = JournalViewModel.dayKey(now, zone: utc), otherKey = JournalViewModel.dayKey(yesterday, zone: utc)
+        model.outsideIntakeByDay[otherKey] = .read(values: ["energy": 620], readKeys: ["energy"])
         model.load(now: now)
+        XCTAssertEqual(model.sections.first { $0.id == otherKey }?.energyText, "620 Calories")
         XCTAssertNil(model.sections.first { $0.id == key }?.energyText)
     }
 
@@ -275,5 +288,76 @@ final class DiaryHealthTotalsTests: XCTestCase {
         XCTAssertTrue(model.outsideIntakeByDay.isEmpty)
         model.load(now: now)
         XCTAssertNil(model.sections.first { $0.id == key }?.energyText)
+    }
+
+    /// A read that finishes after the Diary's zone changed is dropped, and the day is read again in the new zone.
+    func testAReadThatFinishesAfterAZoneChangeIsDropped() async throws {
+        let journal = try makeJournal()
+        var zone = "UTC"
+        let model = JournalViewModel(store: journal, timeZoneProvider: { zone }, locale: Locale(identifier: "en_US"))
+        var reads = 0
+        model.healthDayReader = { _, _ in
+            reads += 1
+            if reads == 1 { zone = "America/New_York" }
+            return HealthDayRead(.read(values: ["energy": 620], readKeys: ["energy"]))
+        }
+        await model.loadHealthTotals(forDayKey: "2020-01-15", now: now)
+        XCTAssertNil(model.outsideIntakeByDay["2020-01-15"], "the read for the old zone's day is not kept")
+        await model.loadHealthTotals(forDayKey: "2020-01-15", now: now)
+        await model.loadHealthTotals(forDayKey: "2020-01-15", now: now)
+        XCTAssertEqual(reads, 2, "read again in the new zone, then kept")
+    }
+
+    /// A read that returns the same figures as before does not rebuild the Diary.
+    func testAReadWithTheSameFiguresDoesNotReload() async throws {
+        let (model, key) = try waterOnlyDay()
+        model.healthDayReader = { _, _ in HealthDayRead(.read(values: ["energy": 620], readKeys: ["energy"])) }
+        await model.loadHealthTotals(forDayKey: key, now: now)
+        var rebuilds = 0
+        let watch = model.$sections.dropFirst().sink { _ in rebuilds += 1 }
+        await model.loadHealthTotals(forDayKey: key, now: now)
+        watch.cancel()
+        XCTAssertEqual(rebuilds, 0, "no reload for unchanged figures")
+    }
+
+    /// A day whose clocks change at midnight starts at the zone's real start of day, not at a shifted instant.
+    func testADayWhoseMidnightIsSkippedStartsAtTheZonesStartOfDay() throws {
+        let zone = try XCTUnwrap(TimeZone(identifier: "America/Sao_Paulo"))
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = zone
+        let day = try XCTUnwrap(JournalViewModel.dayInterval(forKey: "2018-11-04", zone: zone))
+        let noon = try XCTUnwrap(calendar.date(from: DateComponents(year: 2018, month: 11, day: 4, hour: 12)))
+        XCTAssertEqual(day.start, calendar.startOfDay(for: noon))
+        XCTAssertEqual(day.end.timeIntervalSince(day.start), 23 * 3600)
+    }
+
+    /// After the Diary's zone changes, a past day's Health figures read for the old zone no longer show.
+    func testAZoneChangeForgetsHealthFiguresForTheOldZone() async throws {
+        let journal = try makeJournal()
+        try journal.create(
+            Intake(id: UUID().uuidString.lowercased(), category: "water", occurredAt: now, timeZoneIdentifier: "UTC"),
+            components: [IntakeComponent(componentID: "water", name: "Example water", amount: 250, unit: .mL)],
+            product: nil, now: now)
+        var zone = "UTC"
+        let model = JournalViewModel(store: journal, timeZoneProvider: { zone }, locale: Locale(identifier: "en_US"))
+        model.healthDayReader = { _, _ in HealthDayRead(.read(values: ["energy": 620], readKeys: ["energy"])) }
+        model.load(now: now)
+        let key = JournalViewModel.dayKey(now, zone: TimeZone(identifier: "UTC")!)
+        await model.loadHealthTotals(forDayKey: key, now: now.addingTimeInterval(3 * 86_400))
+        XCTAssertNotNil(model.outsideIntakeByDay[key])
+        zone = "Asia/Tokyo"
+        model.load(now: now)
+        XCTAssertTrue(model.outsideIntakeByDay.isEmpty, "figures read for UTC days are forgotten")
+    }
+
+    /// A day row's Health read starts again when the Diary's zone changes, so a day on screen is read for the new zone.
+    func testADayRowsHealthReadRestartsOnAZoneChange() throws {
+        let journal = try makeJournal()
+        var zone = "UTC"
+        let model = JournalViewModel(store: journal, timeZoneProvider: { zone }, locale: Locale(identifier: "en_US"))
+        let before = model.healthReadTaskID(forDayKey: "2020-01-15")
+        XCTAssertEqual(model.healthReadTaskID(forDayKey: "2020-01-15"), before, "same day and zone, same read")
+        zone = "Asia/Tokyo"
+        XCTAssertNotEqual(model.healthReadTaskID(forDayKey: "2020-01-15"), before)
     }
 }

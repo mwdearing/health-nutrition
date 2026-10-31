@@ -149,6 +149,8 @@ public final class JournalViewModel: ObservableObject {
     /// after the totals were forgotten, is dropped rather than written over newer figures.
     private var healthReadGenerations: [String: Int] = [:]
     private var healthReadEpoch = 0
+    /// The zone the Diary was last built in, so a zone change forgets Health figures read for the old zone's days.
+    private var healthTotalsZoneID: String?
     /// Reads what other apps logged to Apple Health between two instants. The app sets it; nil keeps the Diary
     /// journal-only.
     public var healthDayReader: (@MainActor (Date, Date) async -> HealthDayRead)?
@@ -172,7 +174,10 @@ public final class JournalViewModel: ObservableObject {
         healthReadGenerations[key] = generation
         let epoch = healthReadEpoch
         let read = await reader(day.start, through)
-        guard healthReadGenerations[key] == generation, healthReadEpoch == epoch else { return }
+        // A read that finished after a newer one started for the day, after the totals were forgotten, or after the
+        // Diary's zone changed (its day was another span of time), is dropped; the day is read again in the new zone.
+        guard healthReadGenerations[key] == generation, healthReadEpoch == epoch, dayZone.identifier == zoneID
+        else { return }
         if read.complete {
             healthReadMarks[key] = (through, zoneID)
         } else {
@@ -185,6 +190,12 @@ public final class JournalViewModel: ObservableObject {
         load(now: now)
         copyNotice = notice
         copyFailed = failed
+    }
+
+    /// The identity of a day row's Health read: the day and the Diary's zone, so a zone change starts a fresh read for
+    /// each day on screen rather than leaving it journal-only until it scrolls away and back.
+    public func healthReadTaskID(forDayKey key: String) -> String {
+        "\(key)|\(dayZone.identifier)"
     }
 
     /// Forgets every day's Apple Health totals, for Erase all data: no header keeps figures read before the erase, and
@@ -208,8 +219,12 @@ public final class JournalViewModel: ObservableObject {
         guard parts.count == 3 else { return nil }
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = zone
-        guard let start = calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2])),
-              let end = calendar.date(byAdding: .day, value: 1, to: start),
+        // From noon, so a zone whose clocks change at midnight (that midnight does not exist) still gets its real
+        // start of day; the end is the next day's start.
+        guard let noon = calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2], hour: 12)),
+              let nextNoon = calendar.date(byAdding: .day, value: 1, to: noon),
+              let start = Optional(calendar.startOfDay(for: noon)),
+              let end = Optional(calendar.startOfDay(for: nextNoon)),
               // A key that names no real day (2026-02-31) would be normalised to another day, so it is refused.
               dayKey(start, zone: zone) == key
         else { return nil }
@@ -314,6 +329,11 @@ public final class JournalViewModel: ObservableObject {
     /// Groups active intakes by the local day of each intake's own time zone, newest first.
     public func load(now: Date) {
         defer { loadCount += 1 }
+        // Health figures were read for days in one zone; after a zone change a key names another span of time, so the
+        // figures are forgotten and each day is read again as it comes on screen.
+        let zoneID = dayZone.identifier
+        if let healthZone = healthTotalsZoneID, healthZone != zoneID { forgetHealthTotals() }
+        healthTotalsZoneID = zoneID
         copyNotice = nil
         copyFailed = false
         do {

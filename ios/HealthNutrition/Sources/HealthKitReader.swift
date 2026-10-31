@@ -74,15 +74,8 @@ final class HealthKitReader: BodyActivityReading {
         return readings
     }
 
-    /// One Diary day's totals from samples other apps wrote, for that day's header. Not connected until read access
-    /// was asked for, as on Today.
-    func outsideIntake(from start: Date, to end: Date) async -> HealthIntakeTotals.Outside {
-        guard HKHealthStore.isHealthDataAvailable(), hasAskedForReadAccess else { return .notConnected }
-        let outside = await outsideNutrientTotals(from: start, to: end)
-        return .read(values: outside.totals, readKeys: outside.readKeys)
-    }
-
-    /// One Diary day's outside intake, and whether every query succeeded, so a day with a failed query is read again.
+    /// One Diary day's totals from samples other apps wrote, for that day's header, and whether every query succeeded,
+    /// so a day with a failed query is read again. Not connected until read access was asked for, as on Today.
     func outsideIntakeDay(from start: Date, to end: Date) async -> HealthDayRead {
         guard HKHealthStore.isHealthDataAvailable(), hasAskedForReadAccess else { return HealthDayRead(.notConnected) }
         let outside = await outsideNutrientTotals(from: start, to: end)
