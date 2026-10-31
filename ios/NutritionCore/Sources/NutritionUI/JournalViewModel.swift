@@ -173,11 +173,7 @@ public final class JournalViewModel: ObservableObject {
         let epoch = healthReadEpoch
         let read = await reader(day.start, through)
         guard healthReadGenerations[key] == generation, healthReadEpoch == epoch else { return }
-        if read.complete {
-            healthReadMarks[key] = (through, zoneID)
-        } else {
-            healthReadMarks[key] = nil
-        }
+        healthReadMarks[key] = (through, zoneID)
         guard read.outside != outsideIntakeByDay[key] else { return }
         outsideIntakeByDay[key] = read.outside
         // A background Health read must not clear a copy's Undo notice, which `load` resets for a person's own reload.
