@@ -700,7 +700,7 @@ public final class TodayViewModel: ObservableObject {
             + "\(AmountDisplay.spokenName(for: waterTotalDisplay.unit)) today"
         guard waterHasUnknown else { return spoken }
         if knownWaterBelowHundredth {
-            return "less than 0.01 \(AmountDisplay.spokenName(for: waterTotalDisplay.unit)) today"
+            return "less than 0.01 \(AmountDisplay.spokenName(for: waterTotalDisplay.unit))"
         }
         return knownWaterReadsAsAtLeast
             ? "at least \(knownWaterExact.spokenAmount) \(AmountDisplay.spokenName(for: knownWaterExact.unit)) today"
