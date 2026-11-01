@@ -4,12 +4,13 @@ import XCTest
 /// form, drags from the left screen edge, and then checks that either the discard question is up or the
 /// form is still on screen with its typed text.
 final class AddTypedInputSwipeUITests: XCTestCase {
-    /// Both edge-swipe tests fail intermittently on the CI runners, on main and on pull requests that do not
-    /// touch the Add flow (#930), so they are skipped until the drag is reliable or a unit test of the pop gate
-    /// covers the same behavior. Remove this override to run them again.
+    /// The typed-input edge swipe stays quarantined (#930); the clean-form edge swipe runs again so its root cause
+    /// can be measured on CI. Remove this override to run the typed-input test again.
     override func setUpWithError() throws {
         try super.setUpWithError()
-        throw XCTSkip("Edge-swipe UI tests are quarantined as flaky on CI (#930).")
+        if name.contains("testEdgeSwipeBackKeepsTypedDetailsOrAsksFirst") {
+            throw XCTSkip("Typed-input edge swipe is quarantined as flaky on CI (#930).")
+        }
     }
 
     /// Ends the app after each test so a leftover app cannot carry its typed state into the next run.
