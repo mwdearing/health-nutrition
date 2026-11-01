@@ -197,6 +197,30 @@ final class JournalStoreTests: XCTestCase {
             try hash(correctingTo: when.addingTimeInterval(-3_600)))
     }
 
+    /// A clock a test moves forward; the store reads it from another thread, so access is locked.
+    private final class TestClock: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value: Date
+        init(_ value: Date) { self.value = value }
+        var now: Date {
+            get { lock.withLock { value } }
+            set { lock.withLock { value = newValue } }
+        }
+    }
+
+    func testUndoWindowReadsTheInjectedClock() throws {
+        let directory = try makeDirectory()
+        let clock = TestClock(when)
+        let store = try SwiftDataJournalStore(
+            url: storeURL(directory), enabledDestinations: [.healthKit, .relay],
+            fileOperations: .system, clock: { clock.now })
+        try store.create(sampleIntake(), components: [oats()], product: nil, now: when)
+        try store.delete(intakeID: intakeID, now: when)
+        clock.now = when.addingTimeInterval(5)
+        try store.undoDelete(intakeID: intakeID)
+        XCTAssertEqual(try store.activeIntakes().map(\.id), [intakeID])
+    }
+
     func testDeleteHidesIntakeQueuesDeleteOperationsAndKeepsHistory() throws {
         let store = try makeStore(try makeDirectory())
         try store.create(sampleIntake(), components: [oats()], product: nil, now: when)
