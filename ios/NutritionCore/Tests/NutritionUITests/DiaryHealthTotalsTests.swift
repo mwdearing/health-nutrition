@@ -360,4 +360,30 @@ final class DiaryHealthTotalsTests: XCTestCase {
         zone = "Asia/Tokyo"
         XCTAssertNotEqual(model.healthReadTaskID(forDayKey: "2020-01-15"), before)
     }
+
+    /// Turning Health access off in Settings forgets a past day's Health figures at once, not at the next launch,
+    /// and starts a fresh read for each day on screen (#1107, Mike 2026-10-31).
+    func testAHealthAccessChangeForgetsAPastDaysFiguresAtOnce() async throws {
+        let (model, key) = try waterOnlyDay()
+        model.healthDayReader = { _, _ in HealthDayRead(.read(values: ["energy": 620], readKeys: ["energy"])) }
+        model.load(now: now)
+        let tomorrow = now.addingTimeInterval(86_400)
+        await model.loadHealthTotals(forDayKey: key, now: tomorrow)
+        XCTAssertEqual(model.sections.first { $0.id == key }?.energyText, "620 Calories")
+        let taskID = model.healthReadTaskID(forDayKey: key)
+
+        model.healthAccessChanged(now: now)
+
+        XCTAssertTrue(model.outsideIntakeByDay.isEmpty)
+        XCTAssertNil(model.sections.first { $0.id == key }?.energyText, "the header drops Health's figure at once")
+        XCTAssertNotEqual(model.healthReadTaskID(forDayKey: key), taskID, "the day on screen is read again")
+
+        var reads = 0
+        model.healthDayReader = { _, _ in
+            reads += 1
+            return HealthDayRead(.read(values: [:], readKeys: ["energy"]))
+        }
+        await model.loadHealthTotals(forDayKey: key, now: tomorrow)
+        XCTAssertEqual(reads, 1, "a past day read before the change is read again, not kept")
+    }
 }
