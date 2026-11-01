@@ -161,7 +161,8 @@ private struct LogDoseSheet: View {
                         #endif
                         Text(row.unitText).foregroundStyle(TokenColors.textSecondary)
                     }
-                    DatePicker("Time taken", selection: $takenAt)
+                    // A dose is logged once it has been taken, so the time stops at now.
+                    DatePicker("Time taken", selection: $takenAt, in: ...Date())
                 }
                 Section {
                     TextField("Injection site (optional)", text: $siteText)

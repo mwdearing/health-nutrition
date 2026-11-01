@@ -212,7 +212,10 @@ public final class MedicationLogViewModel: ObservableObject {
             unitText: medication.unit.rawValue,
             scheduleText: Self.scheduleText(medication.scheduleDays),
             lastDoseText: last.map(Self.lastDoseText) ?? "No dose logged yet",
-            daysSinceText: last.flatMap { MedicationLog.daysSince($0, today: today) }.map(Self.daysSinceText),
+            // A dose whose own local day is after today here (taken further east, then read after flying west)
+            // has no days-since line rather than a negative count.
+            daysSinceText: last.flatMap { MedicationLog.daysSince($0, today: today) }
+                .flatMap { $0 >= 0 ? Self.daysSinceText($0) : nil },
             statusText: Self.statusText(standing),
             isArchived: medication.isArchived)
     }
