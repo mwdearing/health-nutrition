@@ -105,15 +105,15 @@ final class TodayDistrustedWaterTests: XCTestCase {
         XCTAssertEqual(bar.valueText, "No data")
     }
 
-    /// A known water part too small to show must not read "at least less than ..." (a contradiction).
-    func testABelowSmallestKnownPartIsNotPrefixedWithAtLeast() throws {
+    /// Owner choice A (2026-11-01): a known water part under 1 mL reads "at least 1 mL", never "less than" with "at least".
+    func testAKnownPartUnder1MLReadsAtLeast1MLNotLessThan() throws {
         let store = try makeStore()
         try log(store, category: "water", componentID: "sip", amount: 0.5, share: nil)
         try log(store, category: "other", componentID: "suspect", amount: 250, share: 80)
         let model = today(store)
         XCTAssertTrue(model.waterHasUnknown)
-        // Copy for this case is an open owner decision (see #1148 thread); pinned to the current approved fallback.
-        XCTAssertEqual(model.waterFigureText, "No data")
+        XCTAssertEqual(model.waterFigureText, "at least 1 mL")
+        XCTAssertEqual(model.waterAccessibilityValue, "at least 1 milliliters today")
     }
 
     /// A healthy soup with a share still counts its water, unchanged.
