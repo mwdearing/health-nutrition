@@ -6,6 +6,7 @@ import SwiftUI
 /// only: the screen never offers a view on a dose, grades it or checks it, and it never shows a dose's site.
 public struct MedicationLogView: View {
     @ObservedObject var model: MedicationLogViewModel
+    @Environment(\.scenePhase) private var scenePhase
     @State private var isAdding = false
     /// The row whose Log a dose sheet is open; nil while no sheet is open.
     @State private var loggingRow: MedicationRow?
@@ -55,6 +56,10 @@ public struct MedicationLogView: View {
         .background(TokenColors.background)
         .navigationTitle("Medication log")
         .onAppear { self.model.load() }
+        // Back from the background, possibly on a later day: "Today", "Due today" and the days since are read again.
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { self.model.load() }
+        }
         .sheet(isPresented: $isAdding) {
             AddMedicationSheet(model: model)
         }

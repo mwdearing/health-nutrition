@@ -160,17 +160,18 @@ public final class MedicationLogViewModel: ObservableObject {
         return nil
     }
 
-    /// Removes only the dose the last log saved, clears the Undo line and reloads. A failure sets the message.
+    /// Removes only the dose the last log saved, clears the Undo line and reloads. A failure sets the message and
+    /// keeps the Undo line, so the removal can be tried again.
     public func undoLastDose() {
         guard let doseID = lastLoggedDoseID else { return }
-        lastLoggedDoseID = nil
-        undoText = nil
         do {
             try store.removeDose(id: doseID)
         } catch {
             errorMessage = "Could not undo the dose."
             return
         }
+        lastLoggedDoseID = nil
+        undoText = nil
         load()
     }
 
