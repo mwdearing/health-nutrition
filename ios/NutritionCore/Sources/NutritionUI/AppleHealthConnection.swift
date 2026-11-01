@@ -87,19 +87,25 @@ public final class AppleHealthConnectionViewModel: ObservableObject {
     /// the old access. Not called for the first read in `init`.
     public var onStateChange: (@MainActor (AppleHealthConnectionState) -> Void)?
 
+    /// The access the figures were read under: the types Health allows, not only the state they map to, so a
+    /// change between two partly allowed answers is still reported.
+    private var lastAuthorizedTypes: Set<String>
+
     public init(connector: any AppleHealthConnecting) {
         self.connector = connector
         let access = connector.currentAccess()
         self.state = access.state
         self.readAsked = access.readAsked
+        self.lastAuthorizedTypes = access.authorizedTypes
     }
 
     /// Reads Health's answer again. Called when the row appears and when the app comes back to the
     /// foreground, because the answer can change in the Health app while this one is in the background.
     public func refresh() {
         let access = connector.currentAccess()
-        if access.state != state {
+        if access.state != state || access.authorizedTypes != lastAuthorizedTypes {
             state = access.state
+            lastAuthorizedTypes = access.authorizedTypes
             onStateChange?(state)
         }
         readAsked = access.readAsked
