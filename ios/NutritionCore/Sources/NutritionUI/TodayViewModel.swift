@@ -699,20 +699,36 @@ public final class TodayViewModel: ObservableObject {
         let spoken = "\(waterTotalDisplay.spokenAmount) "
             + "\(AmountDisplay.spokenName(for: waterTotalDisplay.unit)) today"
         guard waterHasUnknown else { return spoken }
-        // A known part below the smallest shown amount cannot read as "at least" without a contradiction.
-        return knownWaterReadsAsAtLeast ? "at least \(spoken)" : Self.waterNoDataText
+        return knownWaterReadsAsAtLeast
+            ? "at least \(knownWaterExact.spokenAmount) \(AmountDisplay.spokenName(for: knownWaterExact.unit)) today"
+            : Self.waterNoDataText
     }
 
     /// The water figure on the card when no water goal is set: the total, "at least" the known part when some
     /// of the day's water cannot be counted, or "No data" when none of it can (#1137).
     public var waterFigureText: String {
         guard waterHasUnknown else { return waterTotalDisplay.text }
-        return knownWaterReadsAsAtLeast ? "at least \(waterTotalDisplay.text)" : Self.waterNoDataText
+        return knownWaterReadsAsAtLeast ? "at least \(knownWaterExact.text)" : Self.waterNoDataText
     }
 
-    /// Whether the known part can be shown as "at least X": some is known and it is not below the smallest amount shown.
+    /// Whether the known part can be shown as "at least X": some is known.
     private var knownWaterReadsAsAtLeast: Bool {
-        waterTotalMilliliters > 0 && !waterTotalDisplay.isBelowSmallest
+        waterTotalMilliliters > 0 && knownWaterExact.amount > 0
+    }
+
+    /// The known part in the unit shown, never above what is known. The shown figure rounds to whole units, so a
+    /// known 0.5 mL that rounds up to 1 mL shows its own 0.5 mL (owner choice A-exact, 2026-11-01).
+    private var knownWaterExact: DisplayAmount {
+        let unit = waterTotalDisplay.unit
+        guard let converted = try? Quantity(value: waterTotalMilliliters, unit: .mL).converted(to: unit),
+              converted.value > 0
+        else { return waterTotalDisplay }
+        var scaled = converted.value * 100
+        var floored = Decimal()
+        NSDecimalRound(&floored, &scaled, 0, .down)
+        let exact = floored / 100
+        guard waterTotalDisplay.amount > exact else { return waterTotalDisplay }
+        return DisplayAmount(amount: exact, unit: unit, groupsWholeAmount: true)
     }
 
     /// The existing approved text for a figure with nothing known (GoalBar).
