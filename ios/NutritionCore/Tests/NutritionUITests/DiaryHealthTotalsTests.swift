@@ -151,14 +151,14 @@ final class DiaryHealthTotalsTests: XCTestCase {
     }
 
     /// One food entry on `now`'s day, with the given lookup.
-    private func foodDay(lookup: NutrientFactsLookup) throws -> (JournalViewModel, String) {
+    private func foodDay(lookup: NutrientFactsLookup, goals: GoalStore? = nil) throws -> (JournalViewModel, String) {
         let journal = try makeJournal()
         try journal.create(
             Intake(id: UUID().uuidString.lowercased(), category: "food", occurredAt: now, timeZoneIdentifier: "UTC"),
             components: [IntakeComponent(componentID: "oats", name: "Example oats", amount: 40, unit: .g)],
             product: nil, now: now)
         let model = JournalViewModel(
-            store: journal, lookup: lookup, timeZoneIdentifier: "UTC", locale: Locale(identifier: "en_US"))
+            store: journal, goals: goals, lookup: lookup, timeZoneIdentifier: "UTC", locale: Locale(identifier: "en_US"))
         return (model, JournalViewModel.dayKey(now, zone: TimeZone(identifier: "UTC")!))
     }
 
