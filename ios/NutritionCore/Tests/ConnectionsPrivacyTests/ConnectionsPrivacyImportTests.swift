@@ -669,7 +669,7 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         await waitForImportToSettle(model)
 
         XCTAssertEqual(model.importMessage, ConnectionsPrivacyViewModel.cleanupIncompleteMessage)
-        XCTAssertEqual(ConnectionsPrivacyViewModel.cleanupIncompleteMessage, "Restored. Could not finish cleaning up; try again to be sure.")
+        XCTAssertEqual(ConnectionsPrivacyViewModel.cleanupIncompleteMessage, "MUTANT")
         XCTAssertFalse(try journal.activeIntakes().isEmpty)
     }
 

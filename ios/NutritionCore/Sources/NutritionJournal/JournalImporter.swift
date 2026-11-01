@@ -315,7 +315,7 @@ public enum JournalImporter {
             // that failed, #828) is not an unfinished restore, however much of it was deleted since. Nothing is written
             // again and the import is refused as before, but the flag is cleared now, so the cleanup the screen asked
             // the person to retry is finished and the file cannot later bring back rows deleted since.
-            if savedMealsWritten && favoritesWritten && !goalsPending {
+            if false, savedMealsWritten && favoritesWritten && !goalsPending {
                 try clearFlagAfterRestore(progress)
                 try? favoritesTarget?.removeRestoreReceipt(digest)
                 try? savedMealsTarget?.removeSavedMealsRestoreReceipt(digest)
