@@ -1121,6 +1121,8 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     private let storeURL: URL
     private let fileOperations: StoreFileOperations
     private let enabledDestinations: Set<JournalDestination>
+    /// Reads the time for the undo window and the outbox hold. The app uses the system clock; tests inject their own.
+    private let clock: @Sendable () -> Date
 
     public var failNextSaveForTesting: Bool {
         get { lock.withLock { failFlag } }
@@ -1133,9 +1135,13 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
         try self.init(url: url, enabledDestinations: enabledDestinations, fileOperations: .system)
     }
 
-    init(url: URL, enabledDestinations: Set<JournalDestination>, fileOperations: StoreFileOperations) throws {
+    init(
+        url: URL, enabledDestinations: Set<JournalDestination>, fileOperations: StoreFileOperations,
+        clock: @escaping @Sendable () -> Date = { Date() }
+    ) throws {
         self.enabledDestinations = enabledDestinations
         self.fileOperations = fileOperations
+        self.clock = clock
         storeURL = url
         restoreMarkerURL = url.appendingPathExtension("restore-in-progress")
         container = try fileOperations.openContainer(url)
@@ -1590,7 +1596,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             // The window is read at commit, not from the caller's clock: a delivery pass that reads the hold
             // after this commit sees the row withdrawn, so Health cannot get the delete first.
             if !deleteRows.isEmpty {
-                let committedAt = Date()
+                let committedAt = clock()
                 let stillOpen = deleteRows.allSatisfy {
                     $0.acknowledgedAt == nil
                         && committedAt < ($0.deletedAt ?? .distantPast).addingTimeInterval(JournalUndo.deleteWindow)
@@ -2507,7 +2513,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
         writeLock.lock()
         defer { writeLock.unlock() }
         // A delete waits out its Undo window, so an undone delete never reaches Apple Health or the relay.
-        let holdCutoff = Date().addingTimeInterval(-JournalUndo.deleteWindow)
+        let holdCutoff = clock().addingTimeInterval(-JournalUndo.deleteWindow)
         let rows = try context.fetch(FetchDescriptor<OutboxRecord>(
             predicate: #Predicate<OutboxRecord> { $0.acknowledgedAt == nil })).filter { row in
             row.kindRaw != OutboxKind.delete.rawValue || (row.deletedAt ?? .distantPast) <= holdCutoff
