@@ -228,6 +228,8 @@ final class AppServices {
             }
         }
         appleHealth = AppleHealthConnectionViewModel(connector: healthKitDeliveryStatus)
+        // A Health access change forgets the Diary's Health figures at once instead of at the next launch (#1107).
+        appleHealth.onStateChange = { [journalModel] _ in journalModel.healthAccessChanged(now: Date()) }
         firstDayChecklist = FirstDayChecklistModel(
             store: journalStore, goals: goalStore, preferences: displayPreferences, health: appleHealth)
         // One reader for Today's activity card and the Diary's day headers, so both ask Health the same way.

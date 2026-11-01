@@ -151,14 +151,14 @@ final class DiaryHealthTotalsTests: XCTestCase {
     }
 
     /// One food entry on `now`'s day, with the given lookup.
-    private func foodDay(lookup: NutrientFactsLookup, goals: GoalStore? = nil) throws -> (JournalViewModel, String) {
+    private func foodDay(lookup: NutrientFactsLookup) throws -> (JournalViewModel, String) {
         let journal = try makeJournal()
         try journal.create(
             Intake(id: UUID().uuidString.lowercased(), category: "food", occurredAt: now, timeZoneIdentifier: "UTC"),
             components: [IntakeComponent(componentID: "oats", name: "Example oats", amount: 40, unit: .g)],
             product: nil, now: now)
         let model = JournalViewModel(
-            store: journal, goals: goals, lookup: lookup, timeZoneIdentifier: "UTC", locale: Locale(identifier: "en_US"))
+            store: journal, lookup: lookup, timeZoneIdentifier: "UTC", locale: Locale(identifier: "en_US"))
         return (model, JournalViewModel.dayKey(now, zone: TimeZone(identifier: "UTC")!))
     }
 
@@ -359,6 +359,32 @@ final class DiaryHealthTotalsTests: XCTestCase {
         XCTAssertEqual(model.healthReadTaskID(forDayKey: "2020-01-15"), before, "same day and zone, same read")
         zone = "Asia/Tokyo"
         XCTAssertNotEqual(model.healthReadTaskID(forDayKey: "2020-01-15"), before)
+    }
+
+    /// Turning Health access off in Settings forgets a past day's Health figures at once, not at the next launch,
+    /// and starts a fresh read for each day on screen (#1107, Mike 2026-10-31).
+    func testAHealthAccessChangeForgetsAPastDaysFiguresAtOnce() async throws {
+        let (model, key) = try waterOnlyDay()
+        model.healthDayReader = { _, _ in HealthDayRead(.read(values: ["energy": 620], readKeys: ["energy"])) }
+        model.load(now: now)
+        let tomorrow = now.addingTimeInterval(86_400)
+        await model.loadHealthTotals(forDayKey: key, now: tomorrow)
+        XCTAssertEqual(model.sections.first { $0.id == key }?.energyText, "620 Calories")
+        let taskID = model.healthReadTaskID(forDayKey: key)
+
+        model.healthAccessChanged(now: now)
+
+        XCTAssertTrue(model.outsideIntakeByDay.isEmpty)
+        XCTAssertNil(model.sections.first { $0.id == key }?.energyText, "the header drops Health's figure at once")
+        XCTAssertNotEqual(model.healthReadTaskID(forDayKey: key), taskID, "the day on screen is read again")
+
+        var reads = 0
+        model.healthDayReader = { _, _ in
+            reads += 1
+            return HealthDayRead(.read(values: [:], readKeys: ["energy"]))
+        }
+        await model.loadHealthTotals(forDayKey: key, now: tomorrow)
+        XCTAssertEqual(reads, 1, "a past day read before the change is read again, not kept")
     }
 
     /// A food day with 20 g of protein against a 60 g goal.
