@@ -21,7 +21,14 @@ final class PopGestureGateTests: XCTestCase {
     /// whichever way the test expects it to move.
     private func makeStack(initiallyEnabled: Bool) -> UINavigationController {
         let nav = UINavigationController(rootViewController: UIViewController())
-        window = UIWindow(frame: UIScreen.main.bounds)
+        // Attach the window to a foreground scene; a window with no scene may never lay out its SwiftUI content.
+        let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first { $0.activationState == .foregroundActive }
+            ?? UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        if let scene {
+            window = UIWindow(windowScene: scene)
+        } else {
+            window = UIWindow(frame: UIScreen.main.bounds)
+        }
         window.rootViewController = nav
         window.makeKeyAndVisible()
         nav.interactivePopGestureRecognizer?.isEnabled = initiallyEnabled
