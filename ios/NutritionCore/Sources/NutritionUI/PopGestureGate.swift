@@ -39,8 +39,6 @@ final class PopGateView: UIView {
     }
 
     func apply() {
-        // DIAG-TEMP: remove before merge
-        print("POPGATE-DIAG apply blocked=\(blocked) window=\(window != nil) nav=\(owningNavigationController != nil) next=\(String(describing: next).prefix(80))")
         guard window != nil else { return }
         guard let nav = owningNavigationController else {
             // SwiftUI can attach this view before its hosting controller has joined the stack, so the responder
