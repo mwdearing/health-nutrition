@@ -77,6 +77,15 @@ public final class MedicationLogViewModel: ObservableObject {
         }
     }
 
+    /// Forgets the Undo offer and any message, then reads the log again. Called when an erase or a restore replaces
+    /// the stores, so no line still names a dose that was removed.
+    public func storesWereReplaced() {
+        lastLoggedDoseID = nil
+        undoText = nil
+        errorMessage = nil
+        load()
+    }
+
     /// Reads the medications and doses and rebuilds the rows. A read that fails leaves no rows and sets the message.
     public func load() {
         guard let today = today(),

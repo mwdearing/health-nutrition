@@ -262,7 +262,7 @@ final class AppServices {
         let storesReplaced = connections.$eraseGeneration.dropFirst().map { _ in () }
             .merge(with: connections.$journalRestoreGeneration.dropFirst().map { _ in () })
         medicationLogRefresh = storesReplaced.sink { [weak medicationLog = self.medicationLog] _ in
-            MainActor.assumeIsolated { medicationLog?.load() }
+            MainActor.assumeIsolated { medicationLog?.storesWereReplaced() }
         }
         supplementStackRefresh = [
             storesReplaced.sink { [weak stack = self.supplementStack] _ in
