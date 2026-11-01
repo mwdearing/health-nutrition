@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import NutritionDomain
 import NutritionProviders
@@ -281,6 +282,17 @@ public final class LibraryViewModel: ObservableObject {
     @Published public private(set) var undoToken: LibraryUndoToken?
     /// The supplement list the Library links to. Set once by the app; nil leaves the link out.
     public var supplementStack: SupplementStackViewModel?
+    /// The medication log the Library links to while its switch is on. Set once by the app; nil leaves the link out.
+    /// Its changes are forwarded here, so the link appears and goes as the switch changes.
+    public var medicationLog: MedicationLogViewModel? {
+        didSet {
+            medicationLogRefresh = medicationLog?.objectWillChange.sink { [weak self] _ in
+                MainActor.assumeIsolated { self?.objectWillChange.send() }
+            }
+        }
+    }
+    /// Keeps the forwarding of the medication log's changes alive for as long as the log is set.
+    private var medicationLogRefresh: AnyCancellable?
 
     private let store: JournalStore
     private let favorites: FavoritesStore

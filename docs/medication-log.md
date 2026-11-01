@@ -1,10 +1,36 @@
 # Medication log
 
-Status: in progress. The rules and the store exist; there are no screens yet.
+Status: the list, add, log and archive screens exist. Settings has the switch (off by default), and the
+Library shows a Medication log row once it is on. Not yet: history editing, the Today tile, export and the
+weight trend.
 
 The medication log keeps the medications a person names and the doses they type. The person
 names each medication and types every dose field. The log never suggests, checks or changes a
 dose, and it holds no list of drugs, dose ranges, titration steps or advice.
+
+## Screens
+
+- **Settings switch.** Settings > Units and logging has a Medication log switch. It is off by default.
+  Turning it off hides the log and keeps the data.
+- **Library row.** While the switch is on, the Library shows a Medication log row next to My supplements.
+- **List.** Each active medication shows its name, unit and schedule, then these lines:
+  - "Last dose" with the amount, unit, day and time of the latest dose, or "No dose logged yet";
+  - days since the last dose: "Today", "1 day since" or "N days since". A dose whose own day is after
+    today on this device (logged further east, then read after travelling west) has no days-since line;
+  - the schedule standing: "Next by your schedule: <day>", "Due today", "Overdue by 1 day" or
+    "Overdue by N days". A medication with no schedule, or with no dose yet, shows no standing line.
+  - Archived medications sit in an Archived section, shown only when there is one.
+- **Add.** Add medication opens a sheet with a name, a unit (mg, mcg, mL or units) and an optional
+  "Every how many days" field from 1 to 28. An empty field means no schedule.
+- **Log with Undo.** Tapping a medication opens Log a dose: an amount (decimal pad), a date and time that
+  start at now and cannot go past it, an optional injection site and an optional note. After a save the
+  screen offers Undo, which removes only that dose. If the removal fails, Undo stays offered so it can be
+  tried again; Erase all data and a restore withdraw it.
+- **Amounts.** Amounts read as stored, with a comma between thousands: "1,000 mg", "2.5 mg".
+- **Archive.** Swiping a row archives it, and swiping an archived row unarchives it. Archiving keeps the
+  medication's doses and schedule.
+
+The injection site is saved with the dose and is never shown in the list, trends or charts.
 
 ## Rules
 
@@ -36,18 +62,21 @@ already logged in its old unit.
 The medications and doses are kept in their own store file, `medications.store`, separate from
 the journal. The file uses a versioned schema (version 1.0.0) with a migration plan that lists
 that first version, and it opens without CloudKit. The site was added to version 1.0.0 in place,
-not as a second version: no app code opens the store file yet (the app wiring lands with the
-screens), so no released build has created one in the older shape.
+not as a second version: no released build has created the store file in the older shape.
+
+The app opens `medications.store` with the other stores. If it cannot be opened, the app reports
+that the medication log store file could not be opened.
 
 A row that cannot be read, or that fails the same checks as a save, fails the whole read. The
 log never skips a damaged row and shows the rest as if nothing were wrong.
 
-Erase all data will delete the medication rows, then replace the store file and its `-wal` and
-`-shm` files with an empty one, as the other stores do. The store can already erase itself, but
-it is not yet wired into Erase all data; that wiring lands with the screens.
+Erase all data erases `medications.store` last. It deletes the medication rows, then replaces the
+store file and its `-wal` and `-shm` files with an empty one, as the other stores do. The Medication
+log switch is reset by the erase too (see [Erase all data](erase-all-data.md)).
 
-## Not in this slice
+## Not yet
 
-- No screens and no app wiring.
-- Not in the journal export yet.
-- No reminders yet.
+- History editing.
+- The Today tile.
+- Export.
+- The weight trend markers.

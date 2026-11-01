@@ -259,6 +259,7 @@ public final class UserDefaultsDisplayPreferences: DisplayPreferencesWriting, Fi
         defaults.removeObject(forKey: communityDisclosureKey)
         defaults.removeObject(forKey: referenceGroupKey)
         defaults.removeObject(forKey: macroSplitKey)
+        defaults.removeObject(forKey: Self.keyPrefix + "medicationLog.on")
         defaults.removeObject(forKey: Self.keyPrefix + "addsActiveEnergyToGoal")
     }
 
@@ -360,11 +361,34 @@ public final class InMemoryDisplayPreferences: DisplayPreferencesWriting, FirstR
         referenceGroup = nil
         macroSplit = nil
         addsActiveEnergyToGoal = false
+        isMedicationLogOn = false
     }
 
     public private(set) var addsActiveEnergyToGoal = false
 
     public func setAddsActiveEnergyToGoal(_ adds: Bool) { addsActiveEnergyToGoal = adds }
+
+    /// Whether the Medication log is shown, off until a person turns it on.
+    public private(set) var isMedicationLogOn = false
+}
+
+extension UserDefaultsDisplayPreferences: MedicationLogPreferences {
+    /// The Medication log switch, under "display.medicationLog.on". An absent key reads as off.
+    public var isMedicationLogOn: Bool {
+        defaults.bool(forKey: Self.keyPrefix + "medicationLog.on")
+    }
+
+    /// Writes the Medication log switch. Turning it off keeps the medications and doses.
+    public func setMedicationLogOn(_ on: Bool) {
+        defaults.set(on, forKey: Self.keyPrefix + "medicationLog.on")
+    }
+}
+
+extension InMemoryDisplayPreferences: MedicationLogPreferences {
+    /// Writes the Medication log switch in memory.
+    public func setMedicationLogOn(_ on: Bool) {
+        isMedicationLogOn = on
+    }
 }
 
 extension UserDefaultsDisplayPreferences: ReferenceGroupPreferences {

@@ -8,15 +8,19 @@ public struct AppSettingsView: View {
     private let reminders: ReminderController?
     private let account: AccountViewModel?
     private let appleHealth: AppleHealthConnectionViewModel?
+    private let medicationLog: MedicationLogViewModel?
     private let now: () -> Date
     private let opensGoals: Bool
     private let onShowWelcome: (() -> Void)?
 
+    /// - Parameter medicationLog: the medication log whose switch sits under "Units and logging". Nil leaves the
+    ///   switch out.
     public init(
         goals: GoalsViewModel? = nil, connections: ConnectionsPrivacyViewModel? = nil,
         reminders: ReminderController? = nil,
         account: AccountViewModel? = nil,
         appleHealth: AppleHealthConnectionViewModel? = nil,
+        medicationLog: MedicationLogViewModel? = nil,
         now: @escaping () -> Date = { Date() }, opensGoals: Bool = false,
         onShowWelcome: (() -> Void)? = nil
     ) {
@@ -25,6 +29,7 @@ public struct AppSettingsView: View {
         self.reminders = reminders
         self.account = account
         self.appleHealth = appleHealth
+        self.medicationLog = medicationLog
         self.now = now
         self.opensGoals = opensGoals
         self.onShowWelcome = onShowWelcome
@@ -33,9 +38,23 @@ public struct AppSettingsView: View {
     public var body: some View {
         if let connections {
             SettingsContent(model: AppSettingsViewModel(connections: connections, goals: goals, reminders: reminders, account: account),
-                            appleHealth: appleHealth,
+                            appleHealth: appleHealth, medicationLog: medicationLog,
                             now: now, opensGoals: opensGoals, onShowWelcome: onShowWelcome)
         }
+    }
+}
+
+/// The Medication log switch and its footnote. Observes the model so the switch redraws when it changes.
+private struct MedicationLogSwitchRow: View {
+    @ObservedObject var model: MedicationLogViewModel
+
+    var body: some View {
+        Toggle("Medication log", isOn: Binding(
+            get: { model.isOn },
+            set: { model.isOn = $0 }
+        ))
+        Text("Turning it off hides the log and keeps the data.")
+            .font(.footnote).foregroundStyle(TokenColors.textSecondary)
     }
 }
 
@@ -85,16 +104,19 @@ private struct SettingsContent: View {
     @State private var importReadGate = JournalImportReadGate()
     @State private var importReadTask: Task<Data, Error>?
     private let appleHealth: AppleHealthConnectionViewModel?
+    private let medicationLog: MedicationLogViewModel?
     private let now: () -> Date
     private let onShowWelcome: (() -> Void)?
 
     init(
         model: AppSettingsViewModel, appleHealth: AppleHealthConnectionViewModel? = nil,
+        medicationLog: MedicationLogViewModel? = nil,
         now: @escaping () -> Date, opensGoals: Bool,
         onShowWelcome: (() -> Void)? = nil
     ) {
         _model = StateObject(wrappedValue: model)
         self.appleHealth = appleHealth
+        self.medicationLog = medicationLog
         _showingGoals = State(initialValue: opensGoals && model.goals != nil)
         self.now = now
         self.onShowWelcome = onShowWelcome
@@ -146,6 +168,9 @@ private struct SettingsContent: View {
                     InlineNotice(error, tone: .failed)
                 }
                 reminderRows
+                if let medicationLog {
+                    MedicationLogSwitchRow(model: medicationLog)
+                }
             }
             if appleHealth != nil {
                 Section("Connections") {
