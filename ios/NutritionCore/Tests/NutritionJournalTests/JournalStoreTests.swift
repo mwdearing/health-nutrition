@@ -216,7 +216,7 @@ final class JournalStoreTests: XCTestCase {
             fileOperations: .system, clock: { clock.now })
         try store.create(sampleIntake(), components: [oats()], product: nil, now: when)
         try store.delete(intakeID: intakeID, now: when)
-        clock.now = when.addingTimeInterval(60)
+        clock.now = when.addingTimeInterval(5)
         try store.undoDelete(intakeID: intakeID)
         XCTAssertEqual(try store.activeIntakes().map(\.id), [intakeID])
     }
