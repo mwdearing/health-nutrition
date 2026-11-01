@@ -11,7 +11,7 @@ account deletion or label retraction.
 
 ## What is erased
 
-The four SwiftData stores live under Application Support. Each store deletes its rows, then removes its store file and the `-wal` and `-shm` files beside it, then reopens an empty store at the same place. The journal store did this first (#761); the favorites, recipes and goals stores do the same since #228 item 1. A failed checkpoint, removal or reopen is reported as a failed erase, never as a clean one, and a failed reopen is retried by the store's next call.
+The five SwiftData stores live under Application Support. Each store deletes its rows, then removes its store file and the `-wal` and `-shm` files beside it, then reopens an empty store at the same place. The journal store did this first (#761); the favorites, recipes and goals stores do the same since #228 item 1. A failed checkpoint, removal or reopen is reported as a failed erase, never as a clean one, and a failed reopen is retried by the store's next call.
 
 | File | Store | Rows removed |
 | --- | --- | --- |
@@ -19,12 +19,13 @@ The four SwiftData stores live under Application Support. Each store deletes its
 | `favorites.store` | `SwiftDataFavoritesStore` | Favorite templates. |
 | `recipes.store` | `SwiftDataRecipeStore` | Recipe versions and recipe tombstones. |
 | `goals.store` | `SwiftDataGoalStore` | Daily nutrient targets, the weight plan and goal restore receipts. |
+| `medications.store` | `SwiftDataMedicationStore` | Medications and their doses. Erased last. |
 
 Each store saves its own row deletion. If a store fails, erase reports a partial failure and still attempts the other local cleanup steps. The screen must not report full success when an eraser fails.
 
 ### Display preferences
 
-Erase removes all twelve keys owned by `UserDefaultsDisplayPreferences` from the app's defaults domain:
+Erase removes all thirteen keys owned by `UserDefaultsDisplayPreferences` from the app's defaults domain:
 
 | Category | Keys removed |
 | --- | --- |
@@ -34,6 +35,7 @@ Erase removes all twelve keys owned by `UserDefaultsDisplayPreferences` from the
 | Today goals (2) | `display.goals.hiddenOnToday`, `display.goals.waterDefaultSeeded` |
 | Sharing disclosure, separately acknowledged per account (1) | `display.community.disclosureSeen` |
 | Vitamins and minerals comparison group (1) | `display.reference.group` |
+| Medication log switch (1) | `display.medicationLog.on` |
 | Macro split the gram goals follow (1) | `display.goals.macroSplit` |
 
 Removing the keys restores defaults; it does not write replacement values, with one exception: `display.goals.waterDefaultSeeded` is set to true again right after the erase, so the default water goal is not written back into the just-erased goal store. The reminder's pending notification is also removed. The disclosure will be shown again when the relevant account next signs in on this phone.
