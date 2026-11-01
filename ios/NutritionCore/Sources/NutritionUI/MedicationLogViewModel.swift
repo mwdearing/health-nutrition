@@ -33,7 +33,7 @@ public struct MedicationRow: Equatable, Identifiable {
 }
 
 /// The Medication log's screens: the list of medications with their last dose and schedule standing, adding a
-/// medication, logging a dose with Undo, and archiving. Plain facts only; nothing here suggests, checks or
+/// medication, logging a dose with Undo, and archiving. Plain facts only; nothing here offers a view on, checks or
 /// changes a dose.
 ///
 /// A dose's site is saved with the dose but is never read back here, so it is never shown.

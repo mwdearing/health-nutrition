@@ -3,7 +3,7 @@ import SwiftUI
 
 /// The Medication log screen: the active medications with their last dose and schedule standing, the archived
 /// ones below them, and the way in to add a medication, log a dose with Undo and archive a medication. Plain facts
-/// only: the screen never suggests, grades or checks a dose, and it never shows a dose's site.
+/// only: the screen never offers a view on a dose, grades it or checks it, and it never shows a dose's site.
 public struct MedicationLogView: View {
     @ObservedObject var model: MedicationLogViewModel
     @State private var isAdding = false
