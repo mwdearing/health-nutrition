@@ -151,14 +151,14 @@ final class DiaryHealthTotalsTests: XCTestCase {
     }
 
     /// One food entry on `now`'s day, with the given lookup.
-    private func foodDay(lookup: NutrientFactsLookup) throws -> (JournalViewModel, String) {
+    private func foodDay(lookup: NutrientFactsLookup, goals: GoalStore? = nil) throws -> (JournalViewModel, String) {
         let journal = try makeJournal()
         try journal.create(
             Intake(id: UUID().uuidString.lowercased(), category: "food", occurredAt: now, timeZoneIdentifier: "UTC"),
             components: [IntakeComponent(componentID: "oats", name: "Example oats", amount: 40, unit: .g)],
             product: nil, now: now)
         let model = JournalViewModel(
-            store: journal, lookup: lookup, timeZoneIdentifier: "UTC", locale: Locale(identifier: "en_US"))
+            store: journal, goals: goals, lookup: lookup, timeZoneIdentifier: "UTC", locale: Locale(identifier: "en_US"))
         return (model, JournalViewModel.dayKey(now, zone: TimeZone(identifier: "UTC")!))
     }
 
@@ -385,5 +385,56 @@ final class DiaryHealthTotalsTests: XCTestCase {
         }
         await model.loadHealthTotals(forDayKey: key, now: tomorrow)
         XCTAssertEqual(reads, 1, "a past day read before the change is read again, not kept")
+    }
+
+    /// A food day with 20 g of protein against a 60 g goal.
+    private func proteinDay() throws -> (JournalViewModel, String) {
+        let goals = InMemoryGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: 60, unit: .g))
+        return try foodDay(lookup: ProteinFacts(), goals: goals)
+    }
+
+    /// A Health query that failed for a goal's nutrient keeps the journal's own bar, as the energy figure keeps the
+    /// journal's figure (#1107 item 2, Mike 2026-10-31).
+    func testAFailedHealthQueryKeepsTheJournalsGoalBar() throws {
+        let (model, key) = try proteinDay()
+        model.outsideIntakeByDay[key] = .read(values: [:], readKeys: ["energy"])
+        model.load(now: now)
+
+        let bar = try XCTUnwrap(model.sections.first { $0.id == key }?.headerBars.first { $0.id == "protein" })
+        XCTAssertEqual(bar.state, .progress)
+        XCTAssertEqual(bar.fraction, Decimal(20) / Decimal(60))
+    }
+
+    /// A partial Health value from a query that did not finish is not added either: the bar is the journal's.
+    func testAPartialHealthValueIsNotAddedToTheGoalBar() throws {
+        let (model, key) = try proteinDay()
+        model.outsideIntakeByDay[key] = .read(values: ["protein": 10], readKeys: [])
+        model.load(now: now)
+
+        let bar = try XCTUnwrap(model.sections.first { $0.id == key }?.headerBars.first { $0.id == "protein" })
+        XCTAssertEqual(bar.state, .progress)
+        XCTAssertEqual(bar.fraction, Decimal(20) / Decimal(60))
+    }
+
+    /// A completed Health query still adds Health's amount to the bar.
+    func testACompletedHealthQueryStillAddsToTheGoalBar() throws {
+        let (model, key) = try proteinDay()
+        model.outsideIntakeByDay[key] = .read(values: ["protein": 10], readKeys: ["protein"])
+        model.load(now: now)
+
+        let bar = try XCTUnwrap(model.sections.first { $0.id == key }?.headerBars.first { $0.id == "protein" })
+        XCTAssertEqual(bar.fraction, Decimal(string: "0.5"))
+    }
+}
+
+/// Every component states 20 g of protein and nothing else.
+private struct ProteinFacts: NutrientFactsLookup {
+    func value(for component: IntakeComponent, nutrient: String) -> NutrientValue {
+        nutrient == "protein" ? .known(20, .g) : .unknown
+    }
+
+    func value(for component: IntakeComponent, snapshot: ProductDefinition?, nutrient: String) -> NutrientValue {
+        value(for: component, nutrient: nutrient)
     }
 }

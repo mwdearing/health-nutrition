@@ -971,7 +971,15 @@ public final class JournalViewModel: ObservableObject {
             let journalLine = NutrientProgressLine.make(
                 nutrient: goal.nutrient, total: totals.total(for: goal.nutrient), goal: goal,
                 knownSum: totals.knownSum(for: goal.nutrient), missingCount: totals.missingCount(for: goal.nutrient))
-            let line = HealthIntakeTotals.combine([journalLine], outside: outside).first ?? journalLine
+            // A Health query that failed for this nutrient keeps the journal's own bar, as the energy figure keeps the
+            // journal's figure, rather than turning a known journal amount into "Can't total yet" (#1107, Mike 2026-10-31).
+            let line: NutrientProgressLine
+            if case .read(_, let readKeys) = outside,
+               !readKeys.contains(HealthKitWritePlanner.canonicalKey(for: goal.nutrient)) {
+                line = journalLine
+            } else {
+                line = HealthIntakeTotals.combine([journalLine], outside: outside).first ?? journalLine
+            }
             return GoalBarModel.make(
                 line: line, hasEntries: line.hasKnownAmount || hasFoodEntries, missingCount: line.missingCount,
                 unitSystem: unitSystem)
