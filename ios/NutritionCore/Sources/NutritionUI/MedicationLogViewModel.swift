@@ -155,7 +155,7 @@ public final class MedicationLogViewModel: ObservableObject {
             return Self.doseMessage(for: error)
         }
         lastLoggedDoseID = dose.id
-        undoText = "Logged \(amount.description) \(medication.unit.rawValue) of \(medication.name)"
+        undoText = "Logged \(Self.doseAmountText(amount)) \(medication.unit.rawValue) of \(medication.name)"
         load()
         return nil
     }
@@ -236,7 +236,7 @@ public final class MedicationLogViewModel: ObservableObject {
 
     /// The last dose read in the dose's own zone. A dose whose zone or day cannot be read shows its amount and unit only.
     private static func lastDoseText(_ dose: MedicationDose) -> String {
-        let amount = dose.amount.description
+        let amount = doseAmountText(dose.amount)
         guard let day = dose.day, let zone = TimeZone(identifier: dose.timeZoneIdentifier) else {
             return "Last dose \(amount) \(dose.unit.rawValue)"
         }
@@ -246,6 +246,19 @@ public final class MedicationLogViewModel: ObservableObject {
         formatter.dateFormat = "h:mm a"
         let time = formatter.string(from: dose.takenAt)
         return "Last dose \(amount) \(dose.unit.rawValue) on \(BodyActivityViewModel.dayText(day)) at \(time)"
+    }
+
+    /// A dose amount as stored, with a comma between thousands, so 1000 reads "1,000" and 2.5 reads "2.5".
+    static func doseAmountText(_ amount: Decimal) -> String {
+        let plain = DecimalFormatting.text(amount)
+        let parts = plain.split(separator: ".", maxSplits: 1, omittingEmptySubsequences: false)
+        var whole = String(parts[0])
+        var grouped = ""
+        while whole.count > 3 {
+            grouped = "," + whole.suffix(3) + grouped
+            whole.removeLast(3)
+        }
+        return whole + grouped + (parts.count > 1 ? "." + parts[1] : "")
     }
 
     private static func statusText(_ standing: MedicationScheduleStatus) -> String? {

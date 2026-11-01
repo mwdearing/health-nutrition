@@ -15,15 +15,18 @@ dose, and it holds no list of drugs, dose ranges, titration steps or advice.
 - **Library row.** While the switch is on, the Library shows a Medication log row next to My supplements.
 - **List.** Each active medication shows its name, unit and schedule, then these lines:
   - "Last dose" with the amount, unit, day and time of the latest dose, or "No dose logged yet";
-  - days since the last dose: "Today", "1 day since" or "N days since";
+  - days since the last dose: "Today", "1 day since" or "N days since". A dose whose own day is after
+    today on this device (logged further east, then read after travelling west) has no days-since line;
   - the schedule standing: "Next by your schedule: <day>", "Due today", "Overdue by 1 day" or
     "Overdue by N days". A medication with no schedule, or with no dose yet, shows no standing line.
   - Archived medications sit in an Archived section, shown only when there is one.
 - **Add.** Add medication opens a sheet with a name, a unit (mg, mcg, mL or units) and an optional
   "Every how many days" field from 1 to 28. An empty field means no schedule.
 - **Log with Undo.** Tapping a medication opens Log a dose: an amount (decimal pad), a date and time that
-  start at now, an optional injection site and an optional note. After a save the screen offers Undo, which
-  removes only that dose.
+  start at now and cannot go past it, an optional injection site and an optional note. After a save the
+  screen offers Undo, which removes only that dose. If the removal fails, Undo stays offered so it can be
+  tried again; Erase all data and a restore withdraw it.
+- **Amounts.** Amounts read as stored, with a comma between thousands: "1,000 mg", "2.5 mg".
 - **Archive.** Swiping a row archives it, and swiping an archived row unarchives it. Archiving keeps the
   medication's doses and schedule.
 
