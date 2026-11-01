@@ -105,6 +105,17 @@ final class TodayDistrustedWaterTests: XCTestCase {
         XCTAssertEqual(bar.valueText, "No data")
     }
 
+    /// Owner choice 1 (2026-11-01): a known water part under 0.01 mL reads "less than 0.01 mL", never "at least".
+    func testAKnownPartUnderAHundredthOfAMLReadsLessThan() throws {
+        let store = try makeStore()
+        try log(store, category: "water", componentID: "sip", amount: 0.004, share: nil)
+        try log(store, category: "other", componentID: "suspect", amount: 250, share: 80)
+        let model = today(store)
+        XCTAssertTrue(model.waterHasUnknown)
+        XCTAssertEqual(model.waterFigureText, "less than 0.01 mL")
+        XCTAssertEqual(model.waterAccessibilityValue, "less than 0.01 milliliters today")
+    }
+
     /// Owner choice A-exact (2026-11-01): a known water part under 1 mL reads its own amount as "at least", never the rounded-up "at least 1 mL".
     func testAKnownPartUnder1MLReadsAtLeast1MLNotLessThan() throws {
         let store = try makeStore()

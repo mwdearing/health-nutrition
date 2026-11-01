@@ -699,6 +699,9 @@ public final class TodayViewModel: ObservableObject {
         let spoken = "\(waterTotalDisplay.spokenAmount) "
             + "\(AmountDisplay.spokenName(for: waterTotalDisplay.unit)) today"
         guard waterHasUnknown else { return spoken }
+        if knownWaterBelowHundredth {
+            return "less than 0.01 \(AmountDisplay.spokenName(for: waterTotalDisplay.unit)) today"
+        }
         return knownWaterReadsAsAtLeast
             ? "at least \(knownWaterExact.spokenAmount) \(AmountDisplay.spokenName(for: knownWaterExact.unit)) today"
             : Self.waterNoDataText
@@ -708,6 +711,7 @@ public final class TodayViewModel: ObservableObject {
     /// of the day's water cannot be counted, or "No data" when none of it can (#1137).
     public var waterFigureText: String {
         guard waterHasUnknown else { return waterTotalDisplay.text }
+        if knownWaterBelowHundredth { return "less than 0.01 \(waterTotalDisplay.unit.symbol)" }
         return knownWaterReadsAsAtLeast ? "at least \(knownWaterExact.text)" : Self.waterNoDataText
     }
 
@@ -729,6 +733,12 @@ public final class TodayViewModel: ObservableObject {
         let exact = floored / 100
         guard waterTotalDisplay.amount > exact else { return waterTotalDisplay }
         return DisplayAmount(amount: exact, unit: unit, groupsWholeAmount: true)
+    }
+
+    /// True when the known water is real but under 0.01 of the shown unit: it reads "less than 0.01 mL"
+    /// rather than "at least" (owner choice 1, 2026-11-01), so no bound is claimed for the unknown part.
+    private var knownWaterBelowHundredth: Bool {
+        waterTotalMilliliters > 0 && knownWaterExact.amount <= 0
     }
 
     /// The existing approved text for a figure with nothing known (GoalBar).
