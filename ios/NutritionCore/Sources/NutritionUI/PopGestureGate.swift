@@ -50,7 +50,8 @@ final class PopGateView: UIView {
             return
         }
         gatedStack = nav
-        nav.interactivePopGestureRecognizer?.isEnabled = !blocked
+        // MUTATION: apply() is a no-op; the gate must never switch the recognizer.
+        _ = nav
     }
 
     private var retriesLeft = 3
