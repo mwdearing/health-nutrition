@@ -2,7 +2,7 @@
 
 Status: Current. Reviewed whenever a store is added or a connection starts writing anywhere.
 
-**Settings > Your data** offers **Erase all data** after a confirmation that says what is removed and that the action cannot be undone. Erase runs each local store eraser, resets the app's display preferences and reminder, removes export files the app can still reach, and clears the community session from this phone's Keychain. It does not contact the community server: the server account, shared submissions and any independently approved catalog snapshot remain. It does not remove copies already shared to another app or service.
+**Settings > Your data** offers **Erase all data** after a confirmation that says what is removed and that the action cannot be undone. Erase runs each local store eraser, resets the app's display preferences and reminder, removes export files the app can still reach, and clears the community session from this device's Keychain. It does not contact the community server: the server account, shared submissions and any independently approved catalog snapshot remain. It does not remove copies already shared to another app or service.
 
 Code: `ios/NutritionCore/Sources/NutritionJournal/JournalErase.swift` holds the
 `JournalErasing` protocol; `ConnectionsPrivacyViewModel.eraseAllData()` runs the
@@ -36,11 +36,11 @@ Erase removes all twelve keys owned by `UserDefaultsDisplayPreferences` from the
 | Vitamins and minerals comparison group (1) | `display.reference.group` |
 | Macro split the gram goals follow (1) | `display.goals.macroSplit` |
 
-Removing the keys restores defaults; it does not write replacement values, with one exception: `display.goals.waterDefaultSeeded` is set to true again right after the erase, so the default water goal is not written back into the just-erased goal store. The reminder's pending notification is also removed. The disclosure will be shown again when the relevant account next signs in on this phone.
+Removing the keys restores defaults; it does not write replacement values, with one exception: `display.goals.waterDefaultSeeded` is set to true again right after the erase, so the default water goal is not written back into the just-erased goal store. The reminder's pending notification is also removed. The disclosure will be shown again when the relevant account next signs in on this device.
 
 ### Other local cleanup
 
-- The local Keychain session stored on this phone is cleared. A Keychain failure is reported as a partial erase, while other local erasers still run. This is local credential removal only; no server logout or account deletion request is made.
+- The local Keychain session stored on this device is cleared. A Keychain failure is reported as a partial erase, while other local erasers still run. This is local credential removal only; no server logout or account deletion request is made.
 - Export files named `journal-export-….json` in the temporary directory are removed, including files left by an earlier app launch. A file that cannot be deleted is reported as a failed cleanup.
 - The supplement list's times and days (`supplementStack.schedules` in the app's defaults domain) and the times each Taken was for (`supplementStack.taken`) are removed by `UserDefaultsSupplementStackStore`. The items themselves are favorites and go with `favorites.store`.
 - The screen clears its export state and entry count when erase begins so it does not keep offering data that is being removed.

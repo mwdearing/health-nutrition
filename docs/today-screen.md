@@ -20,7 +20,7 @@ read live in `NutritionJournal`. The app target wires them together. Tests cover
 **The welcome** is a full screen shown once per install, on the first launch of the app (`RootView` presents
 `WelcomeView` in a full-screen cover while the welcome flag is not set). It shows the title "HealthNutrition", the
 sentence "Log what you eat and drink. See it against goals you set.", and three cards: "Scan a label or barcode, or
-type it in", "Your journal stays on this phone", and "No scores, no advice". It has two actions:
+type it in", "Your journal stays on this device", and "No scores, no advice". It has two actions:
 - **Get started** stores the welcome flag and closes the screen.
 - **Restore from an export** stores the flag, closes the screen and opens Settings. The restore itself is the
   "Restore from an export" button under **Privacy** in Settings, which works only while the journal is empty.
