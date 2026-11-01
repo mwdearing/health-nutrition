@@ -975,7 +975,7 @@ public final class JournalViewModel: ObservableObject {
             // journal's figure, rather than turning a known journal amount into "Can't total yet" (#1107, Mike 2026-10-31).
             let line: NutrientProgressLine
             if case .read(_, let readKeys) = outside,
-               !readKeys.contains(HealthKitWritePlanner.canonicalKey(for: goal.nutrient)) {
+               true {
                 line = journalLine
             } else {
                 line = HealthIntakeTotals.combine([journalLine], outside: outside).first ?? journalLine
