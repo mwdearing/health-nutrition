@@ -731,7 +731,11 @@ public final class TodayViewModel: ObservableObject {
         var floored = Decimal()
         NSDecimalRound(&floored, &scaled, 0, .down)
         let exact = floored / 100
-        guard waterTotalDisplay.amount > exact else { return waterTotalDisplay }
+        // The shown figure is a safe bound only when it is a real amount no larger than the known part; a figure
+        // that rounded to zero (0.4 mL shows as 0 mL) or rounded up is replaced by the known part itself.
+        let shown = waterTotalDisplay.amount
+        guard shown > 0, shown <= exact else { return DisplayAmount(amount: exact, unit: unit, groupsWholeAmount: true) }
+        return waterTotalDisplay
         return DisplayAmount(amount: exact, unit: unit, groupsWholeAmount: true)
     }
 

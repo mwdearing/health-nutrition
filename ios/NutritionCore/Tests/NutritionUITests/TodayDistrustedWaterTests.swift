@@ -117,6 +117,17 @@ final class TodayDistrustedWaterTests: XCTestCase {
         XCTAssertEqual(model.waterAccessibilityValue, "less than 0.01 milliliters")
     }
 
+    /// A known part that rounds to zero in the shown unit (0.4 mL) reads its own amount as "at least", not "No data".
+    func testAKnownPartThatRoundsToZeroReadsItsOwnAmountAsAtLeast() throws {
+        let store = try makeStore()
+        try log(store, category: "water", componentID: "sip", amount: 0.4, share: nil)
+        try log(store, category: "other", componentID: "suspect", amount: 250, share: 80)
+        let model = today(store)
+        XCTAssertTrue(model.waterHasUnknown)
+        XCTAssertEqual(model.waterFigureText, "at least 0.4 mL")
+        XCTAssertEqual(model.waterAccessibilityValue, "at least 0.4 milliliters today")
+    }
+
     /// Owner choice A-exact (2026-11-01): a known water part under 1 mL reads its own amount as "at least", never the rounded-up "at least 1 mL".
     func testAKnownPartUnder1MLReadsAtLeast1MLNotLessThan() throws {
         let store = try makeStore()
