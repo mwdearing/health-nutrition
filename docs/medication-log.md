@@ -19,6 +19,8 @@ dose, and it holds no list of drugs, dose ranges, titration steps or advice.
     today on this device (logged further east, then read after travelling west) has no days-since line;
   - the schedule standing: "Next by your schedule: <day>", "Due today", "Overdue by 1 day" or
     "Overdue by N days". A medication with no schedule, or with no dose yet, shows no standing line.
+    A dose whose own day is after today on this device has no standing line either, as it has no
+    days-since line.
   - Archived medications sit in an Archived section, shown only when there is one.
 - **Add.** Add medication opens a sheet with a name, a unit (mg, mcg, mL or units) and an optional
   "Every how many days" field from 1 to 28. An empty field means no schedule.
@@ -61,22 +63,28 @@ already logged in its old unit.
 
 The medications and doses are kept in their own store file, `medications.store`, separate from
 the journal. The file uses a versioned schema (version 1.0.0) with a migration plan that lists
-that first version, and it opens without CloudKit. The site was added to version 1.0.0 in place,
-not as a second version: no released build has created the store file in the older shape.
+that first version, and it opens without CloudKit. Version 1.0.0 was amended in place before the
+app opened the file, so no released build has created it in an older shape. Any later change to
+the schema needs a new schema version and a migration stage.
 
-The app opens `medications.store` with the other stores. If it cannot be opened, the app reports
-that the medication log store file could not be opened.
+The app opens `medications.store` with the other stores. When the file cannot be opened, the app
+still starts, and the store tries the open again on each read. The Medication log then shows
+"Could not read the medication log." and offers **Clear the medication log**. After the person
+confirms, clearing removes the file and its `-wal` and `-shm` files without a checkpoint, and opens
+an empty log. Erase all data does the same. A damaged row gets the same offer. Nothing removes the
+file without one of those actions.
 
 A row that cannot be read, or that fails the same checks as a save, fails the whole read. The
 log never skips a damaged row and shows the rest as if nothing were wrong.
 
 Erase all data erases `medications.store` last. It deletes the medication rows, then replaces the
 store file and its `-wal` and `-shm` files with an empty one, as the other stores do. The Medication
-log switch is reset by the erase too (see [Erase all data](erase-all-data.md)).
+log switch is reset by the erase too (see [Erase all data](erase-all-data.md)). When the file could
+not be opened, the erase replaces it without a checkpoint, and the store opens an empty log.
 
 ## Not yet
 
-- History editing.
-- The Today tile.
+- History editing (a later slice).
+- The Today tile (a later slice).
 - Export.
 - The weight trend markers.
