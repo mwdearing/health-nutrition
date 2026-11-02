@@ -281,7 +281,7 @@ final class NutrientGapsTests: XCTestCase {
         preferences.setReferenceGroup(men31)
         let model = NutrientGapsViewModel(
             store: store, lookup: GapsSnapshotFacts(), preferences: preferences,
-            healthToday: .read(values: ["vitaminC": 500], readKeys: ["vitaminC"]))
+            healthToday: { .read(values: ["vitaminC": 500], readKeys: ["vitaminC"]) })
         model.load(now: noon)
         let vitaminC = try XCTUnwrap(model.rows.first { $0.nutrient == "vitaminC" })
         XCTAssertEqual(vitaminC.tally.fromHealth, 500)
@@ -296,7 +296,7 @@ final class NutrientGapsTests: XCTestCase {
         preferences.setReferenceGroup(men31)
         let model = NutrientGapsViewModel(
             store: store, lookup: GapsSnapshotFacts(), preferences: preferences,
-            healthToday: .read(values: [:], readKeys: ["vitaminC"]))
+            healthToday: { .read(values: [:], readKeys: ["vitaminC"]) })
         model.load(now: noon)
         let vitaminC = try XCTUnwrap(model.rows.first { $0.nutrient == "vitaminC" })
         XCTAssertEqual(vitaminC.status, .belowReference)
@@ -309,7 +309,7 @@ final class NutrientGapsTests: XCTestCase {
         preferences.setReferenceGroup(men31)
         let model = NutrientGapsViewModel(
             store: store, lookup: GapsSnapshotFacts(), preferences: preferences,
-            healthToday: .read(values: [:], readKeys: []))
+            healthToday: { .read(values: [:], readKeys: []) })
         model.load(now: noon)
         let vitaminC = try XCTUnwrap(model.rows.first { $0.nutrient == "vitaminC" })
         XCTAssertEqual(vitaminC.status, .unknown)
@@ -326,7 +326,7 @@ final class NutrientGapsTests: XCTestCase {
         preferences.setReferenceGroup(men31)
         let model = NutrientGapsViewModel(
             store: store, lookup: GapsSnapshotFacts(), preferences: preferences,
-            healthToday: .read(values: [:], readKeys: []))
+            healthToday: { .read(values: [:], readKeys: []) })
         model.load(now: noon)
         let vitaminC = try XCTUnwrap(model.rows.first { $0.nutrient == "vitaminC" })
         XCTAssertEqual(vitaminC.status, .belowReferenceSoFar)
