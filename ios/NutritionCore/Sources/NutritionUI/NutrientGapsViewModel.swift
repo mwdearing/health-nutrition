@@ -381,9 +381,11 @@ public final class NutrientGapsViewModel: ObservableObject {
         do {
             let read = try Self.tallies(store: store, lookup: lookup, now: now, days: span.dayCount)
             loggedDays = read.loggedDays
-            if span == .week {
+            switch span {
+            case .week:
                 tallies = Self.averaged(read.tallies, byDay: read.byDay)
-            } else {
+            case .day:
+                // Health's day total is today's only, so it is added on the day span alone.
                 tallies = Self.addingHealth(read.tallies, outside: healthToday())
             }
             dayTallies = span == .week ? read.byDay : []
