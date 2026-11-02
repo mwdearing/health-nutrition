@@ -70,7 +70,7 @@ final class TodayDiaryDayTests: XCTestCase {
         // 2023-11-14 08:13 in Los Angeles, which is 2023-11-14 in UTC too.
         try store.create(
             Intake(
-                id: "la", category: "food", occurredAt: now.addingTimeInterval(-6 * 3_600),
+                id: UUID().uuidString.lowercased(), category: "food", occurredAt: now.addingTimeInterval(-6 * 3_600),
                 timeZoneIdentifier: "America/Los_Angeles"),
             components: [IntakeComponent(componentID: "c", name: "Example toast", amount: 30, unit: .g)],
             product: nil, now: now)
