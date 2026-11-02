@@ -311,6 +311,7 @@ public final class SwiftDataFavoritesStore: FavoritesStore, FavoritesRestoreTarg
             for row in try context.fetch(FetchDescriptor<FavoriteRecord>()) { context.delete(row) }
             try context.save()
         }
+        fileOperations.afterRowsDeleted()
         // The rows are gone from every read, but the store file keeps their bytes until SQLite reuses the pages, so
         // the file is replaced too, as the journal store's erase does (#228).
         try replaceFiles()
