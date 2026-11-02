@@ -50,6 +50,11 @@ public final class SwiftDataGoalStore: GoalStore, WeightPlanStore, JournalErasin
     private let fileOperations: StoreFileOperations
     /// True after an erase whose reopen failed; the next call tries the reopen again.
     private var reopenPending = false
+    /// True once `close()` has run. Closing is final: an erase in flight when it runs must not reopen the store (#1156).
+    private var closeRequested = false
+    /// Test seam: runs in `eraseAll` after the rows are deleted and before the file is replaced, the window a
+    /// concurrent `close()` can land in.
+    var afterRowsDeleted: (() -> Void)?
 
     public convenience init(url: URL) throws {
         try self.init(url: url, fileOperations: .systemOperations(opening: Self.makeContainer))
@@ -72,11 +77,13 @@ public final class SwiftDataGoalStore: GoalStore, WeightPlanStore, JournalErasin
         lock.withLock {
             container = nil
             reopenPending = false
+            closeRequested = true
         }
     }
 
     private func openContainer() throws -> ModelContainer {
         try lock.withLock {
+            guard !closeRequested else { throw GoalStoreError.closed }
             if container == nil, reopenPending {
                 container = try fileOperations.openContainer(storeURL)
                 reopenPending = false
@@ -341,6 +348,7 @@ public final class SwiftDataGoalStore: GoalStore, WeightPlanStore, JournalErasin
             for row in try context.fetch(FetchDescriptor<WeightPlanRecord>()) { context.delete(row) }
             try context.save()
         }
+        afterRowsDeleted?()
         // The rows are gone from every read, but the store file keeps their bytes until SQLite reuses the pages, so
         // the file is replaced too, as the journal store's erase does (#228).
         try replaceFiles()
@@ -352,8 +360,9 @@ public final class SwiftDataGoalStore: GoalStore, WeightPlanStore, JournalErasin
         try lock.withLock {
             container = nil
             let result = fileOperations.replaceStoreFiles(at: storeURL)
-            container = result.container
-            reopenPending = result.container == nil
+            // A close that ran during the erase wins: the emptied file stays closed rather than being reopened.
+            container = closeRequested ? nil : result.container
+            reopenPending = !closeRequested && result.container == nil
             if let error = result.error { throw error }
         }
     }
