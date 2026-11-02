@@ -113,7 +113,7 @@ final class TodayDistrustedWaterTests: XCTestCase {
         let model = today(store)
         XCTAssertTrue(model.waterHasUnknown)
         XCTAssertEqual(model.waterFigureText, "less than 0.01 mL")
-        // No "today": the known part is under 0.01, not the day's total, which may hold unknown water.
+        // No "today": the figure states the known part only, because the day's total may hold unknown water.
         XCTAssertEqual(model.waterAccessibilityValue, "less than 0.01 milliliters")
     }
 

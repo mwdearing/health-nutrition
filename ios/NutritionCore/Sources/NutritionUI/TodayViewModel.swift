@@ -736,7 +736,6 @@ public final class TodayViewModel: ObservableObject {
         let shown = waterTotalDisplay.amount
         guard shown > 0, shown <= exact else { return DisplayAmount(amount: exact, unit: unit, groupsWholeAmount: true) }
         return waterTotalDisplay
-        return DisplayAmount(amount: exact, unit: unit, groupsWholeAmount: true)
     }
 
     /// True when the known water is real but under 0.01 of the shown unit: it reads "less than 0.01 mL"
