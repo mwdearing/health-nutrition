@@ -73,7 +73,10 @@ still starts, and the store tries the open again on each read. The Medication lo
 confirms, clearing reads the log again first; a log that reads now is kept, because a read can fail
 for a passing reason such as a locked or busy file. A log that still cannot be read is cleared:
 clearing removes the file and its `-wal` and `-shm` files without a checkpoint, and opens
-an empty log. Erase all data does the same. A damaged row gets the same offer. Nothing removes the
+an empty log. It does so only when SQLite finds the file damaged: it cannot be read as a
+database, or its integrity check reports a fault. A file that fails to open for another reason,
+such as a locked or busy file or a newer schema version, is kept, and the clear says it could
+not clear the log. Erase all data does the same. A damaged row gets the same offer. Nothing removes the
 file without one of those actions.
 
 A row that cannot be read, or that fails the same checks as a save, fails the whole read. The

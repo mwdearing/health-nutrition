@@ -1,5 +1,6 @@
 import Foundation
 import NutritionDomain
+import SQLite3
 import SwiftData
 
 /// One stored medication. The identifier is kept as its UUID text and the unit as its raw value, so a row a
@@ -252,8 +253,10 @@ public final class SwiftDataMedicationStore: MedicationStore, JournalErasing, @u
     /// Removes every medication and every dose. The rows are deleted one at a time in one save, and then the store file
     /// is replaced with an empty one. The store stays open afterwards.
     ///
-    /// A closed store throws `MedicationStoreError.closed` and removes nothing. A file that cannot be opened is replaced
-    /// without deleting rows or checkpointing it, since there is no open store to delete them from.
+    /// A closed store throws `MedicationStoreError.closed` and removes nothing. When the file cannot be opened, its rows
+    /// cannot be deleted, or its checkpoint fails, the file is replaced without a checkpoint only when SQLite finds it
+    /// damaged (see `storeFileIsDamaged(at:)`). A file that failed for another reason, such as a locked or busy file or
+    /// a newer schema, is kept and the error is thrown.
     public func eraseAll() throws {
         writeLock.lock()
         defer { writeLock.unlock() }
@@ -263,16 +266,58 @@ public final class SwiftDataMedicationStore: MedicationStore, JournalErasing, @u
         } catch MedicationStoreError.closed {
             throw MedicationStoreError.closed
         } catch {
-            try replaceFiles(checkpointing: false)
+            try replaceIfDamaged(after: error)
             return
         }
-        let context = ModelContext(container)
-        for row in try context.fetch(FetchDescriptor<MedicationDoseRecord>()) { context.delete(row) }
-        for row in try context.fetch(FetchDescriptor<MedicationRecord>()) { context.delete(row) }
-        try context.save()
+        do {
+            let context = ModelContext(container)
+            for row in try context.fetch(FetchDescriptor<MedicationDoseRecord>()) { context.delete(row) }
+            for row in try context.fetch(FetchDescriptor<MedicationRecord>()) { context.delete(row) }
+            try context.save()
+        } catch {
+            try replaceIfDamaged(after: error)
+            return
+        }
         // The rows are gone from every read, but the file keeps their bytes until SQLite reuses the pages, so the file
         // is replaced too, as the goal store's erase does.
-        try replaceFiles()
+        do {
+            try replaceFiles()
+        } catch StoreFileError.checkpointFailed {
+            try replaceIfDamaged(after: StoreFileError.checkpointFailed)
+        }
+    }
+
+    /// Replaces the store file without a checkpoint when SQLite finds it damaged, and otherwise throws `error`, so a
+    /// file that failed for a passing reason is never removed. The caller holds writeLock.
+    private func replaceIfDamaged(after error: Error) throws {
+        guard Self.storeFileIsDamaged(at: storeURL) else { throw error }
+        try replaceFiles(checkpointing: false)
+    }
+
+    /// Whether SQLite finds the file at `url` damaged: it cannot be read as a database, or its quick integrity check
+    /// reports a fault. A missing file, or one that cannot be checked for another reason (busy, locked, no
+    /// permission), is not damaged.
+    static func storeFileIsDamaged(at url: URL) -> Bool {
+        guard FileManager.default.fileExists(atPath: url.path) else { return false }
+        var database: OpaquePointer?
+        defer { sqlite3_close(database) }
+        let opened = sqlite3_open_v2(url.path, &database, SQLITE_OPEN_READWRITE, nil)
+        guard opened == SQLITE_OK else { return isDamageCode(opened) }
+        sqlite3_busy_timeout(database, 2_000)
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        let prepared = sqlite3_prepare_v2(database, "PRAGMA quick_check", -1, &statement, nil)
+        guard prepared == SQLITE_OK else { return isDamageCode(prepared) }
+        let stepped = sqlite3_step(statement)
+        guard stepped == SQLITE_ROW else { return isDamageCode(stepped) }
+        guard let text = sqlite3_column_text(statement, 0) else { return true }
+        return String(cString: text) != "ok"
+    }
+
+    /// Whether an SQLite result code says the file is damaged rather than unavailable for a moment.
+    private static func isDamageCode(_ code: Int32) -> Bool {
+        let primary = code & 0xFF
+        return primary == SQLITE_CORRUPT || primary == SQLITE_NOTADB
     }
 
     /// Replaces the store file with an empty one. The caller holds writeLock, so no write lands between the row delete
