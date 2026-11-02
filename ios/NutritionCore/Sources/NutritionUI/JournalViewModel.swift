@@ -371,7 +371,13 @@ public final class JournalViewModel: ObservableObject {
                     skipped += 1
                     continue
                 }
-                let snapshot = Self.snapshot(of: current, in: &snapshots, using: store)
+                let snapshot: ProductDefinition?
+                do {
+                    snapshot = try Self.snapshot(of: current, in: &snapshots, using: store)
+                } catch {
+                    skipped += 1
+                    continue
+                }
                 let rowKind = ProductKindResolution.kind(
                     snapshotID: current.productSnapshotID, snapshotKind: { _ in snapshot?.kind }, category: intake.category)
                 let row = JournalRow(
@@ -779,14 +785,15 @@ public final class JournalViewModel: ObservableObject {
         return parts.isEmpty ? "No totals for this day." : parts.joined(separator: ", ")
     }
 
-    /// The product snapshot a revision points at, read at most once per snapshot id. A snapshot that
-    /// cannot be read is nil, which the row reads as the food an entry without a product always was.
+    /// The product snapshot a revision points at, read at most once per snapshot id. A revision with no snapshot
+    /// id is nil, the food an entry without a product always was. A snapshot that cannot be read throws, so its
+    /// entry is skipped rather than shown as a food it may not be (#775).
     private static func snapshot(
         of revision: IntakeRevision?, in cache: inout [String: ProductDefinition?], using store: any JournalStore
-    ) -> ProductDefinition? {
+    ) throws -> ProductDefinition? {
         guard let id = revision?.productSnapshotID else { return nil }
         if let cached = cache[id] { return cached }
-        let found = try? store.product(snapshotID: id)
+        let found = try store.product(snapshotID: id)
         cache[id] = found
         return found
     }
