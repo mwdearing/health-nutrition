@@ -128,6 +128,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// What the importer refused and why, in the words a person can act on.
     public static let importUnsupportedVersionMessage =
         "That file was made by a newer version of the app, so this one cannot read it."
+    public static let importAlreadyRestoredMessage = "Restored earlier. Cleanup is finished; nothing was added again."
     public static let importNotEmptyMessage =
         "This device already has journal entries. An import only works on a journal that is empty."
     /// A version 4 backup carries the whole saved meals list, so it is not restored over saved meals the phone keeps.
@@ -1150,6 +1151,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             return partialRestoreWarningMessage
         case .cleanupIncomplete:
             return cleanupIncompleteMessage
+        case .alreadyRestored:
+            return importAlreadyRestoredMessage
         case .rolledBack:
             return importRolledBackMessage
         }

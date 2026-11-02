@@ -258,7 +258,7 @@ final class JournalImportGoalsTests: XCTestCase {
         try base.removeGoal(nutrient: "energy")
 
         XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: nil, goals: base)) { error in
-            guard case JournalImportError.notEmpty = error else { return XCTFail("expected notEmpty, got \(error)") }
+            guard case JournalImportError.alreadyRestored = error else { return XCTFail("expected alreadyRestored, got \(error)") }
         }
         XCTAssertNil(try base.goal(for: "energy"), "a goal the person deleted must not come back")
     }
