@@ -357,20 +357,42 @@ extension View {
         #endif
     }
 
+    /// The decimal keypad with its own Done key, for a screen with one amount field.
     @ViewBuilder
     func decimalAmountKeyboard() -> some View {
         #if os(iOS)
-        self.keyboardType(.decimalPad)
-            .toolbar {
-                ToolbarItemGroup(placement: .keyboard) {
-                    Spacer()
-                    Button("Done") {
-                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-                    }
-                }
-            }
+        self.decimalKeypadOnly()
+            .toolbar { KeyboardDoneToolbar() }
         #else
         self
+        #endif
+    }
+
+    /// The decimal keypad without a toolbar. A screen with several amount fields (the product editor) must not
+    /// attach a keyboard toolbar to each one, because SwiftUI stacks one Done key per field. Such a screen adds
+    /// `KeyboardDoneToolbar` once, on the form.
+    @ViewBuilder
+    func decimalKeypadOnly() -> some View {
+        #if os(iOS)
+        self.keyboardType(.decimalPad)
+        #else
+        self
+        #endif
+    }
+}
+
+/// The single keyboard Done key. Attach it once per screen, never once per field.
+public struct KeyboardDoneToolbar: ToolbarContent {
+    public init() {}
+
+    public var body: some ToolbarContent {
+        #if os(iOS)
+        ToolbarItemGroup(placement: .keyboard) {
+            Spacer()
+            Button("Done") {
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            }
+        }
         #endif
     }
 }
