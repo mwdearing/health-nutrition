@@ -221,6 +221,21 @@ final class JournalStoreTests: XCTestCase {
         XCTAssertEqual(try store.activeIntakes().map(\.id), [intakeID])
     }
 
+    func testUndoIsRefusedOnceTheInjectedClockPassesTheWindow() throws {
+        let directory = try makeDirectory()
+        let clock = TestClock(when)
+        let store = try SwiftDataJournalStore(
+            url: storeURL(directory), enabledDestinations: [.healthKit, .relay],
+            fileOperations: .system, clock: { clock.now })
+        try store.create(sampleIntake(), components: [oats()], product: nil, now: when)
+        try store.delete(intakeID: intakeID, now: when)
+        clock.now = when.addingTimeInterval(JournalUndo.deleteWindow + 5)
+        XCTAssertThrowsError(try store.undoDelete(intakeID: intakeID)) {
+            XCTAssertEqual($0 as? JournalError, .undoUnavailable(intakeID))
+        }
+        XCTAssertTrue(try store.activeIntakes().isEmpty)
+    }
+
     func testDeleteHidesIntakeQueuesDeleteOperationsAndKeepsHistory() throws {
         let store = try makeStore(try makeDirectory())
         try store.create(sampleIntake(), components: [oats()], product: nil, now: when)
