@@ -83,7 +83,6 @@ public final class SwiftDataGoalStore: GoalStore, WeightPlanStore, JournalErasin
 
     private func openContainer() throws -> ModelContainer {
         try lock.withLock {
-            guard !closeRequested else { throw GoalStoreError.closed }
             if container == nil, reopenPending {
                 container = try fileOperations.openContainer(storeURL)
                 reopenPending = false
