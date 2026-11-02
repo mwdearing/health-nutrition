@@ -472,7 +472,7 @@ public final class TodayViewModel: ObservableObject {
                 // Water other apps logged to Health counts as logged and known, as it does in the water figure.
                 let outsideWater = Self.outsideWaterMilliliters(outsideIntake) > 0
                 return GoalBarModel.make(
-                    line: line, hasEntries: waterEntries > 0 || countedWater > 0 || outsideWater || unknownWater, missingCount: 0,
+                    line: line, hasEntries: waterEntries > 0 || countedWater > 0 || outsideWater, missingCount: 0,
                     skippedWaterCount: skipped, someKnown: countedWater > 0 || outsideWater,
                     unitSystem: self.preferences.unitSystem)
             }
