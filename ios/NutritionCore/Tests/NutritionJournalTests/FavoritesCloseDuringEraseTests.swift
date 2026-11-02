@@ -22,19 +22,20 @@ final class FavoritesCloseDuringEraseTests: XCTestCase {
 
     func testACloseDuringAnEraseStaysClosed() throws {
         let url = try makeDirectory().appendingPathComponent("favorites.store")
-        var operations = StoreFileOperations.system
-        var storeRef: SwiftDataFavoritesStore?
+        var operations = StoreFileOperations.systemOperations(opening: SwiftDataFavoritesStore.makeContainer)
+        final class StoreBox { weak var store: SwiftDataFavoritesStore? }
+        let storeRef = StoreBox()
         operations.afterRowsDeleted = {
             // The erase holds writeLock here, not the store lock, so a close from another thread can run now.
             let finished = DispatchSemaphore(value: 0)
             DispatchQueue.global().async {
-                storeRef?.close()
+                storeRef.store?.close()
                 finished.signal()
             }
             finished.wait()
         }
         let store = try SwiftDataFavoritesStore(url: url, fileOperations: operations)
-        storeRef = store
+        storeRef.store = store
         try store.add(favorite("porridge"))
         try store.eraseAll()
         XCTAssertThrowsError(try store.list()) { error in
@@ -51,24 +52,25 @@ final class FavoritesCloseDuringEraseTests: XCTestCase {
         let url = try makeDirectory().appendingPathComponent("favorites.store")
         final class Probe { weak var container: ModelContainer? }
         let probe = Probe()
-        var operations = StoreFileOperations.system
+        var operations = StoreFileOperations.systemOperations(opening: SwiftDataFavoritesStore.makeContainer)
         let opening = operations.openContainer
         operations.openContainer = { url in
             let container = try opening(url)
             probe.container = container
             return container
         }
-        var storeRef: SwiftDataFavoritesStore?
+        final class StoreBox { weak var store: SwiftDataFavoritesStore? }
+        let storeRef = StoreBox()
         operations.afterRowsDeleted = {
             let finished = DispatchSemaphore(value: 0)
             DispatchQueue.global().async {
-                storeRef?.close()
+                storeRef.store?.close()
                 finished.signal()
             }
             finished.wait()
         }
         let store = try SwiftDataFavoritesStore(url: url, fileOperations: operations)
-        storeRef = store
+        storeRef.store = store
         try autoreleasepool { try store.eraseAll() }
         XCTAssertNil(probe.container, "a closed store kept the container its erase opened, so the file stays open")
     }
