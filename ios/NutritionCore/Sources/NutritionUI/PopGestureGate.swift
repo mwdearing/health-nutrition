@@ -84,7 +84,6 @@ struct PopGestureGate: UIViewRepresentable {
     func updateUIView(_ view: PopGateView, context: Context) {
         view.blocked = blocked
     }
-
 }
 
 extension View {
