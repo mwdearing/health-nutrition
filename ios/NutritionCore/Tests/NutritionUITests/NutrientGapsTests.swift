@@ -273,6 +273,64 @@ final class NutrientGapsTests: XCTestCase {
         XCTAssertEqual(zinc.amountText, "At least 0.65 mg")
     }
 
+    /// Health's day total counts toward the day like Today's Health side: a completed read reaches the reference
+    /// with no journal entries at all, and the upper limit is checked on the total (vitamin C, men 31+: RDA 90 mg).
+    func testAHealthOnlyDayReachesTheReferenceOnTheDaySpan() throws {
+        let store = try makeStore()
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setReferenceGroup(men31)
+        let model = NutrientGapsViewModel(
+            store: store, lookup: GapsSnapshotFacts(), preferences: preferences,
+            healthToday: .read(values: ["vitaminC": 500], readKeys: ["vitaminC"]))
+        model.load(now: noon)
+        let vitaminC = try XCTUnwrap(model.rows.first { $0.nutrient == "vitaminC" })
+        XCTAssertEqual(vitaminC.tally.fromHealth, 500)
+        XCTAssertEqual(vitaminC.status, .reachedReference)
+    }
+
+    /// A completed Health read with no samples is a known zero, so the day is below the reference, not unknown.
+    func testAHealthZeroIsAKnownZeroNotUnknown() throws {
+        let store = try makeStore()
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setReferenceGroup(men31)
+        let model = NutrientGapsViewModel(
+            store: store, lookup: GapsSnapshotFacts(), preferences: preferences,
+            healthToday: .read(values: [:], readKeys: ["vitaminC"]))
+        model.load(now: noon)
+        let vitaminC = try XCTUnwrap(model.rows.first { $0.nutrient == "vitaminC" })
+        XCTAssertEqual(vitaminC.status, .belowReference)
+    }
+
+    /// A Health query that failed is unknown, never zero: the day with no journal entries says unknown.
+    func testAFailedHealthReadIsUnknownNeverZero() throws {
+        let store = try makeStore()
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setReferenceGroup(men31)
+        let model = NutrientGapsViewModel(
+            store: store, lookup: GapsSnapshotFacts(), preferences: preferences,
+            healthToday: .read(values: [:], readKeys: []))
+        model.load(now: noon)
+        let vitaminC = try XCTUnwrap(model.rows.first { $0.nutrient == "vitaminC" })
+        XCTAssertEqual(vitaminC.status, .unknown)
+    }
+
+    /// A failed Health query beside a journal amount below the reference says the day may be higher, as the
+    /// Diary's "at least" does: the nutrient is counted as missing, not as a finished total.
+    func testAFailedHealthReadBesideAJournalAmountSaysMayBeHigher() throws {
+        let store = try makeStore()
+        try log(store, "Orange", at: noon, product: product("orange", kind: .food, nutrients: [
+            "vitaminC": .known(60, .mg),
+        ]))
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setReferenceGroup(men31)
+        let model = NutrientGapsViewModel(
+            store: store, lookup: GapsSnapshotFacts(), preferences: preferences,
+            healthToday: .read(values: [:], readKeys: []))
+        model.load(now: noon)
+        let vitaminC = try XCTUnwrap(model.rows.first { $0.nutrient == "vitaminC" })
+        XCTAssertEqual(vitaminC.status, .belowReferenceSoFar)
+    }
+
     func testAHandTypedSupplementCountsAsSupplementNotFood() throws {
         let store = try makeStore()
         let intake = Intake(
