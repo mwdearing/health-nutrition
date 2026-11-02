@@ -156,6 +156,8 @@ public struct NutrientGapRow: Equatable, Identifiable {
     /// Above the reference the bar is full and `referenceMarker` shows where the reference sits.
     public var foodFraction: Decimal? { fraction(of: tally.fromFood) }
     public var supplementFraction: Decimal? { fraction(of: tally.fromSupplements) }
+    /// Apple Health's share of the reference, drawn after the journal's parts so the bar matches the total.
+    public var healthFraction: Decimal? { fraction(of: tally.fromHealth) }
 
     /// Where the reference sits on a bar that runs past it, or nil while the day is below it.
     public var referenceMarker: Decimal? {
@@ -332,14 +334,14 @@ public final class NutrientGapsViewModel: ObservableObject {
     private let lookup: NutrientFactsLookup
     private let preferences: ReferenceGroupPreferences?
     /// Health's side of today, from the same read Today uses. Counted on the day span only; `.notConnected` adds nothing.
-    private let healthToday: HealthIntakeTotals.Outside
+    private let healthToday: () -> HealthIntakeTotals.Outside
     private var tallies: [String: NutrientDayTally] = [:]
     /// The week's tallies day by day, so a daily upper limit is checked against each day, not the average.
     private var dayTallies: [[String: NutrientDayTally]] = []
 
     public init(
         store: JournalStore, lookup: NutrientFactsLookup = UnknownNutrientFacts(),
-        preferences: ReferenceGroupPreferences? = nil, healthToday: HealthIntakeTotals.Outside = .notConnected
+        preferences: ReferenceGroupPreferences? = nil, healthToday: @escaping () -> HealthIntakeTotals.Outside = { .notConnected }
     ) {
         self.store = store
         self.lookup = lookup
@@ -382,7 +384,7 @@ public final class NutrientGapsViewModel: ObservableObject {
             if span == .week {
                 tallies = Self.averaged(read.tallies, byDay: read.byDay)
             } else {
-                tallies = Self.addingHealth(read.tallies, outside: healthToday)
+                tallies = Self.addingHealth(read.tallies, outside: healthToday())
             }
             dayTallies = span == .week ? read.byDay : []
             skippedIntakeCount = read.skipped

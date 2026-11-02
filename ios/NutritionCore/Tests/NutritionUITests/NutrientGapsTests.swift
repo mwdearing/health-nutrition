@@ -286,6 +286,7 @@ final class NutrientGapsTests: XCTestCase {
         let vitaminC = try XCTUnwrap(model.rows.first { $0.nutrient == "vitaminC" })
         XCTAssertEqual(vitaminC.tally.fromHealth, 500)
         XCTAssertEqual(vitaminC.status, .reachedReference)
+        XCTAssertNotNil(vitaminC.healthFraction, "the bar draws Health's part, so it agrees with the total")
     }
 
     /// A completed Health read with no samples is a known zero, so the day is below the reference, not unknown.
