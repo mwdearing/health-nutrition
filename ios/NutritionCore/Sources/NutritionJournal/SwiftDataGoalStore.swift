@@ -357,8 +357,8 @@ public final class SwiftDataGoalStore: GoalStore, WeightPlanStore, JournalErasin
             container = nil
             let result = fileOperations.replaceStoreFiles(at: storeURL)
             // A close that ran during the erase wins: the emptied file is not reopened, so the closed store holds no container.
-            container = closeRequested ? nil : result.container
-            reopenPending = !closeRequested && result.container == nil
+            container = result.container
+            reopenPending = result.container == nil
             if let error = result.error { throw error }
         }
     }
