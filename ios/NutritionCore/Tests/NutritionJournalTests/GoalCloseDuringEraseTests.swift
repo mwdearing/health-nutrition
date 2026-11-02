@@ -36,4 +36,32 @@ final class GoalCloseDuringEraseTests: XCTestCase {
             XCTAssertEqual(error as? GoalStoreError, .closed)
         }
     }
+
+    /// The emptied container is not held after a close during an erase (#1156): the store must drop the container the
+    /// erase opened, so nothing keeps the file open once the store is closed.
+    func testTheEmptiedContainerIsNotHeldAfterACloseDuringAnErase() throws {
+        let url = try makeDirectory().appendingPathComponent("goals.store")
+        final class Probe { weak var container: ModelContainer? }
+        let probe = Probe()
+        var operations = StoreFileOperations.system
+        let opening = operations.openContainer
+        operations.openContainer = { url in
+            let container = try opening(url)
+            probe.container = container
+            return container
+        }
+        var storeRef: SwiftDataGoalStore?
+        operations.afterRowsDeleted = {
+            let finished = DispatchSemaphore(value: 0)
+            DispatchQueue.global().async {
+                storeRef?.close()
+                finished.signal()
+            }
+            finished.wait()
+        }
+        let store = try SwiftDataGoalStore(url: url, fileOperations: operations)
+        storeRef = store
+        try autoreleasepool { try store.eraseAll() }
+        XCTAssertNil(probe.container, "a closed store kept the container its erase opened, so the file stays open")
+    }
 }
