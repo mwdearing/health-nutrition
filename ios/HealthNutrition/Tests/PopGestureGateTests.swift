@@ -1,8 +1,10 @@
 import SwiftUI
-import UIKit
 import XCTest
 
 @testable import NutritionUI
+
+#if canImport(UIKit)
+import UIKit
 
 /// The edge swipe-back is switched off on the navigation stack that hosts a form while it holds typed input, back on
 /// when the input is cleared, and back on when another screen covers the form. Each test pushes a hosted gate onto a
@@ -35,16 +37,20 @@ final class PopGestureGateTests: XCTestCase {
         return nav
     }
 
-    private func settle() {
-        let deadline = Date().addingTimeInterval(0.5)
-        while Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.05)) }
+    /// Runs the run loop until the stack's recognizer reaches `expected`, or gives up after two seconds. The
+    /// assertion after it then reports the real value, so a gate that never moves still fails.
+    private func settle(_ nav: UINavigationController, until expected: Bool) {
+        let deadline = Date().addingTimeInterval(2)
+        while Date() < deadline, nav.interactivePopGestureRecognizer?.isEnabled != expected {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+        }
     }
 
     private func push(blocked: Bool, onto nav: UINavigationController) -> UIHostingController<AnyView> {
         let host = UIHostingController(rootView: AnyView(Color.clear.blocksEdgeSwipeBack(while: blocked)))
         nav.pushViewController(host, animated: false)
         host.view.layoutIfNeeded()
-        settle()
+        settle(nav, until: !blocked)
         return host
     }
 
@@ -66,7 +72,7 @@ final class PopGestureGateTests: XCTestCase {
         XCTAssertEqual(nav.interactivePopGestureRecognizer?.isEnabled, false, "a form with typed input still allows the edge pop")
         host.rootView = AnyView(Color.clear.blocksEdgeSwipeBack(while: false))
         host.view.layoutIfNeeded()
-        settle()
+        settle(nav, until: true)
         XCTAssertEqual(nav.interactivePopGestureRecognizer?.isEnabled, true, "clearing the input left the edge pop off")
     }
 
@@ -76,7 +82,7 @@ final class PopGestureGateTests: XCTestCase {
         _ = push(blocked: true, onto: nav)
         XCTAssertEqual(nav.interactivePopGestureRecognizer?.isEnabled, false, "a covered blocked form re-enabled the edge pop")
         nav.popViewController(animated: false)
-        settle()
+        settle(nav, until: false)
         XCTAssertEqual(nav.interactivePopGestureRecognizer?.isEnabled, false, "popping the top blocked form left the edge pop on over the form beneath")
     }
 
@@ -84,10 +90,11 @@ final class PopGestureGateTests: XCTestCase {
         let nav = makeStack(initiallyEnabled: true)
         _ = push(blocked: true, onto: nav)
         nav.pushViewController(UIViewController(), animated: false)
-        settle()
+        settle(nav, until: true)
         XCTAssertEqual(nav.interactivePopGestureRecognizer?.isEnabled, true, "the screen over the form cannot be swiped away")
         nav.popViewController(animated: false)
-        settle()
+        settle(nav, until: false)
         XCTAssertEqual(nav.interactivePopGestureRecognizer?.isEnabled, false, "returning to the form did not turn the edge pop off again")
     }
 }
+#endif

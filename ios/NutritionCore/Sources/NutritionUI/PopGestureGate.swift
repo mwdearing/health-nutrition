@@ -27,11 +27,12 @@ final class PopGateView: UIView {
         }
     }
 
-    /// SwiftUI can attach this view before its hosting controller has joined the stack. Each layout pass
-    /// re-applies, so the gate finds its navigation controller as soon as the responder chain is complete.
+    /// SwiftUI can attach this view before its hosting controller has joined the stack. Until the gate has found
+    /// its navigation controller, each layout pass retries; after that the state is set by window and blocked
+    /// changes, so later layout passes do no work.
     override func layoutSubviews() {
         super.layoutSubviews()
-        if window != nil { apply() }
+        if window != nil, gatedStack == nil { apply() }
     }
 
     /// The navigation controller of the nearest view controller that owns this view, if any.
@@ -84,9 +85,6 @@ struct PopGestureGate: UIViewRepresentable {
         view.blocked = blocked
     }
 
-    static func dismantleUIView(_ view: PopGateView, coordinator: ()) {
-        view.release()
-    }
 }
 
 extension View {
