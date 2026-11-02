@@ -26,19 +26,20 @@ final class RecipeCloseDuringEraseTests: XCTestCase {
 
     func testACloseDuringAnEraseStaysClosed() throws {
         let url = try makeDirectory().appendingPathComponent("recipes.store")
-        var operations = StoreFileOperations.system
-        var storeRef: SwiftDataRecipeStore?
+        var operations = StoreFileOperations.systemOperations(opening: SwiftDataRecipeStore.makeContainer)
+        final class StoreBox { weak var store: SwiftDataRecipeStore? }
+        let storeRef = StoreBox()
         operations.afterRowsDeleted = {
             // The erase holds writeLock here, not the store lock, so a close from another thread can run now.
             let finished = DispatchSemaphore(value: 0)
             DispatchQueue.global().async {
-                storeRef?.close()
+                storeRef.store?.close()
                 finished.signal()
             }
             finished.wait()
         }
         let store = try SwiftDataRecipeStore(url: url, fileOperations: operations)
-        storeRef = store
+        storeRef.store = store
         try store.saveNewVersion(version())
         try store.eraseAll()
         XCTAssertThrowsError(try store.list()) { error in
@@ -55,24 +56,25 @@ final class RecipeCloseDuringEraseTests: XCTestCase {
         let url = try makeDirectory().appendingPathComponent("recipes.store")
         final class Probe { weak var container: ModelContainer? }
         let probe = Probe()
-        var operations = StoreFileOperations.system
+        var operations = StoreFileOperations.systemOperations(opening: SwiftDataRecipeStore.makeContainer)
         let opening = operations.openContainer
         operations.openContainer = { url in
             let container = try opening(url)
             probe.container = container
             return container
         }
-        var storeRef: SwiftDataRecipeStore?
+        final class StoreBox { weak var store: SwiftDataRecipeStore? }
+        let storeRef = StoreBox()
         operations.afterRowsDeleted = {
             let finished = DispatchSemaphore(value: 0)
             DispatchQueue.global().async {
-                storeRef?.close()
+                storeRef.store?.close()
                 finished.signal()
             }
             finished.wait()
         }
         let store = try SwiftDataRecipeStore(url: url, fileOperations: operations)
-        storeRef = store
+        storeRef.store = store
         try autoreleasepool { try store.eraseAll() }
         XCTAssertNil(probe.container, "a closed store kept the container its erase opened, so the file stays open")
     }
