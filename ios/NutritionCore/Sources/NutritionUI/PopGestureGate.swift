@@ -55,6 +55,11 @@ final class PopGateView: UIView {
         guard let nav = gatedStack else { return }
         gatedStack = nil
         Self.refresh(nav, excluding: self)
+        // UIKit can finish moving the revealed screen back into the window after this gate leaves it. Re-read the
+        // top screen once the transition has run, so a blocked form beneath is gated again.
+        DispatchQueue.main.async { [weak nav, released = self] in
+            if let nav { Self.refresh(nav, excluding: released) }
+        }
     }
 
     /// Sets the edge swipe from the top screen. `excluding` is the gate being released, which can still be in the
