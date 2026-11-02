@@ -260,20 +260,15 @@ public final class SwiftDataMedicationStore: MedicationStore, JournalErasing, @u
     public func eraseAll() throws {
         writeLock.lock()
         defer { writeLock.unlock() }
-        let container: ModelContainer
+        // The opened container is held only inside this block, so no reference to it outlives the block into the file
+        // replacement below, which removes the files under it and opens a new store at the same path.
         do {
-            container = try openContainer()
-        } catch MedicationStoreError.closed {
-            throw MedicationStoreError.closed
-        } catch {
-            try replaceIfDamaged(after: error)
-            return
-        }
-        do {
-            let context = ModelContext(container)
+            let context = ModelContext(try openContainer())
             for row in try context.fetch(FetchDescriptor<MedicationDoseRecord>()) { context.delete(row) }
             for row in try context.fetch(FetchDescriptor<MedicationRecord>()) { context.delete(row) }
             try context.save()
+        } catch MedicationStoreError.closed {
+            throw MedicationStoreError.closed
         } catch {
             try replaceIfDamaged(after: error)
             return
