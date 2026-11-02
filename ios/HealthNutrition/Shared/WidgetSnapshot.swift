@@ -123,15 +123,17 @@ enum WidgetFigure {
 
     /// Water as the person reads it: whole fluid ounces under US units, whole millilitres otherwise; dashes when the
     /// value is missing or cannot be shown.
-    static func water(_ milliliters: Double?, usUnits: Bool?) -> String {
+    /// A partial total (some water entries have no known amount) gets the same "+" as the macros: "1,000+ mL".
+    static func water(_ milliliters: Double?, usUnits: Bool?, partial: Bool = false) -> String {
+        let plus = partial ? "+" : ""
         if usUnits == true {
             guard let milliliters, milliliters.isFinite else { return "—" }
             let ounces = milliliters / millilitersPerUSFluidOunce
             // A sip is still water: under half an ounce it reads "<1" rather than a rounded 0.
             if ounces > 0, ounces < 0.5 { return "<1 fl oz" }
-            return (wholeNumber(ounces) ?? "—") + " fl oz"
+            return (wholeNumber(ounces) ?? "—") + plus + " fl oz"
         }
-        return (wholeNumber(milliliters) ?? "—") + " mL"
+        return (wholeNumber(milliliters) ?? "—") + plus + " mL"
     }
 
     /// A whole number grouped as Today groups it ("2,494"), so widget figures match the app (#816).

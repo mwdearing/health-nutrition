@@ -80,7 +80,7 @@ struct TodayWidgetView: View {
                         Text("Protein \(WidgetFigure.figure(snapshot?.proteinGrams, unit: "g", partial: snapshot?.isPartial("protein") == true))")
                         Text("Carbohydrate \(WidgetFigure.figure(snapshot?.carbohydrateGrams, unit: "g", partial: snapshot?.isPartial("carbohydrate") == true))")
                         Text("Fat \(WidgetFigure.figure(snapshot?.fatGrams, unit: "g", partial: snapshot?.isPartial("fat") == true))")
-                        Text("Water \(WidgetFigure.water(snapshot?.waterMilliliters, usUnits: snapshot?.usUnits))")
+                        Text("Water \(WidgetFigure.water(snapshot?.waterMilliliters, usUnits: snapshot?.usUnits, partial: snapshot?.isPartial("water") == true))")
                         if snapshot?.partialFigures?.isEmpty == false {
                             Text("+ Some entries are missing nutrients").font(.caption2).foregroundStyle(.secondary)
                         }
