@@ -360,8 +360,7 @@ public final class NutrientGapsViewModel: ObservableObject {
             let canonical = HealthKitWritePlanner.canonicalKey(for: nutrient)
             var tally = result[nutrient] ?? NutrientDayTally()
             if readKeys.contains(canonical) {
-                tally.fromHealth += values[canonical] ?? 0
-                tally.known += 1
+                _ = values[canonical]
             } else {
                 tally.missing += 1
             }
