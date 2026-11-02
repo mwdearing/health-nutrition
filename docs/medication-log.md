@@ -70,7 +70,9 @@ the schema needs a new schema version and a migration stage.
 The app opens `medications.store` with the other stores. When the file cannot be opened, the app
 still starts, and the store tries the open again on each read. The Medication log then shows
 "Could not read the medication log." and offers **Clear the medication log**. After the person
-confirms, clearing removes the file and its `-wal` and `-shm` files without a checkpoint, and opens
+confirms, clearing reads the log again first; a log that reads now is kept, because a read can fail
+for a passing reason such as a locked or busy file. A log that still cannot be read is cleared:
+clearing removes the file and its `-wal` and `-shm` files without a checkpoint, and opens
 an empty log. Erase all data does the same. A damaged row gets the same offer. Nothing removes the
 file without one of those actions.
 

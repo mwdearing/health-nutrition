@@ -113,9 +113,13 @@ public final class MedicationLogViewModel: ObservableObject {
     }
 
     /// Erases the medication store and reads it again, after the person confirms the clear. It does nothing unless
-    /// a read has failed on screen and an eraser is present. A failed erase keeps the offer and sets a message.
+    /// a read has failed on screen and an eraser is present. The log is read once more first, and a log that reads
+    /// now is kept: a read can fail for a passing reason, such as a locked or busy file. A failed erase keeps the
+    /// offer and sets a message.
     public func clearLog() {
         guard canClear, let eraser else { return }
+        load()
+        guard canClear else { return }
         do {
             try eraser.eraseAll()
         } catch {
