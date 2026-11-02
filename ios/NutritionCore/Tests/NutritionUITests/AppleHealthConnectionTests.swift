@@ -123,4 +123,34 @@ final class AppleHealthConnectionTests: XCTestCase {
 
         XCTAssertEqual(model.state, .turnedOff)
     }
+
+    /// Swapping which types are allowed without changing the counts is still a change of access, so the Diary forgets
+    /// figures read under the old types (#1107), even though both answers are partly allowed.
+    func testSwappingAllowedTypesWhileStillPartlyAllowedIsReported() {
+        let connector = FakeConnector(AppleHealthAccess(
+            undetermined: 0, authorized: 14, denied: 1, authorizedTypes: ["steps", "energy"]))
+        let model = AppleHealthConnectionViewModel(connector: connector)
+        var reported: [AppleHealthConnectionState] = []
+        model.onStateChange = { reported.append($0) }
+        connector.access = AppleHealthAccess(
+            undetermined: 0, authorized: 14, denied: 1, authorizedTypes: ["steps", "protein"])
+        model.refresh()
+        XCTAssertEqual(reported, [.partlyAllowed])
+    }
+
+    /// A change in Health's answer is reported once, so the Diary can forget figures read under the old access
+    /// (#1107); a refresh with the same answer reports nothing.
+    func testRefreshReportsAStateChangeOnce() {
+        let connector = FakeConnector(access(0, 15, 0))
+        let model = AppleHealthConnectionViewModel(connector: connector)
+        var reported: [AppleHealthConnectionState] = []
+        model.onStateChange = { reported.append($0) }
+
+        model.refresh()
+        XCTAssertEqual(reported, [], "same answer, nothing reported")
+        connector.access = access(0, 0, 15)
+        model.refresh()
+        model.refresh()
+        XCTAssertEqual(reported, [.turnedOff])
+    }
 }

@@ -17,6 +17,9 @@ public enum JournalImportError: Error, Sendable, Equatable {
     case savedMealsNotEmpty
     /// The bytes are not a journal export at all: not JSON, or not the shape the schema describes.
     case malformed(String)
+    /// The restore finished and every row is written, but the restore-in-progress flag could not be removed.
+    /// The rows stay; the flag is the only thing left behind.
+    case cleanupIncomplete
     /// The file is a version 1 export that cannot be restored as it stands: a snapshot nothing defines,
     /// a revision history that does not line up, an amount that is not exact decimal text.
     case corrupt(String)
@@ -308,7 +311,17 @@ public enum JournalImporter {
                     }
                 }
             }
-            guard !(savedMealsWritten && favoritesWritten && !goalsPending) else { throw JournalImportError.notEmpty }
+            // Every part is written: a flag that outlived the whole restore (a stop after the last save, or a clear
+            // that failed, #828) is not an unfinished restore, however much of it was deleted since. Nothing is written
+            // again and the import is refused as before, but the flag is cleared now, so the cleanup the screen asked
+            // the person to retry is finished and the file cannot later bring back rows deleted since.
+            if savedMealsWritten && favoritesWritten && !goalsPending {
+                try clearFlagAfterRestore(progress)
+                try? favoritesTarget?.removeRestoreReceipt(digest)
+                try? savedMealsTarget?.removeSavedMealsRestoreReceipt(digest)
+                try? goalsTarget?.removeGoalRestoreReceipt(digest)
+                throw JournalImportError.notEmpty
+            }
             if let savedMealsTarget, !savedMealsWritten {
                 try savedMealsTarget.restoreJournalSavedMeals(plan.savedMeals, receipt: digest)
             }
@@ -329,11 +342,14 @@ public enum JournalImporter {
                 }
                 try addMissingGoals(recorded, into: goalsTarget, receipt: digest)
                 try goalsTarget.markGoalRestoreReceiptDone(digest)
-                goalsWritten = try goalsTarget.goalRestoreWrittenGoals(digest).count
+                // Every row is written by now, so a ledger that cannot be read is a cleanup to retry (#828).
+                do { goalsWritten = try goalsTarget.goalRestoreWrittenGoals(digest).count } catch {
+                    throw JournalImportError.cleanupIncomplete
+                }
             }
             // A flag that outlived a finished resume would let a later import of this file write rows the
             // person deleted since, so a failure to clear it is reported rather than swallowed.
-            try progress.clearRestoreInProgress()
+            try clearFlagAfterRestore(progress)
             // The flag is gone, so the receipts have nothing left to answer; one left by a stop here is harmless.
             try? favoritesTarget?.removeRestoreReceipt(digest)
             try? savedMealsTarget?.removeSavedMealsRestoreReceipt(digest)
@@ -446,10 +462,17 @@ public enum JournalImporter {
             // restore is finished from its receipt rather than re-derived from the store.
             try goalsTarget?.markGoalRestoreReceiptDone(digest)
             // Counted before the receipt is removed, since the ledger lives in it.
-            if let goalsTarget { goalsWritten = try goalsTarget.goalRestoreWrittenGoals(digest).count }
+            // Every row is written by now, so a ledger that cannot be read is a cleanup to retry, not a bad file (#828).
+            if let goalsTarget {
+                do { goalsWritten = try goalsTarget.goalRestoreWrittenGoals(digest).count } catch {
+                    throw JournalImportError.cleanupIncomplete
+                }
+            }
             // A flag that cannot be cleared is reported rather than swallowed. It cannot start a resume over this
             // second phase: every part of it now has its receipt.
-            try progress?.clearRestoreInProgress()
+            // The restore itself is complete, so a flag that cannot be cleared is reported as its own outcome, not as a
+            // failed import: the person's rows are there and a retry would only find them.
+            do { try progress?.clearRestoreInProgress() } catch { throw JournalImportError.cleanupIncomplete }
             try? favoritesTarget?.removeRestoreReceipt(digest)
             try? savedMealsTarget?.removeSavedMealsRestoreReceipt(digest)
             try? goalsTarget?.removeGoalRestoreReceipt(digest)
@@ -472,6 +495,16 @@ public enum JournalImporter {
         }
         let deleted = try (store as? JournalTombstoneSource)?.deletedIntakes() ?? []
         return Set(deleted.map(\.id)) == Set(plan.tombstones.map(\.id)) && deleted.count == plan.tombstones.count
+    }
+
+    /// Clears the restore flag once every row is written. A failed clear is the restore that finished but could
+    /// not clean up (#828), not a bad file, so it is reported as `cleanupIncomplete`.
+    private static func clearFlagAfterRestore(_ progress: JournalRestoreProgress) throws {
+        do {
+            try progress.clearRestoreInProgress()
+        } catch {
+            throw JournalImportError.cleanupIncomplete
+        }
     }
 
     private static func summary(of plan: JournalRestorePlan, goals: Int) -> JournalImportSummary {

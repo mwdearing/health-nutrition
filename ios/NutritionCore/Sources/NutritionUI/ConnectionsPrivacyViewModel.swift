@@ -120,6 +120,9 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     public static let exportFailedMessage = "Could not export the journal."
     public static let importButtonTitle = "Import a journal export"
     public static let importFailedMessage = "Could not import that file."
+    /// A restore that finished but could not clean up its flag. The rows are there; the person is told to retry.
+    /// Wording approved by Mike on 2026-10-31 (#828).
+    public static let cleanupIncompleteMessage = "Restored. Could not finish cleaning up; try again to be sure."
     /// The approved rollback wording: a write failed, and the undo put everything back.
     public static let importRolledBackMessage = "Nothing was imported. Try again."
     /// What the importer refused and why, in the words a person can act on.
@@ -771,11 +774,13 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         public let favorites: JournalErasing
         public let recipes: JournalErasing
         public let goals: JournalErasing
+        /// The medication log's store, `medications.store`. Erased last, after goals.
+        public let medications: JournalErasing
 
         public init(
             widgets: JournalErasing, savedMeals: JournalErasing, supplements: JournalErasing,
             reminders: [JournalErasing], journal: JournalErasing, favorites: JournalErasing, recipes: JournalErasing,
-            goals: JournalErasing
+            goals: JournalErasing, medications: JournalErasing
         ) {
             self.widgets = widgets
             self.savedMeals = savedMeals
@@ -785,6 +790,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             self.favorites = favorites
             self.recipes = recipes
             self.goals = goals
+            self.medications = medications
         }
     }
 
@@ -792,7 +798,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// publish announced before the erase lands after it, and journal after the lists it does not depend on.
     public static func eraseOrder(_ stores: EraseStores) -> [JournalErasing] {
         [stores.widgets, stores.savedMeals, stores.supplements] + stores.reminders
-            + [stores.journal, stores.favorites, stores.recipes, stores.goals]
+            + [stores.journal, stores.favorites, stores.recipes, stores.goals, stores.medications]
     }
 
     /// Puts the display preferences back to their defaults and republishes that state, so the screen
@@ -862,7 +868,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             switch self {
             case .imported:
                 return true
-            case .failed(.refused(.partialRestore)):
+            case .failed(.refused(.partialRestore)), .failed(.refused(.cleanupIncomplete)):
                 return true
             case .failed:
                 return false
@@ -1142,6 +1148,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             return importFailedMessage
         case .partialRestore:
             return partialRestoreWarningMessage
+        case .cleanupIncomplete:
+            return cleanupIncompleteMessage
         case .rolledBack:
             return importRolledBackMessage
         }

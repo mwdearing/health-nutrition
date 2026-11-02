@@ -192,7 +192,7 @@ public struct TodayView: View {
                             .font(.headline)
                             .foregroundStyle(TokenColors.textPrimary)
                         Spacer(minLength: DesignSpacing.s)
-                        Text(model.waterTotalDisplay.text)
+                        Text(model.waterFigureText)
                             .font(.title3)
                             .foregroundStyle(TokenColors.textPrimary)
                             .accessibilityValue(model.waterAccessibilityValue)

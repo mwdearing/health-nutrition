@@ -6,7 +6,7 @@ import XCTest
 
 /// Forwards to a real journal, except that the two reads the Goals screen makes for captured supplements
 /// can be made to throw, as a failed journal read would.
-private final class SnapshotReadFailingStore: JournalStore, @unchecked Sendable {
+final class SnapshotReadFailingStore: JournalStore, @unchecked Sendable {
     let inner: SwiftDataJournalStore
     /// Makes the active-intakes read throw.
     var failsActiveIntakes = false

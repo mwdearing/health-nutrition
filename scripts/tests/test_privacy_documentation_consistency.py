@@ -143,7 +143,7 @@ def test_privacy_and_erase_copy_follow_current_source_keys_and_boundaries() -> N
         for cell in row[:1]
         if cell.startswith("`")
     }
-    assert len(stores) == 4
+    assert len(stores) == 5
     assert documented_stores == stores
 
     preference_keys = _reset_preference_keys()

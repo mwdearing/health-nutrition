@@ -337,13 +337,15 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
         let favorites = OrderedEraser("favorites", log)
         let recipes = OrderedEraser("recipes", log)
         let goals = OrderedEraser("goals", log)
+        let medications = OrderedEraser("medications", log)
 
         let order = ConnectionsPrivacyViewModel.eraseOrder(ConnectionsPrivacyViewModel.EraseStores(
             widgets: widgets, savedMeals: savedMeals, supplements: supplements,
-            reminders: [daily, custom], journal: journal, favorites: favorites, recipes: recipes, goals: goals))
+            reminders: [daily, custom], journal: journal, favorites: favorites, recipes: recipes, goals: goals,
+            medications: medications))
 
         let expected: [JournalErasing] = [
-            widgets, savedMeals, supplements, daily, custom, journal, favorites, recipes, goals,
+            widgets, savedMeals, supplements, daily, custom, journal, favorites, recipes, goals, medications,
         ]
         XCTAssertEqual(order.count, expected.count)
         for (actual, wanted) in zip(order, expected) {
@@ -378,14 +380,15 @@ final class ConnectionsPrivacyEraseTests: XCTestCase {
             supplements: OrderedEraser("supplements", log),
             reminders: [OrderedEraser("reminders", log), OrderedEraser("custom reminders", log)],
             journal: OrderedEraser("journal", log), favorites: OrderedEraser("favorites", log),
-            recipes: OrderedEraser("recipes", log), goals: OrderedEraser("goals", log)))
+            recipes: OrderedEraser("recipes", log), goals: OrderedEraser("goals", log),
+            medications: OrderedEraser("medications", log)))
         let model = makeModel(order)
 
         let erased = await model.eraseAllData()
         XCTAssertTrue(erased)
         XCTAssertEqual(log.names, [
             "widget data", "saved meals", "supplements", "reminders", "custom reminders",
-            "journal", "favorites", "recipes", "goals",
+            "journal", "favorites", "recipes", "goals", "medications",
         ])
     }
 

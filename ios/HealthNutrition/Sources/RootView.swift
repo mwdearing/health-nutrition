@@ -228,6 +228,7 @@ struct RootView: View {
                 AppSettingsView(
                     goals: services.goals, connections: connections, reminders: services.reminders,
                     account: services.account, appleHealth: services.appleHealth,
+                    medicationLog: services.medicationLog,
                     now: { Date() }, opensGoals: settingsOpensGoals,
                     onShowWelcome: { self.welcomeAfterSettings = true; self.showingSettings = false }
                 )

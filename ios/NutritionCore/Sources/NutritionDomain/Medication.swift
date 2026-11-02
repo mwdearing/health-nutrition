@@ -1,12 +1,17 @@
 import Foundation
 
-/// The units a medication amount can be typed in. Nothing here says which unit a medication uses: the
-/// person picks one for each medication, and each dose is logged in its medication's unit.
+/// The units a medication amount can be typed in: milligrams, micrograms, milliliters or units. Nothing here
+/// says which unit a medication uses: the person picks one for each medication, and each dose is logged in
+/// its medication's unit.
 public enum MedicationUnit: String, CaseIterable, Sendable, Equatable {
     /// Milligrams.
     case mg
     /// Micrograms.
     case mcg
+    /// Milliliters.
+    case mL
+    /// Units, as the person types them.
+    case units
 }
 
 /// Why a medication or a dose is not usable as entered.
@@ -33,6 +38,14 @@ public enum MedicationError: Error, Sendable, Equatable {
     case noteEmpty
     /// The note is longer than the limit.
     case noteTooLong
+    /// The site is empty or only whitespace.
+    case siteEmpty
+    /// The site starts or ends with whitespace (a space, a tab or a line break).
+    case siteNotTrimmed
+    /// The site holds a line break inside it.
+    case siteHasLineBreak
+    /// The site is longer than the limit.
+    case siteTooLong
 }
 
 /// A medication the person tracks, under a name they typed. Nothing here knows what the medication is.
@@ -100,6 +113,8 @@ public struct MedicationDose: Sendable, Equatable {
     public static let maximumFractionDigits = 3
     /// The maximum number of Characters in the note.
     public static let maximumNoteLength = 200
+    /// The maximum number of Characters in the site.
+    public static let maximumSiteLength = 40
 
     /// The identifier of this dose.
     public let id: UUID
@@ -113,13 +128,15 @@ public struct MedicationDose: Sendable, Equatable {
     public let amount: Decimal
     /// The unit of the amount.
     public let unit: MedicationUnit
+    /// The injection site the person typed, kept with the dose only. Nothing in the log reads it.
+    public let site: String?
     /// An optional note the person wrote about the dose.
     public let note: String?
 
     /// A dose with the given fields. Nothing is checked until `validate()` is called.
     public init(
         id: UUID = UUID(), medicationID: UUID, takenAt: Date, timeZoneIdentifier: String, amount: Decimal,
-        unit: MedicationUnit, note: String? = nil
+        unit: MedicationUnit, site: String? = nil, note: String? = nil
     ) {
         self.id = id
         self.medicationID = medicationID
@@ -127,6 +144,7 @@ public struct MedicationDose: Sendable, Equatable {
         self.timeZoneIdentifier = timeZoneIdentifier
         self.amount = amount
         self.unit = unit
+        self.site = site
         self.note = note
     }
 
@@ -141,10 +159,11 @@ public struct MedicationDose: Sendable, Equatable {
         return CalendarDay(year: year, month: month, day: day)
     }
 
-    /// Checks the amount, then the time zone, then the note, in this order. The amount must be a number
-    /// above zero and at most `maximumAmount`, with no more than `maximumFractionDigits` decimal places.
-    /// The time zone must be one this device knows. A note, when present, must not be blank and must fit
-    /// `maximumNoteLength`.
+    /// Checks the amount, then the time zone, then the site, then the note, in this order. The amount must be
+    /// a number above zero and at most `maximumAmount`, with no more than `maximumFractionDigits` decimal
+    /// places. The time zone must be one this device knows. A site, when present, must not be blank, must not
+    /// start or end with whitespace, must not hold a line break, and must fit `maximumSiteLength`. A note, when
+    /// present, must not be blank and must fit `maximumNoteLength`.
     public func validate() throws {
         if amount.isNaN || amount <= 0 {
             throw MedicationError.amountNotPositive
@@ -160,6 +179,20 @@ public struct MedicationDose: Sendable, Equatable {
         }
         if timeZoneIdentifier.isEmpty || TimeZone(identifier: timeZoneIdentifier) == nil {
             throw MedicationError.timeZoneUnknown
+        }
+        if let site {
+            if site.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                throw MedicationError.siteEmpty
+            }
+            if site.trimmingCharacters(in: .whitespacesAndNewlines) != site {
+                throw MedicationError.siteNotTrimmed
+            }
+            if site.contains(where: { $0.isNewline }) {
+                throw MedicationError.siteHasLineBreak
+            }
+            if site.count > Self.maximumSiteLength {
+                throw MedicationError.siteTooLong
+            }
         }
         if let note {
             if note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
