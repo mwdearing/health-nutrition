@@ -272,7 +272,7 @@ final class JournalImportAtomicityTests: JournalImportTestCase {
         XCTAssertFalse(rowsAfterFirst.isEmpty)
 
         // The retry the message asks for finds every receipt and the flag: it clears the flag and writes nothing
-        // again, and the import is refused as a journal that is not empty, as a finished restore is (#828).
+        // again, and the import is refused as a finished restore (#828), with the alreadyRestored outcome (#1172).
         XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: favoritesStore)) {
             XCTAssertEqual($0 as? JournalImportError, .alreadyRestored)
         }
