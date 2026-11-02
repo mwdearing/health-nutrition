@@ -316,7 +316,7 @@ public enum JournalImporter {
             }
             // Every part is written: a flag that outlived the whole restore (a stop after the last save, or a clear
             // that failed, #828) is not an unfinished restore, however much of it was deleted since. Nothing is written
-            // again and the import is refused as before, but the flag is cleared now, so the cleanup the screen asked
+            // again and the import is refused as already restored (#1172), but the flag is cleared now, so the cleanup the screen asked
             // the person to retry is finished and the file cannot later bring back rows deleted since.
             if savedMealsWritten && favoritesWritten && !goalsPending {
                 try clearFlagAfterRestore(progress)

@@ -238,7 +238,7 @@ final class JournalImportGoalsTests: XCTestCase {
 
     /// A goal the restore set, then the person deleted after every goal was written, is not added back when the same
     /// file is imported again while the flag is still set. The done marker makes the import refuse as already restored
-    /// (`notEmpty`); without it the resume runs again. The receipt is empty once both goals are written, so the energy
+    /// (`alreadyRestored`, #1172); without it the resume runs again. The receipt is empty once both goals are written, so the energy
     /// check holds either way and only the refusal tells the marker is there.
     func testAGoalDeletedAfterTheGoalsFinishedIsNotReAdded() throws {
         let base = try goalStore()
