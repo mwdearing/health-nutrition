@@ -15,19 +15,20 @@ final class GoalCloseDuringEraseTests: XCTestCase {
 
     func testACloseDuringAnEraseStaysClosed() throws {
         let url = try makeDirectory().appendingPathComponent("goals.store")
-        var operations = StoreFileOperations.system
-        var storeRef: SwiftDataGoalStore?
+        var operations = StoreFileOperations.systemOperations(opening: SwiftDataGoalStore.makeContainer)
+        final class StoreBox { weak var store: SwiftDataGoalStore? }
+        let storeRef = StoreBox()
         operations.afterRowsDeleted = {
             // The erase holds writeLock here, not the store lock, so a close from another thread can run now.
             let finished = DispatchSemaphore(value: 0)
             DispatchQueue.global().async {
-                storeRef?.close()
+                storeRef.store?.close()
                 finished.signal()
             }
             finished.wait()
         }
         let store = try SwiftDataGoalStore(url: url, fileOperations: operations)
-        storeRef = store
+        storeRef.store = store
         try store.setGoal(NutrientGoal(nutrient: "protein", target: 60, unit: .g))
         try store.eraseAll()
         XCTAssertThrowsError(try store.goals()) { error in
@@ -44,24 +45,25 @@ final class GoalCloseDuringEraseTests: XCTestCase {
         let url = try makeDirectory().appendingPathComponent("goals.store")
         final class Probe { weak var container: ModelContainer? }
         let probe = Probe()
-        var operations = StoreFileOperations.system
+        var operations = StoreFileOperations.systemOperations(opening: SwiftDataGoalStore.makeContainer)
         let opening = operations.openContainer
         operations.openContainer = { url in
             let container = try opening(url)
             probe.container = container
             return container
         }
-        var storeRef: SwiftDataGoalStore?
+        final class StoreBox { weak var store: SwiftDataGoalStore? }
+        let storeRef = StoreBox()
         operations.afterRowsDeleted = {
             let finished = DispatchSemaphore(value: 0)
             DispatchQueue.global().async {
-                storeRef?.close()
+                storeRef.store?.close()
                 finished.signal()
             }
             finished.wait()
         }
         let store = try SwiftDataGoalStore(url: url, fileOperations: operations)
-        storeRef = store
+        storeRef.store = store
         try autoreleasepool { try store.eraseAll() }
         XCTAssertNil(probe.container, "a closed store kept the container its erase opened, so the file stays open")
     }
