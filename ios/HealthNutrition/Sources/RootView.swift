@@ -45,6 +45,7 @@ struct RootView: View {
 
     @State private var selection: AppTab = .today
     @State private var addHome: AddHomeViewModel?
+    @State private var libraryEditor: LibraryProductEditor?
     @State private var productSearchModel: CommunityProductSearchViewModel?
     @State private var addIntakeModel: AddIntakeViewModel?
     @State private var confirmDiscardAdd = false
@@ -152,13 +153,22 @@ struct RootView: View {
                     model: services.library, onAdded: { reload() }, onOpenRecipes: { openRecipes() },
                     onOpen: { template in self.openAddDetails(prefilledFrom: template) },
                     onProduct: { product in self.startProductDetails(product) },
-                    onEditProduct: { product in self.startProductEditor(revision: product) },
-                    onLegacyProduct: { draft in self.startProductEditor(legacy: draft) },
+                    onEditProduct: { product in self.presentLibraryEditor(revision: product) },
+                    onLegacyProduct: { draft in self.presentLibraryEditor(legacy: draft) },
                     onSearchProducts: { self.startProductSearch() },
-                    onNewProduct: { self.startProductEditor() }
+                    onNewProduct: { self.presentLibraryEditor() }
                 )
                 .navigationTitle("Library")
                 .toolbar { settingsToolbar }
+                // Editing from the Library opens the editor on its own, not inside the Add flow, so Cancel and Save return here.
+                .sheet(item: $libraryEditor) { editor in
+                    NavigationStack {
+                        CustomProductEditorView(model: editor.model, sharing: services.library.productSharing) { _, _ in
+                            services.library.load()
+                            self.libraryEditor = nil
+                        }
+                    }
+                }
             }
                 .safeAreaInset(edge: .bottom) { addCapsule }
                 .tabItem { Label("Library", systemImage: "square.grid.2x2") }
@@ -435,6 +445,10 @@ struct RootView: View {
         let editor = CustomProductEditorViewModel(store: services.journalStore, revision: revision, legacy: legacy, sharing: services.productSharing)
         addNavigation.path.append(.productEditor(ProductEditorPrefill(model: editor)))
     }
+    private func presentLibraryEditor(revision: CustomProductRevision? = nil, legacy: LegacyCustomProductDraft? = nil) {
+        let model = CustomProductEditorViewModel(store: services.journalStore, revision: revision, legacy: legacy, sharing: services.productSharing)
+        libraryEditor = LibraryProductEditor(model: model)
+    }
     private func startProductEditor(revision: CustomProductRevision? = nil, legacy: LegacyCustomProductDraft? = nil) {
         startAddingIntake()
         if let home = addHome { openProductEditor(home: home, revision: revision, legacy: legacy) }
@@ -681,4 +695,10 @@ struct StartupFailureView: View {
         }
         .padding()
     }
+}
+
+/// A product editor opened from the Library, shown as its own sheet.
+struct LibraryProductEditor: Identifiable {
+    let id = UUID()
+    let model: CustomProductEditorViewModel
 }
