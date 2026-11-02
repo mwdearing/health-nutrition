@@ -229,9 +229,8 @@ public final class SwiftDataRecipeStore: RecipeStore, JournalErasing, @unchecked
         try lock.withLock {
             container = nil
             let result = fileOperations.replaceStoreFiles(at: storeURL)
-            // A close that ran during the erase wins: the emptied file stays closed rather than being reopened.
-            container = closeRequested ? nil : result.container
-            reopenPending = !closeRequested && result.container == nil
+            container = result.container
+            reopenPending = result.container == nil
             if let error = result.error { throw error }
         }
     }
