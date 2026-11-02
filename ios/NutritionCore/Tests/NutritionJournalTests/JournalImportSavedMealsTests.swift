@@ -425,7 +425,7 @@ final class JournalImportSavedMealsTests: JournalImportTestCase {
         savedMeals.meals = []
 
         XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: favoritesStore, savedMeals: savedMeals)) {
-            XCTAssertEqual($0 as? JournalImportError, .notEmpty)
+            XCTAssertEqual($0 as? JournalImportError, .alreadyRestored)
         }
         XCTAssertEqual(savedMeals.meals, [])
     }
