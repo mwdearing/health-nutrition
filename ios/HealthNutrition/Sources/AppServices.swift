@@ -429,8 +429,8 @@ final class AppServices {
         }
         // Never blocks launch: a file that cannot be opened is retried on each read, and the Medication log offers
         // to clear it.
-        let medicationStore = SwiftDataMedicationStore(
-            retryingOpenAt: directory.appendingPathComponent("medications.store"))
+        let medicationURL = directory.appendingPathComponent("medications.store")
+        let medicationStore = SwiftDataMedicationStore(retryingOpenAt: medicationURL)
         return AppServices(
             journalStore: journalStore, favoritesStore: favoritesStore, recipeStore: recipeStore,
             goalStore: goalStore, medicationStore: medicationStore, displayPreferences: displayPreferences,
