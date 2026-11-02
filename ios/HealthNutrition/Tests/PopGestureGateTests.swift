@@ -81,9 +81,23 @@ final class PopGestureGateTests: XCTestCase {
         _ = push(blocked: true, onto: nav)
         _ = push(blocked: true, onto: nav)
         XCTAssertEqual(nav.interactivePopGestureRecognizer?.isEnabled, false, "a covered blocked form re-enabled the edge pop")
+        // Start from on, so the pop has to turn the edge pop off again for the form beneath to pass.
+        nav.interactivePopGestureRecognizer?.isEnabled = true
         nav.popViewController(animated: false)
         settle(nav, until: false)
         XCTAssertEqual(nav.interactivePopGestureRecognizer?.isEnabled, false, "popping the top blocked form left the edge pop on over the form beneath")
+    }
+
+    func testAnimatedPushOfBlockedFormKeepsTheEdgePopOff() {
+        let nav = makeStack(initiallyEnabled: true)
+        let host = UIHostingController(rootView: AnyView(Color.clear.blocksEdgeSwipeBack(while: true)))
+        nav.pushViewController(host, animated: true)
+        let deadline = Date().addingTimeInterval(3)
+        while Date() < deadline, nav.transitionCoordinator != nil || nav.interactivePopGestureRecognizer?.isEnabled != false {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.02))
+        }
+        XCTAssertNil(nav.transitionCoordinator, "the animated push did not finish")
+        XCTAssertEqual(nav.interactivePopGestureRecognizer?.isEnabled, false, "an animated push of a blocked form left the edge pop on")
     }
 
     func testScreenPushedOverABlockedFormCanBeSwipedAwayAndTheGateReturns() {
