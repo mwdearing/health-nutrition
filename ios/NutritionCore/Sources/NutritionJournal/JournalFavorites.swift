@@ -325,10 +325,16 @@ public final class SwiftDataFavoritesStore: FavoritesStore, FavoritesRestoreTarg
     private func replaceFiles() throws {
         try lock.withLock {
             container = nil
+            if closeRequested {
+                // Closed during the erase: remove the files and reopen nothing, so no file is left behind and the store
+                // holds no container (#1156).
+                reopenPending = false
+                if let error = fileOperations.removeStoreFiles(at: storeURL) { throw error }
+                return
+            }
             let result = fileOperations.replaceStoreFiles(at: storeURL)
-            // A close that ran during the erase wins: the emptied file is not reopened, so the closed store holds no container.
-            container = closeRequested ? nil : result.container
-            reopenPending = !closeRequested && result.container == nil
+            container = result.container
+            reopenPending = result.container == nil
             if let error = result.error { throw error }
         }
     }

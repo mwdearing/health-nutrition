@@ -74,4 +74,29 @@ final class FavoritesCloseDuringEraseTests: XCTestCase {
         try autoreleasepool { try store.eraseAll() }
         XCTAssertNil(probe.container, "a closed store kept the container its erase opened, so the file stays open")
     }
+
+    /// A store closed during an erase leaves no store file behind and reports no error (#1156): the erase removes the
+    /// file, main, write-ahead and shared-memory, and reopens nothing.
+    func testAClosedMidEraseLeavesNoStoreFiles() throws {
+        let url = try makeDirectory().appendingPathComponent("favorites.store")
+        var operations = StoreFileOperations.systemOperations(opening: SwiftDataFavoritesStore.makeContainer)
+        final class StoreBox { weak var store: SwiftDataFavoritesStore? }
+        let storeRef = StoreBox()
+        operations.afterRowsDeleted = {
+            let finished = DispatchSemaphore(value: 0)
+            DispatchQueue.global().async {
+                storeRef.store?.close()
+                finished.signal()
+            }
+            finished.wait()
+        }
+        let store = try SwiftDataFavoritesStore(url: url, fileOperations: operations)
+        storeRef.store = store
+        try store.eraseAll()
+        for suffix in ["", "-wal", "-shm"] {
+            XCTAssertFalse(
+                FileManager.default.fileExists(atPath: url.path + suffix),
+                "a store closed mid-erase left \(suffix.isEmpty ? "the store file" : suffix)")
+        }
+    }
 }
