@@ -9,6 +9,9 @@ struct StoreFileOperations {
     var remove: (URL) throws -> Void
     /// Opens the store file as a container; the erase calls it again to reopen the emptied store.
     var openContainer: (URL) throws -> ModelContainer
+    /// Test hook: runs in an erase after the rows are deleted and before the file is replaced (#1156). The system
+    /// operations do nothing here.
+    var afterRowsDeleted: () -> Void = {}
 
     static let system = StoreFileOperations(
         checkpoint: { try SwiftDataJournalStore.checkpointStoreFile(at: $0) },

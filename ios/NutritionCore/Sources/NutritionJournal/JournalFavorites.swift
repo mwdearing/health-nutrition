@@ -134,9 +134,6 @@ public final class SwiftDataFavoritesStore: FavoritesStore, FavoritesRestoreTarg
     private var reopenPending = false
     /// True once `close()` has run. Closing is final: an erase that is in flight when it runs must not reopen the store.
     private var closeRequested = false
-    /// Test seam: runs in `eraseAll` after the rows are deleted and before the file is replaced, the window a
-    /// concurrent `close()` can land in.
-    var afterRowsDeleted: (() -> Void)?
 
     public convenience init(url: URL) throws {
         try self.init(url: url, fileOperations: .systemOperations(opening: Self.makeContainer))
@@ -318,7 +315,7 @@ public final class SwiftDataFavoritesStore: FavoritesStore, FavoritesRestoreTarg
             for row in try context.fetch(FetchDescriptor<FavoriteRecord>()) { context.delete(row) }
             try context.save()
         }
-        afterRowsDeleted?()
+        fileOperations.afterRowsDeleted()
         // The rows are gone from every read, but the store file keeps their bytes until SQLite reuses the pages, so
         // the file is replaced too, as the journal store's erase does (#228).
         try replaceFiles()
