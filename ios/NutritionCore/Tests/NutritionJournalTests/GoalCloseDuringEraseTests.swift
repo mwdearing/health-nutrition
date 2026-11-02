@@ -14,17 +14,20 @@ final class GoalCloseDuringEraseTests: XCTestCase {
 
     func testACloseDuringAnEraseStaysClosed() throws {
         let url = try makeDirectory().appendingPathComponent("goals.store")
-        let store = try SwiftDataGoalStore(url: url)
-        try store.setGoal(NutrientGoal(nutrient: "protein", target: 60, unit: .g))
-        store.afterRowsDeleted = {
+        var operations = StoreFileOperations.system
+        var storeRef: SwiftDataGoalStore?
+        operations.afterRowsDeleted = {
             // The erase holds writeLock here, not the store lock, so a close from another thread can run now.
             let finished = DispatchSemaphore(value: 0)
             DispatchQueue.global().async {
-                store.close()
+                storeRef?.close()
                 finished.signal()
             }
             finished.wait()
         }
+        let store = try SwiftDataGoalStore(url: url, fileOperations: operations)
+        storeRef = store
+        try store.setGoal(NutrientGoal(nutrient: "protein", target: 60, unit: .g))
         try store.eraseAll()
         XCTAssertThrowsError(try store.goals()) { error in
             XCTAssertEqual(error as? GoalStoreError, .closed, "the erase reopened a store that was closed")
