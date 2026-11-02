@@ -116,7 +116,10 @@ final class MedicationStoreOpenRetryTests: XCTestCase {
 
         steps.removalFails = false
         try store.eraseAll()
-        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path + "-wal"))
+        // The reopened empty store makes its own -wal, so check what the erase removed, not what is there now.
+        XCTAssertEqual(
+            steps.removed,
+            ["medications.store-shm", "medications.store-shm", "medications.store-wal", "medications.store"])
         XCTAssertEqual(try store.medications(), [])
     }
 
