@@ -117,9 +117,10 @@ A day with nothing logged is unknown for every nutrient, for the same reason.
 
 ### One day at a time
 The day is the caller's to decide and `DailyTotalsBuilder` never sees two at once. `TodayViewModel` keeps the
-intakes on the same local day as now; `JournalViewModel` groups by day. Both use **each intake's own stored time
-zone**, as `JournalViewModel` already did for its rows, so one instant logged in two zones is two local days and
-neither day absorbs the other's entries. An intake whose stored time zone is not a valid time zone is left out with
+intakes whose day is the Diary's today; `JournalViewModel` groups by day. Both read each intake's day in **its own
+stored time zone**, so one instant logged in two zones is two local days and neither day absorbs the other's entries.
+Which day is today is today's date in the **current zone**, for both screens, so after travel Today and the Diary's
+today hold the same entries (#1139, Mike 2026-10-31). An intake whose stored time zone is not a valid time zone is left out with
 no fallback, exactly as it already was.
 
 `JournalDaySection` carries that day's `DailyTotals`, and `JournalViewModel.totalsText(totals:tracked:goals:)`
@@ -290,8 +291,8 @@ Text that is not a positive number is refused rather than rounded or guessed at.
   available. Library products say "From your Library"; an unedited recipe keeps its version snapshot.
   Save stays enabled in the bottom inset, with save errors and blocked-field messages above it. Serving
   chips and Log to several days are disabled placeholders with Later badges and "Not available yet".
-- **Local day**: an intake is on Today when its time falls on the same calendar day as "now" in the intake's own time
-  zone. Deleted intakes are hidden. A time corrected on the entry screen moves the entry to the day it now falls on,
+- **Local day**: an intake is on Today when its day, read in the intake's own time zone, is today's date in the current
+  zone, the same today as the Diary's (#1139). Quick-added water takes the current zone at the moment it is added. Deleted intakes are hidden. A time corrected on the entry screen moves the entry to the day it now falls on,
   in the Journal as well as here.
 - **Date subtitle** uses the current device time zone on every reload, including after a zone change.
 - **Missing values**: a food snapshot with only unknown tracked nutrients counts as having no nutrition values.
