@@ -1,8 +1,10 @@
 import Foundation
 import NutritionDomain
+import NutritionJournal
 import XCTest
 
 @testable import HealthNutrition
+@testable import NutritionUI
 
 final class WidgetSnapshotTests: XCTestCase {
     private var directory: URL!
@@ -398,5 +400,36 @@ final class WidgetSnapshotTests: XCTestCase {
         XCTAssertNil(WidgetFigure.wholeNumber(.infinity))
         // Larger than Int.max as a Double: would trap in Int(...) without the bound.
         XCTAssertNil(WidgetFigure.wholeNumber(1e30))
+    }
+
+    /// #1148: a day whose water is partly unknown (a distrusted entry with a share) is listed as partial, so the
+    /// widget and Watch can mark the water with "+". A day with all water known is not listed.
+    @MainActor
+    func testThePublisherListsWaterAsPartialOnlyWhenSomeWaterIsUnknown() throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let store = try SwiftDataJournalStore(url: directory.appendingPathComponent("water.store"))
+        func log(_ category: String, _ id: String, _ amount: Decimal, share: Decimal?) throws {
+            try store.create(
+                Intake(id: UUID().uuidString.lowercased(), category: category, occurredAt: now, timeZoneIdentifier: "UTC"),
+                components: [IntakeComponent(componentID: id, name: id, amount: amount, unit: .mL, hydrationPercent: share)],
+                product: nil, now: now)
+        }
+        try log("water", "glass", 200, share: nil)
+        try log("other", "suspect", 250, share: 80)
+        let partialModel = TodayViewModel(store: store, lookup: UnknownNutrientFacts(), timeZoneIdentifier: "UTC")
+        partialModel.load(now: now)
+        XCTAssertTrue(partialModel.waterHasUnknown)
+        let partial = WidgetSnapshotPublisher.snapshot(from: partialModel, now: now)
+        XCTAssertTrue(partial.isPartial("water"), "a partly unknown water total must be listed as partial")
+
+        let cleanStore = try SwiftDataJournalStore(url: directory.appendingPathComponent("clean.store"))
+        try cleanStore.create(
+            Intake(id: UUID().uuidString.lowercased(), category: "water", occurredAt: now, timeZoneIdentifier: "UTC"),
+            components: [IntakeComponent(componentID: "glass", name: "glass", amount: 200, unit: .mL, hydrationPercent: nil)],
+            product: nil, now: now)
+        let cleanModel = TodayViewModel(store: cleanStore, lookup: UnknownNutrientFacts(), timeZoneIdentifier: "UTC")
+        cleanModel.load(now: now)
+        let clean = WidgetSnapshotPublisher.snapshot(from: cleanModel, now: now)
+        XCTAssertFalse(clean.isPartial("water"), "an all-known water total is not partial")
     }
 }
