@@ -272,9 +272,9 @@ final class JournalImportAtomicityTests: JournalImportTestCase {
         XCTAssertFalse(rowsAfterFirst.isEmpty)
 
         // The retry the message asks for finds every receipt and the flag: it clears the flag and writes nothing
-        // again, and the import is refused as a journal that is not empty, as a finished restore is (#828).
+        // again, and the import is refused as a finished restore (#828), with the alreadyRestored outcome (#1172).
         XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: favoritesStore)) {
-            XCTAssertEqual($0 as? JournalImportError, .notEmpty)
+            XCTAssertEqual($0 as? JournalImportError, .alreadyRestored)
         }
         XCTAssertNil(try inner.restoreInProgressDigest())
         XCTAssertEqual(try inner.activeIntakes().map(\.id), rowsAfterFirst)
@@ -302,7 +302,7 @@ final class JournalImportAtomicityTests: JournalImportTestCase {
 
         // The retry reads no ledger: it clears the flag and is refused as a finished restore.
         XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: favoritesStore, goals: goals)) {
-            XCTAssertEqual($0 as? JournalImportError, .notEmpty)
+            XCTAssertEqual($0 as? JournalImportError, .alreadyRestored)
         }
         XCTAssertNil(try journal.restoreInProgressDigest())
         XCTAssertEqual(try base.goals().count, 1, "no goal is added again")

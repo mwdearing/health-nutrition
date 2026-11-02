@@ -1056,4 +1056,11 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         XCTAssertNil(stillHeld, "a timed-out restore does not release the running pass's hold")
         await held.leave()
     }
+
+    /// A retry after a finished restore says it finished, with the approved wording pinned as a literal (#1172).
+    func testARetryAfterAFinishedRestoreSaysItFinishedNotThatTheJournalIsFull() {
+        XCTAssertEqual(
+            ConnectionsPrivacyViewModel.importFailureText(for: .alreadyRestored),
+            "Restored earlier. Cleanup is finished; nothing was added again.")
+    }
 }
