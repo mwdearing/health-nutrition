@@ -118,6 +118,10 @@ public final class TodayViewModel: ObservableObject {
     @Published public private(set) var waterTotalMilliliters: Decimal = 0
     /// Water components skipped because their unit is not a volume (never counted as zero).
     @Published public private(set) var waterSkippedCount: Int = 0
+    /// True when an entry's water is in the day but cannot be counted: a distrusted entry (a negative logged,
+    /// stated or lookup value) that is a drink or carries a water share. The Diary marks that day's water unknown,
+    /// so Today shows the known part as "at least" and never adds the suspect amount (#1137).
+    @Published public private(set) var waterHasUnknown: Bool = false
     /// Stored intakes left out of Today because their time zone identifier is not a valid time zone.
     @Published public private(set) var skippedIntakeCount: Int = 0
     @Published public private(set) var coverage: [CoverageLine] = []
@@ -171,7 +175,9 @@ public final class TodayViewModel: ObservableObject {
     /// goals still gets the totals, which are the larger half of the line.
     private let goals: GoalStore?
     private let trackedNutrients: [String]
-    private let timeZoneIdentifier: String
+    /// The zone "today" is read in, asked on every load and quick add: the one given in tests, otherwise the current
+    /// zone, as the Diary does, so Today follows the person after travel without a relaunch (#1139).
+    private let zoneID: () -> String
     private let makeID: () -> String
     /// Read on every quick add and every label, rather than copied into this model, so a preference
     /// changed on another screen is honored by the next tap rather than by the next launch.
@@ -182,7 +188,7 @@ public final class TodayViewModel: ObservableObject {
         goals: GoalStore? = nil,
         lookup: NutrientFactsLookup = UnknownNutrientFacts(),
         trackedNutrients: [String] = TodayViewModel.defaultTrackedNutrients,
-        timeZoneIdentifier: String = TimeZone.current.identifier,
+        timeZoneIdentifier: String? = nil,
         makeID: @escaping () -> String = { UUID().uuidString.lowercased() },
         preferences: DisplayPreferences = InMemoryDisplayPreferences()
     ) {
@@ -190,7 +196,7 @@ public final class TodayViewModel: ObservableObject {
         self.goals = goals
         self.lookup = lookup
         self.trackedNutrients = trackedNutrients
-        self.timeZoneIdentifier = timeZoneIdentifier
+        self.zoneID = IntakeRepeater.resolver(override: timeZoneIdentifier, provider: { DiaryZone.identifier() })
         self.makeID = makeID
         self.preferences = preferences
     }
@@ -256,7 +262,7 @@ public final class TodayViewModel: ObservableObject {
         return tracked + [DailyTotalsBuilder.waterKey]
     }
 
-    /// Reloads Today: active intakes on the local day of each intake's own time zone.
+    /// Reloads Today: active intakes whose own-zone day is today's date in the current zone, the Diary's today.
     public func load(now: Date) {
         // Nil while a load is in progress and after one that failed, so it only ever names a load whose totals
         // are the ones on screen; a successful load sets it again at the end.
@@ -264,8 +270,11 @@ public final class TodayViewModel: ObservableObject {
         do {
             var skippedIntakes = 0
             var intakes: [Intake] = []
+            // The Diary's today: today's date in the current zone. An entry counts when its own-zone day is that date,
+            // so Today and the Diary's today always hold the same entries (#1139, Mike 2026-10-31).
+            let todayKey = JournalViewModel.dayKey(now, zone: TimeZone(identifier: zoneID()) ?? .current)
             for intake in try store.activeIntakes() where intake.lifecycle == .active {
-                guard let sameDay = Self.isSameLocalDay(intake, as: now) else {
+                guard let sameDay = Self.isOnDay(intake, key: todayKey) else {
                     skippedIntakes += 1
                     continue
                 }
@@ -281,6 +290,7 @@ public final class TodayViewModel: ObservableObject {
             var waterEntries = 0
             // Water components that counted as a volume: the only water that is known.
             var countedWater = 0
+            var unknownWater = false
             // One snapshot is read once per load, however many components and nutrients refer to it.
             var snapshots: [String: ProductDefinition?] = [:]
             let loggedUnits = try LoggedUnitIndex.loadOrThrow(from: store)
@@ -295,14 +305,21 @@ public final class TodayViewModel: ObservableObject {
                 // an entry with a snapshot states its kind through that snapshot (#416, #364).
                 let kind = ProductKindResolution.kind(
                     snapshotID: current?.productSnapshotID, snapshotKind: { _ in snapshot?.kind }, category: intake.category)
+                // The same per-entry decision the Diary's totals make, so both screens agree on that day's water.
+                let distrusted = DailyTotalsBuilder.isDistrusted(
+                    (components, snapshot, intake.category, typed: current?.productSnapshotID == nil), lookup: lookup)
                 if intake.category == "water" {
                     waterEntries += 1
+                    // A distrusted drink's water is unknown, as in the Diary: none of it is added. A component that
+                    // could not count anyway is still reported as skipped.
+                    if distrusted { unknownWater = true }
                     for component in components {
                         if component.unit.dimension == .volume,
                             Self.isPositive(component.amount),
                             let converted = try? Quantity(value: component.amount, unit: component.unit).converted(to: .mL),
                             Self.isPositive(converted.value)
                         {
+                            guard !distrusted else { continue }
                             // A water entry counts its full volume, or volume times its stored share when one is set.
                             waterTotal += converted.value * (component.hydrationPercent ?? 100) / 100
                             countedWater += 1
@@ -313,7 +330,11 @@ public final class TodayViewModel: ObservableObject {
                 } else {
                     // A volume component with a stored water share counts volume times share, whatever its product kind.
                     // A component with no stored share (logged before shares) adds no water, as on main.
-                    for component in components where component.unit.dimension == .volume {
+                    if distrusted, components.contains(where: { $0.hydrationPercent != nil }) {
+                        // A distrusted entry that carries a water share makes the day's water unknown in the Diary.
+                        unknownWater = true
+                    }
+                    for component in components where component.unit.dimension == .volume && !distrusted {
                         guard Self.isPositive(component.amount),
                             let converted = try? Quantity(value: component.amount, unit: component.unit).converted(to: .mL),
                             Self.isPositive(converted.value),
@@ -356,6 +377,7 @@ public final class TodayViewModel: ObservableObject {
             dateSubtitle = Self.makeDateSubtitle(now, zoneIdentifier: TimeZone.current.identifier)
             waterTotalMilliliters = waterTotal + Self.outsideWaterMilliliters(outsideIntake)
             waterSkippedCount = skipped
+            waterHasUnknown = unknownWater
             skippedIntakeCount = skippedIntakes
             // A goal store that cannot be read is not a person with no goals, so the failure is
             // carried out to the screen rather than swallowed into an empty goal list: a target the
@@ -455,7 +477,7 @@ public final class TodayViewModel: ObservableObject {
                 // Water other apps logged to Health counts as logged and known, as it does in the water figure.
                 let outsideWater = Self.outsideWaterMilliliters(outsideIntake) > 0
                 return GoalBarModel.make(
-                    line: line, hasEntries: waterEntries > 0 || countedWater > 0 || outsideWater, missingCount: 0,
+                    line: line, hasEntries: waterEntries > 0 || countedWater > 0 || outsideWater || unknownWater, missingCount: 0,
                     skippedWaterCount: skipped, someKnown: countedWater > 0 || outsideWater,
                     unitSystem: self.preferences.unitSystem)
             }
@@ -485,6 +507,7 @@ public final class TodayViewModel: ObservableObject {
             waterTotalMilliliters = 0
             waterEntryCount = 0
             waterSkippedCount = 0
+            waterHasUnknown = false
             skippedIntakeCount = 0
             coverage = []
             progress = []
@@ -502,7 +525,8 @@ public final class TodayViewModel: ObservableObject {
     /// reference group kept with the display preferences.
     public func makeNutrientGaps() -> NutrientGapsViewModel {
         NutrientGapsViewModel(
-            store: store, lookup: lookup, preferences: preferences as? ReferenceGroupPreferences)
+            store: store, lookup: lookup, preferences: preferences as? ReferenceGroupPreferences,
+            healthToday: { [weak self] in self?.outsideIntake ?? .notConnected })
     }
 
     /// The daily water goal used until the person sets one: 2,000 mL (about 68 fl oz).
@@ -542,7 +566,7 @@ public final class TodayViewModel: ObservableObject {
             return nil
         }
         let intake = Intake(
-            id: makeID(), category: "water", occurredAt: now, timeZoneIdentifier: timeZoneIdentifier)
+            id: makeID(), category: "water", occurredAt: now, timeZoneIdentifier: zoneID())
         let component = IntakeComponent(componentID: "water", name: "Water", amount: milliliters, unit: .mL)
         do {
             // The place of the write in commit order is taken inside its own commit.
@@ -675,10 +699,59 @@ public final class TodayViewModel: ObservableObject {
     /// Spoken summary of the water total for assistive technology. Built from the same bound-aware
     /// figures as the label, so an amount too small for the shown unit is spoken as less than that
     /// rather than as a zero that is not there.
+    /// A day with water that cannot be counted reads its known part as "at least 200 mL"; with nothing known
+    /// it reads "No data", never a zero that is not there (#1137).
     public var waterAccessibilityValue: String {
-        "\(waterTotalDisplay.spokenAmount) "
+        let spoken = "\(waterTotalDisplay.spokenAmount) "
             + "\(AmountDisplay.spokenName(for: waterTotalDisplay.unit)) today"
+        guard waterHasUnknown else { return spoken }
+        if knownWaterBelowHundredth {
+            return "less than 0.01 \(AmountDisplay.spokenName(for: waterTotalDisplay.unit))"
+        }
+        return knownWaterReadsAsAtLeast
+            ? "at least \(knownWaterExact.spokenAmount) \(AmountDisplay.spokenName(for: knownWaterExact.unit)) today"
+            : Self.waterNoDataText
     }
+
+    /// The water figure on the card when no water goal is set: the total, "at least" the known part when some
+    /// of the day's water cannot be counted, or "No data" when none of it can (#1137).
+    public var waterFigureText: String {
+        guard waterHasUnknown else { return waterTotalDisplay.text }
+        if knownWaterBelowHundredth { return "less than 0.01 \(waterTotalDisplay.unit.symbol)" }
+        return knownWaterReadsAsAtLeast ? "at least \(knownWaterExact.text)" : Self.waterNoDataText
+    }
+
+    /// Whether the known part can be shown as "at least X": some is known.
+    private var knownWaterReadsAsAtLeast: Bool {
+        waterTotalMilliliters > 0 && knownWaterExact.amount > 0
+    }
+
+    /// The known part in the unit shown, never above what is known. The shown figure rounds to whole units, so a
+    /// known 0.5 mL that rounds up to 1 mL shows its own 0.5 mL (owner choice A-exact, 2026-11-01).
+    private var knownWaterExact: DisplayAmount {
+        let unit = waterTotalDisplay.unit
+        guard let converted = try? Quantity(value: waterTotalMilliliters, unit: .mL).converted(to: unit),
+              converted.value > 0
+        else { return waterTotalDisplay }
+        var scaled = converted.value * 100
+        var floored = Decimal()
+        NSDecimalRound(&floored, &scaled, 0, .down)
+        let exact = floored / 100
+        // The shown figure is a safe bound only when it is a real amount no larger than the known part; a figure
+        // that rounded to zero (0.4 mL shows as 0 mL) or rounded up is replaced by the known part itself.
+        let shown = waterTotalDisplay.amount
+        guard shown > 0, shown <= exact else { return DisplayAmount(amount: exact, unit: unit, groupsWholeAmount: true) }
+        return waterTotalDisplay
+    }
+
+    /// True when the known water is real but under 0.01 of the shown unit: it reads "less than 0.01 mL"
+    /// rather than "at least" (owner choice 1, 2026-11-01), so no bound is claimed for the unknown part.
+    private var knownWaterBelowHundredth: Bool {
+        waterTotalMilliliters > 0 && knownWaterExact.amount <= 0
+    }
+
+    /// The existing approved text for a figure with nothing known (GoalBar).
+    static let waterNoDataText = "No data"
 
     /// The meal sections for a list of rows. Water rows are left out; a meal that is not one of the four
     /// the app names, or none at all, is Other.
@@ -812,12 +885,11 @@ public final class TodayViewModel: ObservableObject {
         return found
     }
 
-    /// Nil when the intake's stored time zone identifier is not a valid time zone (no fallback).
-    static func isSameLocalDay(_ intake: Intake, as now: Date) -> Bool? {
+    /// Whether the intake's day, read in its own zone, is `key`. Nil when the intake's stored time zone identifier is
+    /// not a valid time zone (no fallback).
+    static func isOnDay(_ intake: Intake, key: String) -> Bool? {
         guard let zone = TimeZone(identifier: intake.timeZoneIdentifier) else { return nil }
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = zone
-        return calendar.isDate(intake.occurredAt, inSameDayAs: now)
+        return JournalViewModel.dayKey(intake.occurredAt, zone: zone) == key
     }
 
     }

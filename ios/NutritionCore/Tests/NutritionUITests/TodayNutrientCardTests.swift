@@ -109,7 +109,7 @@ final class TodayNutrientCardTests: XCTestCase {
 
     private func cardModel(_ journal: JournalStore, _ goals: GoalStore) -> TodayViewModel {
         let model = TodayViewModel(
-            store: journal, goals: goals, lookup: CardFacts(), preferences: InMemoryDisplayPreferences())
+            store: journal, goals: goals, lookup: CardFacts(), timeZoneIdentifier: "UTC", preferences: InMemoryDisplayPreferences())
         model.load(now: cardWhen)
         return model
     }
@@ -129,7 +129,7 @@ final class TodayNutrientCardTests: XCTestCase {
         try goals.setGoal(NutrientGoal(nutrient: "magnesium", target: Decimal(400), unit: .mg))
 
         let model = TodayViewModel(
-            store: journal, goals: goals, lookup: CardFacts(), preferences: InMemoryDisplayPreferences())
+            store: journal, goals: goals, lookup: CardFacts(), timeZoneIdentifier: "UTC", preferences: InMemoryDisplayPreferences())
         model.load(now: cardWhen)
 
         XCTAssertEqual(cardIDs(model), ["iron", "fiber", "sodium"])
@@ -142,7 +142,7 @@ final class TodayNutrientCardTests: XCTestCase {
         try goals.setGoal(NutrientGoal(nutrient: "magnesium", target: Decimal(400), unit: .mg))
 
         let model = TodayViewModel(
-            store: journal, goals: goals, lookup: CardFacts(), preferences: InMemoryDisplayPreferences())
+            store: journal, goals: goals, lookup: CardFacts(), timeZoneIdentifier: "UTC", preferences: InMemoryDisplayPreferences())
         model.load(now: cardWhen)
 
         XCTAssertEqual(cardIDs(model), [])
@@ -191,7 +191,7 @@ final class TodayNutrientCardTests: XCTestCase {
         try logFood(journal)
 
         let model = TodayViewModel(
-            store: journal, goals: goals, lookup: CardFacts(), preferences: InMemoryDisplayPreferences())
+            store: journal, goals: goals, lookup: CardFacts(), timeZoneIdentifier: "UTC", preferences: InMemoryDisplayPreferences())
         model.load(now: cardWhen)
         XCTAssertFalse(cardIDs(model).isEmpty)
 

@@ -43,4 +43,27 @@ extension StoreFileOperations {
             return (nil, firstError ?? error)
         }
     }
+
+    /// Removes the store file at `url` with its write-ahead and shared-memory files, and opens nothing: the path for a
+    /// store closed during an erase, which must leave no file behind (#1156). The steps and their order match
+    /// `replaceStoreFiles`, and the first failure is returned.
+    func removeStoreFiles(at url: URL) -> Error? {
+        var firstError: Error?
+        do {
+            try checkpoint(url)
+        } catch {
+            firstError = error
+        }
+        for suffix in ["-shm", "-wal", ""] {
+            if firstError != nil { break }
+            let file = URL(fileURLWithPath: url.path + suffix)
+            guard FileManager.default.fileExists(atPath: file.path) else { continue }
+            do {
+                try remove(file)
+            } catch {
+                firstError = error
+            }
+        }
+        return firstError
+    }
 }

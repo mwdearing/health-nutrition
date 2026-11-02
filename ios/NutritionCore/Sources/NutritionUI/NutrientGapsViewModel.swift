@@ -36,6 +36,9 @@ public enum NutrientGapStatus: Hashable, Sendable {
 public struct NutrientDayTally: Equatable, Sendable {
     public var fromFood: Decimal = 0
     public var fromSupplements: Decimal = 0
+    /// Apple Health's day total for the nutrient, counted only on the day span. Health's value is a known amount
+    /// of what other apps logged, the same as Today's Health side (HealthIntakeTotals).
+    public var fromHealth: Decimal = 0
     /// Entries that stated an amount.
     public var known = 0
     /// Entries that could have stated it and did not, or stated it in a unit that cannot be added
@@ -49,7 +52,7 @@ public struct NutrientDayTally: Equatable, Sendable {
         self.missing = missing
     }
 
-    public var total: Decimal { fromFood + fromSupplements }
+    public var total: Decimal { fromFood + fromSupplements + fromHealth }
 }
 
 /// One vitamin or mineral on the screen: the day's known amount, its reference values for the
@@ -153,6 +156,8 @@ public struct NutrientGapRow: Equatable, Identifiable {
     /// Above the reference the bar is full and `referenceMarker` shows where the reference sits.
     public var foodFraction: Decimal? { fraction(of: tally.fromFood) }
     public var supplementFraction: Decimal? { fraction(of: tally.fromSupplements) }
+    /// Apple Health's share of the reference, drawn after the journal's parts so the bar matches the total.
+    public var healthFraction: Decimal? { fraction(of: tally.fromHealth) }
 
     /// Where the reference sits on a bar that runs past it, or nil while the day is below it.
     public var referenceMarker: Decimal? {
@@ -328,18 +333,43 @@ public final class NutrientGapsViewModel: ObservableObject {
     private let store: JournalStore
     private let lookup: NutrientFactsLookup
     private let preferences: ReferenceGroupPreferences?
+    /// Health's side of today, from the same read Today uses. Counted on the day span only; `.notConnected` adds nothing.
+    private let healthToday: () -> HealthIntakeTotals.Outside
     private var tallies: [String: NutrientDayTally] = [:]
     /// The week's tallies day by day, so a daily upper limit is checked against each day, not the average.
     private var dayTallies: [[String: NutrientDayTally]] = []
 
     public init(
         store: JournalStore, lookup: NutrientFactsLookup = UnknownNutrientFacts(),
-        preferences: ReferenceGroupPreferences? = nil
+        preferences: ReferenceGroupPreferences? = nil, healthToday: @escaping () -> HealthIntakeTotals.Outside = { .notConnected }
     ) {
         self.store = store
         self.lookup = lookup
         self.preferences = preferences
+        self.healthToday = healthToday
         self.referenceGroup = preferences?.referenceGroup
+    }
+
+    /// Adds Health's day total to each nutrient Health can state. A completed query is a known amount (a known zero
+    /// when Health had no samples); a query that failed or did not run is unknown, never zero, so the nutrient is
+    /// counted as missing.
+    static func addingHealth(
+        _ tallies: [String: NutrientDayTally], outside: HealthIntakeTotals.Outside
+    ) -> [String: NutrientDayTally] {
+        guard case .read(let values, let readKeys) = outside else { return tallies }
+        var result = tallies
+        for nutrient in nutrients where HealthKitWritePlanner.mapping(for: nutrient) != nil {
+            let canonical = HealthKitWritePlanner.canonicalKey(for: nutrient)
+            var tally = result[nutrient] ?? NutrientDayTally()
+            if readKeys.contains(canonical) {
+                tally.fromHealth += values[canonical] ?? 0
+                tally.known += 1
+            } else {
+                tally.missing += 1
+            }
+            result[nutrient] = tally
+        }
+        return result
     }
 
     /// The nutrients listed, in the reference table's order.
@@ -351,7 +381,13 @@ public final class NutrientGapsViewModel: ObservableObject {
         do {
             let read = try Self.tallies(store: store, lookup: lookup, now: now, days: span.dayCount)
             loggedDays = read.loggedDays
-            tallies = span == .week ? Self.averaged(read.tallies, byDay: read.byDay) : read.tallies
+            switch span {
+            case .week:
+                tallies = Self.averaged(read.tallies, byDay: read.byDay)
+            case .day:
+                // Health's day total is today's only, so it is added on the day span alone.
+                tallies = Self.addingHealth(read.tallies, outside: healthToday())
+            }
             dayTallies = span == .week ? read.byDay : []
             skippedIntakeCount = read.skipped
             errorMessage = nil

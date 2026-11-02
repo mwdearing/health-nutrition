@@ -74,7 +74,7 @@ final class TodayDesignTests: XCTestCase {
         ])
         let today = TodayViewModel(
             store: store, goals: goals, lookup: SnapshotNutrientFacts(),
-            trackedNutrients: ["protein"])
+            trackedNutrients: ["protein"], timeZoneIdentifier: "UTC")
         let journal = JournalViewModel(store: store, goals: goals, lookup: SnapshotNutrientFacts())
         today.load(now: now)
         journal.load(now: now)
@@ -241,6 +241,7 @@ final class TodayDesignTests: XCTestCase {
         let today = TodayViewModel(
             store: store,
             goals: InMemoryGoalStore(goals: [NutrientGoal(nutrient: "water", target: target, unit: .mL)]),
+            timeZoneIdentifier: "UTC",
             preferences: InMemoryDisplayPreferences(unitSystem: .usCustomary))
         today.load(now: self.now)
         let bar = try XCTUnwrap(today.waterBar)
@@ -257,6 +258,7 @@ final class TodayDesignTests: XCTestCase {
         let today = TodayViewModel(
             store: store,
             goals: InMemoryGoalStore(goals: [NutrientGoal(nutrient: "water", target: target, unit: .mL)]),
+            timeZoneIdentifier: "UTC",
             preferences: InMemoryDisplayPreferences(unitSystem: .metric))
         today.load(now: self.now)
         let bar = try XCTUnwrap(today.waterBar)
@@ -308,7 +310,7 @@ final class TodayDesignTests: XCTestCase {
         }
         let journal = JournalViewModel(store: store)
         journal.load(now: self.now)
-        let today = TodayViewModel(store: store)
+        let today = TodayViewModel(store: store, timeZoneIdentifier: "UTC")
         today.load(now: self.now)
         let expected = [
             ("Sample water", "drop.fill", "Water"),
