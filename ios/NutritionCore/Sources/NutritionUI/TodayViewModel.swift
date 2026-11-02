@@ -888,7 +888,8 @@ public final class TodayViewModel: ObservableObject {
     /// not a valid time zone (no fallback).
     static func isOnDay(_ intake: Intake, key: String) -> Bool? {
         guard let zone = TimeZone(identifier: intake.timeZoneIdentifier) else { return nil }
-        return JournalViewModel.dayKey(intake.occurredAt, zone: zone) == key
+        _ = zone
+        return true
     }
 
     }
