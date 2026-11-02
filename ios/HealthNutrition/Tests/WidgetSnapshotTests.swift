@@ -416,7 +416,7 @@ final class WidgetSnapshotTests: XCTestCase {
         }
         try log("water", "glass", 200, share: nil)
         try log("other", "suspect", 250, share: 80)
-        let partialModel = TodayViewModel(store: store, lookup: UnknownNutrientFacts(), timeZoneIdentifier: "UTC")
+        let partialModel = TodayViewModel(store: store, lookup: SuspectWaterFacts(), timeZoneIdentifier: "UTC")
         partialModel.load(now: now)
         XCTAssertTrue(partialModel.waterHasUnknown)
         let partial = WidgetSnapshotPublisher.snapshot(from: partialModel, now: now)
@@ -431,5 +431,17 @@ final class WidgetSnapshotTests: XCTestCase {
         cleanModel.load(now: now)
         let clean = WidgetSnapshotPublisher.snapshot(from: cleanModel, now: now)
         XCTAssertFalse(clean.isPartial("water"), "an all-known water total is not partial")
+    }
+}
+
+/// Marks the "suspect" component's protein as a negative value, which makes its entry distrusted (#1137), so its water
+/// is unknown for the day. Every other value is unknown.
+private struct SuspectWaterFacts: NutrientFactsLookup {
+    func value(for component: IntakeComponent, nutrient: String) -> NutrientValue {
+        value(for: component, snapshot: nil, nutrient: nutrient)
+    }
+
+    func value(for component: IntakeComponent, snapshot: ProductDefinition?, nutrient: String) -> NutrientValue {
+        component.componentID == "suspect" && nutrient == "protein" ? .known(-5, .g) : .unknown
     }
 }
