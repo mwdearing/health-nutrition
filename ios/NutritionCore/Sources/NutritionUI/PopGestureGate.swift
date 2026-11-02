@@ -7,10 +7,10 @@ import UIKit
 /// stop the edge gesture, so the gesture is switched off on the navigation controller that hosts the form,
 /// and the form's own Back or Cancel asks instead.
 ///
-/// The gate is a plain view inside the form. When it enters a window it walks its responder chain to the
-/// view controller that owns it and switches that controller's stack. When it leaves the window, because the
-/// form was popped or another screen was pushed over it, it switches the gesture back on, so the screen on top
-/// can still be swiped away; coming back on screen applies the form's state again.
+/// The gate is a plain view inside the form. Whenever it enters a window, leaves one, or lays out, it sets the
+/// edge swipe from the state of the stack's top screen: off while a blocked gate sits in that screen's view tree,
+/// on otherwise. So a form covered by another blocked form cannot re-enable the gesture over its input, and a
+/// clean screen on top stays swipeable.
 final class PopGateView: UIView {
     var blocked = false {
         didSet { if blocked != oldValue { apply() } }
@@ -23,9 +23,15 @@ final class PopGateView: UIView {
         if window == nil {
             release()
         } else {
-            retriesLeft = 3
             apply()
         }
+    }
+
+    /// SwiftUI can attach this view before its hosting controller has joined the stack. Each layout pass
+    /// re-applies, so the gate finds its navigation controller as soon as the responder chain is complete.
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        if window != nil { apply() }
     }
 
     /// The navigation controller of the nearest view controller that owns this view, if any.
@@ -39,25 +45,28 @@ final class PopGateView: UIView {
     }
 
     func apply() {
-        guard window != nil else { return }
-        guard let nav = owningNavigationController else {
-            // SwiftUI can attach this view before its hosting controller has joined the stack, so the responder
-            // chain is not complete yet. Retry on the next run loop turn, a few times at most.
-            if retriesLeft > 0 {
-                retriesLeft -= 1
-                DispatchQueue.main.async { [weak self] in self?.apply() }
-            }
-            return
-        }
+        guard window != nil, let nav = owningNavigationController else { return }
         gatedStack = nav
-        nav.interactivePopGestureRecognizer?.isEnabled = !blocked
+        Self.refresh(nav, excluding: nil)
     }
 
-    private var retriesLeft = 3
-
     func release() {
-        gatedStack?.interactivePopGestureRecognizer?.isEnabled = true
+        guard let nav = gatedStack else { return }
         gatedStack = nil
+        Self.refresh(nav, excluding: self)
+    }
+
+    /// Sets the edge swipe from the top screen. `excluding` is the gate being released, which can still be in the
+    /// tree while it leaves the window.
+    private static func refresh(_ nav: UINavigationController, excluding released: PopGateView?) {
+        let top = nav.topViewController?.viewIfLoaded
+        let blockedOnTop = top.map { containsBlockedGate($0, excluding: released) } ?? false
+        nav.interactivePopGestureRecognizer?.isEnabled = !blockedOnTop
+    }
+
+    private static func containsBlockedGate(_ view: UIView, excluding released: PopGateView?) -> Bool {
+        if let gate = view as? PopGateView, gate !== released, gate.blocked { return true }
+        return view.subviews.contains { containsBlockedGate($0, excluding: released) }
     }
 }
 
