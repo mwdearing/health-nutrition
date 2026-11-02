@@ -217,7 +217,7 @@ final class JournalImportAtomicityTests: JournalImportTestCase {
         for favorite in try favoritesStore.list() { try favoritesStore.remove(id: favorite.id) }
 
         XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: favoritesStore)) {
-            XCTAssertEqual($0 as? JournalImportError, .notEmpty)
+            XCTAssertEqual($0 as? JournalImportError, .alreadyRestored)
         }
         XCTAssertTrue(try favoritesStore.list().isEmpty, "deleted favorites are not put back")
     }
