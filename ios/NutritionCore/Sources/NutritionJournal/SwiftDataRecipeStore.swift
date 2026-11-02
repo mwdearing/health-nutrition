@@ -108,7 +108,6 @@ public final class SwiftDataRecipeStore: RecipeStore, JournalErasing, @unchecked
 
     private func openContainer() throws -> ModelContainer {
         try lock.withLock {
-            guard !closeRequested else { throw RecipeStoreError.closed }
             if container == nil, reopenPending {
                 container = try fileOperations.openContainer(storeURL)
                 reopenPending = false
