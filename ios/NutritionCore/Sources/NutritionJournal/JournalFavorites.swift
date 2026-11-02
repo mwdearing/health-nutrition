@@ -164,7 +164,6 @@ public final class SwiftDataFavoritesStore: FavoritesStore, FavoritesRestoreTarg
 
     private func openContainer() throws -> ModelContainer {
         try lock.withLock {
-            guard !closeRequested else { throw FavoritesError.closed }
             if container == nil, reopenPending {
                 container = try fileOperations.openContainer(storeURL)
                 reopenPending = false
