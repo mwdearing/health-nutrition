@@ -132,6 +132,8 @@ public final class SwiftDataFavoritesStore: FavoritesStore, FavoritesRestoreTarg
     private let fileOperations: StoreFileOperations
     /// True after an erase whose reopen failed; the next call tries the reopen again.
     private var reopenPending = false
+    /// Test seam (evidence branch only): runs after the rows are deleted, before the file is replaced.
+    var afterRowsDeleted: (() -> Void)?
 
     public convenience init(url: URL) throws {
         try self.init(url: url, fileOperations: .systemOperations(opening: Self.makeContainer))
@@ -311,6 +313,7 @@ public final class SwiftDataFavoritesStore: FavoritesStore, FavoritesRestoreTarg
             for row in try context.fetch(FetchDescriptor<FavoriteRecord>()) { context.delete(row) }
             try context.save()
         }
+        afterRowsDeleted?()
         // The rows are gone from every read, but the store file keeps their bytes until SQLite reuses the pages, so
         // the file is replaced too, as the journal store's erase does (#228).
         try replaceFiles()
