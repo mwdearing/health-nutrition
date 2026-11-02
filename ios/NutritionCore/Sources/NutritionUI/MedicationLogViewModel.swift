@@ -43,6 +43,8 @@ public final class MedicationLogViewModel: ObservableObject {
     private let preferences: DisplayPreferences
     private let now: () -> Date
     private let timeZone: () -> TimeZone
+    /// Erases the medication store when the person clears a log that cannot be read. Nil when clearing is not offered.
+    private let eraser: JournalErasing?
     /// The identifier of the dose the last successful log saved, so Undo can remove it.
     private var lastLoggedDoseID: UUID?
 
@@ -54,17 +56,21 @@ public final class MedicationLogViewModel: ObservableObject {
     @Published public private(set) var errorMessage: String?
     /// The line for the Undo button after a dose is logged, nil when there is nothing to undo.
     @Published public private(set) var undoText: String?
+    /// Whether the person may clear the log: true only after a read failed and an eraser is present.
+    @Published public private(set) var canClear = false
 
     /// A view model over the medication store. `now` and `timeZone` are read on each load and save, so a test
-    /// can fix the day and the device's zone.
+    /// can fix the day and the device's zone. `eraser` is the store's erase, offered as "Clear the medication log"
+    /// when a read fails; nil means no clear is offered.
     public init(
         store: MedicationStore, preferences: DisplayPreferences, now: @escaping () -> Date = { Date() },
-        timeZone: @escaping () -> TimeZone = { .current }
+        timeZone: @escaping () -> TimeZone = { .current }, eraser: JournalErasing? = nil
     ) {
         self.store = store
         self.preferences = preferences
         self.now = now
         self.timeZone = timeZone
+        self.eraser = eraser
     }
 
     /// Whether the Medication log is shown. Reads and writes the preference when the preferences keep it;
@@ -86,7 +92,8 @@ public final class MedicationLogViewModel: ObservableObject {
         load()
     }
 
-    /// Reads the medications and doses and rebuilds the rows. A read that fails leaves no rows and sets the message.
+    /// Reads the medications and doses and rebuilds the rows. A read that fails leaves no rows, sets the message and
+    /// offers the clear when an eraser is present. A read that works withdraws the offer.
     public func load() {
         guard let today = today(),
             let medications = try? store.medications(),
@@ -95,12 +102,27 @@ public final class MedicationLogViewModel: ObservableObject {
             rows = []
             archivedRows = []
             errorMessage = "Could not read the medication log."
+            canClear = eraser != nil
             return
         }
         let built = medications.map { row(for: $0, doses: doses, today: today) }
         rows = built.filter { !$0.isArchived }
         archivedRows = built.filter { $0.isArchived }
         errorMessage = nil
+        canClear = false
+    }
+
+    /// Erases the medication store and reads it again, after the person confirms the clear. It does nothing unless
+    /// a read has failed on screen and an eraser is present. A failed erase keeps the offer and sets a message.
+    public func clearLog() {
+        guard canClear, let eraser else { return }
+        do {
+            try eraser.eraseAll()
+        } catch {
+            errorMessage = "Could not clear the medication log."
+            return
+        }
+        storesWereReplaced()
     }
 
     /// Saves a new medication and reloads. Returns nil on success, or the message to show when it is not saved.
@@ -207,17 +229,18 @@ public final class MedicationLogViewModel: ObservableObject {
     private func row(for medication: Medication, doses: [MedicationDose], today: CalendarDay) -> MedicationRow {
         let last = MedicationLog.lastDose(of: medication.id, in: doses)
         let standing = MedicationLog.status(of: medication, lastDose: last, today: today)
+        let daysSince = last.flatMap { MedicationLog.daysSince($0, today: today) }
+        // A dose whose own local day is after today here (taken further east, then read after flying west)
+        // has neither a days-since line nor a standing line, rather than a negative count.
+        let isAfterToday = (daysSince ?? 0) < 0
         return MedicationRow(
             id: medication.id,
             name: medication.name,
             unitText: medication.unit.rawValue,
             scheduleText: Self.scheduleText(medication.scheduleDays),
             lastDoseText: last.map(Self.lastDoseText) ?? "No dose logged yet",
-            // A dose whose own local day is after today here (taken further east, then read after flying west)
-            // has no days-since line rather than a negative count.
-            daysSinceText: last.flatMap { MedicationLog.daysSince($0, today: today) }
-                .flatMap { $0 >= 0 ? Self.daysSinceText($0) : nil },
-            statusText: Self.statusText(standing),
+            daysSinceText: isAfterToday ? nil : daysSince.map(Self.daysSinceText),
+            statusText: isAfterToday ? nil : Self.statusText(standing),
             isArchived: medication.isArchived)
     }
 

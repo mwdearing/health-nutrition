@@ -144,7 +144,8 @@ final class AppServices {
             lookup: SnapshotNutrientFacts(), referencePreferences: displayPreferences,
             preferences: displayPreferences)
         goals = GoalsViewModel(store: goalStore, journal: journalStore, preferences: displayPreferences)
-        medicationLog = MedicationLogViewModel(store: medicationStore, preferences: displayPreferences)
+        medicationLog = MedicationLogViewModel(
+            store: medicationStore, preferences: displayPreferences, eraser: medicationStore)
         let savedMealStore = UserDefaultsSavedMealStore()
         let savedMeals = SavedMealsModel(store: savedMealStore, journal: journalStore)
         self.savedMeals = savedMeals
@@ -426,16 +427,10 @@ final class AppServices {
             journalStore.close()
             throw StoreStartupError.goals(error)
         }
-        let medicationStore: SwiftDataMedicationStore
-        do {
-            medicationStore = try SwiftDataMedicationStore(url: directory.appendingPathComponent("medications.store"))
-        } catch {
-            goalStore.close()
-            recipeStore.close()
-            favoritesStore.close()
-            journalStore.close()
-            throw StoreStartupError.medications(error)
-        }
+        // Never blocks launch: a file that cannot be opened is retried on each read, and the Medication log offers
+        // to clear it.
+        let medicationStore = SwiftDataMedicationStore(
+            retryingOpenAt: directory.appendingPathComponent("medications.store"))
         return AppServices(
             journalStore: journalStore, favoritesStore: favoritesStore, recipeStore: recipeStore,
             goalStore: goalStore, medicationStore: medicationStore, displayPreferences: displayPreferences,
@@ -449,7 +444,6 @@ final class AppServices {
         case favorites(Error)
         case recipes(Error)
         case goals(Error)
-        case medications(Error)
 
         var errorDescription: String? {
             switch self {
@@ -461,8 +455,6 @@ final class AppServices {
                 return "The recipes store file could not be opened: \(error.localizedDescription)"
             case .goals(let error):
                 return "The daily goals store file could not be opened: \(error.localizedDescription)"
-            case .medications(let error):
-                return "The medication log store file could not be opened: \(error.localizedDescription)"
             }
         }
     }

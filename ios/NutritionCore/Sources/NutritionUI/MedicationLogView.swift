@@ -8,6 +8,8 @@ public struct MedicationLogView: View {
     @ObservedObject var model: MedicationLogViewModel
     @Environment(\.scenePhase) private var scenePhase
     @State private var isAdding = false
+    /// Whether the Clear the medication log confirmation is showing.
+    @State private var isConfirmingClear = false
     /// The row whose Log a dose sheet is open; nil while no sheet is open.
     @State private var loggingRow: MedicationRow?
 
@@ -51,10 +53,21 @@ public struct MedicationLogView: View {
             if let message = model.errorMessage {
                 InlineNotice(message, tone: .failed)
             }
+            if model.canClear {
+                Section {
+                    Button("Clear the medication log", role: .destructive) { self.isConfirmingClear = true }
+                }
+            }
         }
         .scrollContentBackground(.hidden)
         .background(TokenColors.background)
         .navigationTitle("Medication log")
+        .confirmationDialog("Clear the medication log?", isPresented: $isConfirmingClear, titleVisibility: .visible) {
+            Button("Clear the log", role: .destructive) { self.model.clearLog() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes every medication and dose in the log on this device. It cannot be undone.")
+        }
         .onAppear { self.model.load() }
         // Back from the background, possibly on a later day: "Today", "Due today" and the days since are read again.
         .onChange(of: scenePhase) { _, phase in

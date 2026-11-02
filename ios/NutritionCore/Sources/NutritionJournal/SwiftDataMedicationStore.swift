@@ -63,8 +63,8 @@ final class MedicationDoseRecord {
 }
 
 /// The first and only schema of the medication store file. Its two models are the medication and dose rows above.
-/// No app code opens this store file yet (the app wiring lands with the screens slice), so no released build has
-/// created one, and the version 1.0.0 shape is amended in place with no migration.
+/// Version 1.0.0 was amended in place before app code opened the file; any later change needs a new schema version
+/// and a migration stage.
 enum MedicationSchemaV1: VersionedSchema {
     static var versionIdentifier: Schema.Version { Schema.Version(1, 0, 0) }
     static var models: [any PersistentModel.Type] { [MedicationRecord.self, MedicationDoseRecord.self] }
@@ -96,6 +96,21 @@ public final class SwiftDataMedicationStore: MedicationStore, JournalErasing, @u
     /// Opens or creates the store file at `url`. Throws when the file cannot be opened or its schema cannot be migrated.
     public convenience init(url: URL) throws {
         try self.init(url: url, fileOperations: .systemOperations(opening: Self.makeContainer))
+    }
+
+    /// Opens the store file at `url` if it can be opened now, and never throws. When it cannot, the store starts
+    /// unopened: each later call tries the open again, and `eraseAll()` replaces the file it could not open.
+    public convenience init(retryingOpenAt url: URL) {
+        self.init(retryingOpenAt: url, fileOperations: .systemOperations(opening: Self.makeContainer))
+    }
+
+    /// The store at `url` that does not throw on open, with the file steps an erase takes, so a test can make each one
+    /// fail. A file that cannot be opened leaves the store unopened, and the next call tries the open again.
+    init(retryingOpenAt url: URL, fileOperations: StoreFileOperations) {
+        storeURL = url
+        self.fileOperations = fileOperations
+        container = try? fileOperations.openContainer(url)
+        reopenPending = container == nil
     }
 
     /// The store at `url`, with the file steps an erase takes, so a test can make each one fail.
@@ -236,26 +251,37 @@ public final class SwiftDataMedicationStore: MedicationStore, JournalErasing, @u
 
     /// Removes every medication and every dose. The rows are deleted one at a time in one save, and then the store file
     /// is replaced with an empty one. The store stays open afterwards.
+    ///
+    /// A closed store throws `MedicationStoreError.closed` and removes nothing. A file that cannot be opened is replaced
+    /// without deleting rows or checkpointing it, since there is no open store to delete them from.
     public func eraseAll() throws {
         writeLock.lock()
         defer { writeLock.unlock() }
+        let container: ModelContainer
         do {
-            let context = ModelContext(try openContainer())
-            for row in try context.fetch(FetchDescriptor<MedicationDoseRecord>()) { context.delete(row) }
-            for row in try context.fetch(FetchDescriptor<MedicationRecord>()) { context.delete(row) }
-            try context.save()
+            container = try openContainer()
+        } catch MedicationStoreError.closed {
+            throw MedicationStoreError.closed
+        } catch {
+            try replaceFiles(checkpointing: false)
+            return
         }
+        let context = ModelContext(container)
+        for row in try context.fetch(FetchDescriptor<MedicationDoseRecord>()) { context.delete(row) }
+        for row in try context.fetch(FetchDescriptor<MedicationRecord>()) { context.delete(row) }
+        try context.save()
         // The rows are gone from every read, but the file keeps their bytes until SQLite reuses the pages, so the file
         // is replaced too, as the goal store's erase does.
         try replaceFiles()
     }
 
     /// Replaces the store file with an empty one. The caller holds writeLock, so no write lands between the row delete
-    /// and the file removal. A failed step is thrown; a failed reopen is retried by the next call.
-    private func replaceFiles() throws {
+    /// and the file removal. A failed step is thrown; a failed reopen is retried by the next call. `checkpointing` is
+    /// passed to `StoreFileOperations.replaceStoreFiles(at:checkpointing:)`.
+    private func replaceFiles(checkpointing: Bool = true) throws {
         try lock.withLock {
             container = nil
-            let result = fileOperations.replaceStoreFiles(at: storeURL)
+            let result = fileOperations.replaceStoreFiles(at: storeURL, checkpointing: checkpointing)
             container = result.container
             reopenPending = result.container == nil
             if let error = result.error { throw error }
