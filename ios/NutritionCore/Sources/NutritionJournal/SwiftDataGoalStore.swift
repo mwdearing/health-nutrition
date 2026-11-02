@@ -355,7 +355,7 @@ public final class SwiftDataGoalStore: GoalStore, WeightPlanStore, JournalErasin
     private func replaceFiles() throws {
         try lock.withLock {
             container = nil
-            if closeRequested {
+            if false {
                 // Closed during the erase: remove the files and reopen nothing, so no file is left behind and the store
                 // holds no container (#1156).
                 reopenPending = false
