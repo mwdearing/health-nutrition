@@ -87,7 +87,7 @@ public enum CustomProductMapping {
             guard let amount = label.nutrients[key], CustomProductValidation.standardDimensions[key] != nil || key == "salt" else {
                 throw CustomProductMappingError.unsupportedLegacyFact
             }
-            return ProductFact(key: key == "salt" ? "ingredient:salt" : key, displayName: key == "salt" ? "Salt" : key,
+            return ProductFact(key: key == "salt" ? "ingredient:salt" : key, displayName: key == "salt" ? "Salt" : NutrientNames.displayName(for: key),
                 value: .known(amount, key == "energyKcal" ? .kcal : key == "sodium" ? .mg : .g))
         }
         let serving: ProductServing?
@@ -117,7 +117,7 @@ public enum CustomProductMapping {
                 raw = try rawFactKey(key)
             } else if CustomProductValidation.standardDimensions[key] != nil { raw = key }
             else { raw = "ingredient:" + key }
-            return ProductFact(key: raw, displayName: snapshot.nutrientDisplayNames[key] ?? key, value: snapshot.nutrients[key]!)
+            return ProductFact(key: raw, displayName: NutrientNames.displayName(for: key, displayNames: snapshot.nutrientDisplayNames), value: snapshot.nutrients[key]!)
         }
         // Legacy ProductDefinition.kind may be the old implicit food fallback. Require explicit choice.
         return LegacyCustomProductDraft(originalSnapshot: snapshot, legacyLabel: nil, source: nil,
