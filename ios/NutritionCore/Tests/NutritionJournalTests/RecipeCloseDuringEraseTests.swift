@@ -25,17 +25,20 @@ final class RecipeCloseDuringEraseTests: XCTestCase {
 
     func testACloseDuringAnEraseStaysClosed() throws {
         let url = try makeDirectory().appendingPathComponent("recipes.store")
-        let store = try SwiftDataRecipeStore(url: url)
-        try store.saveNewVersion(version())
-        store.afterRowsDeleted = {
+        var operations = StoreFileOperations.system
+        var storeRef: SwiftDataRecipeStore?
+        operations.afterRowsDeleted = {
             // The erase holds writeLock here, not the store lock, so a close from another thread can run now.
             let finished = DispatchSemaphore(value: 0)
             DispatchQueue.global().async {
-                store.close()
+                storeRef?.close()
                 finished.signal()
             }
             finished.wait()
         }
+        let store = try SwiftDataRecipeStore(url: url, fileOperations: operations)
+        storeRef = store
+        try store.saveNewVersion(version())
         try store.eraseAll()
         XCTAssertThrowsError(try store.list()) { error in
             XCTAssertEqual(error as? RecipeStoreError, .closed, "the erase reopened a store that was closed")
