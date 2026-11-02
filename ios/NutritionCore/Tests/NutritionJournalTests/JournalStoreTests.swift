@@ -236,6 +236,21 @@ final class JournalStoreTests: XCTestCase {
         XCTAssertTrue(try store.activeIntakes().isEmpty)
     }
 
+    func testADeleteIsHeldFromPendingOutboxUntilTheInjectedWindowPasses() throws {
+        let directory = try makeDirectory()
+        let clock = TestClock(when)
+        let store = try SwiftDataJournalStore(
+            url: storeURL(directory), enabledDestinations: [.healthKit, .relay],
+            fileOperations: .system, clock: { clock.now })
+        try store.create(sampleIntake(), components: [oats()], product: nil, now: when)
+        try store.delete(intakeID: intakeID, now: when)
+        // Inside the window the delete is held, so an undone delete never reaches a destination.
+        XCTAssertTrue(try store.pendingOutbox().allSatisfy { $0.kind != .delete })
+        // Once the window has passed on the injected clock, the delete is released.
+        clock.now = when.addingTimeInterval(JournalUndo.deleteWindow + 5)
+        XCTAssertTrue(try store.pendingOutbox().contains { $0.kind == .delete })
+    }
+
     func testDeleteHidesIntakeQueuesDeleteOperationsAndKeepsHistory() throws {
         let store = try makeStore(try makeDirectory())
         try store.create(sampleIntake(), components: [oats()], product: nil, now: when)
