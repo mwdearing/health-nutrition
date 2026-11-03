@@ -58,6 +58,9 @@ public final class MedicationLogViewModel: ObservableObject {
     @Published public private(set) var undoText: String?
     /// Whether the person may clear the log: true only after a read failed and an eraser is present.
     @Published public private(set) var canClear = false
+    /// Set when the person confirmed the clear but the log read again, so nothing was cleared; nil otherwise. The next
+    /// read clears it.
+    @Published public private(set) var clearNotice: String?
 
     /// A view model over the medication store. `now` and `timeZone` are read on each load and save, so a test
     /// can fix the day and the device's zone. `eraser` is the store's erase, offered as "Clear the medication log"
@@ -95,6 +98,7 @@ public final class MedicationLogViewModel: ObservableObject {
     /// Reads the medications and doses and rebuilds the rows. A read that fails leaves no rows, sets the message and
     /// offers the clear when an eraser is present. A read that works withdraws the offer.
     public func load() {
+        clearNotice = nil
         guard let today = today(),
             let medications = try? store.medications(),
             let doses = try? store.allDoses()
@@ -114,15 +118,20 @@ public final class MedicationLogViewModel: ObservableObject {
 
     /// Erases the medication store and reads it again, after the person confirms the clear. It does nothing unless
     /// a read has failed on screen and an eraser is present. The log is read once more first, and a log that reads
-    /// now is kept: a read can fail for a passing reason, such as a locked or busy file. A failed erase keeps the
-    /// offer and sets a message.
+    /// now is kept: a read can fail for a passing reason, such as a locked or busy file, and the notice says nothing
+    /// was cleared. A failed erase reads the log again, so the screen shows what the file now holds, and sets a
+    /// message; the offer stays only while the log still cannot be read.
     public func clearLog() {
         guard canClear, let eraser else { return }
         load()
-        guard canClear else { return }
+        guard canClear else {
+            clearNotice = "The medication log can be read again, so nothing was cleared."
+            return
+        }
         do {
             try eraser.eraseAll()
         } catch {
+            load()
             errorMessage = "Could not clear the medication log."
             return
         }

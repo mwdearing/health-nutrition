@@ -53,6 +53,11 @@ public struct MedicationLogView: View {
             if let message = model.errorMessage {
                 InlineNotice(message, tone: .failed)
             }
+            if let notice = model.clearNotice {
+                Text(notice)
+                    .font(.footnote)
+                    .foregroundStyle(TokenColors.textSecondary)
+            }
             if model.canClear {
                 Section {
                     Button("Clear the medication log", role: .destructive) { self.isConfirmingClear = true }

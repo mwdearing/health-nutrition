@@ -71,24 +71,25 @@ The app opens `medications.store` with the other stores. When the file cannot be
 still starts, and the store tries the open again on each read. The Medication log then shows
 "Could not read the medication log." and offers **Clear the medication log**. After the person
 confirms, clearing reads the log again first; a log that reads now is kept, because a read can fail
-for a passing reason such as a locked or busy file. A log that still cannot be read is cleared:
+for a passing reason such as a locked or busy file, and the screen says "The medication log can be read
+again, so nothing was cleared." A log that still cannot be read is cleared:
 clearing removes the file and its `-wal` and `-shm` files without a checkpoint, and opens
 an empty log. It does so only when SQLite finds the file damaged: it cannot be read as a
 database, or its integrity check reports a fault. A file that fails to open for another reason,
-such as a locked or busy file or a newer schema version, is kept, and the clear says it could
-not clear the log. Erase all data does the same. A damaged row gets the same offer. Nothing removes the
+such as a locked or busy file, is kept, and the clear says it could not clear the log. A failed
+clear reads the log again, so the screen shows what the file now holds. Erase all data does the same. A damaged row gets the same offer. Nothing removes the
 file without one of those actions.
 
 A kept file can leave the log unreadable with a clear that keeps failing. That is the intended result:
-a locked or busy file reads again on a later try, and a file with a newer schema version was written
-by a newer build of the app, which opens it after an update. Removing either would delete a log that
-can still be read.
+a locked or busy file reads again on a later try, and removing a file that SQLite does not find
+damaged could delete a log that can still be read.
 
 A file that the device cannot decrypt is not judged damaged. The store files use the system's default
 data protection, and while a protected file's key is unavailable the system refuses the read itself,
 which SQLite reports as an I/O or open error, never as a file that is not a database or a corrupt
 one, because SQLite is never handed the encrypted bytes. Both the clear and Erase all data also run
-only from a confirmation on screen, so the phone is unlocked when they run.
+only from a confirmation on screen, so the phone is unlocked when they run. This rests on how the
+system documents data protection; it has not been checked on a device.
 
 A row that cannot be read, or that fails the same checks as a save, fails the whole read. The
 log never skips a damaged row and shows the rest as if nothing were wrong.

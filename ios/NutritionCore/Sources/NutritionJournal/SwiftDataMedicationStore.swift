@@ -93,6 +93,10 @@ public final class SwiftDataMedicationStore: MedicationStore, JournalErasing, @u
     private let fileOperations: StoreFileOperations
     /// True after an erase whose reopen failed; the next call tries the reopen again.
     private var reopenPending = false
+    /// Test hook: whether the file at a URL is damaged, asked before an erase replaces a file without a checkpoint.
+    /// It is SQLite's check (`storeFileIsDamaged(at:)`) unless a test sets it, so a test can reach a damaged file whose
+    /// open and row delete succeed. Set it only before the store is used.
+    var storeFileDamageCheck: (URL) -> Bool = SwiftDataMedicationStore.storeFileIsDamaged
 
     /// Opens or creates the store file at `url`. Throws when the file cannot be opened or its schema cannot be migrated.
     public convenience init(url: URL) throws {
@@ -255,8 +259,8 @@ public final class SwiftDataMedicationStore: MedicationStore, JournalErasing, @u
     ///
     /// A closed store throws `MedicationStoreError.closed` and removes nothing. When the file cannot be opened, its rows
     /// cannot be deleted, or its checkpoint fails, the file is replaced without a checkpoint only when SQLite finds it
-    /// damaged (see `storeFileIsDamaged(at:)`). A file that failed for another reason, such as a locked or busy file or
-    /// a newer schema, is kept and the error is thrown.
+    /// damaged (see `storeFileIsDamaged(at:)` and `storeFileDamageCheck`). A file that failed for another reason, such as
+    /// a locked or busy file, is kept and the error is thrown.
     public func eraseAll() throws {
         writeLock.lock()
         defer { writeLock.unlock() }
@@ -285,7 +289,7 @@ public final class SwiftDataMedicationStore: MedicationStore, JournalErasing, @u
     /// Replaces the store file without a checkpoint when SQLite finds it damaged, and otherwise throws `error`, so a
     /// file that failed for a passing reason is never removed. The caller holds writeLock.
     private func replaceIfDamaged(after error: Error) throws {
-        guard Self.storeFileIsDamaged(at: storeURL) else { throw error }
+        guard storeFileDamageCheck(storeURL) else { throw error }
         try replaceFiles(checkpointing: false)
     }
 
