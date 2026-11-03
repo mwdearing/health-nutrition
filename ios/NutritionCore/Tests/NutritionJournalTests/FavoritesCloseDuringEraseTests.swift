@@ -99,4 +99,28 @@ final class FavoritesCloseDuringEraseTests: XCTestCase {
                 "a store closed mid-erase left \(suffix.isEmpty ? "the store file" : suffix)")
         }
     }
+
+    /// A checkpoint that fails during a mid-erase close still removes every store file (#1156): the erase must not
+    /// leave the deleted rows' bytes on disk, and the failure is reported.
+    func testACheckpointFailureMidEraseStillRemovesTheFiles() throws {
+        let url = try makeDirectory().appendingPathComponent("favorites.store")
+        var operations = StoreFileOperations.systemOperations(opening: SwiftDataFavoritesStore.makeContainer)
+        operations.checkpoint = { _ in throw CocoaError(.fileWriteUnknown) }
+        final class StoreBox { weak var store: SwiftDataFavoritesStore? }
+        let storeRef = StoreBox()
+        operations.afterRowsDeleted = {
+            let finished = DispatchSemaphore(value: 0)
+            DispatchQueue.global().async {
+                storeRef.store?.close()
+                finished.signal()
+            }
+            finished.wait()
+        }
+        let store = try SwiftDataFavoritesStore(url: url, fileOperations: operations)
+        storeRef.store = store
+        XCTAssertThrowsError(try store.eraseAll())
+        for suffix in ["", "-wal", "-shm"] {
+            XCTAssertFalse(FileManager.default.fileExists(atPath: url.path + suffix), "a checkpoint failure left \(suffix)")
+        }
+    }
 }
