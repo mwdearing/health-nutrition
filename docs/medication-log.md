@@ -79,13 +79,26 @@ such as a locked or busy file or a newer schema version, is kept, and the clear 
 not clear the log. Erase all data does the same. A damaged row gets the same offer. Nothing removes the
 file without one of those actions.
 
+A kept file can leave the log unreadable with a clear that keeps failing. That is the intended result:
+a locked or busy file reads again on a later try, and a file with a newer schema version was written
+by a newer build of the app, which opens it after an update. Removing either would delete a log that
+can still be read.
+
+A file that the device cannot decrypt is not judged damaged. The store files use the system's default
+data protection, and while a protected file's key is unavailable the system refuses the read itself,
+which SQLite reports as an I/O or open error, never as a file that is not a database or a corrupt
+one, because SQLite is never handed the encrypted bytes. Both the clear and Erase all data also run
+only from a confirmation on screen, so the phone is unlocked when they run.
+
 A row that cannot be read, or that fails the same checks as a save, fails the whole read. The
 log never skips a damaged row and shows the rest as if nothing were wrong.
 
 Erase all data erases `medications.store` last. It deletes the medication rows, then replaces the
 store file and its `-wal` and `-shm` files with an empty one, as the other stores do. The Medication
-log switch is reset by the erase too (see [Erase all data](erase-all-data.md)). When the file could
-not be opened, the erase replaces it without a checkpoint, and the store opens an empty log.
+log switch is reset by the erase too (see [Erase all data](erase-all-data.md)). When the file cannot
+be opened, its rows cannot be deleted or its checkpoint fails, the erase replaces it without a
+checkpoint only when SQLite finds it damaged, as above, and the store opens an empty log. Otherwise
+the file is kept and the erase reports the failure.
 
 ## Not yet
 
