@@ -51,7 +51,8 @@ public struct NourishTodayHeader: View {
     /// shape the Fiber line uses ("15 g of 32 g"). With no goal it is the total alone.
     static func macroFigure(for line: NutrientProgressLine?) -> String {
         let total = figure(for: line)
-        guard let goal = line?.goal else { return total }
+        guard line?.goal != nil else { return total }
+        return total
         return "\(total) of \(AmountDisplay.nutrient(goal.target, unit: goal.unit).text)"
     }
 
