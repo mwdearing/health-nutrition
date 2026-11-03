@@ -77,8 +77,10 @@ clearing removes the file and its `-wal` and `-shm` files without a checkpoint, 
 an empty log. It does so only when SQLite finds the file damaged: it cannot be read as a
 database, or its integrity check reports a fault. A file that fails to open for another reason,
 such as a locked or busy file, is kept, and the clear says it could not clear the log. A failed
-clear reads the log again, so the screen shows what the file now holds. Erase all data does the same. A damaged row gets the same offer. Nothing removes the
-file without one of those actions.
+clear reads the log again, so the screen shows what the file now holds. Erase all data does the same.
+A row that fails the log's own checks, in a file SQLite finds healthy, gets the same offer, and
+clearing removes it: the erase deletes rows without reading them back through those checks, and then
+replaces the file as usual. Nothing removes the file without one of those actions.
 
 A kept file can leave the log unreadable with a clear that keeps failing. That is the intended result:
 a locked or busy file reads again on a later try, and removing a file that SQLite does not find
