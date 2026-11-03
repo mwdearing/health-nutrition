@@ -101,6 +101,15 @@ final class ScaledAmountDisplayTests: XCTestCase {
         }
     }
 
+    /// A macro column reads "intake of goal" like Fiber, and shows the total alone with no macro goal.
+    func testMacroColumnFigureShowsGoal() throws {
+        let totals = try dayTotals()
+        XCTAssertEqual(
+            NourishTodayHeader.macroFigure(for: line(totals, "carbohydrate", goal: 250)), "1 g of 250 g")
+        XCTAssertEqual(NourishTodayHeader.macroFigure(for: line(totals, "carbohydrate")), "1 g")
+        XCTAssertEqual(NourishTodayHeader.macroFigure(for: nil), "—")
+    }
+
     /// The bar is still drawn from the exact total: rounding is for the words only.
     func testTheBarFractionStaysExact() throws {
         let totals = try dayTotals()

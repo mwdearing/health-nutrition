@@ -36,11 +36,23 @@ public struct NourishTodayHeader: View {
         Self.figure(for: model.progress.first(where: { $0.nutrient == key }))
     }
 
+    private func macroFigure(_ key: String) -> String {
+        Self.macroFigure(for: model.progress.first(where: { $0.nutrient == key }))
+    }
+
     /// The figure under a macro column or inside the ring: the day's total, rounded for reading, or a dash
     /// where the day has no known total.
     static func figure(for line: NutrientProgressLine?) -> String {
         guard let line, case .known(let value, let unit) = line.shownAmount else { return "—" }
         return AmountDisplay.nutrient(value, unit: unit).text
+    }
+
+    /// The figure under a macro column: the day's total, then "of" the macro goal when one is set, the same
+    /// shape the Fiber line uses ("15 g of 32 g"). With no goal it is the total alone.
+    static func macroFigure(for line: NutrientProgressLine?) -> String {
+        let total = figure(for: line)
+        guard let goal = line?.goal else { return total }
+        return "\(total) of \(AmountDisplay.nutrient(goal.target, unit: goal.unit).text)"
     }
 
     static func ringFootnote(for goal: NutrientGoal?) -> String? {
@@ -192,7 +204,7 @@ public struct NourishTodayHeader: View {
                 HStack(alignment: .top, spacing: DesignSpacing.m) {
                     ForEach(macros, id: \.0) { key, macro in
                         MacroColumn(
-                            label: macro.label, figure: figure(key), fraction: fraction(macro),
+                            label: macro.label, figure: macroFigure(key), fraction: fraction(macro),
                             spoken: macro.accessibilityText, note: partialNote(key))
                         .frame(maxWidth: .infinity)
                         .accessibilityIdentifier("macroColumn-\(macro.label)")
