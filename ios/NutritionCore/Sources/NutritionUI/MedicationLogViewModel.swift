@@ -95,18 +95,23 @@ public final class MedicationLogViewModel: ObservableObject {
         load()
     }
 
-    /// Reads the medications and doses and rebuilds the rows. A read that fails leaves no rows, sets the message and
-    /// offers the clear when an eraser is present. A read that works withdraws the offer.
+    /// Reads the medications and doses and rebuilds the rows. A store read that fails leaves no rows, sets the message
+    /// and offers the clear when an eraser is present. A read that works withdraws the offer. Only a failed store read
+    /// offers the clear: a day that cannot be worked out leaves no rows and the message, without the offer.
     public func load() {
         clearNotice = nil
-        guard let today = today(),
-            let medications = try? store.medications(),
-            let doses = try? store.allDoses()
-        else {
+        guard let medications = try? store.medications(), let doses = try? store.allDoses() else {
             rows = []
             archivedRows = []
             errorMessage = "Could not read the medication log."
             canClear = eraser != nil
+            return
+        }
+        guard let today = today() else {
+            rows = []
+            archivedRows = []
+            errorMessage = "Could not read the medication log."
+            canClear = false
             return
         }
         let built = medications.map { row(for: $0, doses: doses, today: today) }
@@ -119,8 +124,9 @@ public final class MedicationLogViewModel: ObservableObject {
     /// Erases the medication store and reads it again, after the person confirms the clear. It does nothing unless
     /// a read has failed on screen and an eraser is present. The log is read once more first, and a log that reads
     /// now is kept: a read can fail for a passing reason, such as a locked or busy file, and the notice says nothing
-    /// was cleared. A failed erase reads the log again, so the screen shows what the file now holds, and sets a
-    /// message; the offer stays only while the log still cannot be read.
+    /// was cleared. A failed erase withdraws the Undo offer, because it may already have removed that dose, reads the
+    /// log again, so the screen shows what the file now holds, and sets a message; the offer stays only while the log
+    /// still cannot be read.
     public func clearLog() {
         guard canClear, let eraser else { return }
         load()
@@ -131,6 +137,8 @@ public final class MedicationLogViewModel: ObservableObject {
         do {
             try eraser.eraseAll()
         } catch {
+            lastLoggedDoseID = nil
+            undoText = nil
             load()
             errorMessage = "Could not clear the medication log."
             return
