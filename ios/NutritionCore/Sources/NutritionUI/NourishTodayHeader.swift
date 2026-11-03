@@ -48,11 +48,10 @@ public struct NourishTodayHeader: View {
     }
 
     /// The figure under a macro column: the day's total, then "of" the macro goal when one is set, the same
-    /// shape the Fiber line uses ("15 g of 32 g"). With no goal it is the total alone.
+    /// shape the Fiber line uses ("15 g of 32 g"). With no goal it is the total alone; with no known total it is a dash.
     static func macroFigure(for line: NutrientProgressLine?) -> String {
-        let total = figure(for: line)
-        guard let goal = line?.goal else { return total }
-        return "\(total) of \(AmountDisplay.nutrient(goal.target, unit: goal.unit).text)"
+        guard let line, case .known = line.shownAmount, let goal = line.goal else { return figure(for: line) }
+        return "\(figure(for: line)) of \(AmountDisplay.nutrient(goal.target, unit: goal.unit).text)"
     }
 
     static func ringFootnote(for goal: NutrientGoal?) -> String? {
