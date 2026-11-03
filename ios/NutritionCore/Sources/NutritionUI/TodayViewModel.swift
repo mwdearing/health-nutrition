@@ -525,7 +525,8 @@ public final class TodayViewModel: ObservableObject {
     /// reference group kept with the display preferences.
     public func makeNutrientGaps() -> NutrientGapsViewModel {
         NutrientGapsViewModel(
-            store: store, lookup: lookup, preferences: preferences as? ReferenceGroupPreferences)
+            store: store, lookup: lookup, preferences: preferences as? ReferenceGroupPreferences,
+            healthToday: { [weak self] in self?.outsideIntake ?? .notConnected })
     }
 
     /// The daily water goal used until the person sets one: 2,000 mL (about 68 fl oz).

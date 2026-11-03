@@ -20,6 +20,9 @@ public enum JournalImportError: Error, Sendable, Equatable {
     /// The restore finished and every row is written, but the restore-in-progress flag could not be removed.
     /// The rows stay; the flag is the only thing left behind.
     case cleanupIncomplete
+    /// Every part of this file is already written and the restore-in-progress flag was left behind. The retry
+    /// clears the flag and writes nothing, so the restore is reported as finished, not as a refusal (#1172).
+    case alreadyRestored
     /// The file is a version 1 export that cannot be restored as it stands: a snapshot nothing defines,
     /// a revision history that does not line up, an amount that is not exact decimal text.
     case corrupt(String)
@@ -313,14 +316,14 @@ public enum JournalImporter {
             }
             // Every part is written: a flag that outlived the whole restore (a stop after the last save, or a clear
             // that failed, #828) is not an unfinished restore, however much of it was deleted since. Nothing is written
-            // again and the import is refused as before, but the flag is cleared now, so the cleanup the screen asked
+            // again and the import is refused as already restored (#1172), but the flag is cleared now, so the cleanup the screen asked
             // the person to retry is finished and the file cannot later bring back rows deleted since.
             if savedMealsWritten && favoritesWritten && !goalsPending {
                 try clearFlagAfterRestore(progress)
                 try? favoritesTarget?.removeRestoreReceipt(digest)
                 try? savedMealsTarget?.removeSavedMealsRestoreReceipt(digest)
                 try? goalsTarget?.removeGoalRestoreReceipt(digest)
-                throw JournalImportError.notEmpty
+                throw JournalImportError.alreadyRestored
             }
             if let savedMealsTarget, !savedMealsWritten {
                 try savedMealsTarget.restoreJournalSavedMeals(plan.savedMeals, receipt: digest)
