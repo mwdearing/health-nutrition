@@ -81,6 +81,7 @@ public protocol BodyActivityReading: AnyObject {
     func readOutsideIntake(now: Date) async -> BodyActivityReadings
 }
 
+@MainActor
 extension BodyActivityReading {
     public var hasAskedForNutrientReadAccess: Bool { hasAskedForReadAccess }
     public func readOutsideIntake(now: Date) async -> BodyActivityReadings {
