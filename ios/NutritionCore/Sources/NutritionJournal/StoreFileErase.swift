@@ -5,7 +5,8 @@ extension StoreFileOperations {
     /// The file steps of an erase for a store other than the journal, with the store's own container factory: the
     /// checkpoint and the removal are the journal store's (#228).
     static func systemOperations(opening open: @escaping (URL) throws -> ModelContainer) -> StoreFileOperations {
-        StoreFileOperations(checkpoint: system.checkpoint, remove: system.remove, openContainer: open)
+        StoreFileOperations(
+            checkpoint: system.checkpoint, remove: system.remove, openContainer: open, isDamaged: system.isDamaged)
     }
 
     /// Deletes the store file at `url` with its write-ahead and shared-memory files, then opens an empty store there,

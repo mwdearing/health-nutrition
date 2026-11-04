@@ -15,7 +15,10 @@ final class MedicationStoreCheckpointDamageTests: XCTestCase {
     }
 
     /// A store at `url` holding one medication, whose checkpoint always fails and whose removals are recorded.
-    private func makeStore(at url: URL, steps: CheckpointDamageSteps) throws -> SwiftDataMedicationStore {
+    /// `damaged` is the damage check the erase asks, passed through the file operations as the system's would be.
+    private func makeStore(
+        at url: URL, steps: CheckpointDamageSteps, damaged: @escaping (URL) -> Bool
+    ) throws -> SwiftDataMedicationStore {
         let operations = StoreFileOperations(
             checkpoint: { _ in
                 steps.checkpoints += 1
@@ -25,7 +28,8 @@ final class MedicationStoreCheckpointDamageTests: XCTestCase {
                 steps.removed.append(file.lastPathComponent)
                 try FileManager.default.removeItem(at: file)
             },
-            openContainer: { try SwiftDataMedicationStore.makeContainer(url: $0) })
+            openContainer: { try SwiftDataMedicationStore.makeContainer(url: $0) },
+            isDamaged: damaged)
         let store = SwiftDataMedicationStore(retryingOpenAt: url, fileOperations: operations)
         addTeardownBlock { store.close() }
         try store.saveMedication(Medication(name: "Example weekly injection", unit: .mg, scheduleDays: 7))
@@ -34,23 +38,23 @@ final class MedicationStoreCheckpointDamageTests: XCTestCase {
 
     func testTheStoreUsesSQLitesDamageCheckByDefault() throws {
         let url = try makeURL()
-        let store = SwiftDataMedicationStore(retryingOpenAt: url)
-        addTeardownBlock { store.close() }
         let directory = url.deletingLastPathComponent()
         let notAStore = directory.appendingPathComponent("other.store")
         try Data("not a store".utf8).write(to: notAStore)
-        XCTAssertTrue(store.storeFileDamageCheck(notAStore))
-        XCTAssertFalse(store.storeFileDamageCheck(directory.appendingPathComponent("missing.store")))
+        let operations = StoreFileOperations.systemOperations(opening: {
+            try SwiftDataMedicationStore.makeContainer(url: $0)
+        })
+        XCTAssertTrue(operations.isDamaged(notAStore))
+        XCTAssertFalse(operations.isDamaged(directory.appendingPathComponent("missing.store")))
     }
 
     func testADamagedFileWhoseCheckpointFailsIsReplacedAndOpensEmpty() throws {
         let url = try makeURL()
         let steps = CheckpointDamageSteps()
-        let store = try makeStore(at: url, steps: steps)
-        store.storeFileDamageCheck = { checked in
+        let store = try makeStore(at: url, steps: steps, damaged: { checked in
             steps.checkedURLs.append(checked)
             return true
-        }
+        })
 
         try store.eraseAll()
 
@@ -65,8 +69,7 @@ final class MedicationStoreCheckpointDamageTests: XCTestCase {
     func testAFileThatIsNotDamagedIsKeptAndTheCheckpointFailureIsThrown() throws {
         let url = try makeURL()
         let steps = CheckpointDamageSteps()
-        let store = try makeStore(at: url, steps: steps)
-        store.storeFileDamageCheck = { _ in false }
+        let store = try makeStore(at: url, steps: steps, damaged: { _ in false })
 
         XCTAssertThrowsError(try store.eraseAll()) { error in
             guard case StoreFileError.checkpointFailed = error else {

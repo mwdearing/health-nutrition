@@ -89,7 +89,9 @@ damaged could delete a log that can still be read.
 A file that the device cannot decrypt is not judged damaged. The store files use the system's default
 data protection, and while a protected file's key is unavailable the system refuses the read itself,
 which SQLite reports as an I/O or open error, never as a file that is not a database or a corrupt
-one, because SQLite is never handed the encrypted bytes. Both the clear and Erase all data also run
+one, because SQLite is never handed the encrypted bytes. SQLite reports a short read as an I/O error,
+which is not counted as damage. A short read that surfaces as a failed integrity check would be,
+and that case has not been checked on a device. Both the clear and Erase all data also run
 only from a confirmation on screen, so the phone is unlocked when they run. This rests on how the
 system documents data protection; it has not been checked on a device.
 

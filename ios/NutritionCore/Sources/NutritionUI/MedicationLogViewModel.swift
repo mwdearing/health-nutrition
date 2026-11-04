@@ -47,6 +47,9 @@ public final class MedicationLogViewModel: ObservableObject {
     private let eraser: JournalErasing?
     /// The identifier of the dose the last successful log saved, so Undo can remove it.
     private var lastLoggedDoseID: UUID?
+    /// Test hook: replaces the day read from the device calendar. A closure that returns nil stands for a day that
+    /// cannot be read. Nil, the default, leaves the device calendar in use.
+    var dayOverride: (() -> CalendarDay?)?
 
     /// The active medications, in the store's order.
     @Published public private(set) var rows: [MedicationRow] = []
@@ -131,7 +134,11 @@ public final class MedicationLogViewModel: ObservableObject {
         guard canClear, let eraser else { return }
         load()
         guard canClear else {
-            clearNotice = "The medication log can be read again, so nothing was cleared."
+            // A day that cannot be worked out also leaves the log unread, with no offer. That is not a read
+            // that works, so the notice would be false, and nothing is erased.
+            if errorMessage == nil {
+                clearNotice = "The medication log can be read again, so nothing was cleared."
+            }
             return
         }
         do {
@@ -240,6 +247,7 @@ public final class MedicationLogViewModel: ObservableObject {
 
     /// The day today is on the Gregorian calendar in the device's zone, or nil when the calendar cannot read it.
     private func today() -> CalendarDay? {
+        if let dayOverride { return dayOverride() }
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = timeZone()
         let parts = calendar.dateComponents([.year, .month, .day], from: now())
