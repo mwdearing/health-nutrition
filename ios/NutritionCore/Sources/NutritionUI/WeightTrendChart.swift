@@ -19,31 +19,39 @@ public struct WeightTrendChart: View {
         Chart {
             ForEach(points, id: \.day) { point in
                 LineMark(
-                    x: .value("Day", Self.date(point.day)),
+                    x: .value("Day", Self.position(of: point.day)),
                     y: .value("Weight", NSDecimalNumber(decimal: point.weight).doubleValue)
                 )
                 .foregroundStyle(TokenColors.accent)
                 PointMark(
-                    x: .value("Day", Self.date(point.day)),
+                    x: .value("Day", Self.position(of: point.day)),
                     y: .value("Weight", NSDecimalNumber(decimal: point.weight).doubleValue)
                 )
                 .foregroundStyle(TokenColors.accent)
             }
             ForEach(markers, id: \.day) { marker in
-                RuleMark(x: .value("Dose day", Self.date(marker.day)))
+                RuleMark(x: .value("Dose day", Self.position(of: marker.day)))
                     .foregroundStyle(TokenColors.textSecondary)
                     .accessibilityLabel(Text(BodyActivityViewModel.doseMarkerLabel(marker)))
             }
         }
+        .environment(\.calendar, Self.axisCalendar)
+        .environment(\.timeZone, Self.axisCalendar.timeZone)
         .frame(height: 120)
         .accessibilityLabel(BodyActivityViewModel.weightChartLabel)
     }
 
-    /// The day as noon UTC, so every day maps to one fixed position on the axis whatever the device time zone.
-    private static func date(_ day: CalendarDay) -> Date {
+    /// The calendar the axis places and labels days in. Gregorian UTC whatever the device, so the label under a
+    /// point names the day it was weighed even where noon UTC already falls on the next local day.
+    static let axisCalendar: Calendar = {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "UTC") ?? .current
+        return calendar
+    }()
+
+    /// The day as noon in the axis calendar, so every day maps to one fixed position on the axis.
+    static func position(of day: CalendarDay) -> Date {
         let components = DateComponents(year: day.year, month: day.month, day: day.day, hour: 12)
-        return calendar.date(from: components) ?? Date(timeIntervalSince1970: 0)
+        return axisCalendar.date(from: components) ?? Date(timeIntervalSince1970: 0)
     }
 }
