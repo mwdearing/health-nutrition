@@ -83,7 +83,7 @@ final class CustomProductMappingTests: XCTestCase {
         let staged = try CustomProductMapping.stagedDraft(from: product)
         XCTAssertEqual(staged.facts.first?.displayName, "Vitamin D")
 
-        let revision = CustomProductRevision(localProductID: UUID(), revisionID: UUID(), content: CustomProductContent(name: "Synthetic", kind: .supplement, basis: .perServing,
+        let revision = CustomProductRevision(localProductID: UUID(), revisionID: UUID(), content: CustomProductContent(name: "Synthetic", kind: .supplement, basis: .per100g,
             facts: [ProductFact(key: "vitaminD", displayName: "vitaminD", value: .known(10, .mcg))]))
         let snapshot = try CustomProductMapping.snapshot(for: revision)
         let legacyDraft = try CustomProductMapping.legacyDraft(from: snapshot)
