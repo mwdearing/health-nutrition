@@ -81,6 +81,11 @@ public enum CustomProductMapping {
         return CustomProductRevision(localProductID: UUID(), revisionID: UUID(), content: imported, source: source, importVerification: evidence)
     }
 
+    /// The unit a legacy label fact is stored in. Milligram and microgram nutrients are not grams (#1175).
+    static let legacyUnits: [String: MeasureUnit] = [
+        "energyKcal": .kcal, "sodium": .mg, "calcium": .mg, "iron": .mg, "potassium": .mg, "vitaminD": .mcg,
+    ]
+
     public static func stagedDraft(from product: CommunityProduct) throws -> LegacyCustomProductDraft {
         guard case .legacyLabel(let label) = product.product else { throw CustomProductMappingError.requiresExplicitChoices }
         let facts = try label.nutrients.keys.sorted().map { key -> ProductFact in
@@ -88,7 +93,7 @@ public enum CustomProductMapping {
                 throw CustomProductMappingError.unsupportedLegacyFact
             }
             return ProductFact(key: key == "salt" ? "ingredient:salt" : key, displayName: key == "salt" ? "Salt" : NutrientNames.displayName(for: key),
-                value: .known(amount, key == "energyKcal" ? .kcal : key == "sodium" ? .mg : key == "vitaminD" ? .mcg : .g))
+                value: .known(amount, legacyUnits[key] ?? .g))
         }
         let serving: ProductServing?
         if let value = label.serving {
