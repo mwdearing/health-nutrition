@@ -507,7 +507,8 @@ public final class TodayViewModel: ObservableObject {
             waterTotalMilliliters = 0
             waterEntryCount = 0
             waterSkippedCount = 0
-            waterHasUnknown = false
+            // The read failed, so the day's water is unknown, not zero (#1216).
+            waterHasUnknown = true
             skippedIntakeCount = 0
             coverage = []
             progress = []
