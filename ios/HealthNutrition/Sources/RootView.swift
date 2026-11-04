@@ -163,11 +163,14 @@ struct RootView: View {
                 // Editing from the Library opens the editor on its own, not inside the Add flow, so Cancel and Save return here.
                 .sheet(item: $libraryEditor) { editor in
                     NavigationStack {
-                        CustomProductEditorView(model: editor.model, sharing: services.library.productSharing) { _, _ in
+                        CustomProductEditorView(model: editor.model, sharing: services.library.productSharing) { product, openDetails in
                             services.library.load()
                             self.libraryEditor = nil
+                            if openDetails { self.startProductDetails(product) }
                         }
                     }
+                    // Typed input is not lost to a swipe-down; the form's Cancel asks first.
+                    .interactiveDismissDisabled(editor.model.hasTypedInput)
                 }
             }
                 .safeAreaInset(edge: .bottom) { addCapsule }
