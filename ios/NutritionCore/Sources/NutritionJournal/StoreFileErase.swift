@@ -51,6 +51,7 @@ extension StoreFileOperations {
             firstError = error
         }
         for suffix in ["-shm", "-wal", ""] {
+            if firstError != nil { break }
             let file = URL(fileURLWithPath: url.path + suffix)
             guard FileManager.default.fileExists(atPath: file.path) else { continue }
             do {
