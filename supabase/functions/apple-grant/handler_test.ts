@@ -144,3 +144,13 @@ Deno.test("a null JSON body is a bad request, not a crash", async () => {
   const { deps } = setup();
   assertEquals((await handle(post(null), deps)).status, 400);
 });
+
+Deno.test("a thrown fetch or store error becomes a structured 502", async () => {
+  const { deps, store } = setup();
+  store.rows.set("user-1", "rt-1");
+  deps.fetch = (() => Promise.reject(new Error("timeout"))) as unknown as typeof fetch;
+  const reply = await handle(post({ action: "revoke" }), deps);
+  assertEquals(reply.status, 502);
+  assertEquals(await reply.json(), { error: "upstream_failed" });
+  assertEquals(store.rows.get("user-1"), "rt-1");
+});

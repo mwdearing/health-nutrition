@@ -87,6 +87,15 @@ async function alreadyRevoked(reply: Response): Promise<boolean> {
 }
 
 export async function handle(request: Request, deps: Deps): Promise<Response> {
+  try {
+    return await handleUnguarded(request, deps);
+  } catch {
+    // Network, timeout or store failures: a structured reply, and no detail that could carry a token.
+    return json(502, { error: "upstream_failed" });
+  }
+}
+
+async function handleUnguarded(request: Request, deps: Deps): Promise<Response> {
   if (request.method !== "POST") return json(405, { error: "method_not_allowed" });
   const bearer = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
   const userId = bearer ? await deps.authenticate(bearer) : null;
