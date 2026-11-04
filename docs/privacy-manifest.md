@@ -25,8 +25,8 @@ tracking. Five are linked to the user; Product Interaction is not:
 | `NSPrivacyCollectedDataTypeUserID` | The community account identifier. |
 | `NSPrivacyCollectedDataTypeName` | The optional display name on the account profile. |
 | `NSPrivacyCollectedDataTypeOtherUserContent` | Product-label facts submitted to the community catalog while sharing is on: product name, brand, barcode, serving text and nutrient amounts. |
-| `NSPrivacyCollectedDataTypeSearchHistory` | Barcodes and Search foods words sent to the project's server with the signed-in account (community lookup and shared-product search), and the same words sent to USDA FoodData Central and Open Food Facts. Declared as linked, the conservative answer, because the server receives them with the account. |
-| `NSPrivacyCollectedDataTypeProductInteraction` | Not linked. The hCaptcha human check on email sign-in. The hCaptcha SDK (3.1.0, commit `caea076b`) ships its own manifest that declares exactly this type, not linked, no tracking, app functionality; the app repeats it so the App Store Connect answers and the manifests agree. |
+| `NSPrivacyCollectedDataTypeSearchHistory` | Barcodes and Search foods words sent to the project's server with the signed-in account (community lookup and shared-product search), and the same words sent to USDA FoodData Central and Open Food Facts. Declared as linked, the conservative answer, because the project's server receives them with the signed-in account; USDA and Open Food Facts receive only the words, with no account. |
+| `NSPrivacyCollectedDataTypeProductInteraction` | Not linked: hCaptcha receives no account ID or email (the email goes only to the project's server). The hCaptcha human check on email sign-in. The hCaptcha SDK (3.1.0, commit `caea076b`) ships its own manifest that declares exactly this type, not linked, no tracking, app functionality; the app repeats it so the App Store Connect answers and the manifests agree. |
 
 The local journal is not uploaded as a journal. A barcode lookup sends the
 barcode to the community catalog only after the person asks for a lookup and is signed in; when the
@@ -35,9 +35,9 @@ catalog holds no product, the lookup reads as not found, even when label sharing
 authenticated community catalog, but Open Food Facts and an email sign-in
 challenge are separate requests to external services.
 
-Earlier wording treated search words as not collection. That was wrong for App Store purposes: Apple counts
-data sent off the device to the project's server or a partner service, so the words and barcodes above are
-declared as Search History. They are not sent to ad networks, brokers or analytics, and not used for tracking.
+Apple counts data sent off the device to the project's server or a partner service as collected, so the barcodes
+and search words above are declared as Search History. They are not sent to ad networks, brokers or analytics, and
+not used for tracking.
 
 A name search in Search foods sends only the words the person typed (2 to 80
 characters) to the Open Food Facts search service (`search.openfoodfacts.org`,
