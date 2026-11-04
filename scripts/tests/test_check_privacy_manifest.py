@@ -31,6 +31,8 @@ USER_ID = "NSPrivacyCollectedDataTypeUserID"
 NAME = "NSPrivacyCollectedDataTypeName"
 # The values of a scanned label (name, brand, barcode, nutrient amounts) are shared with the community catalog.
 USER_CONTENT = "NSPrivacyCollectedDataTypeOtherUserContent"
+# Barcodes and search words sent with the signed-in account.
+SEARCH_HISTORY = "NSPrivacyCollectedDataTypeSearchHistory"
 ACCOUNT_DATA = [
     {
         "NSPrivacyCollectedDataType": data_type,
@@ -38,7 +40,7 @@ ACCOUNT_DATA = [
         "NSPrivacyCollectedDataTypeTracking": False,
         "NSPrivacyCollectedDataTypePurposes": ["NSPrivacyCollectedDataTypePurposeAppFunctionality"],
     }
-    for data_type in (EMAIL, USER_ID, NAME, USER_CONTENT)
+    for data_type in (EMAIL, USER_ID, NAME, USER_CONTENT, SEARCH_HISTORY)
 ]
 
 PROJECT_YML = """\
@@ -756,7 +758,7 @@ def test_an_empty_collected_data_list_fails(tmp_path: Path) -> None:
     assert NAME in result.stdout
 
 
-@pytest.mark.parametrize("data_type", [EMAIL, USER_ID, NAME, USER_CONTENT])
+@pytest.mark.parametrize("data_type", [EMAIL, USER_ID, NAME, USER_CONTENT, SEARCH_HISTORY])
 def test_removing_a_declared_account_data_type_fails(tmp_path: Path, data_type: str) -> None:
     root = write_tree(tmp_path, CLEAN_SOURCE, manifest=manifest_xml(collected=account_data_without(data_type)))
     result = run(root)
@@ -797,7 +799,7 @@ def test_account_data_needs_the_app_functionality_purpose(tmp_path: Path) -> Non
 def test_shipped_manifest_declares_the_account_data() -> None:
     manifest = read_manifest(SHIPPED_MANIFEST)
     declared = {entry.get("NSPrivacyCollectedDataType") for entry in manifest.get("NSPrivacyCollectedDataTypes", [])}
-    assert {EMAIL, USER_ID, NAME, USER_CONTENT} <= declared
+    assert {EMAIL, USER_ID, NAME, USER_CONTENT, SEARCH_HISTORY} <= declared
     assert manifest.get("NSPrivacyTracking") is False
 
 

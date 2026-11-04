@@ -427,6 +427,8 @@ REQUIRED_COLLECTED_TYPES = (
     "NSPrivacyCollectedDataTypeName",
     # The values of a scanned label shared with the community catalog.
     "NSPrivacyCollectedDataTypeOtherUserContent",
+    # Barcodes and search words sent with the signed-in account to the project's server.
+    "NSPrivacyCollectedDataTypeSearchHistory",
 )
 APP_FUNCTIONALITY = "NSPrivacyCollectedDataTypePurposeAppFunctionality"
 

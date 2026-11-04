@@ -16,8 +16,8 @@ is nothing to declare and nothing to opt out of.
 
 ## Collected data
 
-`NSPrivacyCollectedDataTypes` currently declares four types. All four are
-linked to the user, not used for tracking, and used for app functionality:
+`NSPrivacyCollectedDataTypes` currently declares six types, all used for app functionality and none for
+tracking. Five are linked to the user; Product Interaction is not:
 
 | Manifest data type | Data the app handles |
 | --- | --- |
@@ -25,6 +25,8 @@ linked to the user, not used for tracking, and used for app functionality:
 | `NSPrivacyCollectedDataTypeUserID` | The community account identifier. |
 | `NSPrivacyCollectedDataTypeName` | The optional display name on the account profile. |
 | `NSPrivacyCollectedDataTypeOtherUserContent` | Product-label facts submitted to the community catalog while sharing is on: product name, brand, barcode, serving text and nutrient amounts. |
+| `NSPrivacyCollectedDataTypeSearchHistory` | Barcodes and Search foods words sent to the project's server with the signed-in account (community lookup and shared-product search), and the same words sent to USDA FoodData Central and Open Food Facts. Declared as linked, the conservative answer, because the server receives them with the account. |
+| `NSPrivacyCollectedDataTypeProductInteraction` | Not linked. The hCaptcha human check on email sign-in. The hCaptcha SDK (3.1.0, commit `caea076b`) ships its own manifest that declares exactly this type, not linked, no tracking, app functionality; the app repeats it so the App Store Connect answers and the manifests agree. |
 
 The local journal is not uploaded as a journal. A barcode lookup sends the
 barcode to the community catalog only after the person asks for a lookup and is signed in; when the
@@ -32,6 +34,10 @@ catalog holds no product, the lookup reads as not found, even when label sharing
 [account behavior](accounts.md). A signed-out lookup does not call the
 authenticated community catalog, but Open Food Facts and an email sign-in
 challenge are separate requests to external services.
+
+Earlier wording treated search words as not collection. That was wrong for App Store purposes: Apple counts
+data sent off the device to the project's server or a partner service, so the words and barcodes above are
+declared as Search History. They are not sent to ad networks, brokers or analytics, and not used for tracking.
 
 A name search in Search foods sends only the words the person typed (2 to 80
 characters) to the Open Food Facts search service (`search.openfoodfacts.org`,
@@ -106,7 +112,7 @@ is not declared with a reason Apple publishes for it, when a declaration is
 malformed (an unknown category, an empty reasons array, a reason that is not a
 string), when a declared reason is not one Apple publishes (a typo such as an
 extra `BOGUS`, or a reason belonging to another category), or when
-`NSPrivacyTracking` is not false. It also fails when one of the four collected
+`NSPrivacyTracking` is not false. It also fails when one of the five required collected
 data types is missing, or is declared without linkage to the user, with
 tracking on, or without the app-functionality purpose.
 
