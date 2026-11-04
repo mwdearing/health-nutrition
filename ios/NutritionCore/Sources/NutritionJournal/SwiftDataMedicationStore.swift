@@ -260,13 +260,10 @@ public final class SwiftDataMedicationStore: MedicationStore, JournalErasing, @u
     public func eraseAll() throws {
         writeLock.lock()
         defer { writeLock.unlock() }
-        // The opened container is held only inside this block, so no reference to it outlives the block into the file
+        // The opened container is held only inside deleteRows, so no reference to it outlives the call into the file
         // replacement below, which removes the files under it and opens a new store at the same path.
         do {
-            let context = ModelContext(try openContainer())
-            for row in try context.fetch(FetchDescriptor<MedicationDoseRecord>()) { context.delete(row) }
-            for row in try context.fetch(FetchDescriptor<MedicationRecord>()) { context.delete(row) }
-            try context.save()
+            try deleteRows()
         } catch MedicationStoreError.closed {
             throw MedicationStoreError.closed
         } catch {
@@ -274,11 +271,27 @@ public final class SwiftDataMedicationStore: MedicationStore, JournalErasing, @u
             return
         }
         // The rows are gone from every read, but the file keeps their bytes until SQLite reuses the pages, so the file
-        // is replaced too, as the goal store's erase does.
+        // is replaced too, as the goal store's erase does. When the rows could not be deleted, the replacement removes
+        // them with the file.
         do {
             try replaceFiles()
         } catch StoreFileError.checkpointFailed {
             try replaceIfDamaged(after: StoreFileError.checkpointFailed)
+        }
+    }
+
+    /// Opens the store and deletes every row, and throws only when the store cannot be opened. A row that the
+    /// opened store cannot fetch, delete or save, such as one written outside the app with a required field
+    /// missing, does not stop the erase: the caller then replaces the file, checkpoint first, which removes it.
+    /// The caller holds writeLock.
+    private func deleteRows() throws {
+        let context = ModelContext(try openContainer())
+        do {
+            for row in try context.fetch(FetchDescriptor<MedicationDoseRecord>()) { context.delete(row) }
+            for row in try context.fetch(FetchDescriptor<MedicationRecord>()) { context.delete(row) }
+            try context.save()
+        } catch {
+            context.rollback()
         }
     }
 

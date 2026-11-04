@@ -1,11 +1,13 @@
 import Foundation
 import NutritionDomain
+import SQLite3
 import SwiftData
 import XCTest
 @testable import NutritionJournal
 
 /// A row that fails the app's own checks fails every read of the log, but the erase deletes rows without reading them
-/// back through those checks, so the clear removes the log from a file SQLite finds healthy.
+/// back through those checks, so the clear removes the log from a file SQLite finds healthy. A row written outside the
+/// app with a required field missing does not stop the erase either: the file replacement removes it.
 final class MedicationStoreDamagedRowEraseTests: XCTestCase {
     private func makeURL() throws -> URL {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -46,6 +48,27 @@ final class MedicationStoreDamagedRowEraseTests: XCTestCase {
         try store.eraseAll()
 
         XCTAssertEqual(try store.medications(), [])
+        XCTAssertEqual(try store.allDoses(), [])
+    }
+
+    func testAnEraseRemovesARowWithARequiredFieldMissing() throws {
+        let url = try makeURL()
+        let first = SwiftDataMedicationStore(retryingOpenAt: url)
+        try first.saveMedication(Medication(name: "Example vial", unit: .mL))
+        first.close()
+
+        var database: OpaquePointer?
+        XCTAssertEqual(sqlite3_open_v2(url.path, &database, SQLITE_OPEN_READWRITE, nil), SQLITE_OK)
+        XCTAssertEqual(sqlite3_exec(database, "UPDATE ZMEDICATIONRECORD SET ZNAME = NULL", nil, nil, nil), SQLITE_OK)
+        XCTAssertEqual(sqlite3_changes(database), 1, "the row written outside the app has no name")
+        sqlite3_close(database)
+        XCTAssertFalse(SwiftDataMedicationStore.storeFileIsDamaged(at: url), "the file itself is healthy")
+
+        let store = SwiftDataMedicationStore(retryingOpenAt: url)
+        addTeardownBlock { store.close() }
+        try store.eraseAll()
+
+        XCTAssertEqual(try store.medications(), [], "the person sees an empty log, and the clear does not keep failing")
         XCTAssertEqual(try store.allDoses(), [])
     }
 }

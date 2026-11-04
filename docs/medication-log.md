@@ -82,7 +82,9 @@ When the log reads after a failed clear, as it does when the erase removed the r
 the Medication log says "The clear did not finish. The log shows what this device holds now." instead.
 A row that fails the log's own checks, in a file SQLite finds healthy, gets the same offer, and
 clearing removes it: the erase deletes rows without reading them back through those checks, and then
-replaces the file as usual. Nothing removes the file without one of those actions.
+replaces the file as usual. A row the store cannot load at all, such as one written outside the app with
+a required field missing, is removed too: when the rows cannot be deleted, the erase still replaces the
+file, checkpoint first, and the replacement removes them. Nothing removes the file without one of those actions.
 
 A kept file can leave the log unreadable with a clear that keeps failing. That is the intended result:
 a locked or busy file reads again on a later try, and removing a file that SQLite does not find
