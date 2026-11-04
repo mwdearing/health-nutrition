@@ -82,6 +82,7 @@ final class CustomProductMappingTests: XCTestCase {
             verification: ProductVerification(status: .sharedUnverified), support: ProductSupport(distinctAccounts: "1", verificationThreshold: "3"), missingFacts: false, alternatives: [])
         let staged = try CustomProductMapping.stagedDraft(from: product)
         XCTAssertEqual(staged.facts.first?.displayName, "Vitamin D")
+        XCTAssertEqual(staged.facts.first?.value, .known(10, .mcg), "vitamin D is micrograms, not grams")
 
         let revision = CustomProductRevision(localProductID: UUID(), revisionID: UUID(), content: CustomProductContent(name: "Synthetic", kind: .supplement, basis: .per100g,
             facts: [ProductFact(key: "vitaminD", displayName: "vitaminD", value: .known(10, .mcg))]))

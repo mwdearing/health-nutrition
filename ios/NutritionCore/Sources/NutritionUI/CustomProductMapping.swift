@@ -88,7 +88,7 @@ public enum CustomProductMapping {
                 throw CustomProductMappingError.unsupportedLegacyFact
             }
             return ProductFact(key: key == "salt" ? "ingredient:salt" : key, displayName: key == "salt" ? "Salt" : NutrientNames.displayName(for: key),
-                value: .known(amount, key == "energyKcal" ? .kcal : key == "sodium" ? .mg : .g))
+                value: .known(amount, key == "energyKcal" ? .kcal : key == "sodium" ? .mg : key == "vitaminD" ? .mcg : .g))
         }
         let serving: ProductServing?
         if let value = label.serving {
