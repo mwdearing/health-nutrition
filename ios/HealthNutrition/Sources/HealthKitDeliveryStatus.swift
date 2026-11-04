@@ -20,6 +20,11 @@ import SwiftUI
 /// Nothing here changes the worker, the writer or any journal behavior: it calls `runOnce(now:)`,
 /// asks for authorization, and reads the store's own counts. Health is asked for write access only
 /// when a person taps Connect in Settings (or the debug tab's button), never on launch.
+/// Defaults keys shared with `HealthKitReader`, outside the main actor so its nonisolated erase can use them.
+enum HealthKitConnectKeys {
+    static let nutritionReadRequested = "healthKit.nutritionReadRequested"
+}
+
 @MainActor
 @Observable
 final class HealthKitDeliveryStatus: AppleHealthConnecting {
@@ -62,7 +67,7 @@ final class HealthKitDeliveryStatus: AppleHealthConnecting {
     }
 
     /// Set once the request that includes nutrient read access has been answered on this device.
-    static let readAskedKey = "healthKit.nutritionReadRequested"
+    static let readAskedKey = HealthKitConnectKeys.nutritionReadRequested
 
     /// The mapped types HealthKit resolves, read once so the request, the gate and the spike all
     /// agree on what "every mapped type" means.

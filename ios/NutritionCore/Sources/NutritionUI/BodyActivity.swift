@@ -77,10 +77,21 @@ public protocol BodyActivityReading: AnyObject {
     func requestReadAccess() async
     /// Today's steps and active energy, the latest weight, and every weigh-in of the last 28 days for the trend.
     func read(now: Date) async -> BodyActivityReadings
+    /// Only the outside intake, for a person who asked for nutrient access but not the card's request.
+    func readOutsideIntake(now: Date) async -> BodyActivityReadings
 }
 
 extension BodyActivityReading {
     public var hasAskedForNutrientReadAccess: Bool { hasAskedForReadAccess }
+    public func readOutsideIntake(now: Date) async -> BodyActivityReadings {
+        let read = await read(now: now)
+        var outside = BodyActivityReadings.empty
+        outside.outsideRead = read.outsideRead
+        outside.outsideNutrients = read.outsideNutrients
+        outside.outsideReadKeys = read.outsideReadKeys
+        outside.outsideReadFailed = read.outsideReadFailed
+        return outside
+    }
 }
 
 /// The activity and weight card on Today.
@@ -130,11 +141,7 @@ public final class BodyActivityViewModel: ObservableObject {
             // Connecting Apple Health in Settings already asked for the nutrient types: other apps' intake counts
             // without the card's request, and nothing else from this read is kept.
             if reader.hasAskedForNutrientReadAccess {
-                let read = await reader.read(now: now)
-                readings.outsideRead = read.outsideRead
-                readings.outsideNutrients = read.outsideNutrients
-                readings.outsideReadKeys = read.outsideReadKeys
-                readings.outsideReadFailed = read.outsideReadFailed
+                readings = await reader.readOutsideIntake(now: now)
             }
             applyWeightPlan(now: now)
             onRead?(readings)

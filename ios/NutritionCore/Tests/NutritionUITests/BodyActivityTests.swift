@@ -53,6 +53,28 @@ final class BodyActivityTests: XCTestCase {
         XCTAssertNil(model.readings.steps, "only the outside intake is kept")
     }
 
+    func testNutrientAccessWithAFailedReadIsNeverShownAsZero() async {
+        let reader = FakeReader()
+        reader.nutrientAsked = true
+        reader.readings = BodyActivityReadings(outsideReadFailed: true, outsideRead: true, outsideReadKeys: [])
+        let model = BodyActivityViewModel(reader: reader, unitSystem: { .metric })
+
+        await model.load(now: now)
+
+        XCTAssertEqual(model.readings.outsideIntake, .read(values: [:], readKeys: []))
+        XCTAssertTrue(model.readings.outsideReadFailed)
+    }
+
+    func testNutrientAccessWithNoOutsideReadStaysNotConnected() async {
+        let reader = FakeReader()
+        reader.nutrientAsked = true
+        let model = BodyActivityViewModel(reader: reader, unitSystem: { .metric })
+
+        await model.load(now: now)
+
+        XCTAssertEqual(model.readings.outsideIntake, .notConnected)
+    }
+
     func testConnectingAsksOnceThenReads() async {
         let reader = FakeReader()
         reader.readings = BodyActivityReadings(steps: 8214, activeEnergyKcal: Decimal(string: "412.6")!)
