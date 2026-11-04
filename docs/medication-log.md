@@ -1,8 +1,8 @@
 # Medication log
 
 Status: the list, add, log and archive screens exist. Settings has the switch (off by default), and the
-Library shows a Medication log row once it is on. Not yet: history editing, the Today tile, export and the
-weight trend.
+Library shows a Medication log row once it is on. Dose days show on the weight chart while the log is on.
+Not yet: history editing, the Today tile and export.
 
 The medication log keeps the medications a person names and the doses they type. The person
 names each medication and types every dose field. The log never suggests, checks or changes a
@@ -110,4 +110,3 @@ the file is kept and the erase reports the failure.
 - History editing (a later slice).
 - The Today tile (a later slice).
 - Export.
-- The weight trend markers.
