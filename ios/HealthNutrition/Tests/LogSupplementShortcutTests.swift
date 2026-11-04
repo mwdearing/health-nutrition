@@ -106,6 +106,13 @@ final class LogSupplementShortcutTests: XCTestCase {
             SupplementShortcut.nearestOpenTime(in: [morning, evening], to: date(hour: 11), calendar: utc), morning)
     }
 
+    func testJustAfterMidnightMarksTheLateEveningTimeNotTheMorningOne() {
+        let lateEvening = ReminderTime(hour: 23, minute: 0)
+        XCTAssertEqual(
+            SupplementShortcut.nearestOpenTime(in: [lateEvening, morning], to: date(hour: 0, minute: 10), calendar: utc),
+            lateEvening)
+    }
+
     func testATieGoesToTheEarlierTimeAndAnEmptyListToNil() {
         XCTAssertEqual(
             SupplementShortcut.nearestOpenTime(in: [evening, morning], to: date(hour: 14), calendar: utc), morning)
