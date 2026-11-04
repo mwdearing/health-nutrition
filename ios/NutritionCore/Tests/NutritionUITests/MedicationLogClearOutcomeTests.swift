@@ -5,7 +5,8 @@ import XCTest
 @testable import NutritionUI
 
 /// What the Medication log shows after the person confirms the clear: a notice when the log reads again and nothing
-/// was cleared, and the log as it now reads, with the failure message, when the erase reports a failure.
+/// was cleared, and the log as it now reads when the erase reports a failure: a log that reads says the clear did
+/// not finish, and one that still cannot be read says it could not be cleared.
 @MainActor
 final class MedicationLogClearOutcomeTests: XCTestCase {
     private func makeModel(_ store: OutcomeMedicationStore) -> MedicationLogViewModel {
@@ -59,7 +60,7 @@ final class MedicationLogClearOutcomeTests: XCTestCase {
         XCTAssertEqual(model.rows, [])
     }
 
-    func testAFailedEraseThatRemovedTheRowsShowsTheEmptyLogWithTheMessage() {
+    func testAFailedEraseThatRemovedTheRowsSaysTheClearDidNotFinish() {
         let store = unreadableStore()
         store.eraseOutcome = .removesRowsThenFails
         let model = makeModel(store)
@@ -69,7 +70,8 @@ final class MedicationLogClearOutcomeTests: XCTestCase {
 
         XCTAssertEqual(store.eraseCount, 1)
         XCTAssertEqual(model.rows, [], "the screen shows the log as it now reads, not the rows from before")
-        XCTAssertEqual(model.errorMessage, "Could not clear the medication log.")
+        XCTAssertEqual(model.errorMessage, "The clear did not finish. The log shows what this device holds now.",
+                       "an empty log that reads is not described as one that could not be cleared")
         XCTAssertFalse(model.canClear, "a log that reads now is not offered for clearing again")
         XCTAssertNil(model.clearNotice)
     }

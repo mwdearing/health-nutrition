@@ -78,6 +78,8 @@ an empty log. It does so only when SQLite finds the file damaged: it cannot be r
 database, or its integrity check reports a fault. A file that fails to open for another reason,
 such as a locked or busy file, is kept, and the clear says it could not clear the log. A failed
 clear reads the log again, so the screen shows what the file now holds. Erase all data does the same.
+When the log reads after a failed clear, as it does when the erase removed the rows before it failed,
+the Medication log says "The clear did not finish. The log shows what this device holds now." instead.
 A row that fails the log's own checks, in a file SQLite finds healthy, gets the same offer, and
 clearing removes it: the erase deletes rows without reading them back through those checks, and then
 replaces the file as usual. Nothing removes the file without one of those actions.

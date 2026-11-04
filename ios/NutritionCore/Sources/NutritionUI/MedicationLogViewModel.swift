@@ -137,8 +137,8 @@ public final class MedicationLogViewModel: ObservableObject {
     /// a read has failed on screen and an eraser is present. The log is read once more first, and a log that reads
     /// now is kept: a read can fail for a passing reason, such as a locked or busy file, and the notice says nothing
     /// was cleared. A failed erase withdraws the Undo offer, because it may already have removed that dose, reads the
-    /// log again, so the screen shows what the file now holds, and sets a message; the offer stays only while the log
-    /// still cannot be read.
+    /// log again, so the screen shows what the file now holds, and sets a message: a log that reads now says the clear
+    /// did not finish, and one that still cannot be read says it could not be cleared and keeps the offer.
     public func clearLog() {
         guard canClear, let eraser else { return }
         load()
@@ -156,7 +156,11 @@ public final class MedicationLogViewModel: ObservableObject {
             lastLoggedDoseID = nil
             undoText = nil
             load()
-            errorMessage = "Could not clear the medication log."
+            // The erase may have removed the rows before it failed. A log that reads now is shown as it is, with
+            // a message that says the clear did not finish, not that the log could not be cleared.
+            errorMessage = errorMessage == nil
+                ? "The clear did not finish. The log shows what this device holds now."
+                : "Could not clear the medication log."
             return
         }
         storesWereReplaced()
