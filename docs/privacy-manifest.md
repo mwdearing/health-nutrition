@@ -17,7 +17,7 @@ is nothing to declare and nothing to opt out of.
 ## Collected data
 
 `NSPrivacyCollectedDataTypes` currently declares six types, all used for app functionality and none for
-tracking. Five are linked to the user; Product Interaction is not:
+tracking. All are linked to the user:
 
 | Manifest data type | Data the app handles |
 | --- | --- |
@@ -26,7 +26,7 @@ tracking. Five are linked to the user; Product Interaction is not:
 | `NSPrivacyCollectedDataTypeName` | The optional display name on the account profile. |
 | `NSPrivacyCollectedDataTypeOtherUserContent` | Product-label facts submitted to the community catalog while sharing is on: product name, brand, barcode, serving text and nutrient amounts. |
 | `NSPrivacyCollectedDataTypeSearchHistory` | Barcodes and Search foods words sent to the project's server with the signed-in account (community lookup and shared-product search), and the same words sent to USDA FoodData Central and Open Food Facts. Declared as linked, the conservative answer, because the project's server receives them with the signed-in account; USDA and Open Food Facts receive only the words, with no account. |
-| `NSPrivacyCollectedDataTypeProductInteraction` | Not linked: hCaptcha receives no account ID or email (the email goes only to the project's server). The hCaptcha human check on email sign-in. The hCaptcha SDK (3.1.0, commit `caea076b`) ships its own manifest that declares exactly this type, not linked, no tracking, app functionality; the app repeats it so the App Store Connect answers and the manifests agree. |
+| `NSPrivacyCollectedDataTypeProductInteraction` | Declared as linked, the conservative answer: the captcha token travels in the same sign-in request as the email to the project's server, and the app does not verify here what that server keeps. hCaptcha itself receives no account ID or email. This covers the hCaptcha human check on email sign-in; the hCaptcha SDK (3.1.0, commit `caea076b`) ships its own manifest that declares exactly this type (not linked on its side, no tracking), app functionality; the app repeats it so the App Store Connect answers and the manifests agree. |
 
 The local journal is not uploaded as a journal. A barcode lookup sends the
 barcode to the community catalog only after the person asks for a lookup and is signed in; when the

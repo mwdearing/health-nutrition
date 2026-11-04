@@ -101,10 +101,7 @@ def test_manifest_documentation_matches_actual_declarations_and_checker_scope() 
     assert documented_types == actual_types
     assert re.search(r"six (?:collected-data )?types", collected_section.lower())
     for row in collected:
-        # Product Interaction is the hCaptcha SDK's own declaration: not linked to the user.
-        assert row["NSPrivacyCollectedDataTypeLinked"] is (
-            row["NSPrivacyCollectedDataType"] != "NSPrivacyCollectedDataTypeProductInteraction"
-        )
+        assert row["NSPrivacyCollectedDataTypeLinked"] is True
         assert row["NSPrivacyCollectedDataTypeTracking"] is False
         assert row["NSPrivacyCollectedDataTypePurposes"] == ["NSPrivacyCollectedDataTypePurposeAppFunctionality"]
 
