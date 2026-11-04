@@ -70,20 +70,43 @@ final class CommunityClientTests: XCTestCase {
         XCTAssertTrue(body["display_name"] is NSNull)
     }
 
-    func testDeleteAccountCallsRPCAndClearsSession() async throws {
-        let transport = FakeCommunityTransport([.response(status: 204, body: "")])
+    func testDeleteAccountRevokesAppleGrantThenCallsRPCAndClearsSession() async throws {
+        let transport = FakeCommunityTransport([
+            .response(status: 200, body: #"{"revoked":true}"#),
+            .response(status: 204, body: ""),
+        ])
         let store = InMemoryCommunitySessionStore(testSession())
         try await client(transport, store: store).deleteAccount()
 
-        let request = try XCTUnwrap(transport.requests.first)
+        XCTAssertEqual(transport.requests.count, 2)
+        let revoke = transport.requests[0]
+        XCTAssertEqual(revoke.httpMethod, "POST")
+        XCTAssertEqual(revoke.url?.path, "/functions/v1/apple-grant")
+        XCTAssertEqual(revoke.value(forHTTPHeaderField: "Authorization"), "Bearer test-access-token")
+        XCTAssertEqual(try bodyJSON(revoke)["action"] as? String, "revoke")
+        let request = transport.requests[1]
         XCTAssertEqual(request.httpMethod, "POST")
         XCTAssertEqual(request.url?.path, "/rest/v1/rpc/delete_my_account")
         XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer test-access-token")
         XCTAssertNil(try store.load())
     }
 
+    func testFailedAppleRevokeKeepsAccountAndSession() async throws {
+        let transport = FakeCommunityTransport([.response(status: 502, body: "")])
+        let stored = testSession()
+        let store = InMemoryCommunitySessionStore(stored)
+
+        await assertCommunityError(.server(502)) { try await client(transport, store: store).deleteAccount() }
+        XCTAssertEqual(transport.requests.map { $0.url?.path }, ["/functions/v1/apple-grant"],
+                       "the account must not be deleted while the Apple grant is still connected")
+        XCTAssertEqual(try store.load(), stored)
+    }
+
     func testFailedDeleteKeepsSession() async throws {
-        let transport = FakeCommunityTransport([.response(status: 500, body: "")])
+        let transport = FakeCommunityTransport([
+            .response(status: 200, body: #"{"revoked":false}"#),
+            .response(status: 500, body: ""),
+        ])
         let stored = testSession()
         let store = InMemoryCommunitySessionStore(stored)
 

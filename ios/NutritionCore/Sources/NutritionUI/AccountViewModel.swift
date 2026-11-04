@@ -132,11 +132,11 @@ public final class AccountViewModel: ObservableObject {
         phase == .signedIn && profileReady && shareLabels && currentAccountAcknowledged && !productDeliveryPausedAfterDeletion
     }
 
-    public func signInWithApple(idToken: String, nonce: String) async {
+    public func signInWithApple(idToken: String, nonce: String, authorizationCode: String? = nil) async {
         guard !signOutInProgress else { return }
         let identity = accountIdentity
         guard let session = await run(Self.signInFailedMessage, {
-            try await self.service.signInWithApple(idToken: idToken, nonce: nonce)
+            try await self.service.signInWithApple(idToken: idToken, nonce: nonce, authorizationCode: authorizationCode)
         }), accountIdentity == identity else { return }
         completeSignIn(session)
         await refreshProfile()

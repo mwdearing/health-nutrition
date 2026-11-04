@@ -13,7 +13,7 @@ Requesting an email sign-in code may first show an hCaptcha human check. Its emb
 
 ## What the account sends
 
-Signing in sends the account email address and identifier to the project server. The optional display name is saved to the account profile. These account details are separate from the local journal.
+Signing in sends the account email address and identifier to the project server. With Sign in with Apple, the one-time authorization code Apple gives the app is also sent, and the project server exchanges it for an Apple refresh token and keeps that token only so it can revoke the Sign in with Apple connection when you delete the account. The token is never stored on this device. The optional display name is saved to the account profile. These account details are separate from the local journal.
 
 ## Barcode lookup
 
@@ -38,5 +38,5 @@ Entries, product snapshots, goals, recipes, favorites, reminders and export file
 ## Sign out, delete and erase
 
 - **Sign out** asks the server to end the session and clears the session stored on this device. Local journal data stays on the phone.
-- **Delete account** removes the server account, its profile and its submissions. An independently approved owner-reviewed catalog snapshot may remain without contributor identity. Local journal data and other device settings are kept.
+- **Delete account** first revokes the Sign in with Apple connection (if the account used it), then removes the server account, its profile and its submissions. If Apple cannot be reached, nothing is deleted and you can try again. An independently approved owner-reviewed catalog snapshot may remain without contributor identity. Local journal data and other device settings are kept.
 - **Erase all data** removes local journal rows, favorites, recipes, goals, the weight plan, display preferences, reminders, the session in this device's Keychain and export files the app can still reach. It does not call server sign-out, delete the account or retract shared submissions. Copies already shared outside the app remain with those destinations. Row deletion is not a promise of forensic erasure.
