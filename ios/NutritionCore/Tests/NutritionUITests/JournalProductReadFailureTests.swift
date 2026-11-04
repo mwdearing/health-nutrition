@@ -62,6 +62,7 @@ final class ProductReadFailingStore: JournalStore, @unchecked Sendable {
     func close() { base.close() }
 }
 
+@MainActor
 final class JournalProductReadFailureTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_750_000_000)
 
