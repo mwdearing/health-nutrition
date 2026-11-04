@@ -47,9 +47,9 @@ public final class MedicationLogViewModel: ObservableObject {
     private let eraser: JournalErasing?
     /// The identifier of the dose the last successful log saved, so Undo can remove it.
     private var lastLoggedDoseID: UUID?
-    /// Test hook: replaces the day read from the device calendar. A closure that returns nil stands for a day that
-    /// cannot be read. Nil, the default, leaves the device calendar in use.
-    var dayOverride: (() -> CalendarDay?)?
+    /// Replaces the day read from the device calendar, so a test can stand for a day that cannot be read. Nil in the
+    /// app, which reads the device calendar.
+    private let dayOverride: (() -> CalendarDay?)?
 
     /// The active medications, in the store's order.
     @Published public private(set) var rows: [MedicationRow] = []
@@ -68,15 +68,24 @@ public final class MedicationLogViewModel: ObservableObject {
     /// A view model over the medication store. `now` and `timeZone` are read on each load and save, so a test
     /// can fix the day and the device's zone. `eraser` is the store's erase, offered as "Clear the medication log"
     /// when a read fails; nil means no clear is offered.
-    public init(
+    public convenience init(
         store: MedicationStore, preferences: DisplayPreferences, now: @escaping () -> Date = { Date() },
         timeZone: @escaping () -> TimeZone = { .current }, eraser: JournalErasing? = nil
+    ) {
+        self.init(store: store, preferences: preferences, now: now, timeZone: timeZone, eraser: eraser, day: nil)
+    }
+
+    /// The same view model, with `day` in place of the device calendar's day when it is set.
+    init(
+        store: MedicationStore, preferences: DisplayPreferences, now: @escaping () -> Date,
+        timeZone: @escaping () -> TimeZone, eraser: JournalErasing?, day: (() -> CalendarDay?)?
     ) {
         self.store = store
         self.preferences = preferences
         self.now = now
         self.timeZone = timeZone
         self.eraser = eraser
+        dayOverride = day
     }
 
     /// Whether the Medication log is shown. Reads and writes the preference when the preferences keep it;

@@ -5,19 +5,22 @@ import XCTest
 @testable import NutritionUI
 
 /// A confirmed clear on a log whose reads failed and then succeed, but whose day cannot be read, says nothing
-/// and erases nothing. The log did read, so the "can be read again" notice would be wrong; the day is not a
-/// store read, so the clear is not offered either.
+/// and erases nothing. Without a day the log is still not shown, so the "can be read again" notice would be
+/// wrong, and a day that cannot be read is not a store read, so the clear is not offered either.
 @MainActor
 final class MedicationLogClearTodayTests: XCTestCase {
     func testAClearWhoseDayCannotBeReadSaysNothingAndErasesNothing() throws {
         let store = TodayMedicationStore(
             InMemoryMedicationStore(medications: [Medication(name: "Example vial", unit: .mL)]))
         store.failsReads = true
-        let model = MedicationLogViewModel(store: store, preferences: InMemoryDisplayPreferences(), eraser: store)
+        var dayCanBeRead = true
+        let model = MedicationLogViewModel(
+            store: store, preferences: InMemoryDisplayPreferences(), now: { Date() }, timeZone: { .current },
+            eraser: store, day: { dayCanBeRead ? CalendarDay(year: 2026, month: 4, day: 15) : nil })
         model.load()
         XCTAssertTrue(model.canClear)
         store.failsReads = false
-        model.dayOverride = { nil }
+        dayCanBeRead = false
 
         model.clearLog()
 
