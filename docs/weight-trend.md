@@ -104,8 +104,9 @@ log reads it. Archived medications count. A dose's site is never read, shown or 
 When the Medication log is off, the chart shows no markers and the trend stays as it is. When the log cannot
 be read, the chart and the trend still show, with no markers.
 
-The markers state dates and doses and nothing else. No part of the chart relates a dose to a weight, and the
-chart carries no status, label or verdict.
+The markers state dates and doses and nothing else. A marker sits on the chart's date axis, so it lines up with
+that day's weight point; the two share a calendar and nothing more. The app computes no link between a dose and a
+weight, states none and draws none, and the chart carries no status, label or verdict.
 
 ## Units and wording
 
