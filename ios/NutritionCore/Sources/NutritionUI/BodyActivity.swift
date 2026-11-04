@@ -407,6 +407,10 @@ public struct BodyActivityCard: View {
                 Task { await self.model.connect(now: self.now()) }
             }
             .disabled(model.isBusy)
+            // Connected in Settings: other apps' intake still counts, or says it could not be read.
+            if let outside = model.outsideText {
+                Text(outside).font(.footnote).foregroundStyle(TokenColors.textSecondary)
+            }
         } else if model.readings.isEmpty {
             Text(BodyActivityViewModel.emptyDetail)
                 .font(.footnote).foregroundStyle(TokenColors.textSecondary)

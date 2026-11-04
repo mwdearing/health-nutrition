@@ -73,8 +73,10 @@ final class BodyActivityTests: XCTestCase {
 
         await model.load(now: now)
 
-        XCTAssertEqual(model.readings.outsideIntake, .read(values: [:], readKeys: []))
+        XCTAssertEqual(model.readings.outsideIntake, .read(values: [:], readKeys: []), "no key is a known zero")
         XCTAssertTrue(model.readings.outsideReadFailed)
+        XCTAssertTrue(model.showsConnect)
+        XCTAssertEqual(model.outsideText, "From other apps: could not be read", "the card says so rather than staying silent")
     }
 
     func testNutrientAccessWithNoOutsideReadStaysNotConnected() async {
