@@ -62,6 +62,7 @@ public struct MedicationTodayTileContent: Equatable {
 struct MedicationsTodayTile: View {
     /// The Medication log view model that supplies the rows and the switch.
     @ObservedObject var model: MedicationLogViewModel
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         if let content = MedicationTodayTileContent.make(from: model) {
@@ -95,6 +96,11 @@ struct MedicationsTodayTile: View {
             .accessibilityLabel(content.accessibilityText)
             .accessibilityHint(MedicationTodayTileContent.accessibilityHint)
             .onAppear { model.load() }
+            // The standing depends on the day, so a return to the app reads the log again: Today can stay on
+            // screen in the background past midnight.
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { model.load() }
+            }
         } else {
             EmptyView()
         }

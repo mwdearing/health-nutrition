@@ -141,6 +141,8 @@ switch is off, and when the host passes no Medication log. It has one line per a
 standing, else the days since the last dose, else the last-dose line. It shows at most three lines, then "N more"
 (for example "2 more"). With no active medication it reads "Add a medication", and when the log cannot be read it reads
 "Could not read the medication log." A tap opens the Medication log. The injection site and the note are never shown.
+The tile reads the log again whenever the app returns to the foreground, so a day that changed in the background
+shows its own standing.
 Code: `MedicationsTodayTile`.
 
 ## Daily goals
