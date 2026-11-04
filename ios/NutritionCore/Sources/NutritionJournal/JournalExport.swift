@@ -413,6 +413,122 @@ public struct JournalExportGoal: Sendable, Hashable, Codable {
     }
 }
 
+/// One medication in the log, from version 9: its identifier, its name, the unit every dose is counted in, its
+/// schedule in days and whether it is archived. An archived medication is exported too, so nothing is left out.
+public struct JournalExportMedication: Sendable, Hashable, Codable {
+    /// The medication's identifier, a UUID string.
+    public var id: String
+    /// The name the person gave the medication.
+    public var name: String
+    /// The unit symbol every dose is counted in: `mg`, `mcg`, `mL` or `units`.
+    public var unit: String
+    /// The days between doses, 1 to 28, or nil when the medication has no schedule. Written as null, never left out.
+    public var scheduleDays: Int?
+    /// True when the medication is archived.
+    public var isArchived: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case unit
+        case scheduleDays = "schedule_days"
+        case isArchived = "is_archived"
+    }
+
+    public init(id: String, name: String, unit: String, scheduleDays: Int?, isArchived: Bool) {
+        self.id = id
+        self.name = name
+        self.unit = unit
+        self.scheduleDays = scheduleDays
+        self.isArchived = isArchived
+    }
+
+    /// Copies a stored medication, with its identifier as a UUID string and its unit's raw value.
+    public init(medication: Medication) {
+        self.init(
+            id: medication.id.uuidString, name: medication.name, unit: medication.unit.rawValue,
+            scheduleDays: medication.scheduleDays, isArchived: medication.isArchived)
+    }
+
+    /// Writes `schedule_days` as an explicit `null` when there is no schedule.
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(unit, forKey: .unit)
+        try encodeNullable(scheduleDays, forKey: .scheduleDays, in: &container)
+        try container.encode(isArchived, forKey: .isArchived)
+    }
+}
+
+/// One medication dose in the log, from version 9: the dose's identifier, the medication it belongs to, when it was
+/// taken and in which time zone, its exact amount and unit, and the site and note the person typed. The site is the
+/// person's own data, so the export keeps it even though the app does not show it.
+public struct JournalExportMedicationDose: Sendable, Hashable, Codable {
+    /// The dose's identifier, a UUID string.
+    public var id: String
+    /// The identifier of the medication this dose belongs to, a UUID string.
+    public var medicationID: String
+    /// When the dose was taken, written in UTC with microseconds like every exported date.
+    public var takenAt: Date
+    /// The time zone identifier the dose was logged in, for example `Europe/Berlin`.
+    public var timeZone: String
+    /// The amount as exact decimal text, never grouped and never a binary float.
+    public var amount: String
+    /// The unit symbol the amount is counted in: the medication's unit.
+    public var unit: String
+    /// Where the dose was given, as the person typed it, or nil. Written as null, never left out.
+    public var site: String?
+    /// The person's note on the dose, or nil. Written as null, never left out.
+    public var note: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case medicationID = "medication_id"
+        case takenAt = "taken_at"
+        case timeZone = "time_zone"
+        case amount
+        case unit
+        case site
+        case note
+    }
+
+    public init(
+        id: String, medicationID: String, takenAt: Date, timeZone: String, amount: String, unit: String,
+        site: String?, note: String?
+    ) {
+        self.id = id
+        self.medicationID = medicationID
+        self.takenAt = takenAt
+        self.timeZone = timeZone
+        self.amount = amount
+        self.unit = unit
+        self.site = site
+        self.note = note
+    }
+
+    /// Copies a stored dose, with its amount as exact decimal text and its unit's raw value.
+    public init(dose: MedicationDose) {
+        self.init(
+            id: dose.id.uuidString, medicationID: dose.medicationID.uuidString, takenAt: dose.takenAt,
+            timeZone: dose.timeZoneIdentifier, amount: DecimalText.encode(dose.amount), unit: dose.unit.rawValue,
+            site: dose.site, note: dose.note)
+    }
+
+    /// Writes `site` and `note` as explicit `null` when they are not set.
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(medicationID, forKey: .medicationID)
+        try container.encode(takenAt, forKey: .takenAt)
+        try container.encode(timeZone, forKey: .timeZone)
+        try container.encode(amount, forKey: .amount)
+        try container.encode(unit, forKey: .unit)
+        try encodeNullable(site, forKey: .site, in: &container)
+        try encodeNullable(note, forKey: .note, in: &container)
+    }
+}
+
 /// The unit one component of an entry or a favorite was logged in, from version 6: `intake_id` (the id of the
 /// entry, or of the favorite made from it), `component_id` and the unit's `unit` symbol (`tsp`, `tbsp`, `cup` or
 /// `fl oz`). The component's own amount is still stored in milliliters.
@@ -475,25 +591,26 @@ public struct JournalExportSavedMeal: Sendable, Hashable, Codable {
     }
 }
 
-/// The exported document, schema version 6. See `contracts/journal-export/v6.schema.json`.
+/// The exported document, schema version 9. See `contracts/journal-export/v9.schema.json`.
 ///
 /// A new field needs a new schema version: an existing version never gains or changes a field, so a reader
-/// written against version 1 keeps working. This build writes version 6 and reads versions 1 to 6, so a backup
-/// taken before the product kind, a revision's own time or saved meals existed still restores. Version 3 is
+/// written against version 1 keeps working. This build writes version 9 and reads versions 1 to 9, so a backup
+/// taken before the product kind, a revision's own time, saved meals, goals or the medication log existed still
+/// restores. Version 3 is
 /// also what tells an older build to stop: a build that reads only versions 1 and 2 refuses the file by its
 /// version, instead of refusing a newer unit symbol (`gummy`, `piece`) partway through as a corrupt amount.
 /// Version 4 adds `saved_meals`, so a build that reads at most version 3 refuses a backup holding them rather
 /// than restore it without them.
 public struct JournalExport: Sendable, Hashable, Codable {
     /// The only schema version this build writes. Bump it when the shape changes.
-    public static let currentSchemaVersion = 8
+    public static let currentSchemaVersion = 9
 
     /// Every version this build reads, in the order they were written.
     ///
     /// Version 1 is here because its documents are still backups people hold: it has no product kind and
     /// nothing else this build cannot read, so a reader that refused it would refuse a person's own
     /// backup. Anything outside this set is refused by value rather than by shape.
-    public static let readableSchemaVersions: Set<Int> = [1, 2, 3, 4, 5, 6, 7, currentSchemaVersion]
+    public static let readableSchemaVersions: Set<Int> = [1, 2, 3, 4, 5, 6, 7, 8, currentSchemaVersion]
 
     public var schemaVersion: Int
     public var exportedAt: Date
@@ -516,6 +633,10 @@ public struct JournalExport: Sendable, Hashable, Codable {
     public var loggedUnits: [JournalExportLoggedUnit]
     /// The daily goals, from version 8, sorted by nutrient. Empty for a document of an earlier version.
     public var goals: [JournalExportGoal]
+    /// Every medication, archived ones included, from version 9, sorted by id. Empty for an earlier version.
+    public var medications: [JournalExportMedication]
+    /// Every medication dose, from version 9, sorted by id. Empty for a document of an earlier version.
+    public var medicationDoses: [JournalExportMedicationDose]
 
     enum CodingKeys: String, CodingKey {
         case schemaVersion = "schema_version"
@@ -529,6 +650,8 @@ public struct JournalExport: Sendable, Hashable, Codable {
         case keptOutOfLibrary = "kept_out_of_library"
         case loggedUnits = "logged_units"
         case goals
+        case medications
+        case medicationDoses = "medication_doses"
     }
 
     public init(
@@ -536,9 +659,12 @@ public struct JournalExport: Sendable, Hashable, Codable {
         intakes: [JournalExportIntake], tombstones: [JournalExportTombstone], favorites: [JournalExportFavorite],
         products: [JournalExportProvenance] = [], savedMeals: [JournalExportSavedMeal] = [],
         keptOutOfLibrary: [String] = [], loggedUnits: [JournalExportLoggedUnit] = [],
-        goals: [JournalExportGoal]
+        goals: [JournalExportGoal], medications: [JournalExportMedication] = [],
+        medicationDoses: [JournalExportMedicationDose] = []
     ) {
         self.goals = goals
+        self.medications = medications
+        self.medicationDoses = medicationDoses
         self.schemaVersion = schemaVersion
         self.exportedAt = exportedAt
         self.appVersion = appVersion
@@ -570,6 +696,10 @@ public struct JournalExport: Sendable, Hashable, Codable {
             ? try container.decode([JournalExportLoggedUnit].self, forKey: .loggedUnits) : []
         // Absent means no goals, so a backup written before version 8, or one that simply has none, still reads.
         goals = try container.decodeIfPresent([JournalExportGoal].self, forKey: .goals) ?? []
+        // Absent means no medication log, so a backup written before version 9, or one with none, still reads.
+        medications = try container.decodeIfPresent([JournalExportMedication].self, forKey: .medications) ?? []
+        medicationDoses = try container.decodeIfPresent(
+            [JournalExportMedicationDose].self, forKey: .medicationDoses) ?? []
     }
 
     /// `saved_meals` is written only for version 4 and later, so a document of an earlier version keeps the
@@ -587,6 +717,11 @@ public struct JournalExport: Sendable, Hashable, Codable {
         if schemaVersion >= 5 { try container.encode(keptOutOfLibrary, forKey: .keptOutOfLibrary) }
         if schemaVersion >= 6 { try container.encode(loggedUnits, forKey: .loggedUnits) }
         if schemaVersion >= 8 { try container.encode(goals, forKey: .goals) }
+        // The medication log is a version 9 field, so an earlier document keeps the shape its schema allows.
+        if schemaVersion >= 9 {
+            try container.encode(medications, forKey: .medications)
+            try container.encode(medicationDoses, forKey: .medicationDoses)
+        }
     }
 }
 
@@ -798,11 +933,21 @@ public enum JournalExporter {
     /// mid-export cannot leave an entry in neither the intakes nor the tombstones.
     public static func makeExport(
         store: JournalStore, favorites: FavoritesStore? = nil, savedMeals: JournalSavedMealsStore? = nil,
-        goals: GoalStore, appVersion: String, exportedAt: Date
+        goals: GoalStore, medications: MedicationStore? = nil, appVersion: String, exportedAt: Date
     ) throws -> JournalExport {
         let goalList = try goals.goals().map {
             JournalExportGoal(nutrient: $0.nutrient, target: DecimalText.encode($0.target), unit: $0.unit.symbol)
         }.sorted { $0.nutrient < $1.nutrient }
+        // The whole medication log, archived medications and every dose. A store that cannot be read throws, so the
+        // export fails rather than writing a file that silently lacks the log.
+        var medicationList: [JournalExportMedication] = []
+        var medicationDoseList: [JournalExportMedicationDose] = []
+        if let medications {
+            medicationList = try medications.medications().map { JournalExportMedication(medication: $0) }
+                .sorted { $0.id < $1.id }
+            medicationDoseList = try medications.allDoses().map { JournalExportMedicationDose(dose: $0) }
+                .sorted { $0.id < $1.id }
+        }
         let snapshot: JournalSnapshot?
         if let source = store as? JournalSnapshotSource {
             snapshot = try source.readJournalSnapshot()
@@ -906,7 +1051,8 @@ public enum JournalExporter {
             favorites: favoriteList.sorted { $0.id < $1.id },
             products: productsByID.values.sorted { $0.snapshotID < $1.snapshotID },
             savedMeals: savedMealList,
-            keptOutOfLibrary: keptOutOfLibraryIDs.sorted(), loggedUnits: loggedUnitList, goals: goalList)
+            keptOutOfLibrary: keptOutOfLibraryIDs.sorted(), loggedUnits: loggedUnitList, goals: goalList,
+            medications: medicationList, medicationDoses: medicationDoseList)
         try validateExportRequiredFields(document)
         return document
     }
