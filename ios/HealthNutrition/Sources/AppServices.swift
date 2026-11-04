@@ -247,7 +247,8 @@ final class AppServices {
         let healthReader = HealthKitReader()
         bodyActivity = BodyActivityViewModel(
             reader: healthReader, unitSystem: { [displayPreferences] in displayPreferences.unitSystem },
-            weightPlan: { [goalStore] in try? goalStore.weightPlan() })
+            weightPlan: { [goalStore] in try? goalStore.weightPlan() },
+            medications: medicationStore, medicationPreferences: displayPreferences)
         // Each Diary day header adds what other apps logged to Apple Health that day, read as the day comes on screen.
         journal.healthDayReader = { start, end in await healthReader.outsideIntakeDay(from: start, to: end) }
         goals.latestHeightCentimeters = { [bodyActivity] in bodyActivity.readings.latestHeightCm }

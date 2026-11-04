@@ -1,7 +1,22 @@
 import Combine
 import Foundation
 import NutritionDomain
+import NutritionJournal
 import SwiftUI
+
+/// One day on the weight chart: the average of that day's weigh-ins in the display unit.
+public struct WeightChartPoint: Equatable, Sendable {
+    /// The local day of the weigh-ins.
+    public let day: CalendarDay
+    /// The day's average weight, in the display unit (kilograms or pounds).
+    public let weight: Decimal
+
+    /// Creates a chart point for one day.
+    public init(day: CalendarDay, weight: Decimal) {
+        self.day = day
+        self.weight = weight
+    }
+}
 
 /// What Apple Health reports for today's activity and recent weight. Every value is optional: Health
 /// never says whether read access was granted, so "no data" and "not allowed" look the same.
@@ -70,12 +85,18 @@ public final class BodyActivityViewModel: ObservableObject {
     @Published public private(set) var hasAsked: Bool
     /// The planned pace beside the trend's pace and goal days, when the saved plan aims at a goal.
     @Published public private(set) var paceComparison: PaceComparison?
+    /// One point per day with a weigh-in inside the trend's window, ascending by day.
+    @Published public private(set) var weightChartPoints: [WeightChartPoint] = []
+    /// One marker per day inside the trend's window with a logged dose, while the Medication log is on.
+    @Published public private(set) var doseMarkers: [DoseDayMarker] = []
     private var trend: WeightTrendResult?
     private var plan: WeightPlan?
     private let reader: any BodyActivityReading
     private let unitSystem: () -> UnitSystem
     private let weightPlan: () -> WeightPlan?
     private let calendar: Calendar
+    private let medications: MedicationStore?
+    private let medicationPreferences: MedicationLogPreferences?
     /// Called with every fresh read, so Today can count active energy toward the calorie goal.
     public var onRead: ((BodyActivityReadings) -> Void)?
 
@@ -84,12 +105,15 @@ public final class BodyActivityViewModel: ObservableObject {
 
     public init(
         reader: any BodyActivityReading, unitSystem: @escaping () -> UnitSystem,
-        weightPlan: @escaping () -> WeightPlan? = { nil }, calendar: Calendar = .current
+        weightPlan: @escaping () -> WeightPlan? = { nil }, calendar: Calendar = .current,
+        medications: MedicationStore? = nil, medicationPreferences: MedicationLogPreferences? = nil
     ) {
         self.reader = reader
         self.unitSystem = unitSystem
         self.weightPlan = weightPlan
         self.calendar = calendar
+        self.medications = medications
+        self.medicationPreferences = medicationPreferences
         self.hasAsked = reader.hasAskedForReadAccess
     }
 
@@ -119,6 +143,8 @@ public final class BodyActivityViewModel: ObservableObject {
         else {
             trend = nil
             paceComparison = nil
+            weightChartPoints = []
+            doseMarkers = []
             return
         }
         let aimsAtGoal = plan?.aim == .lose || plan?.aim == .gain
@@ -126,6 +152,9 @@ public final class BodyActivityViewModel: ObservableObject {
             samples: readings.weightSamples, through: through,
             goalKilograms: aimsAtGoal ? plan?.goalKilograms : nil)
         trend = result
+        // The points come first: the markers show only while the chart does.
+        weightChartPoints = chartPoints(in: result)
+        doseMarkers = dayMarkers(in: result)
         guard aimsAtGoal, let plan, let goal = plan.goalKilograms, let pace = plan.weeklyPaceKilograms,
               let current = result.trendKilograms ?? recentLatestWeight(window: result, calendar: gregorian)
         else {
@@ -135,6 +164,45 @@ public final class BodyActivityViewModel: ObservableObject {
         paceComparison = PlanProjection.compare(
             aim: plan.aim, weeklyPaceKilograms: pace, currentKilograms: current, goalKilograms: goal,
             trend: result)
+    }
+
+    /// True when the chart has at least two days to draw.
+    public var showsWeightChart: Bool { weightChartPoints.count >= 2 }
+
+    /// The spoken title of the weight chart.
+    public static let weightChartLabel = "Weight, last 28 days"
+
+    /// The spoken label of one dose-day marker: the day, then each dose's medication, amount and unit.
+    /// It never names a site.
+    public static func doseMarkerLabel(_ marker: DoseDayMarker) -> String {
+        let entries = marker.entries.map { entry in
+            entry.name + " " + MedicationLogViewModel.doseAmountText(entry.amount) + " " + entry.unit.rawValue
+        }
+        return "Medication log, " + dayText(marker.day) + ": " + entries.joined(separator: "; ")
+    }
+
+    /// The daily average weight of each day with a weigh-in inside the window, ascending by day.
+    private func chartPoints(in result: WeightTrendResult) -> [WeightChartPoint] {
+        var byDay: [CalendarDay: [Decimal]] = [:]
+        for sample in readings.weightSamples where result.from <= sample.day && sample.day <= result.through {
+            byDay[sample.day, default: []].append(sample.kilograms)
+        }
+        return byDay.keys.sorted().map { day in
+            let values = byDay[day] ?? []
+            let average = values.reduce(Decimal(0), +) / Decimal(values.count)
+            return WeightChartPoint(day: day, weight: converted(average))
+        }
+    }
+
+    /// The dose-day markers inside the window. Empty unless the chart is shown, the Medication log is on and a
+    /// store is present; a failed read of the store leaves no markers and the chart as it is.
+    private func dayMarkers(in result: WeightTrendResult) -> [DoseDayMarker] {
+        guard showsWeightChart, medicationPreferences?.isMedicationLogOn == true,
+              let medications else { return [] }
+        guard let medicationList = try? medications.medications(), let doses = try? medications.allDoses()
+        else { return [] }
+        return DoseDayMarkers.markers(
+            medications: medicationList, doses: doses, from: result.from, through: result.through)
     }
 
     /// The latest weigh-in, only when its Gregorian day falls inside the trend's window.
@@ -330,6 +398,9 @@ public struct BodyActivityCard: View {
             }
             if let trend = model.weightTrendText {
                 Text(trend).font(.footnote).foregroundStyle(TokenColors.textSecondary)
+            }
+            if model.showsWeightChart {
+                WeightTrendChart(points: model.weightChartPoints, markers: model.doseMarkers)
             }
             if let plan = model.planPaceText {
                 Text(plan).font(.footnote).foregroundStyle(TokenColors.textSecondary)
