@@ -12,6 +12,8 @@ public struct MedicationLogView: View {
     @State private var isConfirmingClear = false
     /// The row whose Log a dose sheet is open; nil while no sheet is open.
     @State private var loggingRow: MedicationRow?
+    /// The row whose dose history is pushed; nil while none is open.
+    @State private var historyRow: MedicationRow?
 
     /// - Parameter model: the medication log this screen reads and changes.
     public init(model: MedicationLogViewModel) {
@@ -38,6 +40,9 @@ public struct MedicationLogView: View {
                         .swipeActions(edge: .trailing) {
                             Button("Archive") { self.model.setArchived(row.id, archived: true) }
                         }
+                        .swipeActions(edge: .leading) {
+                            Button("History") { self.historyRow = row }
+                        }
                 }
             }
             if !model.archivedRows.isEmpty {
@@ -46,6 +51,9 @@ public struct MedicationLogView: View {
                         MedicationRowText(row: row)
                             .swipeActions(edge: .trailing) {
                                 Button("Unarchive") { self.model.setArchived(row.id, archived: false) }
+                            }
+                            .swipeActions(edge: .leading) {
+                                Button("History") { self.historyRow = row }
                             }
                     }
                 }
@@ -83,6 +91,11 @@ public struct MedicationLogView: View {
         }
         .sheet(item: $loggingRow) { row in
             LogDoseSheet(model: model, row: row)
+        }
+        .navigationDestination(item: $historyRow) { row in
+            MedicationHistoryView(
+                model: model.historyModel(for: row.id),
+                onClose: { changed in if changed { self.model.historyChanged() } })
         }
     }
 }
