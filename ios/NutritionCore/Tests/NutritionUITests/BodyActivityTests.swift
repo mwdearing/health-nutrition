@@ -12,6 +12,17 @@ final class BodyActivityTests: XCTestCase {
         var readings = BodyActivityReadings.empty
         private(set) var requests = 0
         private(set) var reads = 0
+        private(set) var outsideOnlyReads = 0
+
+        func readOutsideIntake(now: Date) async -> BodyActivityReadings {
+            outsideOnlyReads += 1
+            var outside = BodyActivityReadings.empty
+            outside.outsideRead = readings.outsideRead
+            outside.outsideNutrients = readings.outsideNutrients
+            outside.outsideReadKeys = readings.outsideReadKeys
+            outside.outsideReadFailed = readings.outsideReadFailed
+            return outside
+        }
 
         func requestReadAccess() async {
             requests += 1
@@ -47,7 +58,8 @@ final class BodyActivityTests: XCTestCase {
 
         await model.load(now: now)
 
-        XCTAssertEqual(reader.reads, 1)
+        XCTAssertEqual(reader.outsideOnlyReads, 1)
+        XCTAssertEqual(reader.reads, 0, "the card's own types are not read before the card is asked")
         XCTAssertEqual(model.readings.outsideIntake, .read(values: ["energy": 620], readKeys: ["energy"]))
         XCTAssertTrue(model.showsConnect, "the card still asks for steps, energy, weight and height")
         XCTAssertNil(model.readings.steps, "only the outside intake is kept")

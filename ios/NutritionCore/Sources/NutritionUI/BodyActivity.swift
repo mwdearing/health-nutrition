@@ -84,12 +84,12 @@ public protocol BodyActivityReading: AnyObject {
 extension BodyActivityReading {
     public var hasAskedForNutrientReadAccess: Bool { hasAskedForReadAccess }
     public func readOutsideIntake(now: Date) async -> BodyActivityReadings {
-        let read = await read(now: now)
+        let full = await read(now: now)
         var outside = BodyActivityReadings.empty
-        outside.outsideRead = read.outsideRead
-        outside.outsideNutrients = read.outsideNutrients
-        outside.outsideReadKeys = read.outsideReadKeys
-        outside.outsideReadFailed = read.outsideReadFailed
+        outside.outsideRead = full.outsideRead
+        outside.outsideNutrients = full.outsideNutrients
+        outside.outsideReadKeys = full.outsideReadKeys
+        outside.outsideReadFailed = full.outsideReadFailed
         return outside
     }
 }
