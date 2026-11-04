@@ -31,7 +31,7 @@ final class MedicationLogClearUndoTests: XCTestCase {
 
         model.clearLog()
 
-        XCTAssertEqual(model.errorMessage, "Could not clear the medication log.")
+        XCTAssertEqual(model.errorMessage, "The clear did not finish. The log shows what this device holds now.")
         XCTAssertNil(model.undoText, "Undo never names a dose the erase may have removed")
         model.undoLastDose()
         XCTAssertEqual(store.removeDoseCount, 0)
