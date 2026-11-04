@@ -116,3 +116,31 @@ Deno.test("revoke with a stored grant but no key refuses instead of skipping", a
   assertEquals((await handle(post({ action: "revoke" }), deps)).status, 503);
   assertEquals(store.rows.get("user-1"), "rt-1");
 });
+
+Deno.test("revoke treats Apple's invalid_grant as already revoked", async () => {
+  const { deps, store } = setup({ apple: () => new Response(JSON.stringify({ error: "invalid_grant" }), { status: 400 }) });
+  store.rows.set("user-1", "rt-1");
+  const reply = await handle(post({ action: "revoke" }), deps);
+  assertEquals(reply.status, 200);
+  assertEquals(store.rows.size, 0);
+});
+
+Deno.test("a failure forgetting the token after a successful revoke does not block deletion", async () => {
+  const { deps, store } = setup();
+  store.rows.set("user-1", "rt-1");
+  deps.store = { ...store, get: (u) => store.get(u), put: (u, t) => store.put(u, t), remove: () => Promise.reject(new Error("x")) };
+  assertEquals((await handle(post({ action: "revoke" }), deps)).status, 200);
+});
+
+Deno.test("store fails cleanly when Apple rejects the code or returns no refresh token", async () => {
+  for (const apple of [() => new Response("{}", { status: 400 }), () => new Response("{}")]) {
+    const { deps, store } = setup({ apple });
+    assertEquals((await handle(post({ action: "store", authorization_code: "c" }), deps)).status, 502);
+    assertEquals(store.rows.size, 0);
+  }
+});
+
+Deno.test("a null JSON body is a bad request, not a crash", async () => {
+  const { deps } = setup();
+  assertEquals((await handle(post(null), deps)).status, 400);
+});

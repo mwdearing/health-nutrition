@@ -102,6 +102,14 @@ final class CommunityClientTests: XCTestCase {
         XCTAssertEqual(try store.load(), stored)
     }
 
+    func testANetworkFailureDuringRevokeBlocksDeletion() async throws {
+        let transport = FakeCommunityTransport([.failure(URLError(.notConnectedToInternet))])
+        let store = InMemoryCommunitySessionStore(testSession())
+
+        await assertCommunityError(.network) { try await client(transport, store: store).deleteAccount() }
+        XCTAssertEqual(transport.requests.map { $0.url?.path }, ["/functions/v1/apple-grant"])
+    }
+
     func testFailedDeleteKeepsSession() async throws {
         let transport = FakeCommunityTransport([
             .response(status: 200, body: #"{"revoked":false}"#),

@@ -94,7 +94,10 @@ public actor CommunityAuth {
     /// POST /functions/v1/apple-grant {action: store}. The Apple key never leaves the server.
     private func handOffAppleAuthorizationCode(_ code: String, bearer: String) async {
         guard let body = try? CommunityAPI.encode(AppleGrantBody(action: "store", authorizationCode: code)) else { return }
-        _ = try? await api.send("/functions/v1/apple-grant", bearer: bearer, body: body)
+        // The code is single-use, so a transient failure gets one more try.
+        for _ in 0..<2 {
+            if (try? await api.send("/functions/v1/apple-grant", bearer: bearer, body: body)) != nil { return }
+        }
     }
 
     /// Emails a one-time code. The address also creates the account on first use.

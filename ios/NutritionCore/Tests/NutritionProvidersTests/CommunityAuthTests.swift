@@ -62,6 +62,20 @@ final class CommunityAuthTests: XCTestCase {
         XCTAssertEqual(try store.load(), session)
     }
 
+    func testAFailedHandoffIsRetriedOnce() async throws {
+        let transport = FakeCommunityTransport([
+            .response(status: 200, body: tokenBody),
+            .response(status: 502, body: ""),
+            .response(status: 200, body: #"{"stored":true}"#),
+        ])
+        let auth = try makeAuth(transport: transport)
+
+        _ = try await auth.signInWithApple(idToken: "t", nonce: "n", authorizationCode: "c")
+
+        XCTAssertEqual(transport.requests.map { $0.url?.path },
+                       ["/auth/v1/token", "/functions/v1/apple-grant", "/functions/v1/apple-grant"])
+    }
+
     func testSignInWithAppleWithoutACodeMakesNoHandoff() async throws {
         let transport = FakeCommunityTransport([.response(status: 200, body: tokenBody)])
         let auth = try makeAuth(transport: transport)

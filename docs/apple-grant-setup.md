@@ -34,6 +34,8 @@ Never run `supabase config push`. Do not commit the `.p8`.
   `public.apple_grants` (service role only, no client access).
 - Delete account: the app calls the function first. With a stored grant it calls Apple's revoke endpoint and forgets the
   token; with none (email sign-in) it returns at once. A failed revoke stops the deletion so it can be retried.
+- Accounts that signed in with Apple before this release have no stored grant; they sign in again to create one.
+- The token is stored as plain text in a service-role-only table (no client access). A second Apple sign-in replaces it; Apple keeps one grant per app and person.
 - Until the secrets are set, sign-in works and nothing is stored, so accounts created before the key is configured have no
   grant to revoke server-side. The person can still remove the app under Settings > Apple ID > Sign in with Apple.
 

@@ -75,7 +75,15 @@ async function appleForm(deps: Deps, config: AppleConfig, path: string, fields: 
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body,
+    signal: AbortSignal.timeout(10_000),
   });
+}
+
+/** Apple answers invalid_grant for a token that is already revoked or expired: nothing is left to revoke. */
+async function alreadyRevoked(reply: Response): Promise<boolean> {
+  if (reply.status !== 400) return false;
+  const body = await reply.json().catch(() => null);
+  return body?.error === "invalid_grant";
 }
 
 export async function handle(request: Request, deps: Deps): Promise<Response> {
@@ -90,6 +98,7 @@ export async function handle(request: Request, deps: Deps): Promise<Response> {
   } catch {
     return json(400, { error: "bad_request" });
   }
+  if (payload === null || typeof payload !== "object") return json(400, { error: "bad_request" });
 
   if (payload.action === "store") {
     const code = payload.authorization_code;
@@ -113,8 +122,10 @@ export async function handle(request: Request, deps: Deps): Promise<Response> {
       token,
       token_type_hint: "refresh_token",
     });
-    if (!reply.ok) return json(502, { error: "apple_revoke_failed" });
-    await deps.store.remove(userId);
+    if (!reply.ok && !(await alreadyRevoked(reply))) return json(502, { error: "apple_revoke_failed" });
+    // The grant is revoked at Apple. Forgetting the token is housekeeping (the row also goes with the user),
+    // so a failure here must not block the deletion.
+    await deps.store.remove(userId).catch(() => {});
     return json(200, { revoked: true });
   }
 
