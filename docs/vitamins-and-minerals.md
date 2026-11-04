@@ -38,7 +38,7 @@ Today, and entries dated after today are left out.
 **Compare with** offers the sixteen published rows ("Women 14 to 18" to "Men 71 and over", then "Pregnancy 14 to 18"
 to "Pregnancy 31 to 50" and "Breastfeeding 14 to 18" to "Breastfeeding 31 to 50") and **Nothing**. Until a group is
 picked the screen shows amounts alone, because the sources publish no row for someone who has not said which one is
-theirs. The choice is a display preference on this phone: `UserDefaultsDisplayPreferences` stores it under
+theirs. The choice is a display preference on this device: `UserDefaultsDisplayPreferences` stores it under
 `display.reference.group` as `<sex>.<age band>` (for example `female.years31To50`), or with the life stage after it
 for pregnancy and breastfeeding (`female.years31To50.pregnancy`); a value that does not read back as one published row
 is no group, and **Erase all data** removes it with the other display preferences.

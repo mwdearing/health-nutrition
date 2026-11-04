@@ -49,6 +49,7 @@ extension StoreFileOperations {
     /// store closed during an erase, which must leave no file behind (#1156). The steps and their order match
     /// `replaceStoreFiles`, and the first failure is returned.
     func removeStoreFiles(at url: URL) -> Error? {
+        // A failed checkpoint is recorded, and the files are removed anyway: an erase must not leave its bytes behind.
         var firstError: Error?
         do {
             try checkpoint(url)
@@ -56,13 +57,12 @@ extension StoreFileOperations {
             firstError = error
         }
         for suffix in ["-shm", "-wal", ""] {
-            if firstError != nil { break }
             let file = URL(fileURLWithPath: url.path + suffix)
             guard FileManager.default.fileExists(atPath: file.path) else { continue }
             do {
                 try remove(file)
             } catch {
-                firstError = error
+                if firstError == nil { firstError = error }
             }
         }
         return firstError
