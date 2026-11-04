@@ -793,7 +793,7 @@ public final class JournalViewModel: ObservableObject {
     ) throws -> ProductDefinition? {
         guard let id = revision?.productSnapshotID else { return nil }
         if let cached = cache[id] { return cached }
-        let found = try store.product(snapshotID: id)
+        let found = try? store.product(snapshotID: id)
         cache[id] = found
         return found
     }
