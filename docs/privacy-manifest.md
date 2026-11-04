@@ -112,7 +112,7 @@ is not declared with a reason Apple publishes for it, when a declaration is
 malformed (an unknown category, an empty reasons array, a reason that is not a
 string), when a declared reason is not one Apple publishes (a typo such as an
 extra `BOGUS`, or a reason belonging to another category), or when
-`NSPrivacyTracking` is not false. It also fails when one of the five required collected
+`NSPrivacyTracking` is not false. It also fails when one of the six required collected
 data types is missing, or is declared without linkage to the user, with
 tracking on, or without the app-functionality purpose.
 
