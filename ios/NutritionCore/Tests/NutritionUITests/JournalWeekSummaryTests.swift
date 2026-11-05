@@ -441,6 +441,23 @@ final class JournalWeekSummaryTests: XCTestCase {
         XCTAssertEqual(model.weekSummary?.goalLines, ["Protein: average 15 g a day against 60 g"])
     }
 
+    /// A day with only a water entry in the journal that Health's intake logs, whose protein query succeeded with no
+    /// samples, is a known zero for protein too.
+    func testAWaterOnlyJournalDayWithHealthIntakeAveragesAsZero() throws {
+        let journal = try makeJournalStore()
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        try logWater(journal, daysBack: 0)
+        try logProtein(journal, daysBack: 2, 30)
+
+        let model = makeModel(journal, goals: goals)
+        model.outsideIntakeByDay = [dayKey(0): .read(values: ["energy": 500], readKeys: ["energy", "protein"])]
+        model.load(now: weekNow)
+
+        XCTAssertEqual(model.weekSummary?.headline, "Logged 2 of 7 days")
+        XCTAssertEqual(model.weekSummary?.goalLines, ["Protein: average 15 g a day against 60 g"])
+    }
+
     /// The partial subtotal of a nutrient some of whose samples could not be read is not a stated intake.
     func testAPartiallyReadNutrientDoesNotMakeALoggedDay() throws {
         let journal = try makeJournalStore()
