@@ -486,7 +486,7 @@ public final class NutrientGapsViewModel: ObservableObject {
             // A day Health answered empty, which the journal did not log, says nothing: it must not add keys that
             // would count as stated days in the average. A failed or partial read still stays unknown.
             guard positive || healthFailed(outside) || logged.contains(date) else { continue }
-            byDate[date] = addingHealth(byDate[date] ?? [:], outside: outside)
+            byDate[date] = byDate[date] ?? [:]
             if positive { logged.insert(date) }
         }
         let ordered = byDate.keys.sorted().map { byDate[$0] ?? [:] }
