@@ -487,6 +487,26 @@ final class JournalWeekSummaryTests: XCTestCase {
         XCTAssertEqual(model.weekSummary?.headline, "Nothing logged this week.")
     }
 
+    /// An entry dated later than now has not happened, so it does not stand in the way of Health's intake for that day:
+    /// today counts as logged by Health alone, and the later entry's protein is not averaged in.
+    func testAnEntryLaterThanNowDoesNotHideHealthIntakeForThatDay() throws {
+        let journal = try makeJournalStore()
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        let later = weekNow.addingTimeInterval(6 * 3600)
+        try journal.create(
+            Intake(id: UUID().uuidString.lowercased(), category: "food", occurredAt: later, timeZoneIdentifier: "UTC"),
+            components: [IntakeComponent(componentID: "later", name: "Later", amount: Decimal(100), unit: .g)],
+            product: nil, now: later)
+
+        let model = makeModel(journal, goals: goals)
+        model.outsideIntakeByDay = [dayKey(0): healthProtein(40)]
+        model.load(now: weekNow)
+
+        XCTAssertEqual(model.weekSummary?.headline, "Logged 1 of 7 days")
+        XCTAssertEqual(model.weekSummary?.goalLines, ["Protein: average 40 g a day against 60 g"])
+    }
+
     /// A journal with no day at all shows its empty state, not a week card, even when Health holds intake.
     func testAnEmptyJournalHasNoWeekCardWhateverHealthHolds() throws {
         let model = makeModel(try makeJournalStore())

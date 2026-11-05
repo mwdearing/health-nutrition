@@ -907,8 +907,10 @@ public final class JournalViewModel: ObservableObject {
         let windowKeys = (0..<weekLength).compactMap { back in
             calendar.date(byAdding: .day, value: -back, to: startOfToday).map { dayKey($0, zone: zone) }
         }
+        // A day with a section but no row inside the window (an entry dated later than now) counts here too: what is
+        // dated later has not happened, so only Health's intake states that day, as for a day with no section.
         let healthOnlyKeys = windowKeys.filter { key in
-            outsideByDay[key]?.statesIntake == true && !sections.contains { $0.id == key }
+            outsideByDay[key]?.statesIntake == true && !week.contains { $0.id == key }
         }
         let logged = week.filter { hasFoodEntries($0.rows) || outsideByDay[$0.id]?.statesIntake == true }
         let days: [WeekDay] = logged.map { WeekDay(totals: $0.totals, outside: outsideByDay[$0.id] ?? .notConnected) }
