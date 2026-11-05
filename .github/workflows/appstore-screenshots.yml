@@ -11,6 +11,8 @@ on:
     paths:
       - ".github/workflows/appstore-screenshots.yml"
       - "ios/HealthNutrition/Tests/StoreScreenshotUITests/**"
+      - "ios/HealthNutrition/project.yml"
+      - ".github/scripts/install-xcodegen.sh"
   workflow_dispatch:
 
 permissions:
@@ -51,7 +53,7 @@ jobs:
         run: |
           xcrun simctl list devicetypes
           xcrun simctl list runtimes available
-          type_id=$(xcrun simctl list devicetypes --json | python3 -c '
+          type_id=$(xcrun simctl list devicetypes --json | python3 -I -c '
           import json, os, sys
           types = {t["name"]: t["identifier"] for t in json.load(sys.stdin)["devicetypes"]}
           for name in (os.environ["DEVICE"], os.environ["FALLBACK"]):
@@ -59,7 +61,7 @@ jobs:
                   print(types[name])
                   break
           ')
-          runtime=$(xcrun simctl list runtimes available --json | python3 -c '
+          runtime=$(xcrun simctl list runtimes available --json | python3 -I -c '
           import json, sys
           runtimes = [r for r in json.load(sys.stdin)["runtimes"] if r.get("isAvailable") and r["identifier"].startswith("com.apple.CoreSimulator.SimRuntime.iOS")]
           runtimes.sort(key=lambda r: [int(x) for x in r["version"].split(".")])
@@ -93,11 +95,18 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: appstore-screenshots-${{ matrix.size }}
-          path: |
-            ${{ runner.temp }}/store-screenshots/*.png
-            ${{ runner.temp }}/store-screenshots/*.txt
-          if-no-files-found: error
+          path: ${{ runner.temp }}/store-screenshots/*.png
+          if-no-files-found: warn
           retention-days: 30
+      # Debug shots and element trees the test keeps when a step misses; never part of the store set.
+      - name: Upload the debug files
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: store-shots-debug-${{ matrix.size }}
+          path: ${{ runner.temp }}/store-screenshots/debug/*
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Upload the test results
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

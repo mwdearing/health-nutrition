@@ -40,7 +40,7 @@ final class AppStoreScreenshotUITests: XCTestCase {
         capture("1-today")
 
         tapTab("Diary")
-        let day = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "1,220")).firstMatch
+        let day = app.descendants(matching: .any).matching(NSPredicate(format: "label MATCHES %@", "(?s).*1.?220.*")).firstMatch
         XCTAssertTrue(day.waitForExistence(timeout: 15), "the Diary does not show the seeded day total")
         capture("2-diary")
 
@@ -90,7 +90,7 @@ final class AppStoreScreenshotUITests: XCTestCase {
         if !(amountsOnly.exists && amountsOnly.isHittable) {
             capture("debug-amounts-only-not-tappable-\(name)")
             try? app.debugDescription.write(
-                to: outputDirectory.appendingPathComponent("debug-tree-amounts-only-\(name).txt"), atomically: true,
+                to: outputFile("debug-tree-amounts-only-\(name)", ext: "txt"), atomically: true,
                 encoding: .utf8)
             XCTFail("Amounts only is not tappable")
         }
@@ -143,7 +143,7 @@ final class AppStoreScreenshotUITests: XCTestCase {
         let menu = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@ OR label == %@", "meal", "None")).firstMatch
         guard menu.waitForExistence(timeout: 5), menu.isHittable else {
             try? app.debugDescription.write(
-                to: outputDirectory.appendingPathComponent("debug-tree-no-meal-menu-\(entry).txt"), atomically: true,
+                to: outputFile("debug-tree-no-meal-menu-\(entry)", ext: "txt"), atomically: true,
                 encoding: .utf8)
             return
         }
@@ -154,7 +154,7 @@ final class AppStoreScreenshotUITests: XCTestCase {
         } else {
             capture("debug-meal-menu-\(entry)")
             try? app.debugDescription.write(
-                to: outputDirectory.appendingPathComponent("debug-tree-meal-menu-\(entry).txt"), atomically: true,
+                to: outputFile("debug-tree-meal-menu-\(entry)", ext: "txt"), atomically: true,
                 encoding: .utf8)
         }
     }
@@ -162,7 +162,7 @@ final class AppStoreScreenshotUITests: XCTestCase {
     private func dismissKeyboard() {
         guard app.keyboards.count > 0 else { return }
         let done = app.buttons["Done"]
-        if done.exists && done.isHittable { done.tap() } else { app.navigationBars.firstMatch.tap() }
+        if done.exists && done.isHittable { done.tap() } else { app.navigationBars.staticTexts.firstMatch.tap() }
         _ = pollUntil(timeout: 5, { self.app.keyboards.count == 0 })
     }
 
@@ -186,8 +186,17 @@ final class AppStoreScreenshotUITests: XCTestCase {
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
-        let url = outputDirectory.appendingPathComponent("\(name).png")
+        let url = outputFile(name, ext: "png")
         do { try screenshot.pngRepresentation.write(to: url) } catch { XCTFail("could not write \(url.path): \(error)") }
+    }
+
+    /// Store shots go in the output directory; debug shots and trees go in its `debug` folder, which is uploaded
+    /// separately and only on failure, so they never join the store set.
+    private func outputFile(_ name: String, ext: String) -> URL {
+        let isDebug = name.hasPrefix("debug")
+        let directory = isDebug ? outputDirectory.appendingPathComponent("debug", isDirectory: true) : outputDirectory!
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory.appendingPathComponent("\(name).\(ext)")
     }
 
     private func element(_ identifier: String) -> XCUIElement {

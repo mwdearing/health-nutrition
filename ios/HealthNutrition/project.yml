@@ -224,6 +224,7 @@ targets:
       - path: Tests
         excludes:
           - AddSearchUITests/**
+          - StoreScreenshotUITests/**
     dependencies:
       - target: HealthNutrition
       # The stores, the Connections view model and the recipe types the assertions use are the
