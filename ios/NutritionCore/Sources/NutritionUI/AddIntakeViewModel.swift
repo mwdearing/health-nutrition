@@ -1093,10 +1093,18 @@ public final class AddIntakeViewModel: ObservableObject {
     /// save path do: IntakeContextSnapshotBasis's scaling factor for the stored label basis and the amount typed.
     /// Only a mass amount is scaled, so a volume or count amount shows no preview.
     private func capturedPreview(labelBasis: String) -> AmountPreview? {
-        guard let amount = AmountParser.parseTyped(amountText), unit.dimension == .mass,
-              let converted = try? Quantity(value: amount, unit: unit).converted(to: .g)
-        else { return nil }
-        let component = IntakeComponent(componentID: "preview", name: name, amount: amount, unit: unit)
+        guard let typed = AmountParser.parseTyped(amountText), unit.dimension == .mass else { return nil }
+        // A serving shown rounded and left alone is previewed from the exact quantity saving stores, the same
+        // backing `amountPreview` and the "This adds" lines read, so the three never disagree.
+        var amount = typed
+        var amountUnit = unit
+        if let backing = prefillBacking, backing.shownAmount == typed, backing.shownUnit == unit,
+           backing.storedUnit.dimension == .mass {
+            amount = backing.storedAmount
+            amountUnit = backing.storedUnit
+        }
+        guard let converted = try? Quantity(value: amount, unit: amountUnit).converted(to: .g) else { return nil }
+        let component = IntakeComponent(componentID: "preview", name: name, amount: amount, unit: amountUnit)
         guard let factor = DailyTotalsBuilder.scalingFactor(labelBasis: labelBasis, logged: [component]) else {
             return nil
         }
