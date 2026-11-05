@@ -97,7 +97,7 @@ final class InsightsAveragesTests: XCTestCase {
     func testAnUnfinishedHealthQueryKeepsItsSubtotalAsAMinimum() {
         let result = make([
             healthDay("2023-11-15", values: ["protein": 25], readKeys: [], journalProtein: 40, isLogged: true),
-            healthDay("2023-11-14", values: ["protein": 30], readKeys: []),
+            healthDay("2023-11-14", values: ["energy": 500, "protein": 30], readKeys: ["energy"]),
         ])
         XCTAssertEqual(result.lines.map(\.text), ["Protein: at least 47.5 g a day over 2 logged days"])
     }
