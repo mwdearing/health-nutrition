@@ -54,17 +54,24 @@ enum SupplementShortcut {
     static func loggedMessage(_ title: String) -> String { "Logged \(title)" }
 
     /// The open time closest to when the shortcut runs, by time of day in `calendar`'s zone: at 9 PM with 8 AM and
-    /// 8 PM open that is 8 PM, at 11 AM it is 8 AM. A tie goes to the earlier time, the one that has already
-    /// passed. Nil when no time is open.
+    /// 8 PM open that is 8 PM, at 11 AM it is 8 AM. The day wraps at midnight: at 12:10 AM with 11 PM and 8 AM
+    /// open that is 11 PM. A tie goes to the earlier time, the one that has already passed. Nil when no time is
+    /// open.
     static func nearestOpenTime(in times: [ReminderTime], to now: Date, calendar: Calendar) -> ReminderTime? {
         let parts = calendar.dateComponents([.hour, .minute], from: now)
         let current = (parts.hour ?? 0) * 60 + (parts.minute ?? 0)
         return times.min { first, second in
-            let a = abs(first.hour * 60 + first.minute - current)
-            let b = abs(second.hour * 60 + second.minute - current)
+            let a = Self.minutesApart(first.hour * 60 + first.minute, current)
+            let b = Self.minutesApart(second.hour * 60 + second.minute, current)
             if a != b { return a < b }
             return first.hour * 60 + first.minute < second.hour * 60 + second.minute
         }
+    }
+
+    /// The shorter way round the clock between two minutes of the day, 0 to 720.
+    private static func minutesApart(_ x: Int, _ y: Int) -> Int {
+        let direct = abs(x - y)
+        return min(direct, 1440 - direct)
     }
 
     /// Logs one Taken for the item with this id.

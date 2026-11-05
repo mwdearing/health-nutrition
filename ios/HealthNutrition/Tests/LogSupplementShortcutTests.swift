@@ -112,6 +112,13 @@ final class LogSupplementShortcutTests: XCTestCase {
         XCTAssertNil(SupplementShortcut.nearestOpenTime(in: [], to: date(hour: 14), calendar: utc))
     }
 
+    func testJustAfterMidnightMarksTheLateEveningTimeNotTheMorning() {
+        let lateEvening = ReminderTime(hour: 23, minute: 0)
+        XCTAssertEqual(
+            SupplementShortcut.nearestOpenTime(in: [morning, lateEvening], to: date(hour: 0, minute: 10), calendar: utc),
+            lateEvening)
+    }
+
     func testTheShortcutLogsTheNearestOpenTimeNotTheEarliest() {
         let stack = FakeStack(items: [ShortcutSupplement(id: "a", title: "Creatine", openTimes: [morning, evening])])
         _ = SupplementShortcut.log(favoriteID: "a", now: date(hour: 21), stack: stack, calendar: utc)
