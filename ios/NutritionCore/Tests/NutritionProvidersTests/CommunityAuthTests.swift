@@ -166,10 +166,10 @@ final class CommunityAuthTests: XCTestCase {
         let task = Task { try await auth.verifyEmailCode(email: "person@example.com", code: "123456") }
         try await Task.sleep(nanoseconds: 50_000_000)
         task.cancel()
-        let session = try await task.value
+        let result = await task.result
 
-        XCTAssertEqual(session.accessToken, "test-access-token")
-        XCTAssertEqual(try store.load(), session)
+        XCTAssertNoThrow(try result.get(), "the reply that arrived must not be dropped")
+        XCTAssertEqual(try store.load()?.accessToken, "test-access-token")
     }
 
     func testNetworkFailureDuringRefreshKeepsStore() async throws {
