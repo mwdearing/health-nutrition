@@ -465,7 +465,7 @@ public final class NutrientGapsViewModel: ObservableObject {
         for (index, date) in dates.enumerated() where index < byDay.count { byDate[date] = byDay[index] }
         var logged = loggedDates
         for (date, outside) in health {
-            byDate[date] = addingHealth(byDate[date] ?? [:], outside: outside)
+            byDate[date] = byDate[date] ?? [:]
             if case .read(let values, let readKeys) = outside,
                readKeys.contains(where: { (values[$0] ?? 0) > 0 }) {
                 logged.insert(date)
