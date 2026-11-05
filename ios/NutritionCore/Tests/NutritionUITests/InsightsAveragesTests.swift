@@ -26,9 +26,11 @@ final class InsightsAveragesTests: XCTestCase {
         _ key: String, values: [String: Decimal], readKeys: Set<String>, journalProtein: Decimal? = nil,
         isLogged: Bool = false
     ) -> InsightsAverages.Day {
-        let base = day(key, protein: journalProtein, isLogged: isLogged)
+        // No journal protein means no journal contribution (empty totals), not an entry whose value is unknown.
+        let totals = journalProtein == nil
+            ? DailyTotals(totals: [:]) : day(key, protein: journalProtein, isLogged: isLogged).totals
         return InsightsAverages.Day(
-            key: key, totals: base.totals, isLogged: isLogged, outside: .read(values: values, readKeys: readKeys))
+            key: key, totals: totals, isLogged: isLogged, outside: .read(values: values, readKeys: readKeys))
     }
 
     /// Health's amount is added to the journal's for the same day, as Today adds it (#1268).
