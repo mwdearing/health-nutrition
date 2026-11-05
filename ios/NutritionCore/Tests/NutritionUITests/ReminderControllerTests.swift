@@ -402,6 +402,22 @@ final class ReminderControllerTests: XCTestCase {
         XCTAssertTrue(controller.isOn)
     }
 
+    func testChangingTheTimeAfterNotificationsWereWithdrawnTurnsTheSwitchOffWithAMessage() async throws {
+        let scheduler = FakeReminderScheduler()
+        scheduler.settablePermission = .allowed
+        let (controller, preferences) = makeController(scheduler)
+        await controller.setOn(true)
+        scheduler.settablePermission = .denied
+
+        await controller.setTime(sevenThirty)
+
+        XCTAssertFalse(controller.isOn)
+        XCTAssertFalse(preferences.isReminderOn)
+        XCTAssertEqual(controller.message, withdrawnMessage)
+        XCTAssertNil(scheduler.pendingTime)
+        XCTAssertEqual(scheduler.scheduledTimes, [ReminderTime.standard])
+    }
+
     func testTheNoticeClearsOnceNotificationsAreAllowedAgain() async throws {
         let scheduler = FakeReminderScheduler()
         scheduler.settablePermission = .denied

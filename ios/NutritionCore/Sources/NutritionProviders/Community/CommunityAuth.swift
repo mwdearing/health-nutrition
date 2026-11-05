@@ -66,7 +66,14 @@ public actor CommunityAuth {
 
     /// Signs in with the identity token from Sign in with Apple: POST /auth/v1/token?grant_type=id_token.
     /// The nonce is the raw nonce whose hash was sent to Apple.
-    public func signInWithApple(idToken: String, nonce: String) async throws -> CommunitySession {
+    /// When Apple supplied an authorization code it is handed to the server once the session is accepted, so the
+    /// server can keep the Sign in with Apple grant and revoke it when the account is deleted. That handoff is
+    /// best effort: a failure never fails the sign-in.
+    public func signInWithApple(
+        idToken: String,
+        nonce: String,
+        authorizationCode: String? = nil
+    ) async throws -> CommunitySession {
         // The sign-in service does not ask for a challenge on an identity token, so none is requested.
         let body = try CommunityAPI.encode(AppleBody(idToken: idToken, nonce: nonce, metaSecurity: nil))
         authenticationIntent += 1
@@ -77,7 +84,21 @@ public actor CommunityAuth {
             query: [URLQueryItem(name: "grant_type", value: "id_token")],
             body: body
         )
-        return try acceptAuthentication(data, response, startedAtIntent: startedAtIntent)
+        let session = try acceptAuthentication(data, response, startedAtIntent: startedAtIntent)
+        if let authorizationCode, !authorizationCode.isEmpty {
+            await handOffAppleAuthorizationCode(authorizationCode, bearer: session.accessToken)
+        }
+        return session
+    }
+
+    /// POST /functions/v1/apple-grant {action: store}. The Apple key never leaves the server.
+    private func handOffAppleAuthorizationCode(_ code: String, bearer: String) async {
+        guard let body = try? CommunityAPI.encode(AppleGrantBody(action: "store", authorizationCode: code)) else { return }
+        // Each attempt is bounded by the client's 15 s request timeout, so sign-in waits at most about 30 s here.
+        // A second try only helps when the first failed before Apple's exchange: the code is single-use.
+        for _ in 0..<2 {
+            if (try? await api.send("/functions/v1/apple-grant", bearer: bearer, body: body)) != nil { return }
+        }
     }
 
     /// Emails a one-time code. The address also creates the account on first use.
@@ -316,6 +337,16 @@ private struct AppleBody: Encodable {
         case idToken = "id_token"
         case nonce
         case metaSecurity = "gotrue_meta_security"
+    }
+}
+
+struct AppleGrantBody: Encodable {
+    let action: String
+    var authorizationCode: String? = nil
+
+    enum CodingKeys: String, CodingKey {
+        case action
+        case authorizationCode = "authorization_code"
     }
 }
 

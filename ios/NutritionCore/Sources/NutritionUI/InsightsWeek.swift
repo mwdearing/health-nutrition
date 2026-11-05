@@ -9,23 +9,27 @@ public struct InsightsWeek: Equatable {
         /// "Mon", "Tue" in the locale, or the one-letter form a narrow bar label wants.
         public let label: String
         public let entryCount: Int
+        /// Apple Health read a stated food or drink amount for the day, so the day is logged even with no entry.
+        public var hasHealthIntake: Bool = false
+        public var isLogged: Bool { entryCount > 0 || hasHealthIntake }
     }
 
     public static let length = 7
 
     public let days: [Day]
-    public var loggedDays: Int { days.filter { $0.entryCount > 0 }.count }
+    public var loggedDays: Int { days.filter(\.isLogged).count }
     public var entryCount: Int { days.reduce(0) { $0 + $1.entryCount } }
+    /// Days with nothing logged: no entry and no Apple Health intake, so with `loggedDays` they make the whole window.
     public var emptyDays: Int { days.count - loggedDays }
-    public var hasAnyEntry: Bool { entryCount > 0 }
+    public var hasAnyEntry: Bool { loggedDays > 0 }
 
     /// "5 of 7 days logged".
     public var headline: String { "\(loggedDays) of \(days.count) days logged" }
     /// "12 entries", "1 entry".
     public var entriesText: String { entryCount == 1 ? "1 entry" : "\(entryCount) entries" }
-    /// "2 days with no entries", "1 day with no entries".
+    /// "2 days with nothing logged", "1 day with nothing logged".
     public var emptyDaysText: String {
-        emptyDays == 1 ? "1 day with no entries" : "\(emptyDays) days with no entries"
+        emptyDays == 1 ? "1 day with nothing logged" : "\(emptyDays) days with nothing logged"
     }
     /// The fraction of the tallest day, 0 through 1, for drawing a bar. An empty week draws nothing.
     public func barFraction(for day: Day) -> Double {
@@ -51,8 +55,11 @@ public struct InsightsWeek: Equatable {
     ///     here. Entries dated after `now` have not happened and are left out.
     ///   - now: the reference instant; the last day is today's date in `zone`.
     ///   - zone: the zone that says which date today is.
+    ///   - healthIntakeDayKeys: the yyyy-MM-dd keys (in `zone`) of days Apple Health read a stated amount for. Such a
+    ///     day counts as logged though it has no entry; its entry count stays the journal's.
     public static func make(
-        entries: [Entry], now: Date, zone: TimeZone, locale: Locale = .current
+        entries: [Entry], now: Date, zone: TimeZone, locale: Locale = .current,
+        healthIntakeDayKeys: Set<String> = []
     ) -> InsightsWeek {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = zone
@@ -61,6 +68,8 @@ public struct InsightsWeek: Equatable {
         formatter.locale = locale
         formatter.timeZone = zone
         formatter.setLocalizedDateFormatFromTemplate("EEE")
+        // The Diary's yyyy-MM-dd keys as the same year-month-day numbers the entry counts use.
+        let healthDayNumbers = Set(healthIntakeDayKeys.compactMap { Int($0.replacingOccurrences(of: "-", with: "")) })
         var keyCounts: [Int: Int] = [:]
         for entry in entries where entry.occurredAt <= now {
             var own = Calendar(identifier: .gregorian)
@@ -71,7 +80,9 @@ public struct InsightsWeek: Equatable {
         for offset in stride(from: length - 1, through: 0, by: -1) {
             guard let start = calendar.date(byAdding: .day, value: -offset, to: today) else { continue }
             let key = dayKey(calendar.dateComponents([.year, .month, .day], from: start))
-            days.append(Day(id: start, label: formatter.string(from: start), entryCount: keyCounts[key] ?? 0))
+            var day = Day(id: start, label: formatter.string(from: start), entryCount: keyCounts[key] ?? 0)
+            day.hasHealthIntake = healthDayNumbers.contains(key)
+            days.append(day)
         }
         return InsightsWeek(days: days)
     }
@@ -92,12 +103,13 @@ public enum InsightsLoadState: Equatable {
     public static func resolve(
         errorMessage: String?, loadCount: Int, skippedCount: Int = 0, entries: [InsightsWeek.Entry],
         days: [InsightsAverages.Day] = [], averageNutrients: [String] = [], now: Date, zone: TimeZone,
-        locale: Locale = .current
+        locale: Locale = .current, healthIntakeDayKeys: Set<String> = []
     ) -> InsightsLoadState {
         if let errorMessage { return .failed(errorMessage) }
         guard loadCount > 0 else { return .loading }
         return .ready(
-            InsightsWeek.make(entries: entries, now: now, zone: zone, locale: locale), skipped: max(0, skippedCount),
+            InsightsWeek.make(
+                entries: entries, now: now, zone: zone, locale: locale, healthIntakeDayKeys: healthIntakeDayKeys), skipped: max(0, skippedCount),
             averages: InsightsAverages.make(days: days, nutrients: averageNutrients, now: now, zone: zone))
     }
 }

@@ -33,6 +33,8 @@ struct LogWaterIntent: AppIntent {
     static let title: LocalizedStringResource = "Log water"
     static let description = IntentDescription("Adds your usual amount of water to today's diary.")
     static let openAppWhenRun = true
+    /// Running the action, and so logging the water, needs an unlocked device, as for the other logging shortcuts.
+    static let authenticationPolicy: IntentAuthenticationPolicy = .requiresLocalDeviceAuthentication
 
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {

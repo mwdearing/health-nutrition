@@ -232,6 +232,13 @@ final class NutritionFactsParserTests: XCTestCase {
         XCTAssertEqual(value(.potassium, panel), .unknown)
     }
 
+    func testANumberWithTwoDotsStatesNoAmount() throws {
+        let panel = parse(["Iron 1.2.3mg", "Sodium 12.5mg"])
+
+        XCTAssertEqual(value(.iron, panel), .unknown, "1.2.3 is never read as 1.2")
+        XCTAssertEqual(try amount(.sodium, panel), dec("12.5"), "a single dot is unchanged")
+    }
+
     func testDailyValueRemovalStopsAtTheNextRowOnTheLine() throws {
         let panel = parse(["Trans Fat 0g Total Carbohydrate 20g 7%"])
 
