@@ -86,7 +86,8 @@ public enum MedicationReminderPlan {
 public protocol MedicationReminderScheduling: AnyObject, Sendable {
     /// Makes the pending medication requests exactly `requests`; removes any other one. Throws when the system refuses.
     func replaceAll(with requests: [MedicationReminderRequest]) async throws
-    /// Removes every pending and delivered medication request. Synchronous so an erase can finish before it returns.
+    /// Removes every pending and delivered request under `MedicationReminderPlan.identifierPrefix`, and has done so
+    /// when it returns, so an erase can finish before its readback runs.
     func cancelAll()
     /// Removes the pending and delivered requests of these medications, synchronously, so an erase has finished
     /// removing them when it returns. The default removes every medication request.
@@ -338,5 +339,7 @@ public final class MedicationReminderEraser: JournalErasing, @unchecked Sendable
         let ids = store.settings.map(\.medicationID)
         store.clear()
         scheduler.cancel(medicationIDs: ids)
+        // Settings that could not be read leave no ids, so every request under the prefix goes too.
+        scheduler.cancelAll()
     }
 }

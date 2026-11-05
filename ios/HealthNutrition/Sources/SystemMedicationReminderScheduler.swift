@@ -36,15 +36,35 @@ extension SystemReminderScheduler: MedicationReminderScheduling {
         center.removeDeliveredNotifications(withIdentifiers: identifiers)
     }
 
+    /// Removes every pending and delivered request under the prefix and waits for it. The center answers on its own
+    /// queue, so waiting here never blocks the answer; the wait is bounded.
     func cancelAll() {
         let center = UNUserNotificationCenter.current()
-        Task {
-            let identifiers = await center.pendingNotificationRequests().map(\.identifier)
-                .filter { $0.hasPrefix(MedicationReminderPlan.identifierPrefix) }
-            center.removePendingNotificationRequests(withIdentifiers: identifiers)
-            let delivered = await center.deliveredNotifications().map(\.request.identifier)
-                .filter { $0.hasPrefix(MedicationReminderPlan.identifierPrefix) }
-            center.removeDeliveredNotifications(withIdentifiers: delivered)
+        let prefix = MedicationReminderPlan.identifierPrefix
+        let found = IdentifierBox()
+        let pending = DispatchSemaphore(value: 0)
+        center.getPendingNotificationRequests { requests in
+            found.set(pending: requests.map(\.identifier).filter { $0.hasPrefix(prefix) })
+            pending.signal()
         }
+        let delivered = DispatchSemaphore(value: 0)
+        center.getDeliveredNotifications { notifications in
+            found.set(delivered: notifications.map(\.request.identifier).filter { $0.hasPrefix(prefix) })
+            delivered.signal()
+        }
+        _ = pending.wait(timeout: .now() + 2)
+        _ = delivered.wait(timeout: .now() + 2)
+        let (pendingIDs, deliveredIDs) = found.values()
+        center.removePendingNotificationRequests(withIdentifiers: pendingIDs)
+        center.removeDeliveredNotifications(withIdentifiers: deliveredIDs)
     }
+}
+
+private final class IdentifierBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var pending: [String] = []
+    private var delivered: [String] = []
+    func set(pending ids: [String]) { lock.withLock { pending = ids } }
+    func set(delivered ids: [String]) { lock.withLock { delivered = ids } }
+    func values() -> ([String], [String]) { lock.withLock { (pending, delivered) } }
 }

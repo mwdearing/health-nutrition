@@ -389,6 +389,8 @@ final class CountingMedicationScheduler: ReminderScheduling, MedicationReminderS
     private let lock = NSLock()
     private var _replaces = 0
     private var _cancelled: [UUID] = []
+    private var _cancelAlls = 0
+    var cancelAlls: Int { lock.withLock { _cancelAlls } }
     var replaces: Int { lock.withLock { _replaces } }
     var cancelled: [UUID] { lock.withLock { _cancelled } }
     func permission() async -> ReminderPermission { .allowed }
@@ -397,7 +399,7 @@ final class CountingMedicationScheduler: ReminderScheduling, MedicationReminderS
     func cancelDaily() {}
     func pendingDailyCount() async -> Int { 0 }
     func replaceAll(with requests: [MedicationReminderRequest]) async throws { lock.withLock { _replaces += 1 } }
-    func cancelAll() {}
+    func cancelAll() { lock.withLock { _cancelAlls += 1 } }
     func cancel(medicationIDs: [UUID]) { lock.withLock { _cancelled += medicationIDs } }
 }
 
@@ -413,6 +415,20 @@ final class MedicationReminderFollowUpTests: XCTestCase {
         eraser.eraseAll()
         XCTAssertEqual(scheduler.cancelled, [id])
         XCTAssertEqual(store.settings, [])
+    }
+
+    /// Settings data that cannot be decoded reads as none, so the erase must still remove every request under the prefix.
+    func testEraseRemovesEveryPrefixedRequestWhenTheSettingsCannotBeRead() {
+        let suite = "MedicationReminderEraseTests-" + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(Data("not json".utf8), forKey: UserDefaultsMedicationReminderStore.key)
+        let store = UserDefaultsMedicationReminderStore(defaults: defaults)
+        XCTAssertEqual(store.settings, [])
+        let scheduler = CountingMedicationScheduler()
+        MedicationReminderEraser(store: store, scheduler: scheduler, erasures: ReminderErasures()).eraseAll()
+        XCTAssertGreaterThanOrEqual(scheduler.cancelAlls, 1)
+        XCTAssertNil(defaults.data(forKey: UserDefaultsMedicationReminderStore.key))
     }
 
     private func waitForReplaces(_ scheduler: CountingMedicationScheduler, above count: Int) async {
