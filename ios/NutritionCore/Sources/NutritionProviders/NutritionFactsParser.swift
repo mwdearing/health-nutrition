@@ -1300,6 +1300,16 @@ public enum NutritionFactsParser {
             let longest = min(start + 4, tokens.count)
             for end in stride(from: longest, through: start + 1, by: -1) {
                 guard let named = compoundName(tokens[start..<end]) else { continue }
+                // "Total Sugar 9g": "Total" is a panel word, so the scan starts again at "Sugar", which alone
+                // names no row. Read with the panel word in front of it, the name is a named row the named-row
+                // pass already took, so it is not collected again as a compound.
+                if named.nutrient == nil, start > 0, panelWords.contains(tokens[start - 1].text.lowercased()) {
+                    let withPanelWord = tokens[start - 1].text + " " + named.name
+                    if let match = firstRow(in: withPanelWord), match.nameStart == withPanelWord.startIndex,
+                       match.end == withPanelWord.endIndex {
+                        continue
+                    }
+                }
                 // "Vitamin B 1 2 mcg": a number joined after a letter, then a separate number, is ambiguous (B1 at
                 // 2 mcg, or B12 with its amount lost), so the line gives nothing rather than a guessed extra.
                 func isBareNumber(_ text: String) -> Bool { !text.isEmpty && text.allSatisfy { $0.isASCII && $0.isNumber } }
