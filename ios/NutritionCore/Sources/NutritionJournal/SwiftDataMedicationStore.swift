@@ -1,5 +1,6 @@
 import Foundation
 import NutritionDomain
+import SQLite3
 import SwiftData
 
 /// One stored medication. The identifier is kept as its UUID text and the unit as its raw value, so a row a
@@ -63,8 +64,8 @@ final class MedicationDoseRecord {
 }
 
 /// The first and only schema of the medication store file. Its two models are the medication and dose rows above.
-/// No app code opens this store file yet (the app wiring lands with the screens slice), so no released build has
-/// created one, and the version 1.0.0 shape is amended in place with no migration.
+/// Version 1.0.0 was amended in place before app code opened the file; any later change needs a new schema version
+/// and a migration stage.
 enum MedicationSchemaV1: VersionedSchema {
     static var versionIdentifier: Schema.Version { Schema.Version(1, 0, 0) }
     static var models: [any PersistentModel.Type] { [MedicationRecord.self, MedicationDoseRecord.self] }
@@ -96,6 +97,21 @@ public final class SwiftDataMedicationStore: MedicationStore, JournalErasing, @u
     /// Opens or creates the store file at `url`. Throws when the file cannot be opened or its schema cannot be migrated.
     public convenience init(url: URL) throws {
         try self.init(url: url, fileOperations: .systemOperations(opening: Self.makeContainer))
+    }
+
+    /// Opens the store file at `url` if it can be opened now, and never throws. When it cannot, the store starts
+    /// unopened: each later call tries the open again, and `eraseAll()` replaces the file it could not open.
+    public convenience init(retryingOpenAt url: URL) {
+        self.init(retryingOpenAt: url, fileOperations: .systemOperations(opening: Self.makeContainer))
+    }
+
+    /// The store at `url` that does not throw on open, with the file steps an erase takes, so a test can make each one
+    /// fail. A file that cannot be opened leaves the store unopened, and the next call tries the open again.
+    init(retryingOpenAt url: URL, fileOperations: StoreFileOperations) {
+        storeURL = url
+        self.fileOperations = fileOperations
+        container = try? fileOperations.openContainer(url)
+        reopenPending = container == nil
     }
 
     /// The store at `url`, with the file steps an erase takes, so a test can make each one fail.
@@ -236,26 +252,90 @@ public final class SwiftDataMedicationStore: MedicationStore, JournalErasing, @u
 
     /// Removes every medication and every dose. The rows are deleted one at a time in one save, and then the store file
     /// is replaced with an empty one. The store stays open afterwards.
+    ///
+    /// A closed store throws `MedicationStoreError.closed` and removes nothing. When the file cannot be opened, its rows
+    /// cannot be deleted, or its checkpoint fails, the file is replaced without a checkpoint only when SQLite finds it
+    /// damaged (see `storeFileIsDamaged(at:)` and `StoreFileOperations.isDamaged`). A file that failed for another
+    /// reason, such as a locked or busy file, is kept and the error is thrown.
     public func eraseAll() throws {
         writeLock.lock()
         defer { writeLock.unlock() }
+        // The opened container is held only inside deleteRows, so no reference to it outlives the call into the file
+        // replacement below, which removes the files under it and opens a new store at the same path.
         do {
-            let context = ModelContext(try openContainer())
+            try deleteRows()
+        } catch MedicationStoreError.closed {
+            throw MedicationStoreError.closed
+        } catch {
+            try replaceIfDamaged(after: error)
+            return
+        }
+        // The rows are gone from every read, but the file keeps their bytes until SQLite reuses the pages, so the file
+        // is replaced too, as the goal store's erase does. When the rows could not be deleted, the replacement removes
+        // them with the file.
+        do {
+            try replaceFiles()
+        } catch StoreFileError.checkpointFailed {
+            try replaceIfDamaged(after: StoreFileError.checkpointFailed)
+        }
+    }
+
+    /// Opens the store and deletes every row, and throws only when the store cannot be opened. A row that the
+    /// opened store cannot fetch, delete or save, such as one written outside the app with a required field
+    /// missing, does not stop the erase: the caller then replaces the file, checkpoint first, which removes it.
+    /// The caller holds writeLock.
+    private func deleteRows() throws {
+        let context = ModelContext(try openContainer())
+        do {
             for row in try context.fetch(FetchDescriptor<MedicationDoseRecord>()) { context.delete(row) }
             for row in try context.fetch(FetchDescriptor<MedicationRecord>()) { context.delete(row) }
             try context.save()
+        } catch {
+            context.rollback()
         }
-        // The rows are gone from every read, but the file keeps their bytes until SQLite reuses the pages, so the file
-        // is replaced too, as the goal store's erase does.
-        try replaceFiles()
+    }
+
+    /// Replaces the store file without a checkpoint when SQLite finds it damaged, and otherwise throws `error`, so a
+    /// file that failed for a passing reason is never removed. The caller holds writeLock.
+    private func replaceIfDamaged(after error: Error) throws {
+        guard fileOperations.isDamaged(storeURL) else { throw error }
+        try replaceFiles(checkpointing: false)
+    }
+
+    /// Whether SQLite finds the file at `url` damaged: it cannot be read as a database, or its quick integrity check
+    /// reports a fault. A missing file, or one that cannot be checked for another reason (busy, locked, no
+    /// permission), is not damaged.
+    static func storeFileIsDamaged(at url: URL) -> Bool {
+        guard FileManager.default.fileExists(atPath: url.path) else { return false }
+        var database: OpaquePointer?
+        defer { sqlite3_close(database) }
+        let opened = sqlite3_open_v2(url.path, &database, SQLITE_OPEN_READWRITE, nil)
+        guard opened == SQLITE_OK else { return isDamageCode(opened) }
+        sqlite3_busy_timeout(database, 2_000)
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        let prepared = sqlite3_prepare_v2(database, "PRAGMA quick_check", -1, &statement, nil)
+        guard prepared == SQLITE_OK else { return isDamageCode(prepared) }
+        let stepped = sqlite3_step(statement)
+        guard stepped == SQLITE_ROW else { return isDamageCode(stepped) }
+        guard let text = sqlite3_column_text(statement, 0) else { return true }
+        return String(cString: text) != "ok"
+    }
+
+    /// Whether an SQLite result code says the file is damaged rather than unavailable for a moment. Internal so a test
+    /// can check each code without a damaged file.
+    static func isDamageCode(_ code: Int32) -> Bool {
+        let primary = code & 0xFF
+        return primary == SQLITE_CORRUPT || primary == SQLITE_NOTADB
     }
 
     /// Replaces the store file with an empty one. The caller holds writeLock, so no write lands between the row delete
-    /// and the file removal. A failed step is thrown; a failed reopen is retried by the next call.
-    private func replaceFiles() throws {
+    /// and the file removal. A failed step is thrown; a failed reopen is retried by the next call. `checkpointing` is
+    /// passed to `StoreFileOperations.replaceStoreFiles(at:checkpointing:)`.
+    private func replaceFiles(checkpointing: Bool = true) throws {
         try lock.withLock {
             container = nil
-            let result = fileOperations.replaceStoreFiles(at: storeURL)
+            let result = fileOperations.replaceStoreFiles(at: storeURL, checkpointing: checkpointing)
             container = result.container
             reopenPending = result.container == nil
             if let error = result.error { throw error }
