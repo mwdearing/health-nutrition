@@ -81,7 +81,7 @@ public struct InsightsWeek: Equatable {
             guard let start = calendar.date(byAdding: .day, value: -offset, to: today) else { continue }
             let key = dayKey(calendar.dateComponents([.year, .month, .day], from: start))
             var day = Day(id: start, label: formatter.string(from: start), entryCount: keyCounts[key] ?? 0)
-            day.hasHealthIntake = healthDayNumbers.contains(key)
+            day.hasHealthIntake = false
             days.append(day)
         }
         return InsightsWeek(days: days)
