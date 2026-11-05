@@ -144,8 +144,8 @@ final class JournalExportTests: XCTestCase {
 
     private func contractFile(_ name: String, _ fileExtension: String) throws -> Data {
         // The committed contracts are copied into this target's resources as `Contracts/example.v1.json`,
-        // `Contracts/v1.schema.json` and their version 2 and 3 counterparts, so the Swift shapes and the JSON
-        // Schema cannot drift apart.
+        // `Contracts/v1.schema.json` and the counterparts for every later version, so the Swift shapes and the
+        // JSON Schema cannot drift apart.
         let url = try XCTUnwrap(
             Bundle.module.url(forResource: name, withExtension: fileExtension, subdirectory: "Contracts"),
             "missing contract resource \(name).\(fileExtension)")
