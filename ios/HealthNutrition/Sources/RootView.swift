@@ -692,14 +692,26 @@ struct RootView: View {
 
 /// Shown when a store file cannot be opened at all.
 struct StartupFailureView: View {
+    /// What to do next, always shown. The technical text below it varies and is only for support.
+    static let guidance = "Tap Try again. If it keeps failing, quit the app and open it again; if that fails too, reinstall the app."
+
+    /// The error text, shown small under the guidance.
     let message: String?
+    let onRetry: () -> Void
 
     var body: some View {
         VStack(spacing: 12) {
             Text("The app's storage could not be opened.").font(.headline)
-            Text(message ?? "Quit the app and try again; if it keeps failing, reinstall the app.")
-                .font(.footnote)
+            Text(Self.guidance)
                 .multilineTextAlignment(.center)
+            if let message {
+                Text(message)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            Button("Try again", action: onRetry)
+                .buttonStyle(.borderedProminent)
         }
         .padding()
     }
