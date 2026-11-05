@@ -32,7 +32,7 @@ struct AddServingControls: View {
                     .decimalAmountKeyboard()
                     .focused(focus)
                 }
-                Text("1 serving = \(serving.label)")
+                Text("1 serving = \(serving.shownLabel)")
                     .font(.footnote)
                     .foregroundStyle(TokenColors.textSecondary)
                 if let preview = model.amountPreview {

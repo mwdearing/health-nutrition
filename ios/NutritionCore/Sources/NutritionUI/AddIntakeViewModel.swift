@@ -392,7 +392,7 @@ public final class AddIntakeViewModel: ObservableObject {
 
     public var servingHint: String? {
         guard let serving, !serving.isEmpty else { return nil }
-        return "1 serving = \(serving.label)"
+        return "1 serving = \(serving.shownLabel)"
     }
 
     public var attributionTitle: String? { attribution?.text }

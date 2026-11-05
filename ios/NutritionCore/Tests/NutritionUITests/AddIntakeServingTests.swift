@@ -182,9 +182,20 @@ final class AddIntakeServingTests: XCTestCase {
         XCTAssertNotEqual(model.amountPreview?.grams, Decimal(1), "a typed figure is scaled as typed")
     }
 
-    func testServingLabelRoundsAConvertedQuantity() {
+    func testServingLabelRoundsAConvertedQuantityOnlyOnScreen() {
         let quotient = Decimal(30) / Decimal(string: "28.349523125")!
-        XCTAssertEqual(ServingDefinition(quantity: quotient, unit: .oz, text: nil).label, "1.06 oz")
+        let serving = ServingDefinition(quantity: quotient, unit: .oz, text: nil)
+        XCTAssertEqual(serving.shownLabel, "1.06 oz")
+        XCTAssertEqual(serving.label, "\(quotient) oz", "the stored label keeps the exact quantity")
+    }
+
+    /// The stored label basis names the exact serving, so one serving scales to exactly the stated values.
+    func testPerServingLabelBasisKeepsTheExactServing() {
+        let product = LookedUpProduct(
+            barcode: "", name: "Rice cake", brand: nil, basis: .perServing,
+            nutrients: [LookedUpProduct.energyKcal: .known(Decimal(80), .kcal)],
+            attribution: nil, serving: ServingDefinition(quantity: Decimal(string: "10.25")!, unit: .g), version: nil)
+        XCTAssertEqual(product.labelBasis, "per serving (10.25 g)")
     }
 
     func testPerHundredGramPickOffersOnlyMassUnits() throws {
