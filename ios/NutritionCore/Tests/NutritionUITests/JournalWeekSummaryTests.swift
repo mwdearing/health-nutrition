@@ -458,6 +458,23 @@ final class JournalWeekSummaryTests: XCTestCase {
         XCTAssertEqual(model.weekSummary?.goalLines, ["Protein: average 15 g a day against 60 g"])
     }
 
+    /// A journal value the totals cannot add up (protein stated in international units) is not nothing: Health's protein
+    /// does not stand in for the day, which is counted as one that could not be totaled.
+    func testAJournalValueInAnotherKindOfUnitIsNotReplacedByHealth() throws {
+        let journal = try makeJournalStore()
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        try logProtein(journal, daysBack: 0, 30)
+        try logProduct(journal, daysBack: 1, nutrients: ["protein": .known(Decimal(10), .iu)])
+
+        let model = makeModel(journal, goals: goals)
+        model.outsideIntakeByDay = [dayKey(1): healthProtein(40)]
+        model.load(now: weekNow)
+
+        XCTAssertEqual(
+            model.weekSummary?.goalLines, ["Protein: average 30 g a day against 60 g (1 day could not be totaled)"])
+    }
+
     /// The partial subtotal of a nutrient some of whose samples could not be read is not a stated intake.
     func testAPartiallyReadNutrientDoesNotMakeALoggedDay() throws {
         let journal = try makeJournalStore()

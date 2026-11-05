@@ -954,6 +954,9 @@ public final class JournalViewModel: ObservableObject {
             guard let unit = HealthKitWritePlanner.mapping(for: goal.nutrient)?.unit else { return nil }
             return .known(values[canonical] ?? 0, unit)
         }
+        // The journal holds a value for this nutrient that the totals could not add up (a unit of another kind): the day
+        // cannot be totaled, and Health's amount must not stand in for the whole day.
+        if journalStatedCount > 0, case .unknown = journalLine.amount, !journalLine.isPartial { return nil }
         let combined = HealthIntakeTotals.combine([journalLine], outside: day.outside).first ?? journalLine
         return combined.isPartial ? nil : combined.amount
     }
