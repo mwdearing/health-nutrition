@@ -337,7 +337,8 @@ final class TodayTests: XCTestCase {
         let model = TodayViewModel(store: StubJournalStore(intakes: intakes, components: components), timeZoneIdentifier: "UTC")
         model.load(now: now)
         XCTAssertEqual(model.waterTotalMilliliters, Decimal(100))
-        XCTAssertEqual(model.waterSkippedCount, 4)
+        XCTAssertEqual(model.waterSkippedCount, 0, "a volume with an amount that cannot count is not a unit that is not a volume")
+        XCTAssertTrue(model.waterHasUnknown, "such a drink is unknown, as in the Diary")
     }
 
     func testInvalidTimeZoneIntakeIsSkippedAndCounted() throws {
