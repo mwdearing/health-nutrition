@@ -1104,7 +1104,6 @@ public final class AddIntakeViewModel: ObservableObject {
     /// Validates and writes one intake. Invalid input sets field errors and writes nothing.
     @discardableResult
     public func save(now: Date) -> Bool {
-        guard !hasSaved else { return false }
         hasAttemptedSave = true
         commitServingCount()
         let trimmedName = typedName
