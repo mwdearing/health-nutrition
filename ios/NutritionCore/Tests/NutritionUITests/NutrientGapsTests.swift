@@ -332,6 +332,37 @@ final class NutrientGapsTests: XCTestCase {
         XCTAssertEqual(vitaminC.status, .belowReferenceSoFar)
     }
 
+    /// #1240: a week of Apple Health days with nothing in the journal counts each day and averages Health's amount.
+    func testAHealthOnlyWeekCountsEachDayAndAveragesHealth() async throws {
+        let store = try makeStore()
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setReferenceGroup(men31)
+        let model = NutrientGapsViewModel(store: store, lookup: GapsSnapshotFacts(), preferences: preferences)
+        model.healthDayReader = { _, _ in HealthDayRead(.read(values: ["vitaminC": 100], readKeys: ["vitaminC"])) }
+        model.chooseSpan(.week, now: noon)
+        await model.refreshWeekHealth(now: noon)
+        XCTAssertEqual(model.loggedDays, 7)
+        XCTAssertEqual(model.spanSummary, "Average per day over the 7 days you logged in the last 7.")
+        let vitaminC = try XCTUnwrap(model.rows.first { $0.nutrient == "vitaminC" })
+        XCTAssertEqual(vitaminC.tally.fromHealth, 100)
+        XCTAssertEqual(vitaminC.status, .reachedReference)
+    }
+
+    /// #1240: a failed Health read is unknown, never zero, so an empty week with no read says nothing was logged.
+    func testAFailedHealthWeekDayStaysUnknownNotZero() async throws {
+        let store = try makeStore()
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setReferenceGroup(men31)
+        let model = NutrientGapsViewModel(store: store, lookup: GapsSnapshotFacts(), preferences: preferences)
+        model.healthDayReader = { _, _ in HealthDayRead(.read(values: [:], readKeys: []), complete: false) }
+        model.chooseSpan(.week, now: noon)
+        await model.refreshWeekHealth(now: noon)
+        XCTAssertEqual(model.loggedDays, 0)
+        XCTAssertEqual(model.spanSummary, "Nothing was logged in the last 7 days.")
+        let vitaminC = try XCTUnwrap(model.rows.first { $0.nutrient == "vitaminC" })
+        XCTAssertEqual(vitaminC.status, .unknown)
+    }
+
     func testAHandTypedSupplementCountsAsSupplementNotFood() throws {
         let store = try makeStore()
         let intake = Intake(

@@ -146,6 +146,8 @@ public final class TodayViewModel: ObservableObject {
     /// Health's side of Today's totals, set by the activity card after it reads. Until a read says otherwise
     /// Health is not connected, so the totals stay journal-only.
     public var outsideIntake: HealthIntakeTotals.Outside = .notConnected
+    /// Reads Apple Health for one interval, for the Vitamins and minerals Week view. Set by the app; nil until then.
+    public var healthDayReader: (@MainActor (Date, Date) async -> HealthDayRead)?
     /// Says the calorie goal was raised by activity, and by how much; nil when it was not.
     @Published public private(set) var activityGoalNote: String?
     static let energyKey = "energy"
@@ -529,9 +531,11 @@ public final class TodayViewModel: ObservableObject {
     /// The vitamins and minerals screen, reading the same journal and nutrient facts as Today and the
     /// reference group kept with the display preferences.
     public func makeNutrientGaps() -> NutrientGapsViewModel {
-        NutrientGapsViewModel(
+        let model = NutrientGapsViewModel(
             store: store, lookup: lookup, preferences: preferences as? ReferenceGroupPreferences,
             healthToday: { [weak self] in self?.outsideIntake ?? .notConnected })
+        model.healthDayReader = healthDayReader
+        return model
     }
 
     /// The daily water goal used until the person sets one: 2,000 mL (about 68 fl oz).
