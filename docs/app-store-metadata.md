@@ -11,7 +11,7 @@ changes. Nothing here claims a score, advice or a medical effect, and the verb f
 | Name | 26 | 30 |
 | Subtitle | 28 | 30 |
 | Promotional text | 167 | 170 |
-| Keywords | 95 | 100 |
+| Keywords | 90 | 100 |
 | Description | 2266 | 4000 |
 | What's New | 324 | 4000 |
 | Review notes | 1993 | 4000 |
@@ -32,9 +32,9 @@ Log food, drinks, water and supplements in one private journal. Scan a barcode o
 
 ## Keywords
 
-`calorie,macro,nutrition,food diary,supplement,vitamin,mineral,hydration,barcode,protein,tracker`
+`calorie,macro,diet,food diary,supplement,vitamin,mineral,hydration,barcode,protein,tracker`
 
-Apple indexes the name and subtitle too, so the words `log`, `water` and `supplements` are left out here. `food` and `nutrition` stay only inside multi-word terms.
+Apple indexes the name and subtitle too, so `log`, `water`, `nutrition` and the plural `supplements` are left out here. `food` appears only inside `food diary`, and the singular `supplement` stays as a separate search form.
 
 ## Description
 
