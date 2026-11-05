@@ -703,7 +703,7 @@ struct LibraryProductEditor: Identifiable {
 }
 
 /// The Library's product editor sheet. It observes the model, so the swipe-dismiss lock follows typed input as it changes.
-struct LibraryProductEditorSheet: View {
+private struct LibraryProductEditorSheet: View {
     @ObservedObject var model: CustomProductEditorViewModel
     let sharing: CustomProductSharingModel?
     let onSaved: (CustomProductRevision, Bool) -> Void
