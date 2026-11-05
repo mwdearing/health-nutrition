@@ -128,7 +128,12 @@ final class AppStoreScreenshotUITests: XCTestCase {
             scrolls += 1
         }
         XCTAssertTrue(field.waitForExistence(timeout: 10), "no field named \(prefix)")
-        field.tap()
+        // A tap that lands while the sheet is still sliding up is lost, so it is repeated while no keyboard shows.
+        var attempts = 0
+        repeat {
+            field.tap()
+            attempts += 1
+        } while !pollUntil(timeout: 3, { self.app.keyboards.count > 0 }) && attempts < 4
         if !pollUntil(timeout: 10, { self.app.keyboards.count > 0 }) {
             capture("debug-\(prefix)-no-focus")
             let tree = XCTAttachment(string: app.debugDescription)
