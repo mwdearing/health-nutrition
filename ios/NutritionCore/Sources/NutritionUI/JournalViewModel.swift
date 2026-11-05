@@ -192,6 +192,23 @@ public final class JournalViewModel: ObservableObject {
         copyFailed = failed
     }
 
+    /// The yyyy-MM-dd keys of the days Apple Health has read a stated food or drink amount for, for the Insights week.
+    public var healthIntakeDayKeys: Set<String> {
+        Set(outsideIntakeByDay.filter { $0.value.statesIntake }.keys)
+    }
+
+    /// Reads Apple Health for each of the last `days` days ending today, for Insights, which has no Diary rows for a
+    /// day that only Health knows. Past days are read once and kept.
+    public func loadRecentHealthTotals(days: Int, now: Date) async {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = dayZone
+        let today = calendar.startOfDay(for: now)
+        for offset in 0..<max(0, days) {
+            guard let day = calendar.date(byAdding: .day, value: -offset, to: today) else { continue }
+            await loadHealthTotals(forDayKey: Self.dayKey(day, zone: dayZone), now: now)
+        }
+    }
+
     /// The identity of a day row's Health read: the day and the Diary's zone, so a zone change starts a fresh read for
     /// each day on screen rather than leaving it journal-only until it scrolls away and back.
     /// It also carries the forget count, so forgetting the figures (Erase, or a Health access change) starts a fresh

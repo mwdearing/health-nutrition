@@ -45,6 +45,8 @@ struct RootView: View {
 
     @State private var selection: AppTab = .today
     @State private var addHome: AddHomeViewModel?
+    @State private var libraryEditor: LibraryProductEditor?
+    @State private var pendingLibraryDetails: CustomProductRevision?
     @State private var productSearchModel: CommunityProductSearchViewModel?
     @State private var addIntakeModel: AddIntakeViewModel?
     @State private var confirmDiscardAdd = false
@@ -152,13 +154,28 @@ struct RootView: View {
                     model: services.library, onAdded: { reload() }, onOpenRecipes: { openRecipes() },
                     onOpen: { template in self.openAddDetails(prefilledFrom: template) },
                     onProduct: { product in self.startProductDetails(product) },
-                    onEditProduct: { product in self.startProductEditor(revision: product) },
-                    onLegacyProduct: { draft in self.startProductEditor(legacy: draft) },
+                    onEditProduct: { product in self.presentLibraryEditor(revision: product) },
+                    onLegacyProduct: { draft in self.presentLibraryEditor(legacy: draft) },
                     onSearchProducts: { self.startProductSearch() },
-                    onNewProduct: { self.startProductEditor() }
+                    onNewProduct: { self.presentLibraryEditor() }
                 )
                 .navigationTitle("Library")
                 .toolbar { settingsToolbar }
+                // Editing from the Library opens the editor on its own, not inside the Add flow, so Cancel and Save return here.
+                .sheet(item: $libraryEditor, onDismiss: {
+                    // Details open only once the editor sheet has gone, so the two presentations do not collide.
+                    if let product = self.pendingLibraryDetails {
+                        self.pendingLibraryDetails = nil
+                        self.startProductDetails(product)
+                    }
+                }) { editor in
+                    LibraryProductEditorSheet(model: editor.model, sharing: services.library.productSharing) { product, openDetails in
+                        services.library.load()
+                        if openDetails { self.pendingLibraryDetails = product }
+                        self.saveNotice = SaveNotice(SaveLabels.productSaved)
+                        self.libraryEditor = nil
+                    }
+                }
             }
                 .safeAreaInset(edge: .bottom) { addCapsule }
                 .tabItem { Label("Library", systemImage: "square.grid.2x2") }
@@ -435,9 +452,9 @@ struct RootView: View {
         let editor = CustomProductEditorViewModel(store: services.journalStore, revision: revision, legacy: legacy, sharing: services.productSharing)
         addNavigation.path.append(.productEditor(ProductEditorPrefill(model: editor)))
     }
-    private func startProductEditor(revision: CustomProductRevision? = nil, legacy: LegacyCustomProductDraft? = nil) {
-        startAddingIntake()
-        if let home = addHome { openProductEditor(home: home, revision: revision, legacy: legacy) }
+    private func presentLibraryEditor(revision: CustomProductRevision? = nil, legacy: LegacyCustomProductDraft? = nil) {
+        let model = CustomProductEditorViewModel(store: services.journalStore, revision: revision, legacy: legacy, sharing: services.productSharing)
+        libraryEditor = LibraryProductEditor(model: model)
     }
     private func startProductSearch() {
         startAddingIntake()
@@ -553,6 +570,10 @@ struct RootView: View {
             CustomProductEditorView(model: editor.model, sharing: services.library.productSharing) { product, openDetails in
                 services.library.load()
                 self.confirmInAddCover(SaveLabels.productSaved)
+                // Save leaves the editor: it is the top of the Add path, so Save never stays on it.
+                if case .productEditor(let current) = self.addNavigation.path.last, current.model === editor.model {
+                    self.addNavigation.path.removeLast()
+                }
                 if openDetails { self.openProductDetails(product, home: home) }
             }
         case .productSearch:
@@ -680,5 +701,26 @@ struct StartupFailureView: View {
                 .multilineTextAlignment(.center)
         }
         .padding()
+    }
+}
+
+/// A product editor opened from the Library, shown as its own sheet.
+struct LibraryProductEditor: Identifiable {
+    let id = UUID()
+    let model: CustomProductEditorViewModel
+}
+
+/// The Library's product editor sheet. It observes the model, so the swipe-dismiss lock follows typed input as it changes.
+private struct LibraryProductEditorSheet: View {
+    @ObservedObject var model: CustomProductEditorViewModel
+    let sharing: CustomProductSharingModel?
+    let onSaved: (CustomProductRevision, Bool) -> Void
+
+    var body: some View {
+        NavigationStack {
+            CustomProductEditorView(model: model, sharing: sharing, onSaved: onSaved)
+        }
+        // Typed input is not lost to a swipe-down; the form's Cancel asks first.
+        .interactiveDismissDisabled(model.hasTypedInput)
     }
 }

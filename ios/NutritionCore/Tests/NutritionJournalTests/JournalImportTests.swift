@@ -1100,7 +1100,7 @@ final class JournalImportTests: JournalImportTestCase {
         // The time zone is what says when an entry happened where the person was. An empty string, or a name
         // no calendar knows, would be stored as text and read back as a zone the app cannot use, so the file
         // is refused instead.
-        for identifier in ["", "Middle/Earth"] {
+        for identifier in ["", "Middle/Earth", "Factory", "localtime", "posixrules", "posix/America/Chicago", "right/UTC"] {
             var root = try object(of: try exportData(favorites: false))
             var intakes = try XCTUnwrap(root["intakes"] as? [[String: Any]])
             intakes[0]["time_zone"] = identifier

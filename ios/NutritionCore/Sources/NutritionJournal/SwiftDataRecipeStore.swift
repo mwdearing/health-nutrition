@@ -75,6 +75,8 @@ public final class SwiftDataRecipeStore: RecipeStore, JournalErasing, @unchecked
     private let fileOperations: StoreFileOperations
     /// True after an erase whose reopen failed; the next call tries the reopen again.
     private var reopenPending = false
+    /// True once `close()` has run. Closing is final: an erase in flight when it runs must not reopen the store (#1156).
+    private var closeRequested = false
 
     public convenience init(url: URL) throws {
         try self.init(url: url, fileOperations: .systemOperations(opening: Self.makeContainer))
@@ -97,6 +99,7 @@ public final class SwiftDataRecipeStore: RecipeStore, JournalErasing, @unchecked
         lock.withLock {
             container = nil
             reopenPending = false
+            closeRequested = true
         }
     }
 
@@ -210,6 +213,7 @@ public final class SwiftDataRecipeStore: RecipeStore, JournalErasing, @unchecked
             for row in try context.fetch(FetchDescriptor<RecipeVersionRecord>()) { context.delete(row) }
             try context.save()
         }
+        fileOperations.afterRowsDeleted()
         // The rows are gone from every read, but the store file keeps their bytes until SQLite reuses the pages, so
         // the file is replaced too, as the journal store's erase does (#228).
         try replaceFiles()
@@ -220,6 +224,13 @@ public final class SwiftDataRecipeStore: RecipeStore, JournalErasing, @unchecked
     private func replaceFiles() throws {
         try lock.withLock {
             container = nil
+            if closeRequested {
+                // Closed during the erase: remove the files and reopen nothing, so no file is left behind and the store
+                // holds no container (#1156).
+                reopenPending = false
+                if let error = fileOperations.removeStoreFiles(at: storeURL) { throw error }
+                return
+            }
             let result = fileOperations.replaceStoreFiles(at: storeURL)
             container = result.container
             reopenPending = result.container == nil

@@ -1317,11 +1317,12 @@ public enum JournalImporter {
     /// The time zone an entry was recorded in. It is what says when an entry happened where the person was,
     /// so it has to be a name a calendar can actually resolve: an empty string, or one nothing knows, would
     /// be stored as text and read back as a zone the app cannot use, and there would be nothing to repair it
-    /// from later.
+    /// from later. A name the relay encoder refuses (host-local keys such as `localtime`, the `posix/` and
+    /// `right/` copies of the database) is refused here too, so an entry never imports only to fail delivery.
     private static func checkTimeZone(_ identifier: String, of intakeID: String) throws {
-        guard !identifier.isEmpty, TimeZone(identifier: identifier) != nil else {
+        guard !identifier.isEmpty, IntakeContextTimestamp.portableZone(identifier: identifier) != nil else {
             throw JournalImportError.corrupt(
-                "\(intakeID) has the time zone \"\(identifier)\", which is not a time zone")
+                "\(intakeID) has the time zone \"\(identifier)\", which is not a time zone name this app can use")
         }
     }
 

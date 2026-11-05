@@ -36,6 +36,25 @@ final class HealthKitReaderAskedTests: XCTestCase {
         XCTAssertTrue(HealthKitReader(defaults: defaults).hasAskedForReadAccess)
     }
 
+    /// Connect Apple Health in Settings records its own key; outside intake must count it (#1219).
+    func testConnectingInSettingsCountsAsAskedForNutrientReadingOnly() {
+        defaults.set(true, forKey: HealthKitDeliveryStatus.readAskedKey)
+        let reader = HealthKitReader(defaults: defaults)
+        XCTAssertTrue(reader.hasAskedForNutrientReadAccess)
+        XCTAssertFalse(reader.hasAskedForReadAccess, "the Activity card still asks for steps, weight and height")
+    }
+
+    func testNothingAskedMeansNutrientReadingIsNotConnected() {
+        XCTAssertFalse(HealthKitReader(defaults: defaults).hasAskedForNutrientReadAccess)
+    }
+
+    func testForgettingAccessClearsTheConnectKeyToo() {
+        defaults.set(true, forKey: HealthKitDeliveryStatus.readAskedKey)
+        HealthKitReader.forgetReadAccess(defaults: defaults)
+        XCTAssertNil(defaults.object(forKey: HealthKitDeliveryStatus.readAskedKey))
+        XCTAssertFalse(HealthKitReader(defaults: defaults).hasAskedForNutrientReadAccess)
+    }
+
     func testForgettingAccessClearsEveryKey() {
         let keys = [
             "healthKitReader.askedForReadAccess", "healthKitReader.askedForReadAccess.nutrition",

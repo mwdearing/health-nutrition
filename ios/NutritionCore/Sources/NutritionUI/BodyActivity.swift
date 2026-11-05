@@ -34,6 +34,8 @@ public struct BodyActivityReadings: Equatable, Sendable {
     public var outsideNutrients: [String: Decimal]
     /// True when reading other apps' entries failed, so the card says so instead of showing nothing.
     public var outsideReadFailed: Bool
+    /// True when Health could not be asked for the weight, so the card says so instead of "no weight yet".
+    public var weightReadFailed: Bool
     /// True only when the app target actually tried to read other apps' entries this time.
     public var outsideRead: Bool
     /// The canonical keys whose Health query succeeded this read. A key here with no value is a known zero.
@@ -43,8 +45,9 @@ public struct BodyActivityReadings: Equatable, Sendable {
         steps: Decimal? = nil, activeEnergyKcal: Decimal? = nil, latestWeightKg: Decimal? = nil,
         latestWeightDate: Date? = nil, weightSamples: [WeightSample] = [],
         outsideNutrients: [String: Decimal] = [:], outsideReadFailed: Bool = false, outsideRead: Bool = false,
-        outsideReadKeys: Set<String> = []
+        outsideReadKeys: Set<String> = [], weightReadFailed: Bool = false
     ) {
+        self.weightReadFailed = weightReadFailed
         self.outsideNutrients = outsideNutrients
         self.outsideReadFailed = outsideReadFailed
         self.outsideRead = outsideRead
@@ -71,10 +74,28 @@ public struct BodyActivityReadings: Equatable, Sendable {
 public protocol BodyActivityReading: AnyObject {
     /// Whether the person has been shown the read request on this device.
     var hasAskedForReadAccess: Bool { get }
+    /// Whether nutrient read access was asked for, by this card or by connecting Apple Health in Settings.
+    var hasAskedForNutrientReadAccess: Bool { get }
     /// Asks Health for read access to steps, active energy and weight.
     func requestReadAccess() async
     /// Today's steps and active energy, the latest weight, and every weigh-in of the last 28 days for the trend.
     func read(now: Date) async -> BodyActivityReadings
+    /// Only the outside intake, for a person who asked for nutrient access but not the card's request.
+    func readOutsideIntake(now: Date) async -> BodyActivityReadings
+}
+
+@MainActor
+extension BodyActivityReading {
+    public var hasAskedForNutrientReadAccess: Bool { hasAskedForReadAccess }
+    public func readOutsideIntake(now: Date) async -> BodyActivityReadings {
+        let full = await read(now: now)
+        var outside = BodyActivityReadings.empty
+        outside.outsideRead = full.outsideRead
+        outside.outsideNutrients = full.outsideNutrients
+        outside.outsideReadKeys = full.outsideReadKeys
+        outside.outsideReadFailed = full.outsideReadFailed
+        return outside
+    }
 }
 
 /// The activity and weight card on Today.
@@ -121,6 +142,11 @@ public final class BodyActivityViewModel: ObservableObject {
         hasAsked = reader.hasAskedForReadAccess
         guard hasAsked else {
             readings = .empty
+            // Connecting Apple Health in Settings already asked for the nutrient types: other apps' intake counts
+            // without the card's request, and nothing else from this read is kept.
+            if reader.hasAskedForNutrientReadAccess {
+                readings = await reader.readOutsideIntake(now: now)
+            }
             applyWeightPlan(now: now)
             onRead?(readings)
             return
@@ -247,6 +273,19 @@ public final class BodyActivityViewModel: ObservableObject {
     public var weightText: String? {
         readings.latestWeightKg.map { weight($0) }
     }
+
+    /// Shown in place of the weight when Health could not be read for it and no weight is known.
+    public static let weightUnreadableText = "Weight could not be read from Health"
+
+    public var weightUnreadableNotice: String? {
+        readings.weightReadFailed && readings.latestWeightKg == nil ? Self.weightUnreadableText : nil
+    }
+
+    /// Health never says whether read access was refused, so a total from other apps reads as complete either way.
+    public static let outsideNoteText = "Other apps' entries are included only where Health lets this app read them."
+
+    /// The note shown under the other-apps line, whenever that line is shown.
+    public var outsideNote: String? { outsideText == nil ? nil : Self.outsideNoteText }
 
     /// "From other apps: 620 kcal, 48 g protein, 16 fl oz water", naming only what other apps logged today.
     public var outsideText: String? {
@@ -385,6 +424,13 @@ public struct BodyActivityCard: View {
                 Task { await self.model.connect(now: self.now()) }
             }
             .disabled(model.isBusy)
+            // Connected in Settings: other apps' intake still counts, or says it could not be read.
+            if let outside = model.outsideText {
+                Text(outside).font(.footnote).foregroundStyle(TokenColors.textSecondary)
+                if let note = model.outsideNote {
+                    Text(note).font(.footnote).foregroundStyle(TokenColors.textSecondary)
+                }
+            }
         } else if model.readings.isEmpty {
             Text(BodyActivityViewModel.emptyDetail)
                 .font(.footnote).foregroundStyle(TokenColors.textSecondary)
@@ -395,6 +441,8 @@ public struct BodyActivityCard: View {
             }
             if let weight = model.weightText {
                 Text("Weight \(weight)")
+            } else if let unreadable = model.weightUnreadableNotice {
+                Text(unreadable).font(.footnote).foregroundStyle(TokenColors.textSecondary)
             }
             if let trend = model.weightTrendText {
                 Text(trend).font(.footnote).foregroundStyle(TokenColors.textSecondary)
@@ -413,6 +461,9 @@ public struct BodyActivityCard: View {
             }
             if let outside = model.outsideText {
                 Text(outside).font(.footnote).foregroundStyle(TokenColors.textSecondary)
+                if let note = model.outsideNote {
+                    Text(note).font(.footnote).foregroundStyle(TokenColors.textSecondary)
+                }
             }
         }
     }
