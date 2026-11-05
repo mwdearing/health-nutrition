@@ -43,12 +43,18 @@ final class WatchSummaryModel: NSObject, ObservableObject, WCSessionDelegate {
     static let shared = WatchSummaryModel()
 
     @Published private(set) var snapshot: WidgetSnapshot?
-    private let store = WidgetSnapshotStore.appGroup()
-    private lazy var receiver = WatchSnapshotReceiver(store: store) {
-        WidgetCenter.shared.reloadAllTimelines()
-    }
+    private let store: WidgetSnapshotStore?
+    /// Created once, before the session is activated. The background-task refresh and the session delegate both
+    /// reach it from different threads, and they must share its lock; a `lazy var` is not synchronized and could
+    /// give each caller its own receiver.
+    private let receiver: WatchSnapshotReceiver
 
     private override init() {
+        let store = WidgetSnapshotStore.appGroup()
+        self.store = store
+        self.receiver = WatchSnapshotReceiver(store: store) {
+            WidgetCenter.shared.reloadAllTimelines()
+        }
         super.init()
         refresh()
         guard WCSession.isSupported() else { return }
