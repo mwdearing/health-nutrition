@@ -57,6 +57,8 @@ struct WatchTodayWidgetView: View {
                 Text(headline)
             }
             .gaugeStyle(.accessoryCircularCapacity)
+            // With no summary the ring is dimmed, so it does not read as an empty day.
+            .opacity(snapshot?.energyFraction == nil ? 0.3 : 1)
             .accessibilityLabel(spoken)
             .privacySensitive()
         case .accessoryCorner:
@@ -64,6 +66,7 @@ struct WatchTodayWidgetView: View {
                 .accessibilityLabel(spoken)
                 .widgetLabel {
                     Gauge(value: snapshot?.energyFraction ?? 0) { Image(systemName: "fork.knife") }
+                        .opacity(snapshot?.energyFraction == nil ? 0.3 : 1)
                 }
                 .privacySensitive()
         case .accessoryInline:
