@@ -12,9 +12,9 @@ changes. Nothing here claims a score, advice or a medical effect, and the verb f
 | Subtitle | 28 | 30 |
 | Promotional text | 167 | 170 |
 | Keywords | 90 | 100 |
-| Description | 2266 | 4000 |
+| Description | 2432 | 4000 |
 | What's New | 324 | 4000 |
-| Review notes | 1993 | 4000 |
+| Review notes | 2093 | 4000 |
 
 Counts are Unicode characters as Python's `len` reports them, not counting the trailing newline. The keyword field counts the commas.
 
@@ -32,26 +32,26 @@ Log food, drinks, water and supplements in one private journal. Scan a barcode o
 
 ## Keywords
 
-`calorie,macro,diet,food diary,supplement,vitamin,mineral,hydration,barcode,protein,tracker`
+`calorie,macro,diet,meal,diary,supplement,vitamin,mineral,hydration,barcode,protein,tracker`
 
-Apple indexes the name and subtitle too, so `log`, `water`, `nutrition` and the plural `supplements` are left out here. `food` appears only inside `food diary`, and the singular `supplement` stays as a separate search form.
+Apple indexes the name and subtitle too, so `log`, `water`, `nutrition` and the plural `supplements` are left out here. `food` is not in the list, and the singular `supplement` stays as a separate search form.
 
 ## Description
 
 Health Nutrition is a private food, drink and supplement journal. Log what you have, see your day against goals you set, and keep it all on your phone.
 
 LOG IT YOUR WAY
-- Scan a package barcode, scan a Nutrition Facts or Supplement Facts label, search foods by name, or type it in.
+- Scan a package barcode (look-up in the community catalog needs an account), scan a Nutrition Facts or Supplement Facts label, search foods by name, or type it in.
 - Log water with one tap on Today, or type another amount.
 - Keep favorites, recent items and saved meals, and log them again in a tap.
 - Build your own recipes and log a serving.
 - Create your own products with the nutrition facts you enter.
 
 SEE YOUR DAY
-- Today shows calories, protein, carbohydrate and fat, plus a bar for every other nutrient you track, against goals you set. Set the goals yourself, or answer a few questions to start from an estimate and change it any time.
+- Today shows calories, protein, carbohydrate and fat, plus a bar for every other nutrient you track, against goals you set. Set the goals yourself, or answer a few questions for a starting estimate you can change any time.
 - The Diary lists every day by meal. Open any entry to fix the amount, time or day.
 - Trends shows the last 7 days and 30-day averages from your own Diary. A day you did not log is shown as empty, not as zero.
-- See vitamins and minerals for the day beside published reference values.
+- See vitamins and minerals for the day beside published reference amounts.
 - Use US or metric units.
 
 SUPPLEMENTS AND WATER
@@ -66,10 +66,10 @@ MORE
 - Today widgets for the Home Screen and Lock Screen, and an Apple Watch app.
 - Log water, a saved meal or a supplement from Siri, Spotlight or Shortcuts.
 - Export your journal to a file you choose, and restore it later.
-- Erase all data in Settings clears the journal on this device.
+- Erase all data in Settings removes the journal and other app data on this device. It does not remove samples already written to Apple Health or shared catalog submissions.
 
 PRIVATE BY DESIGN
-- Your journal stays on this device. The app has no ads, no analytics and no tracking.
+- Your journal is stored on this device. The app has no ads, no analytics and no tracking.
 - Barcode and name lookups send only the barcode or the words you submit.
 - An account is optional. Sign in with Apple or an emailed code only if you want to share product labels with the community catalog.
 
@@ -105,14 +105,15 @@ result in App Store Connect, since the questionnaire's wording changes.
 | Medical or treatment information | None | The app is a journal. It gives no medical information, no advice and no treatment guidance. |
 | Health or wellness topics | Yes, infrequent | It logs nutrition, water and supplements. It gives no scores or advice. |
 | Unrestricted web access | No | The app only calls its fixed lookup services. It has no browser. |
-| User-generated content or messaging | No | A person can share a product label's facts with the community catalog after owner review. There is no chat, posting or free-text social feature. |
+| User-generated content | Yes | A signed-in person can share a product label's facts, which other people can find after owner review. There is no chat, posting, profile or free-text social feature. |
+| Messaging or chat | No | None. |
 | Parental controls, age assurance | No | None. |
 | In-app purchases, ads | None | The app has neither. |
 
 ## Review notes
 
 ```text
-Sign-in: none is needed. The app is fully usable signed out, and the reviewer does not need an account or a password. An account is optional and is used only to share product labels with the community catalog and to look up barcodes in that catalog. If you want to see it, Settings > Account offers Sign in with Apple, or an emailed one-time code (this may show an hCaptcha human check first). Delete account is in the same place.
+Sign-in: none is needed to review the main flow. The reviewer does not need an account or a password. An account is optional. Everything works signed out except two things: sharing product labels with the community catalog and looking up a barcode in that catalog, which need an account. Scanning a barcode still fills the barcode field without one. If you want to see it, Settings > Account offers Sign in with Apple, or an emailed one-time code (this may show an hCaptcha human check first). Delete account is in the same place.
 
 First launch: a welcome screen appears once. Tap Get started. Nothing is requested at launch.
 
