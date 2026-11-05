@@ -1,8 +1,13 @@
 import XCTest
 
-/// Saving a product from the Library's editor sheet confirms with "Product saved" and leaves the editor.
-/// The product is created in the test, edited once, and the edit is undone in the teardown.
+/// Saving a product edit from the Library's editor sheet confirms with "Product saved".
+/// One fixed product is used for every run: it is created only when Library does not already hold it, so the
+/// store grows by at most one row. The edit changes only the brand, and the teardown restores the brand through
+/// the same editor.
 final class ProductSaveConfirmationUITests: XCTestCase {
+    private let productName = "Synthetic save test"
+    private let editedBrand = "Synthetic brand"
+
     func testEditingAProductFromLibraryConfirmsTheSave() throws {
         let app = XCUIApplication()
         app.launch()
@@ -15,34 +20,73 @@ final class ProductSaveConfirmationUITests: XCTestCase {
         XCTAssertTrue(libraryTab.waitForExistence(timeout: 10), "no Library tab")
         libraryTab.tap()
 
-        let createProduct = app.buttons["Create product"]
-        XCTAssertTrue(createProduct.waitForExistence(timeout: 10), "Library has no Create product action")
-        createProduct.tap()
+        // Teardown runs in reverse order, so this restore runs before the app is terminated.
+        addTeardownBlock { [self] in
+            guard app.state == .runningForeground else { return }
+            if openEditor(app) {
+                let brand = app.textFields["Brand (optional)"]
+                if brand.waitForExistence(timeout: 5) {
+                    brand.tap()
+                    if let current = brand.value as? String, !current.isEmpty, current != "Brand (optional)" {
+                        brand.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count))
+                    }
+                }
+                let save = app.buttons["Save product on this device"]
+                scrollUntilHittable(save, in: app)
+                if save.isHittable { save.tap() }
+            }
+        }
 
-        let nameField = app.textFields["Name"]
-        XCTAssertTrue(nameField.waitForExistence(timeout: 10), "the product editor did not open")
-        nameField.tap()
-        nameField.typeText("Synthetic save test")
+        XCTAssertTrue(ensureProductExists(in: app), "the fixed test product could not be created or found")
+
+        XCTAssertTrue(openEditor(app), "the test product has no Edit and sharing review action")
+
+        let brand = app.textFields["Brand (optional)"]
+        XCTAssertTrue(brand.waitForExistence(timeout: 10), "the product editor did not open for the edit")
+        brand.tap()
+        brand.typeText(editedBrand)
 
         let save = app.buttons["Save product on this device"]
         scrollUntilHittable(save, in: app)
-        save.tap()
-
-        // The new product is listed in the Library; open its editor from its row.
-        let editRow = app.buttons["Edit and sharing review"].firstMatch
-        XCTAssertTrue(editRow.waitForExistence(timeout: 15), "the saved product has no Edit and sharing review action")
-        editRow.tap()
-
-        let editName = app.textFields["Name"]
-        XCTAssertTrue(editName.waitForExistence(timeout: 10), "the product editor did not open for the edit")
-        editName.tap()
-        editName.typeText(" two")
-
-        scrollUntilHittable(save, in: app)
+        XCTAssertTrue(save.isHittable, "Save product on this device is not reachable\n\(app.debugDescription)")
         save.tap()
 
         XCTAssertTrue(app.staticTexts["Product saved"].waitForExistence(timeout: 10),
                       "saving an edit from the Library did not confirm with Product saved\n\(app.debugDescription)")
+    }
+
+    /// Creates the fixed product unless Library already holds it. True when the product exists afterwards.
+    private func ensureProductExists(in app: XCUIApplication) -> Bool {
+        let search = app.textFields["Search on this device"]
+        if search.waitForExistence(timeout: 10) {
+            search.tap()
+            search.typeText(productName)
+            if app.buttons["Edit and sharing review"].waitForExistence(timeout: 5) { return true }
+            search.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: productName.count))
+        }
+
+        let createProduct = app.buttons["Create product"]
+        guard createProduct.waitForExistence(timeout: 10) else { return false }
+        createProduct.tap()
+
+        let nameField = app.textFields["Name"]
+        guard nameField.waitForExistence(timeout: 10) else { return false }
+        nameField.tap()
+        nameField.typeText(productName)
+
+        let save = app.buttons["Save product on this device"]
+        scrollUntilHittable(save, in: app)
+        guard save.isHittable else { return false }
+        save.tap()
+        return app.buttons["Edit and sharing review"].waitForExistence(timeout: 15)
+    }
+
+    /// Opens the editor for the fixed product from its Library row.
+    private func openEditor(_ app: XCUIApplication) -> Bool {
+        let editRow = app.buttons["Edit and sharing review"].firstMatch
+        guard editRow.waitForExistence(timeout: 10) else { return false }
+        editRow.tap()
+        return app.textFields["Name"].waitForExistence(timeout: 10)
     }
 }
 
