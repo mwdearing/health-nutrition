@@ -2511,6 +2511,9 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalDele
     /// `pendingOutbox()` hides a delete for its Undo window, so a worker reading the queue sees an upsert whose
     /// intake is already deleted and no delete beside it. This is how it tells that from a delete that was
     /// delivered. Read under `writeLock` with the same cutoff as `pendingOutbox()`, so the two agree.
+    /// The instant is the store's own, not a worker's `now`: `pendingOutbox()` hides and offers the delete by the
+    /// same reading, and a different one would leave a delete neither hidden nor offered. `undoDelete` removes the
+    /// delete rows, so nothing is held after an Undo.
     public func deleteHoldEnd(intakeID: String) throws -> Date? {
         let context = ModelContext(try openContainer())
         writeLock.lock()

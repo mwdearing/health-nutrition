@@ -600,6 +600,24 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         XCTAssertEqual(try projectionState(store, intakeID: intakeID), .succeeded)
     }
 
+    /// Undo removes the held delete row, so the hold is gone with it: the upsert is not kept waiting for the
+    /// rest of the window, and the very next run writes it.
+    func testTheHoldIsClearedByAnUndoAndTheNextRunWritesTheUpsert() async throws {
+        let (store, writer, _, worker) = try makeWorker()
+
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        let upsertID = try XCTUnwrap(healthKitOperation(store, kind: .upsert)?.operationID)
+        try store.delete(intakeID: intakeID, now: Date())
+        XCTAssertNotNil(try store.deleteHoldEnd(intakeID: intakeID))
+
+        try store.undoDelete(intakeID: intakeID)
+
+        XCTAssertNil(try store.deleteHoldEnd(intakeID: intakeID), "no delete row is left to hold")
+        let outcomes = await worker.runOnce(now: Date())
+        XCTAssertEqual(outcomes, [.delivered(operationID: upsertID, samples: 1)])
+        XCTAssertEqual(writer.saveCalls, 1)
+    }
+
     /// Once the Undo window has closed the delete is offered, so the upsert is superseded as before.
     func testAnUpsertIsSupersededOnceTheDeleteIsPastItsUndoWindow() async throws {
         let (store, writer, _, worker) = try makeWorker()
