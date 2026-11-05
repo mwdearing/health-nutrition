@@ -2,8 +2,9 @@ import XCTest
 
 /// Saving a product edit from the Library's editor sheet confirms with "Product saved".
 /// One fixed product is used for every run: it is created only when Library does not already hold it, so the
-/// store grows by at most one row. The edit changes only the brand, and the teardown restores the brand through
-/// the same editor.
+/// product itself is never duplicated. Each run still saves two revisions (the edit and the restore), so the
+/// store's revision history grows by two per run. The edit changes only the brand, and the teardown restores the
+/// brand through the same editor.
 final class ProductSaveConfirmationUITests: XCTestCase {
     private let productName = "Synthetic save test"
     private let editedBrand = "Synthetic brand"
