@@ -58,13 +58,9 @@ final class ProductSaveConfirmationUITests: XCTestCase {
 
     /// Creates the fixed product unless Library already holds it. True when the product exists afterwards.
     private func ensureProductExists(in app: XCUIApplication) -> Bool {
-        let search = app.textFields["Search on this device"]
-        if search.waitForExistence(timeout: 10) {
-            search.tap()
-            search.typeText(productName)
-            if app.buttons["Edit and sharing review"].waitForExistence(timeout: 5) { return true }
-            search.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: productName.count))
-        }
+        // The store holds only this test's product, so an existing Edit row is that product. Library's search field
+        // is not tapped: on the runner it sits under other controls and is not hittable.
+        if app.buttons["Edit and sharing review"].waitForExistence(timeout: 5) { return true }
 
         let createProduct = app.buttons["Create product"]
         guard createProduct.waitForExistence(timeout: 10) else { return false }
@@ -84,15 +80,6 @@ final class ProductSaveConfirmationUITests: XCTestCase {
 
     /// Opens the editor for the fixed product from its Library row.
     private func openEditor(_ app: XCUIApplication) -> Bool {
-        // Narrow Library to the fixed product by name, so the Edit button tapped is this product's and not another row's.
-        let search = app.textFields["Search on this device"]
-        if search.waitForExistence(timeout: 5) {
-            search.tap()
-            if let current = search.value as? String, !current.isEmpty, current != "Search on this device" {
-                search.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count))
-            }
-            search.typeText(productName)
-        }
         let editRow = app.buttons["Edit and sharing review"].firstMatch
         guard editRow.waitForExistence(timeout: 10) else { return false }
         editRow.tap()
