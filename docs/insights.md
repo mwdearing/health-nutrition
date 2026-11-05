@@ -1,10 +1,12 @@
 # Insights
 
-Reached from the **Trends** tab. It reads the Diary and nothing else, and makes no medical claim.
+Reached from the **Trends** tab. It reads the Diary, and Apple Health where it is connected, and makes no medical claim.
 
 - **Last 7 days.** One bar per local day for the last seven days: how many entries each holds, "N of 7 days
   logged", the entry count and the days with no entries. A day with no entries is shown empty, not as zero
-  intake. Each entry is filed on the day it has in the zone it was logged in, as the Diary files it.
+  intake. Each entry is filed on the day it has in the zone it was logged in, as the Diary files it. A day
+  Apple Health states a food or drink amount for also counts as logged, though it has no entry; water alone, a
+  zero, a failed read and Health not connected do not (#1267). The entry count stays the Diary's.
 - **Last 30 days.** The per-day average of energy, protein, carbohydrate and fat over the 30 local days
   ending today, with how many days that was. A fully known day counts as it is. A partly logged day counts with
   the sum of its known entries, so when any such day is included the line reads "at least" (a minimum, #510).

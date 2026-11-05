@@ -26,6 +26,23 @@ final class InsightsWeekTests: XCTestCase {
         XCTAssertEqual(week.entriesText, "4 entries")
     }
 
+    func testADayAppleHealthStatesIntakeForCountsAsLoggedWithoutAnEntry() {
+        let week = InsightsWeek.make(
+            entries: [InsightsWeek.Entry(occurredAt: now, timeZoneIdentifier: "UTC")], now: now, zone: utc, locale: locale,
+            healthIntakeDayKeys: ["2023-11-14", "2023-11-13", "2023-11-15"])
+        XCTAssertEqual(week.loggedDays, 3, "today by entry and by Health, plus two Health-only days")
+        XCTAssertEqual(week.headline, "3 of 7 days logged")
+        XCTAssertEqual(week.entryCount, 1, "the entry count stays the journal's")
+        XCTAssertTrue(week.hasAnyEntry)
+        XCTAssertEqual(week.emptyDays, 4)
+    }
+
+    func testAWeekOfOnlyHealthDaysIsNotNothingLogged() {
+        let week = InsightsWeek.make(entries: [], now: now, zone: utc, locale: locale, healthIntakeDayKeys: ["2023-11-15"])
+        XCTAssertTrue(week.hasAnyEntry)
+        XCTAssertEqual(week.headline, "1 of 7 days logged")
+    }
+
     func testEntriesOutsideTheWindowOrInTheFutureAreLeftOut() {
         let day: TimeInterval = 86_400
         let week = make([now - 8 * day, now + 3600])
