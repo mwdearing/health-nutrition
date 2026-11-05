@@ -116,9 +116,12 @@ private func focus(_ field: XCUIElement) {
 
 /// Swipes up until the element can be tapped, for a list or form whose rows are built on demand.
 private func scrollUntilHittable(_ element: XCUIElement, in app: XCUIApplication) {
+    // A Form or List scrolls as a table or collection view, so the swipe goes to that container, not the window.
+    let container = app.tables.firstMatch.exists ? app.tables.firstMatch
+        : (app.collectionViews.firstMatch.exists ? app.collectionViews.firstMatch : app)
     var swipes = 0
-    while !(element.exists && element.isHittable), swipes < 8 {
-        app.swipeUp()
+    while !(element.exists && element.isHittable), swipes < 20 {
+        container.swipeUp()
         swipes += 1
     }
 }
