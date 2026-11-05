@@ -1281,6 +1281,9 @@ public final class LabelCaptureViewModel: ObservableObject {
         // lose the reason anyone scanned a supplement panel. The label's own words travel with it, so
         // a slug that does not spell back to them (`dha` -> `DHA`) still reads right.
         for row in additionalRows where row.value != .unknown && !row.isPending {
+            // An extra row never takes a key a named row already set, so it cannot overwrite what the
+            // person answered on that row.
+            if nutrients[row.key] != nil { continue }
             nutrients[row.key] = row.value
             displayNames[row.key] = row.name
         }

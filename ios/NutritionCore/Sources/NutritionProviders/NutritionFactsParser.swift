@@ -47,9 +47,9 @@ public enum NutritionFactsParser {
         PanelRow(key: .transFat, aliases: ["trans fat"], usualUnit: .g),
         PanelRow(key: .cholesterol, aliases: ["cholesterol"], usualUnit: .mg),
         PanelRow(key: .sodium, aliases: ["sodium"], usualUnit: .mg),
-        PanelRow(key: .carbohydrates, aliases: ["total carbohydrate", "carbohydrate", "carbs"], usualUnit: .g),
+        PanelRow(key: .carbohydrates, aliases: ["total carbohydrates", "total carbohydrate", "carbohydrates", "carbohydrate", "carbs"], usualUnit: .g),
         PanelRow(key: .fiber, aliases: ["dietary fiber", "fibre", "fiber"], usualUnit: .g),
-        PanelRow(key: .sugars, aliases: ["total sugars", "sugars"], usualUnit: .g),
+        PanelRow(key: .sugars, aliases: ["total sugars", "total sugar", "sugars"], usualUnit: .g),
         PanelRow(key: .addedSugars, aliases: ["added sugars"], usualUnit: .g),
         PanelRow(key: .protein, aliases: ["protein"], usualUnit: .g),
         // A supplement panel writes the vitamin with its form letter attached ("Vitamin D3 25mcg"),
@@ -1042,7 +1042,7 @@ public enum NutritionFactsParser {
                 // whole-word occurrence still matches.
                 var search = lower.startIndex
                 while let found = lower.range(of: alias, range: search..<lower.endIndex) {
-                    if isWholeWord(found, in: lower) {
+                    if isWholeWord(found, in: lower), !isSubRowOfAnotherNutrient(found, for: row, in: lower) {
                         let start = lower.distance(from: lower.startIndex, to: found.lowerBound)
                         let length = alias.count
                         if let current = best {
@@ -1078,6 +1078,28 @@ public enum NutritionFactsParser {
             end = line.index(nameStart, offsetBy: best.length, limitedBy: line.endIndex) ?? line.endIndex
         }
         return RowMatch(row: best.row, nameStart: nameStart, end: end)
+    }
+
+    /// Whether a whole-word match of "fat" or "fiber" is the tail of a sub-row name: "Polyunsaturated Fat",
+    /// "Monounsaturated Fat" and "Unsaturated Fat" break down the total fat, and "Soluble Fiber" and
+    /// "Insoluble Fiber" break down the dietary fiber. They are not the total row, so the search moves past
+    /// them and the line is read as a row of its own (or left out on a Nutrition Facts panel).
+    private static func isSubRowOfAnotherNutrient(
+        _ range: Range<String.Index>, for row: PanelRow, in lower: String
+    ) -> Bool {
+        let qualifiers: Set<String>
+        switch row.key {
+        case .fat: qualifiers = ["polyunsaturated", "monounsaturated", "unsaturated"]
+        case .fiber: qualifiers = ["soluble", "insoluble"]
+        default: return false
+        }
+        var index = range.lowerBound
+        while index > lower.startIndex, lower[lower.index(before: index)] == " " { index = lower.index(before: index) }
+        var wordStart = index
+        while wordStart > lower.startIndex, lower[lower.index(before: wordStart)].isLetter {
+            wordStart = lower.index(before: wordStart)
+        }
+        return wordStart < index && qualifiers.contains(String(lower[wordStart..<index]))
     }
 
     /// Whether this row occurrence is a breakdown rather than its own nutrient amount.

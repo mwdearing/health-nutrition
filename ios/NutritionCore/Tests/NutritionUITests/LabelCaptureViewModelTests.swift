@@ -880,4 +880,33 @@ private final class GatedBarcodeLookup: BarcodeProductLookup, @unchecked Sendabl
         continuation?.resume(returning: result)
         continuation = nil
     }
+
+    // MARK: Extra rows and named rows
+
+    /// A corrected named row survives the save, and the sugars the panel stated land on the sugars key
+    /// instead of an extra row beside it.
+    func testCorrectedNamedRowSurvivesAndSugarsAreStoredUnderTheirKey() {
+        let model = makeModel()
+        model.load(lines: [
+            "Nutrition Facts", "Serving size 1 bar (40g)", "Calories 150",
+            "Total Carbohydrates 22g", "Total Sugar 9g", "Protein 10g",
+        ])
+
+        XCTAssertTrue(model.additionalRows.isEmpty)
+        XCTAssertTrue(model.correct(key: .carbohydrates, text: "20"))
+
+        let product = model.makeProduct()
+        XCTAssertEqual(product?.value(for: "carbohydrates"), .known(Decimal(20), .g))
+        XCTAssertEqual(product?.value(for: "sugars"), .known(Decimal(9), .g))
+    }
+
+    /// The guard against an extra row taking a named key must not drop an extra that has no named row,
+    /// such as the "Salt" an EU panel prints.
+    func testExtraSaltRowIsStillSaved() {
+        let model = makeModel()
+        model.load(lines: ["Supplement Facts", "Serving size 1 tablet", "Salt 0.5g"])
+
+        XCTAssertEqual(model.additionalRows.map(\.key), ["salt"])
+        XCTAssertEqual(model.makeProduct()?.value(for: "salt"), .known(Decimal(string: "0.5")!, .g))
+    }
 }
