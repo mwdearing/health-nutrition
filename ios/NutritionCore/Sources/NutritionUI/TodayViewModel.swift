@@ -119,7 +119,8 @@ public final class TodayViewModel: ObservableObject {
     /// Water components skipped because their unit is not a volume (never counted as zero).
     @Published public private(set) var waterSkippedCount: Int = 0
     /// True when an entry's water is in the day but cannot be counted: a distrusted entry (a negative logged,
-    /// stated or lookup value) that is a drink or carries a water share. The Diary marks that day's water unknown,
+    /// stated or lookup value) that is a drink or carries a water share, or a drink in a volume unit whose amount
+    /// cannot count (zero, negative, not a number). The Diary marks that day's water unknown,
     /// so Today shows the known part as "at least" and never adds the suspect amount (#1137).
     @Published public private(set) var waterHasUnknown: Bool = false
     /// Stored intakes left out of Today because their time zone identifier is not a valid time zone.
@@ -145,6 +146,8 @@ public final class TodayViewModel: ObservableObject {
     /// Health's side of Today's totals, set by the activity card after it reads. Until a read says otherwise
     /// Health is not connected, so the totals stay journal-only.
     public var outsideIntake: HealthIntakeTotals.Outside = .notConnected
+    /// Reads Apple Health for one interval, for the Vitamins and minerals Week view. Set by the app; nil until then.
+    public var healthDayReader: (@MainActor (Date, Date) async -> HealthDayRead)?
     /// Says the calorie goal was raised by activity, and by how much; nil when it was not.
     @Published public private(set) var activityGoalNote: String?
     static let energyKey = "energy"
@@ -310,8 +313,8 @@ public final class TodayViewModel: ObservableObject {
                     (components, snapshot, intake.category, typed: current?.productSnapshotID == nil), lookup: lookup)
                 if intake.category == "water" {
                     waterEntries += 1
-                    // A distrusted drink's water is unknown, as in the Diary: none of it is added. A component that
-                    // could not count anyway is still reported as skipped.
+                    // A distrusted drink's water is unknown, as in the Diary: none of it is added. A component whose
+                    // unit is not a volume is reported as skipped; a volume whose amount cannot count is unknown.
                     if distrusted { unknownWater = true }
                     for component in components {
                         if component.unit.dimension == .volume,
@@ -323,6 +326,10 @@ public final class TodayViewModel: ObservableObject {
                             // A water entry counts its full volume, or volume times its stored share when one is set.
                             waterTotal += converted.value * (component.hydrationPercent ?? 100) / 100
                             countedWater += 1
+                        } else if component.unit.dimension == .volume {
+                            // A volume with an amount that cannot count (zero, negative, not a number) is unknown, as the
+                            // Diary reads it; it is not "a unit that is not a volume", so it is not reported as skipped.
+                            unknownWater = true
                         } else {
                             skipped += 1
                         }
@@ -524,9 +531,11 @@ public final class TodayViewModel: ObservableObject {
     /// The vitamins and minerals screen, reading the same journal and nutrient facts as Today and the
     /// reference group kept with the display preferences.
     public func makeNutrientGaps() -> NutrientGapsViewModel {
-        NutrientGapsViewModel(
+        let model = NutrientGapsViewModel(
             store: store, lookup: lookup, preferences: preferences as? ReferenceGroupPreferences,
             healthToday: { [weak self] in self?.outsideIntake ?? .notConnected })
+        model.healthDayReader = healthDayReader
+        return model
     }
 
     /// The daily water goal used until the person sets one: 2,000 mL (about 68 fl oz).

@@ -2,7 +2,7 @@
 
 Status: Current. Reviewed whenever the notification permission flow or the erase flow changes.
 
-The app can show one optional daily reminder: a notification on this phone at a time the person
+The app can show one optional daily reminder: a notification on this device at a time the person
 chooses, asking them to log what they have eaten. It is off by default and nothing is sent anywhere.
 
 ## What it does
@@ -20,7 +20,7 @@ chooses, asking them to log what they have eaten. It is off by default and nothi
 - **Local only.** The reminder is a local notification. It does not use remote push, does not add an
   entitlement, a background mode or an Info.plist key, and does not change the app's delivery settings.
 - **Settings row.** The switch and the time picker sit in Settings under "Units and logging". The
-  footnote says: "A reminder on this phone at the time you choose. Nothing is sent anywhere."
+  footnote says: "A reminder on this device at the time you choose. Nothing is sent anywhere."
 - **Erase all data removes it.** The erase cancels the pending request and clears the stored switch and
   time. See [erase all data](erase-all-data.md).
 

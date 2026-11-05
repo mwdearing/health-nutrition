@@ -68,6 +68,10 @@ public struct NutrientGapsView: View {
         .background(TokenColors.background)
         .navigationTitle("Vitamins and minerals")
         .onAppear { model.load(now: now()) }
+        .task(id: model.span) {
+            // The Week view reads Apple Health per day; the Day view has nothing to read here.
+            await model.refreshWeekHealth(now: now())
+        }
     }
 }
 

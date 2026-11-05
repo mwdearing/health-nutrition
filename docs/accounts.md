@@ -5,7 +5,7 @@ An account is optional. It is used for the community catalog and its account fea
 ## Signing in
 
 - Sign in with Apple, or request a one-time code by email. The code is emailed to the address; there is no password.
-- The session is kept in the Keychain on this phone. It is readable only after the first unlock and is not copied by this app to another device.
+- The session is kept in the Keychain on this device. It is readable only after the first unlock and is not copied by this app to another device.
 - The first sign-in of each account on a phone shows a sharing disclosure before the sharing switch can authorize submissions. Acknowledgment is stored separately for each account on this device.
 - The Account section appears only in a build that carries the project settings (see [the community client](community-client.md) and the [iOS app README](../ios/HealthNutrition/README.md)). A local, unsigned or CI build with no account service makes no account calls.
 
@@ -13,7 +13,7 @@ Requesting an email sign-in code may first show an hCaptcha human check. Its emb
 
 ## What the account sends
 
-Signing in sends the account email address and identifier to the project server. The optional display name is saved to the account profile. These account details are separate from the local journal.
+Signing in sends the account email address and identifier to the project server. With Sign in with Apple, the one-time authorization code Apple gives the app is also sent, and the project server exchanges it for an Apple refresh token and keeps that token only so it can revoke the Sign in with Apple connection when you delete the account. The token is never stored on this device. The optional display name is saved to the account profile. These account details are separate from the local journal.
 
 ## Barcode lookup
 
@@ -21,7 +21,7 @@ The authenticated community catalog is asked when you submit the barcode field, 
 
 ## Searching and sharing a product you create
 
-When you are signed in and submit two or more characters in Search foods, the words you typed are sent to the project's server with your signed-in account to search shared products, whether or not Share labels is on. A signed-out person does not make this request. A new custom product entered by hand is shared under the same conditions as a saved label (signed in, disclosure acknowledged for the account, sharing on at save time); it can send its kind, name, brand, any barcode, serving and each nutrient's name, state and amount, linked to your account.
+When you are signed in and submit two or more characters in Search foods, the words you typed are sent to the project's server with your signed-in account to search shared products, whether or not Share labels is on. A signed-out person does not make this request. A new custom product entered by hand is shared under the same conditions as a saved label (signed in, disclosure acknowledged for the account, sharing on at save time); it can send its kind, name, brand, any barcode, serving and each nutrient's name, state and amount, linked to your account. If the app cannot read the status of a shared custom product, sharing pauses rather than guessing; a send interrupted by a restart goes back to waiting and is sent again.
 
 ## Sharing a saved label
 
@@ -37,6 +37,6 @@ Entries, product snapshots, goals, recipes, favorites, reminders and export file
 
 ## Sign out, delete and erase
 
-- **Sign out** asks the server to end the session and clears the session stored on this phone. Local journal data stays on the phone.
-- **Delete account** removes the server account, its profile and its submissions. An independently approved owner-reviewed catalog snapshot may remain without contributor identity. Local journal data and other device settings are kept.
-- **Erase all data** removes local journal rows, favorites, recipes, goals, the weight plan, display preferences, reminders, the session in this phone's Keychain and export files the app can still reach. It does not call server sign-out, delete the account or retract shared submissions. Copies already shared outside the app remain with those destinations. Row deletion is not a promise of forensic erasure.
+- **Sign out** asks the server to end the session and clears the session stored on this device. Local journal data stays on the phone.
+- **Delete account** first revokes the Sign in with Apple connection when the server holds it (an account that signed in with Apple before this feature, or whose hand-over failed, keeps the connection until you remove the app under Settings > Apple ID > Sign in with Apple), then removes the server account, its profile and its submissions. If the revoke or the deletion fails, the app says so and you can try again; the connection may already be revoked by then. An independently approved owner-reviewed catalog snapshot may remain without contributor identity. Local journal data and other device settings are kept.
+- **Erase all data** removes local journal rows, favorites, recipes, goals, the weight plan, display preferences, reminders, the session in this device's Keychain and export files the app can still reach. It does not call server sign-out, delete the account or retract shared submissions. Copies already shared outside the app remain with those destinations. Row deletion is not a promise of forensic erasure.

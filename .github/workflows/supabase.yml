@@ -22,3 +22,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Apply the migrations to a throwaway Postgres and run the behavior test
         run: supabase/tests/run.sh
+  apple-grant:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Test the Apple grant function against doubles
+        run: npx --yes deno@2.1.4 test --no-check supabase/functions/apple-grant/handler_test.ts
