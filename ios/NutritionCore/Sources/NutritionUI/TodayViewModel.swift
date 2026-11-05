@@ -324,10 +324,6 @@ public final class TodayViewModel: ObservableObject {
                             // A water entry counts its full volume, or volume times its stored share when one is set.
                             waterTotal += converted.value * (component.hydrationPercent ?? 100) / 100
                             countedWater += 1
-                        } else if component.unit.dimension == .volume {
-                            // A volume with an amount that cannot count (zero, negative, not a number) is unknown, as the
-                            // Diary reads it; it is not "a unit that is not a volume", so it is not reported as skipped.
-                            unknownWater = true
                         } else {
                             skipped += 1
                         }
