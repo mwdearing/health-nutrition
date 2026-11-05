@@ -68,6 +68,22 @@ final class ZoneChangeReloadTests: XCTestCase {
         XCTAssertEqual(journal.todaySection?.id, "2026-10-20", "today follows Tokyo after the gap change")
     }
 
+    /// The unfixed half of #648: Today follows a day, zone or clock change while the app stays open.
+    func testADayChangeMovesTodayToTheNewDate() async throws {
+        let store = try makeStore()
+        let today = TodayViewModel(store: store, timeZoneIdentifier: "UTC")
+        today.load(now: now)
+        let subtitleBefore = today.dateSubtitle
+        let later = now.addingTimeInterval(86_400)
+        let changes = AsyncStream<Void> { continuation in
+            continuation.yield(())
+            continuation.finish()
+        }
+        await today.runDayChangeReloads({ changes }, now: { later })
+        XCTAssertEqual(today.lastLoadedAt, later, "the change reloaded Today at the new time")
+        XCTAssertNotEqual(today.dateSubtitle, subtitleBefore, "the date under the title moved to the next day")
+    }
+
     private final class StartCounter { var count = 0 }
 
     /// #654: a stream that throws is started again, so a later zone change still reloads the Diary.

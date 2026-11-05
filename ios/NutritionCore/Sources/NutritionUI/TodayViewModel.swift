@@ -265,6 +265,20 @@ public final class TodayViewModel: ObservableObject {
         return tracked + [DailyTotalsBuilder.waterKey]
     }
 
+    /// Reloads Today on each change of day, time zone or clock while the screen stays open, so its date, rows
+    /// and totals follow the device without a foreground or a write (the Diary does the same for a zone change, #648).
+    /// The changes are injected so a test can send one without a system notification. It reloads once when the
+    /// subscription starts, so a change that landed before it was made is applied.
+    public func runDayChangeReloads<Changes: AsyncSequence>(
+        _ makeChanges: @escaping () -> Changes, now: @escaping () -> Date
+    ) async where Changes.Element == Void {
+        var changes = makeChanges().makeAsyncIterator()
+        load(now: now())
+        while (try? await changes.next()) != nil {
+            load(now: now())
+        }
+    }
+
     /// Reloads Today: active intakes whose own-zone day is today's date in the current zone, the Diary's today.
     public func load(now: Date) {
         // Nil while a load is in progress and after one that failed, so it only ever names a load whose totals
