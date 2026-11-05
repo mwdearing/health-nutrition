@@ -133,4 +133,56 @@ final class WatchSnapshotReceiverTests: XCTestCase {
         receiver.receive(context: try context(generation: 0, snapshot: sample()))
         XCTAssertEqual(reloads, 0)
     }
+
+    // MARK: Watch Connectivity background refresh
+
+    func testRefreshAppliesThePendingContextAndReloadsBeforeReturning() async throws {
+        let (receiver, store) = makeReceiver()
+        let pending = try context(generation: 0, snapshot: sample())
+        await WatchConnectivityRefresh.run(
+            receiver: receiver, context: { pending }, hasContentPending: { false }, pause: {})
+        XCTAssertEqual(store.read()?.energyKcal, 1_050)
+        XCTAssertEqual(reloads, 1)
+    }
+
+    func testRefreshKeepsWaitingWhileContentIsPendingAndAppliesWhatArrives() async throws {
+        let (receiver, store) = makeReceiver()
+        var contexts = [try context(generation: 0, snapshot: sample())]
+        var pendingChecks = 2
+        await WatchConnectivityRefresh.run(
+            receiver: receiver, context: { contexts.last ?? [:] },
+            hasContentPending: {
+                pendingChecks -= 1
+                if pendingChecks == 0 {
+                    var newer = self.sample()
+                    newer.energyKcal = 1_900
+                    contexts.append((try? self.context(generation: 0, snapshot: newer)) ?? [:])
+                }
+                return pendingChecks > 0
+            }, pause: {})
+        XCTAssertEqual(pendingChecks, 0)
+        XCTAssertEqual(store.read()?.energyKcal, 1_900)
+    }
+
+    func testRefreshGivesUpWaitingAfterTheLimit() async throws {
+        let (receiver, _) = makeReceiver()
+        var pauses = 0
+        await WatchConnectivityRefresh.run(
+            receiver: receiver, context: { [:] }, hasContentPending: { true }, pause: { pauses += 1 }, maxChecks: 3)
+        XCTAssertEqual(pauses, 3)
+    }
+
+    func testRefreshIgnoresAnEmptyContextAndKeepsTheEraseOrdering() async throws {
+        let (receiver, store) = makeReceiver()
+        receiver.receive(context: try context(generation: 2, snapshot: nil))
+        reloads = 0
+        let older = try context(generation: 1, snapshot: sample())
+        await WatchConnectivityRefresh.run(
+            receiver: receiver, context: { [:] }, hasContentPending: { false }, pause: {})
+        XCTAssertEqual(reloads, 0)
+        await WatchConnectivityRefresh.run(
+            receiver: receiver, context: { older }, hasContentPending: { false }, pause: {})
+        XCTAssertEqual(store.read()?.hasEntries, false)
+        XCTAssertEqual(reloads, 0)
+    }
 }

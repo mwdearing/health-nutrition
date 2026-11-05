@@ -6,28 +6,49 @@ import WidgetKit
 /// shows it. It has no feature of its own and logs nothing.
 @main
 struct HealthNutritionWatchApp: App {
-    @StateObject private var model = WatchSummaryModel()
     @Environment(\.scenePhase) private var scenePhase
+
+    init() {
+        // The session is activated here, outside any scene, so it exists when the system wakes the app in the
+        // background with a Watch Connectivity task and no scene is created.
+        _ = WatchSummaryModel.shared
+    }
 
     var body: some Scene {
         WindowGroup {
-            WatchTodayView(snapshot: model.snapshot)
+            WatchTodayRoot(model: WatchSummaryModel.shared)
         }
         // A process that stayed alive in the background re-reads what is stored when the app is opened again.
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { model.refresh() }
+            if phase == .active { WatchSummaryModel.shared.refresh() }
+        }
+        // The system wakes the app for a context the phone sent while it was not running. The task ends when this
+        // returns, so it returns only once the context has been stored and the complications reloaded.
+        .backgroundTask(.watchConnectivity) {
+            await WatchSummaryModel.shared.handleWatchConnectivityRefresh()
         }
     }
 }
 
+struct WatchTodayRoot: View {
+    @ObservedObject var model: WatchSummaryModel
+
+    var body: some View {
+        WatchTodayView(snapshot: model.snapshot)
+    }
+}
+
 final class WatchSummaryModel: NSObject, ObservableObject, WCSessionDelegate {
+    /// One instance for the process, owned by no scene, so the session and the receiver outlive any window.
+    static let shared = WatchSummaryModel()
+
     @Published private(set) var snapshot: WidgetSnapshot?
     private let store = WidgetSnapshotStore.appGroup()
     private lazy var receiver = WatchSnapshotReceiver(store: store) {
         WidgetCenter.shared.reloadAllTimelines()
     }
 
-    override init() {
+    private override init() {
         super.init()
         refresh()
         guard WCSession.isSupported() else { return }
@@ -42,9 +63,27 @@ final class WatchSummaryModel: NSObject, ObservableObject, WCSessionDelegate {
         DispatchQueue.main.async { self.snapshot = stored }
     }
 
+    /// The body of the Watch Connectivity background task: makes sure the session is active, applies the pending
+    /// context and returns once the session has nothing more waiting (or after a bounded wait).
+    func handleWatchConnectivityRefresh() async {
+        guard WCSession.isSupported() else { return }
+        let session = WCSession.default
+        if session.delegate == nil { session.delegate = self }
+        if session.activationState != .activated { session.activate() }
+        // The context is only readable once the session is active.
+        var activationChecks = 0
+        while session.activationState != .activated, activationChecks < 20 {
+            activationChecks += 1
+            try? await Task.sleep(nanoseconds: 250_000_000)
+        }
+        await WatchConnectivityRefresh.run(
+            receiver: receiver, context: { session.receivedApplicationContext },
+            hasContentPending: { session.hasContentPending }, pause: { try? await Task.sleep(nanoseconds: 250_000_000) })
+        refresh()
+    }
+
     private func apply(_ context: [String: Any]) {
-        guard !context.isEmpty else { return }
-        receiver.receive(context: context)
+        WatchConnectivityRefresh.apply(context, through: receiver)
         refresh()
     }
 
