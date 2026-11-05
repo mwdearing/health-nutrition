@@ -455,10 +455,6 @@ struct RootView: View {
         let model = CustomProductEditorViewModel(store: services.journalStore, revision: revision, legacy: legacy, sharing: services.productSharing)
         libraryEditor = LibraryProductEditor(model: model)
     }
-    private func startProductEditor(revision: CustomProductRevision? = nil, legacy: LegacyCustomProductDraft? = nil) {
-        startAddingIntake()
-        if let home = addHome { openProductEditor(home: home, revision: revision, legacy: legacy) }
-    }
     private func startProductSearch() {
         startAddingIntake()
         if let home = addHome { openAddRoute(.productSearch, home: home) }
