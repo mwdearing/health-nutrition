@@ -923,7 +923,7 @@ public final class JournalViewModel: ObservableObject {
         }
         // A journal with no day at all has a week card only when Health states intake for a day in the window;
         // otherwise it shows its empty state alone.
-        guard !sections.isEmpty || !healthOnlyKeys.isEmpty else { return nil }
+        guard !sections.isEmpty else { return nil }
         let logged = week.filter { hasFoodEntries($0.rows) || outsideByDay[$0.id]?.statesIntake == true }
         let days: [WeekDay] = logged.map { WeekDay(totals: $0.totals, outside: outsideByDay[$0.id] ?? .notConnected) }
             + healthOnlyKeys.map { WeekDay(totals: nil, outside: outsideByDay[$0] ?? .notConnected) }
