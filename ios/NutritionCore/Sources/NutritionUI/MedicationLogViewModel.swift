@@ -113,7 +113,7 @@ public final class MedicationLogViewModel: ObservableObject {
     }
 
     /// Brings the medication reminders in line with the log. Never asks for permission.
-    private func syncReminders() {
+    func syncReminders() {
         guard let reminders else { return }
         Task { @MainActor in await reminders.sync() }
     }
@@ -129,7 +129,9 @@ public final class MedicationLogViewModel: ObservableObject {
 
     /// A history view model for one medication, reading the same store with this view model's clock and zone.
     public func historyModel(for medicationID: UUID) -> MedicationHistoryViewModel {
-        MedicationHistoryViewModel(store: store, medicationID: medicationID, now: now, timeZone: timeZone)
+        let history = MedicationHistoryViewModel(store: store, medicationID: medicationID, now: now, timeZone: timeZone)
+        history.onLogChanged = { [weak self] in self?.syncReminders() }
+        return history
     }
 
     /// Reads the medications and doses and rebuilds the rows. A store read that fails leaves no rows, sets the message

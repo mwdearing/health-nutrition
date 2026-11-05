@@ -50,6 +50,8 @@ public final class MedicationHistoryViewModel: ObservableObject {
     @Published public private(set) var didChange = false
     /// Whether a reminder can be offered: the medication is active and keeps a schedule.
     @Published public private(set) var canRemind = false
+    /// Called after a dose is saved or deleted here, so the medication reminders follow the change at once.
+    public var onLogChanged: (() -> Void)?
 
     /// A view model over one medication's doses. `now` is kept for the same clock as the list, and `timeZone` is the
     /// device's zone, which a changed time takes.
@@ -119,6 +121,7 @@ public final class MedicationHistoryViewModel: ObservableObject {
         }
         didChange = true
         load()
+        onLogChanged?()
         return nil
     }
 
@@ -132,6 +135,7 @@ public final class MedicationHistoryViewModel: ObservableObject {
         }
         didChange = true
         load()
+        onLogChanged?()
     }
 
     // MARK: - Reading

@@ -384,6 +384,84 @@ final class MedicationCapableReminderScheduler: ReminderScheduling, MedicationRe
     func cancelAll() {}
 }
 
+/// Records the medication reminder calls, for the erase and the history re-sync.
+final class CountingMedicationScheduler: ReminderScheduling, MedicationReminderScheduling, @unchecked Sendable {
+    private let lock = NSLock()
+    private var _replaces = 0
+    private var _cancelled: [UUID] = []
+    var replaces: Int { lock.withLock { _replaces } }
+    var cancelled: [UUID] { lock.withLock { _cancelled } }
+    func permission() async -> ReminderPermission { .allowed }
+    func requestPermission() async -> Bool { true }
+    func scheduleDaily(at time: ReminderTime) async throws {}
+    func cancelDaily() {}
+    func pendingDailyCount() async -> Int { 0 }
+    func replaceAll(with requests: [MedicationReminderRequest]) async throws { lock.withLock { _replaces += 1 } }
+    func cancelAll() {}
+    func cancel(medicationIDs: [UUID]) { lock.withLock { _cancelled += medicationIDs } }
+}
+
+@MainActor
+final class MedicationReminderFollowUpTests: XCTestCase {
+    /// The erase removes the pending and delivered requests of every stored setting before it returns.
+    func testEraseRemovesEachMedicationRequestBeforeItReturns() {
+        let scheduler = CountingMedicationScheduler()
+        let store = InMemoryMedicationReminderStore()
+        let id = UUID()
+        store.save([MedicationReminderSetting(medicationID: id, time: ReminderTime(hour: 8, minute: 0))])
+        let eraser = MedicationReminderEraser(store: store, scheduler: scheduler, erasures: ReminderErasures())
+        eraser.eraseAll()
+        XCTAssertEqual(scheduler.cancelled, [id])
+        XCTAssertEqual(store.settings, [])
+    }
+
+    private func waitForReplaces(_ scheduler: CountingMedicationScheduler, above count: Int) async {
+        for _ in 0..<200 where scheduler.replaces <= count { try? await Task.sleep(nanoseconds: 10_000_000) }
+    }
+
+    /// A saved edit or a delete in the history re-syncs the reminders while the screen is still open; a refused
+    /// save does not.
+    func testHistoryEditAndDeleteResyncTheRemindersAndAFailedSaveDoesNot() async throws {
+        let medication = Medication(name: "Example weekly injection", unit: .mg, scheduleDays: 7)
+        let store = InMemoryMedicationStore()
+        try store.saveMedication(medication)
+        let first = MedicationDose(
+            medicationID: medication.id, takenAt: Date().addingTimeInterval(-86_400), timeZoneIdentifier: "UTC",
+            amount: 2.5, unit: .mg)
+        let second = MedicationDose(
+            medicationID: medication.id, takenAt: Date().addingTimeInterval(-3_600), timeZoneIdentifier: "UTC",
+            amount: 2.5, unit: .mg)
+        try store.saveDose(first)
+        try store.saveDose(second)
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setMedicationLogOn(true)
+        let scheduler = CountingMedicationScheduler()
+        let reminderStore = InMemoryMedicationReminderStore()
+        reminderStore.save([MedicationReminderSetting(medicationID: medication.id, time: ReminderTime(hour: 8, minute: 0))])
+        let controller = MedicationReminderController(
+            store: reminderStore, permissions: scheduler, scheduler: scheduler, medications: store,
+            preferences: preferences)
+        let log = MedicationLogViewModel(store: store, preferences: preferences)
+        log.reminders = controller
+        let history = log.historyModel(for: medication.id)
+        history.load()
+
+        var seen = scheduler.replaces
+        XCTAssertNotNil(history.saveEdit(doseID: second.id, amountText: "0", takenAt: Date(), noteText: ""))
+        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertEqual(scheduler.replaces, seen, "a refused save does not re-sync")
+
+        XCTAssertNil(history.saveEdit(doseID: second.id, amountText: "3", takenAt: Date(), noteText: ""))
+        await waitForReplaces(scheduler, above: seen)
+        XCTAssertGreaterThan(scheduler.replaces, seen, "a saved edit re-syncs")
+
+        seen = scheduler.replaces
+        history.deleteDose(id: first.id)
+        await waitForReplaces(scheduler, above: seen)
+        XCTAssertGreaterThan(scheduler.replaces, seen, "a delete re-syncs")
+    }
+}
+
 /// A reminder scheduler that records calls and answers from settable state, for the app's own wiring.
 final class RecordingReminderScheduler: ReminderScheduling, @unchecked Sendable {
     private let lock = NSLock()

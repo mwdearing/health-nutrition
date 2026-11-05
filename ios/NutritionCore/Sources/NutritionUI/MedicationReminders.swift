@@ -88,6 +88,13 @@ public protocol MedicationReminderScheduling: AnyObject, Sendable {
     func replaceAll(with requests: [MedicationReminderRequest]) async throws
     /// Removes every pending and delivered medication request. Synchronous so an erase can finish before it returns.
     func cancelAll()
+    /// Removes the pending and delivered requests of these medications, synchronously, so an erase has finished
+    /// removing them when it returns. The default removes every medication request.
+    func cancel(medicationIDs: [UUID])
+}
+
+extension MedicationReminderScheduling {
+    public func cancel(medicationIDs: [UUID]) { cancelAll() }
 }
 
 /// Where the medication reminder settings are kept.
@@ -328,7 +335,8 @@ public final class MedicationReminderEraser: JournalErasing, @unchecked Sendable
 
     public func eraseAll() {
         erasures.record()
+        let ids = store.settings.map(\.medicationID)
         store.clear()
-        scheduler.cancelAll()
+        scheduler.cancel(medicationIDs: ids)
     }
 }

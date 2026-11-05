@@ -28,6 +28,14 @@ extension SystemReminderScheduler: MedicationReminderScheduling {
         }
     }
 
+    /// Removes by identifier, which the center does before the call returns, so an erase is done when it returns.
+    func cancel(medicationIDs: [UUID]) {
+        let center = UNUserNotificationCenter.current()
+        let identifiers = medicationIDs.map { MedicationReminderPlan.identifierPrefix + $0.uuidString }
+        center.removePendingNotificationRequests(withIdentifiers: identifiers)
+        center.removeDeliveredNotifications(withIdentifiers: identifiers)
+    }
+
     func cancelAll() {
         let center = UNUserNotificationCenter.current()
         Task {
