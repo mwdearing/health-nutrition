@@ -76,7 +76,7 @@ final class BoundedResponseOperation: NSObject, URLSessionDataDelegate, @uncheck
     }
 
     /// URLSession strips only `Authorization` and `Cookie` when a redirect leaves the origin, so the provider key
-    /// header is dropped here unless the scheme, host and port all match the original request: a key sent to
+    /// headers are dropped here unless the scheme, host and port all match the original request: a key sent to
     /// the provider is never sent on over plain http or to another host or port.
     static func strippingKeyOnCrossHostRedirect(_ redirected: URLRequest, from original: URLRequest?) -> URLRequest {
         // An origin that cannot be read on either side counts as a different one: the key stays only when both match.
@@ -84,9 +84,13 @@ final class BoundedResponseOperation: NSObject, URLSessionDataDelegate, @uncheck
             return redirected
         }
         var request = redirected
-        request.setValue(nil, forHTTPHeaderField: "X-Api-Key")
+        for name in credentialHeaders { request.setValue(nil, forHTTPHeaderField: name) }
         return request
     }
+
+    /// The headers the provider clients use to carry a key or a token: USDA `X-Api-Key`, and the community
+    /// service's `apikey` and `Authorization`.
+    private static let credentialHeaders = ["X-Api-Key", "apikey", "Authorization"]
 
     private static func origin(of url: URL?) -> String? {
         guard let url, let scheme = url.scheme?.lowercased(), let host = url.host?.lowercased() else { return nil }

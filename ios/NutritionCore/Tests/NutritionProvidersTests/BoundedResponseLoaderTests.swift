@@ -161,8 +161,12 @@ final class BoundedResponseLoaderTests: XCTestCase {
         elsewhere.setValue("secret", forHTTPHeaderField: "X-Api-Key")
         var sameHost = URLRequest(url: URL(string: "https://PROVIDER.invalid/final")!)
         sameHost.setValue("secret", forHTTPHeaderField: "X-Api-Key")
-        XCTAssertNil(BoundedResponseOperation.strippingKeyOnCrossHostRedirect(elsewhere, from: original)
-            .value(forHTTPHeaderField: "X-Api-Key"))
+        elsewhere.setValue("anon", forHTTPHeaderField: "apikey")
+        elsewhere.setValue("Bearer token", forHTTPHeaderField: "Authorization")
+        let stripped = BoundedResponseOperation.strippingKeyOnCrossHostRedirect(elsewhere, from: original)
+        for name in ["X-Api-Key", "apikey", "Authorization"] {
+            XCTAssertNil(stripped.value(forHTTPHeaderField: name), name)
+        }
         XCTAssertEqual(BoundedResponseOperation.strippingKeyOnCrossHostRedirect(sameHost, from: original)
             .value(forHTTPHeaderField: "X-Api-Key"), "secret")
         var keyed = URLRequest(url: URL(string: "https://provider.invalid/final")!)
