@@ -517,9 +517,14 @@ def shipped_bundles(root: Path) -> list[Bundle]:
             candidate
             for directory in source_directories
             for candidate in directory.rglob(MANIFEST_NAME)
-            if candidate.is_file()
+            if candidate.is_file() or candidate.is_symlink()
             )
         )
+        for candidate in manifests:
+            # Same containment as the Swift sources: a symlinked manifest, or one that resolves outside the
+            # checkout, must not be read.
+            if candidate.is_symlink() or not candidate.resolve().is_relative_to(root.resolve()):
+                raise UsageError(f"{candidate}: not a regular file inside the checkout")
         if len(manifests) > 1:
             listed = ", ".join(str(m) for m in manifests)
             raise UsageError(f"{project}: {target.name} has more than one {MANIFEST_NAME} ({listed}); it needs exactly one")

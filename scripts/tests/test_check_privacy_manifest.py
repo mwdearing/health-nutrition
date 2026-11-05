@@ -1080,3 +1080,15 @@ def test_the_success_line_counts_each_category_once(tmp_path: Path) -> None:
     result = run(root)
     assert result.returncode == 0, result.stdout + result.stderr
     assert "1 required-reason category/categories used and declared across 4 bundle(s)" in result.stdout
+
+
+def test_a_symlinked_privacy_manifest_leaving_the_checkout_is_refused(tmp_path: Path) -> None:
+    outside = tmp_path / "outside.xcprivacy"
+    outside.write_text(manifest_xml(declared=[], collected=[]), encoding="utf-8")
+    root = write_embedded_tree(tmp_path, {})
+    link = root / "HealthNutrition" / "Widgets" / "PrivacyInfo.xcprivacy"
+    link.unlink()
+    link.symlink_to(outside)
+    result = run(root)
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert "regular file" in result.stdout
