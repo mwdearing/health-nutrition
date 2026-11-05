@@ -14,7 +14,7 @@ changes. Nothing here claims a score, advice or a medical effect, and the verb f
 | Keywords | 90 | 100 |
 | Description | 2647 | 4000 |
 | What's New | 324 | 4000 |
-| Review notes | 2996 | 4000 |
+| Review notes | 3055 | 4000 |
 
 Counts are Unicode characters as Python's `len` reports them, not counting the trailing newline. The keyword field counts the commas.
 
@@ -123,7 +123,7 @@ Apple Health (HealthKit): off until the user taps Connect Apple Health in Settin
 
 Camera: used only to scan a package barcode or read a Nutrition Facts or Supplement Facts label on the device. No image is stored or sent by the app. A rare camera check can also appear inside the hCaptcha challenge for an emailed sign-in code; that check runs in hCaptcha's own view.
 
-Medication log: off until the person turns on the Medication log switch in Settings > Units and logging. While it is on, it keeps the medications the person names (each with a unit and an optional schedule in days) and the doses the person types (amount, time and an optional note). Each medication has a history with edit and delete. Today shows a tile for it, the weight chart marks the days that have a logged dose, and the journal export carries it, with an add-only restore. Erase all data removes it. It stays on this device: it is not written to Apple Health and not sent to any server. It does not give medical advice, suggest doses, grade adherence or send reminders.
+Medication log: off until the person turns on the Medication log switch in Settings > Units and logging. While it is on, it keeps the medications the person names (each with a unit and an optional schedule in days) and the doses the person types (amount, time, an optional site and an optional note). The site is never shown back in the log. Each medication has a history with edit and delete. Today shows a tile for it, the weight chart marks the days that have a logged dose, and the journal export carries it, with an add-only restore. Erase all data removes it. It stays on this device: it is not written to Apple Health and not sent to any server. It does not give medical advice, suggest doses, grade adherence or send reminders.
 
 Notifications: optional reminders to log water or supplements, off until the user turns them on.
 
