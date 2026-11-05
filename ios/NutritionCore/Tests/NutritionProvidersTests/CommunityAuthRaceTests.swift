@@ -49,6 +49,7 @@ final class LifecycleTransport: CommunityTransport, @unchecked Sendable {
         case "/auth/v1/verify": kind = "verify"
         case "/rest/v1/profiles", "/rest/v1/rpc/catalog_capabilities_v2": kind = "profile"
         case "/rest/v1/rpc/delete_my_account": kind = "delete"
+        case "/functions/v1/apple-grant": kind = "revoke"
         case "/auth/v1/token":
             kind = request.url?.query?.contains("refresh_token") == true ? "refresh" : "signin"
         default: kind = "other"
@@ -548,7 +549,7 @@ final class CommunityAuthRaceTests: XCTestCase {
         )
 
         await assertCommunityError(.storage) { try await client.deleteAccount() }
-        XCTAssertEqual(transport.operations, ["delete"], "server deletion must happen before local clear")
+        XCTAssertEqual(transport.operations, ["revoke", "delete"], "server deletion must happen before local clear")
         XCTAssertEqual(store.load(), stored)
     }
 
@@ -623,7 +624,7 @@ final class CommunityAuthRaceTests: XCTestCase {
         transport.release("delete")
 
         await assertCommunityError(.storage) { try await deletion.value }
-        XCTAssertEqual(transport.operations, ["delete"], "the server deletion completed before the local session read failed")
+        XCTAssertEqual(transport.operations, ["revoke", "delete"], "the server deletion completed before the local session read failed")
         XCTAssertEqual(store.storedSession, stored, "a failed matching read must not silently claim the local session was invalidated")
     }
 
