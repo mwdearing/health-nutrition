@@ -84,13 +84,16 @@ final class BoundedResponseOperation: NSObject, URLSessionDataDelegate, @uncheck
             return redirected
         }
         var request = redirected
-        for name in credentialHeaders { request.setValue(nil, forHTTPHeaderField: name) }
+        // Matched without regard to case, so a header spelled another way is dropped on every platform.
+        for name in Array((request.allHTTPHeaderFields ?? [:]).keys) where credentialHeaders.contains(name.lowercased()) {
+            request.setValue(nil, forHTTPHeaderField: name)
+        }
         return request
     }
 
     /// The headers the provider clients use to carry a key or a token: USDA `X-Api-Key`, and the community
     /// service's `apikey` and `Authorization`.
-    private static let credentialHeaders = ["X-Api-Key", "apikey", "Authorization"]
+    private static let credentialHeaders = ["x-api-key", "apikey", "authorization"]
 
     private static func origin(of url: URL?) -> String? {
         guard let url, let scheme = url.scheme?.lowercased(), let host = url.host?.lowercased() else { return nil }
