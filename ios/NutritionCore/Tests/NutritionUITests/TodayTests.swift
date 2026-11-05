@@ -324,7 +324,7 @@ final class TodayTests: XCTestCase {
         XCTAssertEqual(model.waterTotalMilliliters, Decimal(1250))
     }
 
-    func testWaterTotalSkipsInvalidAmounts() throws {
+    func testWaterTotalMarksInvalidVolumesUnknown() throws {
         var intakes: [Intake] = []
         var components: [String: [IntakeComponent]] = [:]
         let amounts: [(String, Decimal, MeasureUnit)] = [
