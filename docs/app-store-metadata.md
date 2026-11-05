@@ -130,7 +130,7 @@ Privacy: the privacy manifest, the policy and the App Store privacy answers are 
 
 ## Before you submit
 
-- Community catalog and sign-in: confirmed live for the signed build on 2026-11-04, so the copy stays. The evidence is in the project thread, not in this public file. Recheck it if the hosted project changes before submission.
+- Community catalog and sign-in: README.md says the repository alone does not show a hosted shared service, and that stays true because the evidence is outside the repository. The owner's host check on 2026-11-04 found the hosted project answering and the signed build's configuration present, so the copy stays. Recheck it if the hosted project changes before submission, and drop the catalog and account lines if it is not live.
 - Confirm the name is free in App Store Connect.
 
 ## Claims boundary
