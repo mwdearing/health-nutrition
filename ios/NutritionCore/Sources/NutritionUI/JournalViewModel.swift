@@ -908,7 +908,7 @@ public final class JournalViewModel: ObservableObject {
             calendar.date(byAdding: .day, value: -back, to: startOfToday).map { dayKey($0, zone: zone) }
         }
         let healthOnlyKeys = windowKeys.filter { key in
-            outsideByDay[key]?.statesIntake == true && !week.contains { $0.id == key }
+            outsideByDay[key]?.statesIntake == true && !sections.contains { $0.id == key }
         }
         let logged = week.filter { hasFoodEntries($0.rows) || outsideByDay[$0.id]?.statesIntake == true }
         let days: [WeekDay] = logged.map { WeekDay(totals: $0.totals, outside: outsideByDay[$0.id] ?? .notConnected) }
