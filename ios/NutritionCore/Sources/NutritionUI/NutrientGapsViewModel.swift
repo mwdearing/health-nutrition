@@ -517,9 +517,10 @@ public final class NutrientGapsViewModel: ObservableObject {
         return tallies
     }
 
-    /// The week's totals as a daily average over each nutrient's own stated days, so a day that said
-    /// nothing about a nutrient never reads as a day with none of it. Entry counts stay totals, so
-    /// "Unknown for 3 entries" still counts entries.
+    /// The week's totals as a daily average over each nutrient's own days, so a day with no entry that could
+    /// state a nutrient is left out of the divisor rather than read as a day with none of it. A day whose
+    /// entries could state it but were all unknown does count in the divisor, which is why the figure reads
+    /// "At least". Entry counts stay totals, so "Unknown for 3 entries" still counts entries.
     static func averaged(_ tallies: [String: NutrientDayTally], byDay: [[String: NutrientDayTally]]) -> [String: NutrientDayTally] {
         let days = statedDays(byDay)
         return Dictionary(uniqueKeysWithValues: tallies.map { nutrient, tally in
