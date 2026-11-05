@@ -353,7 +353,9 @@ final class HealthKitDeliveryStatus: AppleHealthConnecting {
             let outcomes = await healthKitDelivery.runOnce(now: passTime)
             lastRunAt = passTime
             lastRunLines = outcomes.map(Self.line(for:))
-            refresh(full: fullRefresh)
+            // A pass that did something changed the queue, so its counts are read in full even for an
+            // automatic run; an idle pass (no outcomes) is the hot path and keeps the narrow read.
+            refresh(full: fullRefresh || !outcomes.isEmpty)
             passTime = Date()
         } while rerunRequested
     }

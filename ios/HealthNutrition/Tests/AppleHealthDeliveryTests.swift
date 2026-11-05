@@ -127,6 +127,26 @@ final class AppleHealthDeliveryTests: XCTestCase {
         XCTAssertTrue(status.lastRunLines.contains { $0.hasPrefix("delivered \(operation.operationID)") })
     }
 
+    /// An automatic run that delivers something changed the queue, so the pending count the debug
+    /// status line shows must not keep its pre-delivery value (#1332 review).
+    func testAnAutomaticRunThatDeliversRefreshesThePendingCount() async throws {
+        let services = try makeServices()
+        let status = HealthKitDeliveryStatus(
+            healthKitDelivery: worker(services, writer: RecordingWriter()), store: services.journalStore,
+            authorizationProbe: { .requested }, accessProbe: { AppleHealthAccess(undetermined: 0, authorized: 15, denied: 0) })
+        try services.journalStore.create(
+            Intake(id: UUID().uuidString.lowercased(), category: "water", occurredAt: when, timeZoneIdentifier: "UTC"),
+            components: [IntakeComponent(componentID: "water", name: "Water", amount: 250, unit: .mL)],
+            product: nil, now: when)
+        status.refresh()
+        XCTAssertEqual(status.counts.pending, 1)
+
+        await status.run(now: when, automatic: true)
+
+        XCTAssertFalse(status.lastRunLines.isEmpty, "the pass delivered the entry")
+        XCTAssertEqual(status.counts.pending, 0, "the count follows the delivery without another refresh")
+    }
+
     /// An automatic run is the hot path: it fires on every reload, on the main actor. It must not read
     /// the pending queue or walk the journal's projections (#1326); that read is for a person's run and
     /// the debug screen. What it does keep current is the suspended count, which the re-arm needs.
