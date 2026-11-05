@@ -251,7 +251,8 @@ final class AppServices {
             medications: medicationStore, medicationPreferences: displayPreferences)
         // Each Diary day header adds what other apps logged to Apple Health that day, read as the day comes on screen.
         journal.healthDayReader = { start, end in await healthReader.outsideIntakeDay(from: start, to: end) }
-        today.healthDayReader = { start, end in await healthReader.outsideIntakeDay(from: start, to: end) }
+        // Through the local `todayModel`: `self.today` cannot be read before every stored property is set.
+        todayModel.healthDayReader = { start, end in await healthReader.outsideIntakeDay(from: start, to: end) }
         goals.latestHeightCentimeters = { [bodyActivity] in bodyActivity.readings.latestHeightCm }
         // Set after every stored property, so the Library can link to the supplement list.
         library.supplementStack = supplementStack
