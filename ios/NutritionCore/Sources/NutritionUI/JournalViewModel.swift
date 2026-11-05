@@ -959,6 +959,11 @@ public final class JournalViewModel: ObservableObject {
         // The journal holds a value for this nutrient that the totals could not add up (a unit of another kind): the day
         // cannot be totaled, and Health's amount must not stand in for the whole day.
         if journalStatedCount > 0, case .unknown = journalLine.amount, !journalLine.isPartial { return nil }
+        // Health adds nothing for this nutrient (its query succeeded with no samples) and the journal's total is whole:
+        // the day is the journal's own total, in its own unit (a captured alias goal in IU stays averageable).
+        if (values[canonical] ?? 0) == 0, case .known = journalLine.amount, !journalLine.isPartial {
+            return journalLine.amount
+        }
         let combined = HealthIntakeTotals.combine([journalLine], outside: day.outside).first ?? journalLine
         return combined.isPartial ? nil : combined.amount
     }

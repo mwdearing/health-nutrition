@@ -507,6 +507,25 @@ final class JournalWeekSummaryTests: XCTestCase {
         XCTAssertEqual(model.weekSummary?.goalLines, ["Protein: average 40 g a day against 60 g"])
     }
 
+    /// A goal stated in a unit other than the one Health reads (vitamin A in IU) keeps its journal total on a day Health's
+    /// query adds nothing to: the day still averages, it is not turned into one that could not be totaled.
+    func testAJournalTotalInAnAliasUnitSurvivesAnEmptyHealthQuery() throws {
+        let journal = try makeJournalStore()
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "vitamin-a", target: Decimal(5000), unit: .iu))
+        try logProduct(journal, daysBack: 0, nutrients: ["vitamin-a": .known(Decimal(3000), .iu)])
+
+        let model = makeModel(journal, goals: goals)
+        model.outsideIntakeByDay = [
+            dayKey(0): .read(values: [:], readKeys: [HealthKitWritePlanner.canonicalKey(for: "vitamin-a")]),
+        ]
+        model.load(now: weekNow)
+
+        let line = try XCTUnwrap(model.weekSummary?.goalLines.first)
+        XCTAssertTrue(line.contains("average"), line)
+        XCTAssertFalse(line.contains("could not be totaled"), line)
+    }
+
     /// A journal with no day at all shows its empty state, not a week card, even when Health holds intake.
     func testAnEmptyJournalHasNoWeekCardWhateverHealthHolds() throws {
         let model = makeModel(try makeJournalStore())
