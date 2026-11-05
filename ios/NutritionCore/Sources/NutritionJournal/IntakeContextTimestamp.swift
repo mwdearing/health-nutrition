@@ -25,8 +25,8 @@ enum IntakeContextTimestamp {
     /// this device rather than on every receiver. Silently falling back to the device's own zone would send a
     /// timestamp whose wall clock no longer agrees with `time_zone`.
     ///
-    /// The offset is written in whole minutes, as the contract allows. A zone's offset before it adopted standard
-    /// time (local mean time, such as -07:52:58 in Chicago before 1883) has seconds, so the offset written for such an
+    /// The offset is written in whole minutes. A zone's offset before it adopted standard
+    /// time (local mean time, such as -07:52:58 in Los Angeles before 1883) has seconds, so the offset written for such an
     /// instant is up to 59 seconds off the wall clock. No entry the app logs is that old.
     static func local(_ date: Date, timeZone identifier: String) throws -> String {
         guard let zone = portableZone(identifier: identifier) else {
