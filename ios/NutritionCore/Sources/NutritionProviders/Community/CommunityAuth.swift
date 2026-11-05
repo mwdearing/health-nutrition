@@ -284,7 +284,7 @@ public actor CommunityAuth {
         // but a later auth attempt, logout, or unknown storage state fences it.
         guard startedAtIntent == authenticationIntent else { throw CommunityError.signedOut }
         // The server has issued this session: it is stored even if the caller was cancelled meanwhile.
-        let session = try save(data, response, honoursCancel: false)
+        let session = try save(data, response, honoursCancel: true)
         localCredentialsRevoked = false
         return session
     }
