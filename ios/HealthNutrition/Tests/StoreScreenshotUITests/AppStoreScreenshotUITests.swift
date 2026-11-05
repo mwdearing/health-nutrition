@@ -82,7 +82,18 @@ final class AppStoreScreenshotUITests: XCTestCase {
         XCTAssertTrue(amountsOnly.waitForExistence(timeout: 20), "no Amounts only action on Add")
         chooseMealOnAddHome(meal, entry: name)
         // The meal menu is still closing for a moment, so the action is tapped once it is hittable again.
-        XCTAssertTrue(pollUntil(timeout: 15, { amountsOnly.exists && amountsOnly.isHittable }), "Amounts only is not tappable")
+        var scrolls = 0
+        while !pollUntil(timeout: 5, { amountsOnly.exists && amountsOnly.isHittable }) && scrolls < 3 {
+            app.swipeUp()
+            scrolls += 1
+        }
+        if !(amountsOnly.exists && amountsOnly.isHittable) {
+            capture("debug-amounts-only-not-tappable-\(name)")
+            try? app.debugDescription.write(
+                to: outputDirectory.appendingPathComponent("debug-tree-amounts-only-\(name).txt"), atomically: true,
+                encoding: .utf8)
+            XCTFail("Amounts only is not tappable")
+        }
         amountsOnly.tap()
         XCTAssertTrue(app.navigationBars["Amounts only"].waitForExistence(timeout: 15))
 
