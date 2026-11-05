@@ -173,7 +173,7 @@ def test_privacy_and_erase_copy_follow_current_source_keys_and_boundaries() -> N
     assert "reviewed by the catalog owner" in accounts
     assert "community agreement does not verify" in accounts
     assert "five people" not in accounts and "five accounts" not in accounts
-    assert "debug build" in privacy and "other apps logged" in privacy and "steps, active energy and weight" in privacy and "never leave it" in privacy
+    assert "debug build" in privacy and "other apps logged" in privacy and "steps, active energy and weight" in privacy and "never be uploaded" in privacy and "paired apple watch" in privacy
 
     privacy_summary = view_model.split("public static let privacySummary =", 1)[1].split("public static let exportButtonTitle", 1)[0]
     summary_literals = " ".join(re.findall(r'"([^"\\]*(?:\\.[^"\\]*)*)"', privacy_summary))
@@ -183,6 +183,8 @@ def test_privacy_and_erase_copy_follow_current_source_keys_and_boundaries() -> N
     for phrase in ("other apps", "height", "usda fooddata central", "not stored"):
         assert phrase in summary
     assert "share labels" not in summary
+    assert "nothing read from health is uploaded" in summary and "paired apple watch" in summary
+    assert "leaves the device" not in summary
     assert "plus steps, activity and weight" not in summary
     assert "nothing is uploaded" not in summary
 
@@ -243,7 +245,7 @@ def test_public_privacy_copy_discloses_apple_health_delivery_and_conditional_cam
     for document in (privacy, erase):
         assert "already written" in document
         assert "does not remove" in document or "does not retract" in document
-    assert "other apps logged" in privacy and "steps, active energy and weight" in privacy and "never leave it" in privacy
+    assert "other apps logged" in privacy and "steps, active energy and weight" in privacy and "never be uploaded" in privacy and "paired apple watch" in privacy
     for document in (privacy, accounts):
         assert "rare cases the challenge may request camera access" in document
 

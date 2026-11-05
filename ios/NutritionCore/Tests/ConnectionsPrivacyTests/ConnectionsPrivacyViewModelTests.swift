@@ -123,6 +123,9 @@ final class ConnectionsPrivacyViewModelTests: XCTestCase {
         // The Health and search sentences match what the app reads and sends (PRIVACY.md).
         XCTAssertTrue(text.contains("other apps"))
         XCTAssertTrue(text.contains("height"))
+        XCTAssertTrue(text.contains("nothing read from health is uploaded"))
+        XCTAssertTrue(text.contains("paired apple watch"))
+        XCTAssertFalse(text.contains("leaves the device"))
         XCTAssertTrue(text.contains("usda fooddata central"))
         XCTAssertFalse(text.contains("reads back only its own samples"))
         XCTAssertTrue(text.contains("does not disable barcode lookup"))

@@ -112,7 +112,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         + "with your account when you are signed in. After you connect Apple Health in Settings, the app writes "
         + "nutrients from real logged food and water entries to HealthKit on this device and reads back its own samples and the nutrition other apps logged, to add to your day totals. "
         + "If you ask on Today, it also reads steps, activity and weight, and height to fill in goal setup; height is not stored. "
-        + "Nothing read from Health leaves the device. A debug build's HealthKit screen can also write test samples. Erasing journal rows does not remove "
+        + "Nothing read from Health is uploaded; today's totals are shown on your Home Screen widgets and your paired Apple Watch. A debug build's HealthKit screen can also write test samples. Erasing journal rows does not remove "
         + "HealthKit samples already written. "
         + "For email sign-in, hCaptcha can process browser/device signals and sends a verification result; a rare "
         + "challenge may request camera access. It does not receive your journal. Export writes a local JSON file for "

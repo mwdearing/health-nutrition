@@ -15,6 +15,6 @@ The read request also covers the nutrient types the app writes (`OutsideIntakeTo
 - **What Health says:** HealthKit never reports whether read access was granted. A refused type reads as no data, so an empty card names both reasons and points to the Health app's Sharing screen.
 - **Erase all data** clears the flag, so the card returns to its button.
 - **Units:** weight follows the app's unit system (pounds for US, kilograms for metric); values are converted only for display.
-- **Where it goes:** nothing read from Health leaves the phone or is stored by the app; the card reads again on every foreground.
+- **Where it goes:** nothing read from Health is uploaded or stored by the app (the totals shown can also appear on widgets and a paired Apple Watch); the card reads again on every foreground.
 - **Code:** `ios/HealthNutrition/Sources/HealthKitReader.swift` (the only reader), `ios/NutritionCore/Sources/NutritionUI/BodyActivity.swift` (card and view model, no HealthKit import).
 - **Needs a device:** the permission sheet, real sums and weight samples.
