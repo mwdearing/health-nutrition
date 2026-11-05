@@ -71,14 +71,18 @@ final class WatchSummaryModel: NSObject, ObservableObject, WCSessionDelegate {
         if session.delegate == nil { session.delegate = self }
         if session.activationState != .activated { session.activate() }
         // The context is only readable once the session is active.
-        var activationChecks = 0
-        while session.activationState != .activated, activationChecks < 20 {
-            activationChecks += 1
-            try? await Task.sleep(nanoseconds: 250_000_000)
+        // Activation and the pending wait share one budget, well under what the system allows a background task.
+        let pauseNanoseconds: UInt64 = 250_000_000
+        let deadline = ContinuousClock.now + .seconds(6)
+        while session.activationState != .activated, ContinuousClock.now < deadline, !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: pauseNanoseconds)
         }
+        let remaining = deadline - ContinuousClock.now
+        let remainingChecks = max(0, Int(remaining / .milliseconds(250)))
         await WatchConnectivityRefresh.run(
             receiver: receiver, context: { session.receivedApplicationContext },
-            hasContentPending: { session.hasContentPending }, pause: { try? await Task.sleep(nanoseconds: 250_000_000) })
+            hasContentPending: { session.hasContentPending }, pause: { try? await Task.sleep(nanoseconds: pauseNanoseconds) },
+            maxChecks: min(WatchConnectivityRefresh.defaultMaxChecks, remainingChecks))
         refresh()
     }
 

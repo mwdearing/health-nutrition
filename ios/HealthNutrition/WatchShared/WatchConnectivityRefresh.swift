@@ -21,8 +21,11 @@ enum WatchConnectivityRefresh {
         while true {
             // Asked before the context is read, so anything that arrived by then is applied by this pass.
             let pending = hasContentPending()
-            apply(context(), through: receiver)
-            guard pending, waits < maxChecks else { return }
+            // Read and applied under the receiver's lock, so a newer context the delegate delivers in between is
+            // never overwritten by this older read.
+            receiver.receive(contextFrom: context)
+            // A cancelled task (the system is ending it) stops after the apply it just did.
+            guard pending, waits < maxChecks, !Task.isCancelled else { return }
             waits += 1
             await pause()
         }
