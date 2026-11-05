@@ -26,6 +26,15 @@ final class OutsideReadingTests: XCTestCase {
         XCTAssertFalse(reading.failed)
     }
 
+    /// A key is missing from `readKeys` only when its query failed or a sample did not convert. A query Health
+    /// answers with no samples (nothing logged, or read access declined) is a read, so Today's water stays exact (#1294).
+    func testWaterIsMissingFromReadKeysOnlyWhenItsQueryFailed() {
+        let empty = OutsideIntakeTotals.reading([OutsideQuery(nutrientKey: "water", outcome: .samples([]))])
+        XCTAssertTrue(empty.readKeys.contains("water"))
+        let failed = OutsideIntakeTotals.reading([OutsideQuery(nutrientKey: "water", outcome: .failed)])
+        XCTAssertFalse(failed.readKeys.contains("water"))
+    }
+
     func testUnconvertibleSampleLeavesItsNutrientUnreadAndKeepsTheSum() {
         let reading = OutsideIntakeTotals.reading([
             OutsideQuery(nutrientKey: "protein", outcome: .samples([sample(protein, 10), .unconvertible])),

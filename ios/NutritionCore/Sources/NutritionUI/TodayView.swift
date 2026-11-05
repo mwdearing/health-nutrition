@@ -1,4 +1,8 @@
+import Combine
 import SwiftUI
+#if os(iOS)
+import UIKit
+#endif
 import NutritionDomain
 import NutritionJournal
 
@@ -124,6 +128,21 @@ public struct TodayView: View {
         }
 #endif
         .onAppear { model.load(now: now()) }
+        // Midnight, a time-zone change or a clock change while the app is open moves Today to the new day.
+        .task {
+            await model.runDayChangeReloads({ Self.dayChanges().values }, now: now)
+        }
+    }
+
+    /// The system's notices that the day, the zone or the clock changed.
+    private static func dayChanges() -> AnyPublisher<Void, Never> {
+        var names: [Notification.Name] = [.NSCalendarDayChanged, .NSSystemTimeZoneDidChange]
+        #if os(iOS)
+        names.append(UIApplication.significantTimeChangeNotification)
+        #endif
+        return Publishers.MergeMany(names.map { NotificationCenter.default.publisher(for: $0) })
+            .map { _ in () }
+            .eraseToAnyPublisher()
     }
 
     /// Opens today's vitamins and minerals against published reference values. It pushes onto the
@@ -214,12 +233,17 @@ public struct TodayView: View {
                     }
                     .accessibilityLabel(model.quickWaterAccessibilityLabel)
                     .accessibilityHint("Adds one water entry. You can undo it for 10 seconds.")
-                    if model.isUndoAvailable(now: now()), model.undo?.isDelete != true {
-                        QuietCapsule("Undo water") {
-                            model.undoLastQuickAdd(now: now())
+                    if model.undo?.isDelete != true {
+                        // Re-read once a second, so the control goes away when its window closes.
+                        TimelineView(.periodic(from: .now, by: 1)) { context in
+                            if model.isUndoAvailable(now: context.date) {
+                                QuietCapsule("Undo water") {
+                                    model.undoLastQuickAdd(now: now())
+                                }
+                                .accessibilityLabel("Undo last water")
+                                .accessibilityValue("Available for 10 seconds after adding")
+                            }
                         }
-                        .accessibilityLabel("Undo last water")
-                        .accessibilityValue("Available for 10 seconds after adding")
                     }
                     Spacer(minLength: DesignSpacing.s)
                 }

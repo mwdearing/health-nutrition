@@ -57,6 +57,10 @@ private struct SaveConfirmationModifier: ViewModifier {
 /// The confirmation line for each save. Wording approved by Mike on 2026-10-16 ("Ok and merge"): the recommended lines below.
 public enum SaveLabels {
     public static let productSaved = "Product saved"
+    /// The product was saved on this device only because the screen's share promise no longer held.
+    public static let productSavedOnDeviceOnly = "Saved on this device only; sharing isn't available right now"
+    /// The confirmation after the product editor saves.
+    public static func productSaved(afterSharePromiseLost lost: Bool) -> String { lost ? productSavedOnDeviceOnly : productSaved }
     public static let entrySaved = "Entry saved"
     public static let loggedToDiary = "Logged to Diary"
     public static let recipeSaved = "Recipe saved"

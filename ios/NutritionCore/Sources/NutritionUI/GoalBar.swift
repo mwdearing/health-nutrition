@@ -144,9 +144,12 @@ public struct GoalBarModel: Equatable, Identifiable {
     ) -> String {
         let name = inSentence(line.label)
         if line.nutrient == DailyTotalsBuilder.waterKey {
+            // A short Health side is not the person's entries (#1294). When entries are skipped too, both are said.
             if skippedWaterCount > 0 {
-                return GoalBarModel.skippedWaterText(count: skippedWaterCount)
+                let skipped = GoalBarModel.skippedWaterText(count: skippedWaterCount)
+                return line.healthGap ? "\(skipped) \(MissingValueWording.healthGapNote(name: name))." : skipped
             }
+            if line.healthGap { return MissingValueWording.healthGapNote(name: name) }
             return MissingValueWording.fallback(name: name)
         }
         return MissingValueWording.partialNote(name: name, healthGap: line.healthGap, count: missingCount)
