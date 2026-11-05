@@ -91,8 +91,13 @@ final class AppStoreScreenshotUITests: XCTestCase {
     private func type(_ text: String, intoFieldStartingWith prefix: String) throws {
         let field = app.textFields.matching(NSPredicate(format: "label BEGINSWITH %@ OR identifier BEGINSWITH %@", prefix, prefix))
             .firstMatch
+        // The form is a lazy list: a field below the fold, or under the keyboard, is not in the tree until scrolled to.
+        var scrolls = 0
+        while !(field.exists && field.isHittable) && scrolls < 4 {
+            app.swipeUp()
+            scrolls += 1
+        }
         XCTAssertTrue(field.waitForExistence(timeout: 10), "no field named \(prefix)")
-        if !field.isHittable { app.swipeUp() }
         field.tap()
         field.typeText(text)
     }
