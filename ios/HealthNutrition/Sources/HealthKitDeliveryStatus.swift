@@ -353,9 +353,11 @@ final class HealthKitDeliveryStatus: AppleHealthConnecting {
             let outcomes = await healthKitDelivery.runOnce(now: passTime)
             lastRunAt = passTime
             lastRunLines = outcomes.map(Self.line(for:))
-            // A pass that did something changed the queue, so its counts are read in full even for an
-            // automatic run; an idle pass (no outcomes) is the hot path and keeps the narrow read.
-            refresh(full: fullRefresh || !outcomes.isEmpty)
+            // A pass that delivered, retracted or superseded something changed the queue, so its counts
+            // are read in full even for an automatic run. Outcomes that leave the queue as it was
+            // (parked, blocked, not due, retry scheduled) are reported on every pass for as long as they
+            // last, so they keep the narrow read: that is the hot path (#1326).
+            refresh(full: fullRefresh || outcomes.contains(where: Self.changedTheQueue))
             passTime = Date()
         } while rerunRequested
     }
@@ -486,6 +488,18 @@ final class HealthKitDeliveryStatus: AppleHealthConnecting {
             return "retry scheduled \(operationID): \(reason); next attempt at \(stamp(nextAttemptAt))"
         case .notAcknowledged(let operationID, let detail):
             return "not acknowledged \(operationID): \(detail)"
+        }
+    }
+
+    /// Whether an outcome took an operation out of the queue, which is what moves `pending` and
+    /// `needsAttention`. The module's own `isResolved` is internal to NutritionJournal, so this names
+    /// the same three cases.
+    private static func changedTheQueue(_ outcome: HealthKitDeliveryOutcome) -> Bool {
+        switch outcome {
+        case .delivered, .retracted, .superseded:
+            return true
+        case .partlyRetracted, .notDue, .blocked, .needsAttention, .retryScheduled, .notAcknowledged:
+            return false
         }
     }
 
