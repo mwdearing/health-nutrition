@@ -23,7 +23,7 @@ final class CustomProductDirtyTests: XCTestCase {
         let store = ProductEditorStorePort()
         let model = CustomProductEditorViewModel(store: store)
         model.name = "Synthetic product"; model.kind = .food
-        _ = try model.save(now: Date(timeIntervalSince1970: 1))
+        _ = try model.save(now: Date(timeIntervalSince1970: 1), shareAsShown: true)
         XCTAssertFalse(model.hasTypedInput)
         model.name = "Synthetic product two"
         XCTAssertTrue(model.hasTypedInput)
