@@ -162,15 +162,11 @@ struct RootView: View {
                 .toolbar { settingsToolbar }
                 // Editing from the Library opens the editor on its own, not inside the Add flow, so Cancel and Save return here.
                 .sheet(item: $libraryEditor) { editor in
-                    NavigationStack {
-                        CustomProductEditorView(model: editor.model, sharing: services.library.productSharing) { product, openDetails in
-                            services.library.load()
-                            self.libraryEditor = nil
-                            if openDetails { self.startProductDetails(product) }
-                        }
+                    LibraryProductEditorSheet(model: editor.model, sharing: services.library.productSharing) { product, openDetails in
+                        services.library.load()
+                        self.libraryEditor = nil
+                        if openDetails { self.startProductDetails(product) }
                     }
-                    // Typed input is not lost to a swipe-down; the form's Cancel asks first.
-                    .interactiveDismissDisabled(editor.model.hasTypedInput)
                 }
             }
                 .safeAreaInset(edge: .bottom) { addCapsule }
@@ -704,4 +700,19 @@ struct StartupFailureView: View {
 struct LibraryProductEditor: Identifiable {
     let id = UUID()
     let model: CustomProductEditorViewModel
+}
+
+/// The Library's product editor sheet. It observes the model, so the swipe-dismiss lock follows typed input as it changes.
+struct LibraryProductEditorSheet: View {
+    @ObservedObject var model: CustomProductEditorViewModel
+    let sharing: CustomProductSharingModel?
+    let onSaved: (CustomProductRevision, Bool) -> Void
+
+    var body: some View {
+        NavigationStack {
+            CustomProductEditorView(model: model, sharing: sharing, onSaved: onSaved)
+        }
+        // Typed input is not lost to a swipe-down; the form's Cancel asks first.
+        .interactiveDismissDisabled(model.hasTypedInput)
+    }
 }
