@@ -3,7 +3,7 @@
 Reached from the **Trends** tab. It reads the Diary, and Apple Health where it is connected, and makes no medical claim.
 
 - **Last 7 days.** One bar per local day for the last seven days: how many entries each holds, "N of 7 days
-  logged", the entry count and the days with no entries. A day with no entries is shown empty, not as zero
+  logged", the entry count and the days with nothing logged. A day with nothing logged is shown empty, not as zero
   intake. Each entry is filed on the day it has in the zone it was logged in, as the Diary files it. A day
   Apple Health states a food or drink amount for also counts as logged, though it has no entry; water alone, a
   zero, a failed read and Health not connected do not (#1267). The entry count stays the Diary's.

@@ -19,17 +19,17 @@ public struct InsightsWeek: Equatable {
     public let days: [Day]
     public var loggedDays: Int { days.filter(\.isLogged).count }
     public var entryCount: Int { days.reduce(0) { $0 + $1.entryCount } }
-    /// Days with no entry, which a day only Apple Health knows about still is: the count matches "days with no entries".
-    public var emptyDays: Int { days.filter { $0.entryCount == 0 }.count }
+    /// Days with nothing logged: no entry and no Apple Health intake, so with `loggedDays` they make the whole window.
+    public var emptyDays: Int { days.count - loggedDays }
     public var hasAnyEntry: Bool { loggedDays > 0 }
 
     /// "5 of 7 days logged".
     public var headline: String { "\(loggedDays) of \(days.count) days logged" }
     /// "12 entries", "1 entry".
     public var entriesText: String { entryCount == 1 ? "1 entry" : "\(entryCount) entries" }
-    /// "2 days with no entries", "1 day with no entries".
+    /// "2 days with nothing logged", "1 day with nothing logged".
     public var emptyDaysText: String {
-        emptyDays == 1 ? "1 day with no entries" : "\(emptyDays) days with no entries"
+        emptyDays == 1 ? "1 day with nothing logged" : "\(emptyDays) days with nothing logged"
     }
     /// The fraction of the tallest day, 0 through 1, for drawing a bar. An empty week draws nothing.
     public func barFraction(for day: Day) -> Double {
