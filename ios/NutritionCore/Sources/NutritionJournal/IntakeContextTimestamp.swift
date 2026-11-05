@@ -27,7 +27,7 @@ enum IntakeContextTimestamp {
     ///
     /// The offset is written in whole minutes. A zone's offset before it adopted standard
     /// time (local mean time, such as -07:52:58 in Los Angeles before 1883) has seconds, so the offset written for such an
-    /// instant is up to 59 seconds off the wall clock. No entry the app logs is that old.
+    /// instant is up to 59 seconds off the wall clock. Only an entry dated before then, such as an imported one, could reach it.
     static func local(_ date: Date, timeZone identifier: String) throws -> String {
         guard let zone = portableZone(identifier: identifier) else {
             throw IntakeContextEncoderError.unknownTimeZone(identifier)
