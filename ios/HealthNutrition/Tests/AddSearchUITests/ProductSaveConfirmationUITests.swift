@@ -35,6 +35,7 @@ final class ProductSaveConfirmationUITests: XCTestCase {
                 brand.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count))
             }
             if !brandBeforeEdit.isEmpty { brand.typeText(brandBeforeEdit) }
+            dismissKeyboard(app)
             let save = app.buttons["Save product on this device"]
             scrollUntilHittable(save, in: app)
             if save.isHittable { save.tap() }
@@ -53,6 +54,7 @@ final class ProductSaveConfirmationUITests: XCTestCase {
         focus(brand)
         brand.typeText(editedBrand)
         didEditBrand = true
+        dismissKeyboard(app)
 
         let save = app.buttons["Save product on this device"]
         scrollUntilHittable(save, in: app)
@@ -75,6 +77,7 @@ final class ProductSaveConfirmationUITests: XCTestCase {
         guard nameField.waitForExistence(timeout: 10) else { return false }
         nameField.tap()
         nameField.typeText(productName)
+        dismissKeyboard(app)
 
         let save = app.buttons["Save product on this device"]
         scrollUntilHittable(save, in: app)
@@ -117,5 +120,14 @@ private func scrollUntilHittable(_ element: XCUIElement, in app: XCUIApplication
     while !(element.exists && element.isHittable), swipes < 8 {
         app.swipeUp()
         swipes += 1
+    }
+}
+
+/// Ends keyboard entry with the keyboard's Return key, so the form can scroll to the Save button beneath the keyboard.
+private func dismissKeyboard(_ app: XCUIApplication) {
+    guard app.keyboards.firstMatch.exists else { return }
+    for label in ["Return", "return"] where app.keyboards.buttons[label].exists {
+        app.keyboards.buttons[label].tap()
+        return
     }
 }
