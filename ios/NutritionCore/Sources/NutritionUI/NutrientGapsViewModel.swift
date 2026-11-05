@@ -394,17 +394,17 @@ public final class NutrientGapsViewModel: ObservableObject {
         do {
             let read = try Self.tallies(store: store, lookup: lookup, now: now, days: span.dayCount)
             loggedDays = read.loggedDays
+            let weekMerged = Self.weekDays(
+                byDay: read.byDay, dates: read.dates, loggedDates: read.loggedDates, health: healthWeek)
             switch span {
             case .week:
-                let merged = Self.weekDays(
-                    byDay: read.byDay, dates: read.dates, loggedDates: read.loggedDates, health: healthWeek)
-                loggedDays = merged.loggedDays
-                tallies = Self.averaged(Self.sumDays(merged.days), byDay: merged.days)
+                loggedDays = weekMerged.loggedDays
+                tallies = Self.averaged(Self.sumDays(weekMerged.days), byDay: weekMerged.days)
             case .day:
                 // Health's day total is today's only, so it is added on the day span alone.
                 tallies = Self.addingHealth(read.tallies, outside: healthToday())
             }
-            dayTallies = span == .week ? Self.weekDays(byDay: read.byDay, dates: read.dates, loggedDates: read.loggedDates, health: healthWeek).days : []
+            dayTallies = span == .week ? weekMerged.days : []
             skippedIntakeCount = read.skipped
             errorMessage = nil
         } catch {
@@ -434,9 +434,6 @@ public final class NutrientGapsViewModel: ObservableObject {
         return days
     }
 
-    /// The week's totals as a daily average over each nutrient's own stated days, so a day that said
-    /// nothing about a nutrient never reads as a day with none of it. Entry counts stay totals, so
-    /// "Unknown for 3 entries" still counts entries.
     /// Reads Apple Health for each of the seven days, today included, and keeps each day's read for the week. Then
     /// the screen rebuilds. A failed day read keeps its partial keys only, so an unread nutrient stays unknown.
     public func refreshWeekHealth(now: Date) async {
@@ -520,6 +517,9 @@ public final class NutrientGapsViewModel: ObservableObject {
         return tallies
     }
 
+    /// The week's totals as a daily average over each nutrient's own stated days, so a day that said
+    /// nothing about a nutrient never reads as a day with none of it. Entry counts stay totals, so
+    /// "Unknown for 3 entries" still counts entries.
     static func averaged(_ tallies: [String: NutrientDayTally], byDay: [[String: NutrientDayTally]]) -> [String: NutrientDayTally] {
         let days = statedDays(byDay)
         return Dictionary(uniqueKeysWithValues: tallies.map { nutrient, tally in
