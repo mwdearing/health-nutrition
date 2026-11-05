@@ -98,9 +98,14 @@ public final class MedicationHistoryViewModel: ObservableObject {
             return "Enter an amount above 0."
         }
         let note = noteText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let zoneID = takenAt == stored.takenAt ? stored.timeZoneIdentifier : timeZone().identifier
+        // A time left within the same minute is unchanged: the picker may drop seconds, so the stored instant and zone
+        // are kept as they are.
+        let sameMinute = floor(takenAt.timeIntervalSinceReferenceDate / 60)
+            == floor(stored.takenAt.timeIntervalSinceReferenceDate / 60)
+        let savedTakenAt = sameMinute ? stored.takenAt : takenAt
+        let zoneID = sameMinute ? stored.timeZoneIdentifier : timeZone().identifier
         let dose = MedicationDose(
-            id: stored.id, medicationID: stored.medicationID, takenAt: takenAt, timeZoneIdentifier: zoneID,
+            id: stored.id, medicationID: stored.medicationID, takenAt: savedTakenAt, timeZoneIdentifier: zoneID,
             amount: amount, unit: stored.unit, site: stored.site, note: note.isEmpty ? nil : note)
         do {
             try dose.validate()
