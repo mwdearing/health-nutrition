@@ -256,6 +256,36 @@ final class FirstRunTests: XCTestCase {
         XCTAssertEqual(model.items.last?.isDone, true)
     }
 
+    /// After Don't Allow, iOS shows no sheet again: the step opens the Health app instead of asking, and says
+    /// why it is not done.
+    func testConnectHealthStepOpensHealthAfterTurnOffAll() throws {
+        let health = HealthConnectorFake(AppleHealthAccess(undetermined: 0, authorized: 0, denied: 3))
+        let model = FirstDayChecklistModel(
+            store: try makeJournalStore(), goals: try makeGoalStore(),
+            preferences: InMemoryDisplayPreferences(), health: AppleHealthConnectionViewModel(connector: health))
+
+        model.load()
+        let row = try XCTUnwrap(model.items.first { $0.kind == .connectHealth })
+        XCTAssertTrue(model.connectHealthOpensHealthSettings)
+        XCTAssertEqual(row.detail, "Turned off in Health")
+        XCTAssertFalse(row.isDone)
+        XCTAssertEqual(health.connectCalls, 0)
+    }
+
+    /// A person who allowed only some nutrients has answered, so the step is done for them.
+    func testConnectHealthStepIsDoneWhenHealthIsPartlyAllowed() throws {
+        let health = HealthConnectorFake(AppleHealthAccess(undetermined: 0, authorized: 1, denied: 2))
+        let model = FirstDayChecklistModel(
+            store: try makeJournalStore(), goals: try makeGoalStore(),
+            preferences: InMemoryDisplayPreferences(), health: AppleHealthConnectionViewModel(connector: health))
+
+        model.load()
+        let row = try XCTUnwrap(model.items.first { $0.kind == .connectHealth })
+        XCTAssertTrue(model.connectHealthOpensHealthSettings)
+        XCTAssertEqual(row.detail, "Partly allowed")
+        XCTAssertTrue(row.isDone)
+    }
+
     /// A device with no Health gets no Health step at all, rather than a row that cannot be done.
     func testConnectHealthStepIsLeftOffWhenHealthIsUnavailable() throws {
         let health = HealthConnectorFake(.unavailable)

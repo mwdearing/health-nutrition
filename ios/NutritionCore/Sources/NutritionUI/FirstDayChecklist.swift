@@ -76,14 +76,20 @@ public final class FirstDayChecklistModel: ObservableObject {
             health.refresh()
             if health.state != .unavailable {
                 items.append(FirstDayChecklistItem(
-                    kind: .connectHealth, title: "Connect Apple Health", detail: nil,
-                    isDone: health.isComplete))
+                    kind: .connectHealth, title: "Connect Apple Health",
+                    // Once Health has answered, the row says how it stands; the answer can only change in Health.
+                    detail: health.opensHealthSettings ? health.statusText : nil,
+                    // A person who allowed only some nutrients has answered, so the step is done for them.
+                    isDone: health.isComplete || health.state == .partlyAllowed))
             }
         }
         // The Health row is appended after the three real steps, so these are the first three.
         let realStepsDone = items.prefix(3).allSatisfy { $0.isDone }
         isVisible = !preferences.isChecklistHidden && !realStepsDone
     }
+
+    /// True when the Health step opens the Health app, because Health has answered and iOS will not ask again.
+    public var connectHealthOpensHealthSettings: Bool { health?.opensHealthSettings ?? false }
 
     /// Asks Health for access where it can still be asked, then reads the steps again.
     public func connectHealth() async {
@@ -119,6 +125,7 @@ public struct FirstDayChecklistView: View {
     private let onLog: () -> Void
     private let onGoals: () -> Void
     private let onUnits: () -> Void
+    @Environment(\.openURL) private var openURL
 
     public init(
         model: FirstDayChecklistModel, onLog: @escaping () -> Void, onGoals: @escaping () -> Void,
@@ -193,7 +200,12 @@ public struct FirstDayChecklistView: View {
             model.markUnitsReviewed()
             onUnits()
         case .connectHealth:
-            Task { await model.connectHealth() }
+            if model.connectHealthOpensHealthSettings {
+                // Health shows its sheet once; after an answer it is changed in the Health app, as in Settings.
+                openURL(URL(string: "x-apple-health://")!)
+            } else {
+                Task { await model.connectHealth() }
+            }
         }
     }
 }
