@@ -92,7 +92,7 @@ public struct KeychainCommunitySessionStore: CommunitySessionStore {
     static func saveStep(afterUpdate status: OSStatus) throws -> SaveStep {
         switch status {
         case errSecSuccess: return .saved
-        case errSecItemNotFound: return .add
+        case errSecItemNotFound: return .saved
         default: throw CommunityError.storage
         }
     }
