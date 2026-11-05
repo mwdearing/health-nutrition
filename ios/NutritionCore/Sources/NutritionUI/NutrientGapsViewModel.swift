@@ -44,15 +44,20 @@ public struct NutrientDayTally: Equatable, Sendable {
     /// Entries that could have stated it and did not, or stated it in a unit that cannot be added
     /// (international units for vitamins A, D and E).
     public var missing = 0
+    /// Days or reads Apple Health could not answer for this nutrient. It makes the figure unknown when nothing else is
+    /// known, but it is not a journal entry, so it is not in the "Unknown for N entries" count (#1240).
+    public var unknownHealth = 0
 
     public init(
-        fromFood: Decimal = 0, fromSupplements: Decimal = 0, fromHealth: Decimal = 0, known: Int = 0, missing: Int = 0
+        fromFood: Decimal = 0, fromSupplements: Decimal = 0, fromHealth: Decimal = 0, known: Int = 0, missing: Int = 0,
+        unknownHealth: Int = 0
     ) {
         self.fromFood = fromFood
         self.fromSupplements = fromSupplements
         self.fromHealth = fromHealth
         self.known = known
         self.missing = missing
+        self.unknownHealth = unknownHealth
     }
 
     public var total: Decimal { fromFood + fromSupplements + fromHealth }
@@ -97,7 +102,7 @@ public struct NutrientGapRow: Equatable, Identifiable {
 
     /// The comparison, in a fixed order: nothing to compare first, then the limit, then the reference.
     static func status(tally: NutrientDayTally, reference: ReferenceIntake?, daysAboveLimit: Int = 0) -> NutrientGapStatus {
-        guard tally.known > 0 else { return tally.missing > 0 ? .unknown : .nothingLogged }
+        guard tally.known > 0 else { return tally.missing > 0 || tally.unknownHealth > 0 ? .unknown : .nothingLogged }
         guard let reference else { return .noReference }
         if daysAboveLimit > 0 && reference.upperLimit != nil {
             return .aboveUpperLimit
@@ -373,7 +378,7 @@ public final class NutrientGapsViewModel: ObservableObject {
                 tally.fromHealth += values[canonical] ?? 0
                 tally.known += 1
             } else {
-                tally.missing += 1
+                tally.unknownHealth += 1
             }
             result[nutrient] = tally
         }
@@ -443,7 +448,8 @@ public final class NutrientGapsViewModel: ObservableObject {
             guard let day = calendar.date(byAdding: .day, value: -offset, to: calendar.startOfDay(for: now)) else { continue }
             let end = offset == 0 ? now : (calendar.date(byAdding: .day, value: 1, to: day) ?? now)
             let read = await reader(day, end)
-            result[Self.localDateKey(day, calendar: calendar)] = read.outside
+            // An incomplete day read is unknown for the whole day: its partial keys are not trusted (#1240).
+            result[Self.localDateKey(day, calendar: calendar)] = read.complete ? read.outside : .read(values: [:], readKeys: [])
         }
         healthWeek = result
         load(now: now)
@@ -486,6 +492,7 @@ public final class NutrientGapsViewModel: ObservableObject {
                 tally.fromHealth += dayTally.fromHealth
                 tally.known += dayTally.known
                 tally.missing += dayTally.missing
+                tally.unknownHealth += dayTally.unknownHealth
                 tallies[nutrient] = tally
             }
         }
@@ -500,7 +507,8 @@ public final class NutrientGapsViewModel: ObservableObject {
             let divisor = Decimal(count)
             return (nutrient, NutrientDayTally(
                 fromFood: tally.fromFood / divisor, fromSupplements: tally.fromSupplements / divisor,
-                fromHealth: tally.fromHealth / divisor, known: tally.known, missing: tally.missing))
+                fromHealth: tally.fromHealth / divisor, known: tally.known, missing: tally.missing,
+                unknownHealth: tally.unknownHealth))
         })
     }
 
