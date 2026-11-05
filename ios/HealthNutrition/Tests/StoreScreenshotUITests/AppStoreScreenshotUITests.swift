@@ -80,6 +80,7 @@ final class AppStoreScreenshotUITests: XCTestCase {
         }
         let amountsOnly = app.buttons["Amounts only"]
         XCTAssertTrue(amountsOnly.waitForExistence(timeout: 20), "no Amounts only action on Add")
+        chooseMealOnAddHome(meal, entry: name)
         amountsOnly.tap()
         XCTAssertTrue(app.navigationBars["Amounts only"].waitForExistence(timeout: 15))
 
@@ -87,7 +88,6 @@ final class AppStoreScreenshotUITests: XCTestCase {
         try type(protein, intoFieldStartingWith: "Protein")
         try type(carbs, intoFieldStartingWith: "Carbs")
         try type(name, intoFieldStartingWith: "Name")
-        chooseMeal(meal)
 
         let logButton = app.buttons["Log"]
         XCTAssertTrue(logButton.waitForExistence(timeout: 10), "no Log button")
@@ -124,19 +124,26 @@ final class AppStoreScreenshotUITests: XCTestCase {
         app.typeText(text)
     }
 
-    /// Picks a meal from the Meal menu. Best effort: an entry with no meal lands under Other, which is still valid.
-    private func chooseMeal(_ meal: String) {
-        dismissKeyboard()
-        let menu = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Meal")).firstMatch
-        var scrolls = 0
-        while !(menu.exists && menu.isHittable) && scrolls < 4 {
-            app.swipeUp()
-            scrolls += 1
+    /// Sets the meal on the Add screen's meal menu, which the next entry takes. Best effort: an entry with no meal
+    /// lands under Other, which is still valid, but the element tree is kept so a miss can be fixed.
+    private func chooseMealOnAddHome(_ meal: String, entry: String) {
+        let menu = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@ OR label == %@", "meal", "None")).firstMatch
+        guard menu.waitForExistence(timeout: 5), menu.isHittable else {
+            try? app.debugDescription.write(
+                to: outputDirectory.appendingPathComponent("debug-tree-no-meal-menu-\(entry).txt"), atomically: true,
+                encoding: .utf8)
+            return
         }
-        guard menu.exists, menu.isHittable else { return }
         menu.tap()
         let option = app.buttons[meal]
-        if option.waitForExistence(timeout: 5) { option.tap() }
+        if option.waitForExistence(timeout: 5) {
+            option.tap()
+        } else {
+            capture("debug-meal-menu-\(entry)")
+            try? app.debugDescription.write(
+                to: outputDirectory.appendingPathComponent("debug-tree-meal-menu-\(entry).txt"), atomically: true,
+                encoding: .utf8)
+        }
     }
 
     private func dismissKeyboard() {
