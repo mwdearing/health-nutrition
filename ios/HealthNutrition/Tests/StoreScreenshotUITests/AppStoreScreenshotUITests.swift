@@ -49,7 +49,7 @@ final class AppStoreScreenshotUITests: XCTestCase {
         XCTAssertTrue(edit.exists && edit.isHittable, "no Edit goals link on Today")
         edit.tap()
         let help = app.buttons["Help me set my goals"]
-        XCTAssertTrue(help.waitForExistence(timeout: 15), "no guided goal setup")
+        if !help.waitForExistence(timeout: 15) { debugFail("goals-screen", "no guided goal setup") }
         help.tap()
 
         try tapChoice("Maintain my weight")
@@ -130,6 +130,13 @@ final class AppStoreScreenshotUITests: XCTestCase {
     }
 
     // MARK: - Steps shared by the tests
+
+    /// Keeps a shot and the element tree under debug/, then fails the step.
+    private func debugFail(_ name: String, _ message: String) {
+        capture("debug-\(name)")
+        try? app.debugDescription.write(to: outputFile("debug-tree-\(name)", ext: "txt"), atomically: true, encoding: .utf8)
+        XCTFail(message)
+    }
 
     private func startOnToday() throws {
         let getStarted = app.buttons["Get started"]
