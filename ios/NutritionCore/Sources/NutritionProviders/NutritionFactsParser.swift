@@ -1706,8 +1706,6 @@ public enum NutritionFactsParser {
         var text = digits
         while text.hasSuffix(".") { text.removeLast() }
         guard text.contains(where: { isDigit($0) }) else { return nil }
-        // Two dots ("1.2.3") state no single number, so the row keeps no amount rather than a guessed one.
-        guard text.filter({ $0 == "." }).count <= 1 else { return nil }
         guard isGroupedThousands(text) else { return nil }
         return Decimal(string: text.replacingOccurrences(of: ",", with: ""), locale: posix)
     }
