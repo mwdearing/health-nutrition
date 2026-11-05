@@ -115,7 +115,8 @@ struct RootView: View {
                     onOpenUnits: { self.openSettings(goals: false) },
                     bodyActivity: services.bodyActivity,
                     supplementStack: services.supplementStack,
-                    onSupplementLogged: { reload() }
+                    onSupplementLogged: { reload() },
+                    medicationLog: services.medicationLog
                 )
                 .toolbar { settingsToolbar }
                 #if DEBUG
