@@ -4,13 +4,14 @@
 -- flooding can change which unverified aggregate is shown but cannot displace an approved canonical.
 -- `ordinal`, the alternatives fingerprint (built in ordinal order) and the cursor all derive from this one ordering,
 -- so they stay consistent. A custom equivalence group counts as reviewed when any of its active revisions was
--- reviewed (the group is shown through its earliest revision, whose facts are equivalent). The previous migrations' bytes are unchanged; only this function is replaced.
+-- reviewed (equivalence covers facts, not display fields, so the group is shown through its earliest reviewed revision, the content the owner actually saw, or through its earliest revision when none was reviewed). The previous migrations' bytes are unchanged; only this function is replaced.
 begin;
 create or replace function catalog_v2.public_rows(p uuid)
 returns table(ordinal bigint,revision bigint,support bigint,reviewed boolean,missing boolean,legacy boolean,content jsonb)
 language sql stable set search_path='' as $$
 with custom as (
-   select min(r.revision) revision,count(*) support,
+   select coalesce(min(r.revision) filter (where exists(select 1 from catalog_v2.owner_reviews o where o.revision=r.revision)),min(r.revision)) revision,
+    count(*) support,
     bool_or(exists(select 1 from catalog_v2.owner_reviews o where o.revision=r.revision)) group_reviewed
    from catalog_v2.contributions c join catalog_v2.revisions r on r.revision=c.revision
    join public.profiles pr on pr.id=c.account_id join auth.users u on u.id=pr.id and not u.is_anonymous

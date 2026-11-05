@@ -137,5 +137,30 @@ do $test$ declare p uuid; rev bigint; first_rev bigint; begin
  assert public.get_catalog_product_v2(p)#>>'{product,verification,source}'='owner_reviewed';
  assert public.get_catalog_product_v2(p)#>>'{product,support,distinct_accounts}'='2';
 end $test$;
+-- Case 4: equivalence ignores display fields, so a group can hold two names. When the owner reviews the later
+-- revision, the group is shown through that reviewed revision, not the earlier unreviewed one.
+set local role authenticated;
+set local request.jwt.claim.sub='49000000-0000-4000-8000-000000000001';
+select public.submit_catalog_product_v2(jsonb_build_object('operation_id',gen_random_uuid(),'client_revision_id',gen_random_uuid(),
+ 'product_id',null,'expected_server_revision',null,'consent_version',2,'consent_generation','0',
+ 'product',jsonb_build_object('name','Synthetic early name granola','brand',null,'barcode','9780306406157','kind','food',
+ 'basis','per_100_g','serving',null,'facts',jsonb_build_array(jsonb_build_object('key','protein','display_name','Protein','state','known','amount','6','unit','g'))))) #> '{publication}' as p4pub \gset
+select set_config('t.p4',(:'p4pub'::jsonb->>'product_id'),false) \g /dev/null
+set local request.jwt.claim.sub='49000000-0000-4000-8000-000000000002';
+select public.submit_catalog_product_v2(jsonb_build_object('operation_id',gen_random_uuid(),'client_revision_id',gen_random_uuid(),
+ 'product_id',current_setting('t.p4')::uuid,'expected_server_revision',null,'consent_version',2,'consent_generation','0',
+ 'product',jsonb_build_object('name','Synthetic reviewed name granola','brand',null,'barcode','9780306406157','kind','food',
+ 'basis','per_100_g','serving',null,'facts',jsonb_build_array(jsonb_build_object('key','protein','display_name','Protein','state','known','amount','6','unit','g'))))) #> '{publication}' as p4pub \gset
+reset role;
+do $test$ declare p uuid; rev bigint; begin
+ p:=current_setting('t.p4')::uuid;
+ assert public.get_catalog_product_v2(p)#>>'{product,product,name}'='Synthetic early name granola', 'unreviewed group shows its earliest revision';
+ select revision into rev from catalog_v2.revisions where product_id=p and content->>'name'='Synthetic reviewed name granola';
+ perform catalog_v2.moderate(p,false,rev);
+ assert public.get_catalog_product_v2(p)#>>'{product,product,name}'='Synthetic reviewed name granola', 'the reviewed revision is the one displayed';
+ assert public.get_catalog_product_v2(p)#>>'{product,verification,source}'='owner_reviewed';
+ assert public.get_catalog_product_v2(p)#>>'{product,support,distinct_accounts}'='2';
+ assert (select normalized_name from catalog_v2.entries where product_id=p)=catalog_v2.search_name('Synthetic reviewed name granola');
+end $test$;
 rollback;
 select 'REVIEWED REPRESENTATIVE OK';
