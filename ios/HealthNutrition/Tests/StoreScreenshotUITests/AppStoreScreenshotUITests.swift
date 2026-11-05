@@ -165,7 +165,7 @@ final class AppStoreScreenshotUITests: XCTestCase {
         if !day.waitForExistence(timeout: 5) { debugFail("no-day-\(daysAgo)", "no calendar day named \(dayName)"); return }
         day.tap()
         // A tap outside the calendar closes it.
-        app.tap()
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.02)).tap()
     }
 
     /// Keeps a shot and the element tree under debug/, then fails the step.
