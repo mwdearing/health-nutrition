@@ -9,6 +9,8 @@ final class ProductSaveConfirmationUITests: XCTestCase {
     private let editedBrand = "Synthetic brand"
     /// The brand the product had before this test edited it, read from the editor before any change.
     private var brandBeforeEdit = ""
+    /// True only once the test has typed the edited brand. The teardown restores nothing until then.
+    private var didEditBrand = false
 
     func testEditingAProductFromLibraryConfirmsTheSave() throws {
         let app = XCUIApplication()
@@ -24,7 +26,7 @@ final class ProductSaveConfirmationUITests: XCTestCase {
 
         // Teardown runs in reverse order, so this restore runs before the app is terminated.
         addTeardownBlock { [self] in
-            guard app.state == .runningForeground else { return }
+            guard didEditBrand, app.state == .runningForeground else { return }
             guard openEditor(app) else { return }
             let brand = app.textFields["Brand (optional)"]
             guard brand.waitForExistence(timeout: 5) else { return }
@@ -49,6 +51,7 @@ final class ProductSaveConfirmationUITests: XCTestCase {
         }
         brand.tap()
         brand.typeText(editedBrand)
+        didEditBrand = true
 
         let save = app.buttons["Save product on this device"]
         scrollUntilHittable(save, in: app)
