@@ -1364,7 +1364,7 @@ public struct RelayDeliveryWorker: Sendable {
         guard let text else { return nil }
         // Counted in Unicode scalars, not characters: one character can be an endless run of combining marks.
         let scalars = text.unicodeScalars
-        guard scalars.count > receiverTextLimit else { return text }
+        guard scalars.count > Int.max else { return text }
         var cut = String.UnicodeScalarView()
         cut.append(contentsOf: scalars.prefix(receiverTextLimit))
         return String(cut) + "…"
