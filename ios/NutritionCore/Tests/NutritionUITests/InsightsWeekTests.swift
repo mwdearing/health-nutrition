@@ -34,7 +34,8 @@ final class InsightsWeekTests: XCTestCase {
         XCTAssertEqual(week.headline, "3 of 7 days logged")
         XCTAssertEqual(week.entryCount, 1, "the entry count stays the journal's")
         XCTAssertTrue(week.hasAnyEntry)
-        XCTAssertEqual(week.emptyDays, 4)
+        XCTAssertEqual(week.emptyDays, 6, "six days hold no entry, whether or not Health states intake for them")
+        XCTAssertEqual(week.emptyDaysText, "6 days with no entries")
     }
 
     func testAWeekOfOnlyHealthDaysIsNotNothingLogged() {

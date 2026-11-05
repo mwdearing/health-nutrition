@@ -19,7 +19,8 @@ public struct InsightsWeek: Equatable {
     public let days: [Day]
     public var loggedDays: Int { days.filter(\.isLogged).count }
     public var entryCount: Int { days.reduce(0) { $0 + $1.entryCount } }
-    public var emptyDays: Int { days.count - loggedDays }
+    /// Days with no entry, which a day only Apple Health knows about still is: the count matches "days with no entries".
+    public var emptyDays: Int { days.filter { $0.entryCount == 0 }.count }
     public var hasAnyEntry: Bool { loggedDays > 0 }
 
     /// "5 of 7 days logged".
@@ -78,7 +79,9 @@ public struct InsightsWeek: Equatable {
             guard let start = calendar.date(byAdding: .day, value: -offset, to: today) else { continue }
             let key = dayKey(calendar.dateComponents([.year, .month, .day], from: start))
             var day = Day(id: start, label: formatter.string(from: start), entryCount: keyCounts[key] ?? 0)
-            day.hasHealthIntake = healthIntakeDayKeys.contains(JournalViewModel.dayKey(start, zone: zone))
+            let parts = calendar.dateComponents([.year, .month, .day], from: start)
+            let isoKey = String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
+            day.hasHealthIntake = healthIntakeDayKeys.contains(isoKey)
             days.append(day)
         }
         return InsightsWeek(days: days)
