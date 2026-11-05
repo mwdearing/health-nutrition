@@ -100,6 +100,30 @@ final class InsightsAveragesTests: XCTestCase {
         XCTAssertEqual(result.lines.map(\.text), ["Protein: at least 47.5 g a day over 2 logged days"])
     }
 
+    /// Entries that carry no value for the nutrient make Health's amount a minimum.
+    func testHealthIsAMinimumWhenAnEntryLacksAValue() {
+        let total = NutrientTotal(
+            value: .unknown,
+            coverage: Coverage(knownCount: 0, totalCount: 1, hasBelowReportingThreshold: false, hasUnknown: true))
+        let totals = DailyTotals(totals: ["protein": total], missingCounts: ["protein": 1])
+        let result = make([InsightsAverages.Day(
+            key: "2023-11-15", totals: totals, isLogged: true,
+            outside: .read(values: ["protein": 30], readKeys: ["protein"]))])
+        XCTAssertEqual(result.lines.map(\.text), ["Protein: at least 30 g a day over 1 logged day"])
+    }
+
+    /// An amount in another unit than Health's is not converted or added, as on Today: the journal's figure stands.
+    func testAJournalAmountInAnotherUnitIsNotAddedToHealths() {
+        let total = NutrientTotal(
+            value: .known(500, .mg),
+            coverage: Coverage(knownCount: 1, totalCount: 1, hasBelowReportingThreshold: false, hasUnknown: false))
+        let result = make([InsightsAverages.Day(
+            key: "2023-11-15", totals: DailyTotals(totals: ["protein": total]), isLogged: true,
+            outside: .read(values: ["protein": 20], readKeys: ["protein"]))])
+        XCTAssertTrue(result.lines.first?.text.hasPrefix("Protein: at least") == true, "\(result.lines.map(\.text))")
+        XCTAssertFalse(result.lines.first?.text.contains("20") == true)
+    }
+
     /// Water alone does not make a Health-only day a logged day.
     func testAWaterOnlyHealthDayIsLeftOut() {
         let result = make([

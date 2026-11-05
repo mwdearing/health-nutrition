@@ -93,10 +93,11 @@ public struct InsightsAverages: Equatable {
                 case .known(let healthAmount, let healthUnit, let complete):
                     if !complete { isPartial = true }
                     if case .known(let journalAmount, let journalUnit) = value {
-                        if let converted = try? Quantity(value: healthAmount, unit: healthUnit).converted(to: journalUnit).value {
-                            value = .known(journalAmount + converted, journalUnit)
+                        if journalUnit.symbol == healthUnit.symbol {
+                            value = .known(journalAmount + healthAmount, journalUnit)
                         } else {
-                            // An amount in a unit the journal's cannot be converted to is left out; the day reads at least.
+                            // As Today does, an amount in another unit than Health's is never converted or added: the
+                            // journal's figure stands and the day reads at least.
                             isPartial = true
                         }
                     } else if healthAmount == 0 {
@@ -110,7 +111,6 @@ public struct InsightsAverages: Equatable {
                         if day.totals.missingCount(for: nutrient) > 0 { isPartial = true }
                     }
                 }
-                if case .unknown = value { continue }
                 guard case .known(let amount, let amountUnit) = value else { continue }
                 let target = unit ?? amountUnit
                 guard let converted = try? Quantity(value: amount, unit: amountUnit).converted(to: target).value
