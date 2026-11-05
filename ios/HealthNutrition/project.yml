@@ -224,6 +224,7 @@ targets:
       - path: Tests
         excludes:
           - AddSearchUITests/**
+          - StoreScreenshotUITests/**
     dependencies:
       - target: HealthNutrition
       # The stores, the Connections view model and the recipe types the assertions use are the
@@ -251,6 +252,19 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.example.HealthNutritionAddUITests
+        GENERATE_INFOPLIST_FILE: YES
+
+  HealthNutritionStoreShotsUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: Tests/StoreScreenshotUITests
+    dependencies:
+      - target: HealthNutrition
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.example.HealthNutritionStoreShotsUITests
         GENERATE_INFOPLIST_FILE: YES
 
 schemes:
@@ -283,3 +297,15 @@ schemes:
       targets:
         - HealthNutritionAddUITests
 
+  HealthNutritionStoreShots:
+    build:
+      targets:
+        HealthNutrition: all
+        HealthNutritionStoreShotsUITests: [test]
+    run:
+      config: Release
+    # Release, so the shots show the shipped app: the debug-only HealthKit tab is not built.
+    test:
+      config: Release
+      targets:
+        - HealthNutritionStoreShotsUITests
