@@ -75,14 +75,21 @@ final class BoundedResponseOperation: NSObject, URLSessionDataDelegate, @uncheck
         self.maxBytes = maxBytes
     }
 
-    /// URLSession strips only `Authorization` and `Cookie` when a redirect leaves the host, so the provider key
-    /// header is dropped here: a key sent to the provider is never sent on to another host.
+    /// URLSession strips only `Authorization` and `Cookie` when a redirect leaves the origin, so the provider key
+    /// header is dropped here unless the scheme, host and port all match the original request: a key sent to
+    /// the provider is never sent on over plain http or to another host or port.
     static func strippingKeyOnCrossHostRedirect(_ redirected: URLRequest, from original: URLRequest?) -> URLRequest {
-        guard let originalHost = original?.url?.host?.lowercased(),
-              redirected.url?.host?.lowercased() != originalHost else { return redirected }
+        guard let originalURL = original?.url, let originalOrigin = origin(of: originalURL),
+              origin(of: redirected.url) != originalOrigin else { return redirected }
         var request = redirected
         request.setValue(nil, forHTTPHeaderField: "X-Api-Key")
         return request
+    }
+
+    private static func origin(of url: URL?) -> String? {
+        guard let url, let scheme = url.scheme?.lowercased(), let host = url.host?.lowercased() else { return nil }
+        let port = url.port ?? (scheme == "https" ? 443 : 80)
+        return "\(scheme)://\(host):\(port)"
     }
 
     // These policy callbacks are routed explicitly so an injected delegate observes the original

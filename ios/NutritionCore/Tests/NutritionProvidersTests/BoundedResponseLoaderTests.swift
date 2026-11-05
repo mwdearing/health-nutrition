@@ -165,6 +165,12 @@ final class BoundedResponseLoaderTests: XCTestCase {
             .value(forHTTPHeaderField: "X-Api-Key"))
         XCTAssertEqual(BoundedResponseOperation.strippingKeyOnCrossHostRedirect(sameHost, from: original)
             .value(forHTTPHeaderField: "X-Api-Key"), "secret")
+        for target in ["http://provider.invalid/final", "https://provider.invalid:8443/final"] {
+            var moved = URLRequest(url: URL(string: target)!)
+            moved.setValue("secret", forHTTPHeaderField: "X-Api-Key")
+            XCTAssertNil(BoundedResponseOperation.strippingKeyOnCrossHostRedirect(moved, from: original)
+                .value(forHTTPHeaderField: "X-Api-Key"), target)
+        }
     }
 
 #if canImport(FoundationNetworking)
