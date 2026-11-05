@@ -441,6 +441,12 @@ final class AppStoreScreenshotUITests: XCTestCase {
     /// entry would land under Other and the store shot would show the wrong meal.
     private func chooseMealOnAddHome(_ meal: String, entry: String) {
         let menu = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@ OR label == %@", "meal", "None")).firstMatch
+        // With entries in Recent the Add screen can open scrolled; the meal menu is at its top.
+        var upScrolls = 0
+        while !(menu.exists && menu.isHittable) && upScrolls < 3 {
+            app.swipeDown()
+            upScrolls += 1
+        }
         guard menu.waitForExistence(timeout: 5), menu.isHittable else {
             try? app.debugDescription.write(
                 to: outputFile("debug-tree-no-meal-menu-\(entry)", ext: "txt"), atomically: true,
@@ -479,7 +485,13 @@ final class AppStoreScreenshotUITests: XCTestCase {
         } else {
             app.navigationBars.staticTexts.firstMatch.tap()
         }
-        _ = pollUntil(timeout: 5, { self.app.keyboards.count == 0 })
+        if !pollUntil(timeout: 3, { self.app.keyboards.count == 0 }) {
+            // Dragging the keyboard down closes it the way a person would.
+            let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.72))
+            let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.99))
+            from.press(forDuration: 0.1, thenDragTo: to)
+            _ = pollUntil(timeout: 3, { self.app.keyboards.count == 0 })
+        }
     }
 
     // MARK: - Navigation and capture
