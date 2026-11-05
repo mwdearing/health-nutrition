@@ -178,8 +178,12 @@ def test_privacy_and_erase_copy_follow_current_source_keys_and_boundaries() -> N
     privacy_summary = view_model.split("public static let privacySummary =", 1)[1].split("public static let exportButtonTitle", 1)[0]
     summary_literals = " ".join(re.findall(r'"([^"\\]*(?:\\.[^"\\]*)*)"', privacy_summary))
     summary = summary_literals.lower()
-    for phrase in ("stays on this device", "open food facts", "community catalog", "share labels", "hcaptcha"):
+    for phrase in ("stays on this device", "open food facts", "community catalog", "share products with the community", "hcaptcha"):
         assert phrase in summary
+    for phrase in ("other apps", "height", "usda fooddata central", "not stored"):
+        assert phrase in summary
+    assert "share labels" not in summary
+    assert "plus steps, activity and weight" not in summary
     assert "nothing is uploaded" not in summary
 
 
@@ -246,7 +250,7 @@ def test_public_privacy_copy_discloses_apple_health_delivery_and_conditional_cam
     summary = view_model.split("public static let privacysummary =", 1)[1].split(
         "public static let exportbuttontitle", 1
     )[0]
-    assert "connect apple health" in summary and "healthkit" in summary and "only its own samples" in summary
+    assert "connect apple health" in summary and "healthkit" in summary and "its own samples" in summary and "other apps" in summary
     assert "camera access" in summary and "email sign-in" in summary
 
 
