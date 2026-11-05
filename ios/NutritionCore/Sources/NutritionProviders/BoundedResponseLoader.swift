@@ -79,8 +79,10 @@ final class BoundedResponseOperation: NSObject, URLSessionDataDelegate, @uncheck
     /// header is dropped here unless the scheme, host and port all match the original request: a key sent to
     /// the provider is never sent on over plain http or to another host or port.
     static func strippingKeyOnCrossHostRedirect(_ redirected: URLRequest, from original: URLRequest?) -> URLRequest {
-        guard let originalURL = original?.url, let originalOrigin = origin(of: originalURL),
-              origin(of: redirected.url) != originalOrigin else { return redirected }
+        // An origin that cannot be read on either side counts as a different one: the key stays only when both match.
+        if let originalOrigin = origin(of: original?.url), origin(of: redirected.url) == originalOrigin {
+            return redirected
+        }
         var request = redirected
         request.setValue(nil, forHTTPHeaderField: "X-Api-Key")
         return request
