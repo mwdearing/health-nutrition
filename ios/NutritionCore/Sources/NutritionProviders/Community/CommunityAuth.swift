@@ -82,7 +82,8 @@ public actor CommunityAuth {
         let (data, response) = try await api.send(
             "/auth/v1/token",
             query: [URLQueryItem(name: "grant_type", value: "id_token")],
-            body: body
+            body: body,
+            keepsReplyOnCancel: true
         )
         let session = try acceptAuthentication(data, response, startedAtIntent: startedAtIntent)
         if let authorizationCode, !authorizationCode.isEmpty {
@@ -114,7 +115,7 @@ public actor CommunityAuth {
         authenticationIntent += 1
         deletedOwners.removeAll()
         let startedAtIntent = authenticationIntent
-        let (data, response) = try await api.send("/auth/v1/verify", body: body)
+        let (data, response) = try await api.send("/auth/v1/verify", body: body, keepsReplyOnCancel: true)
         return try acceptAuthentication(data, response, startedAtIntent: startedAtIntent)
     }
 

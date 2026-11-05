@@ -13,7 +13,8 @@ struct CommunityAPI: Sendable {
         query: [URLQueryItem] = [],
         bearer: String? = nil,
         body: Data? = nil,
-        prefer: String? = nil
+        prefer: String? = nil,
+        keepsReplyOnCancel: Bool = false
     ) async throws -> (Data, HTTPURLResponse) {
         guard var components = URLComponents(url: config.baseURL, resolvingAgainstBaseURL: false) else {
             throw CommunityError.notConfigured
@@ -41,7 +42,9 @@ struct CommunityAPI: Sendable {
         do {
             try Task.checkCancellation()
             let reply = try await transport.send(request)
-            try Task.checkCancellation()
+            // A reply that has arrived is kept when the caller says it must not be lost: for a sign-in the server
+            // has already issued the session and spent the code, so dropping the reply would strand the account.
+            if !keepsReplyOnCancel { try Task.checkCancellation() }
             guard reply.0.count <= BoundedResponseLimits.community else {
                 throw BoundedResponseError.responseTooLarge
             }
@@ -63,9 +66,12 @@ struct CommunityAPI: Sendable {
         query: [URLQueryItem] = [],
         bearer: String? = nil,
         body: Data? = nil,
-        prefer: String? = nil
+        prefer: String? = nil,
+        keepsReplyOnCancel: Bool = false
     ) async throws -> (Data, HTTPURLResponse) {
-        let (data, response) = try await raw(path, method: method, query: query, bearer: bearer, body: body, prefer: prefer)
+        let (data, response) = try await raw(
+            path, method: method, query: query, bearer: bearer, body: body, prefer: prefer,
+            keepsReplyOnCancel: keepsReplyOnCancel)
         guard (200..<300).contains(response.statusCode) else {
             throw CommunityError.from(status: response.statusCode, body: data)
         }
