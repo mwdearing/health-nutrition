@@ -258,7 +258,7 @@ final class NutrientGapsTests: XCTestCase {
     func testATypedEntryKeepsTheComponentsItKnowsAndCountsTheRestAsUnknown() throws {
         let store = try makeStore()
         let intake = Intake(
-            id: UUID().uuidString.lowercased(), category: "food", occurredAt: noon, timeZoneIdentifier: "UTC")
+            id: UUID().uuidString.lowercased(), category: "food", occurredAt: noon)
         try store.create(
             intake, components: [
                 IntakeComponent(componentID: "egg", name: "Egg", amount: 50, unit: .g),
@@ -366,7 +366,7 @@ final class NutrientGapsTests: XCTestCase {
     func testAHandTypedSupplementCountsAsSupplementNotFood() throws {
         let store = try makeStore()
         let intake = Intake(
-            id: UUID().uuidString.lowercased(), category: "supplement", occurredAt: noon, timeZoneIdentifier: "UTC")
+            id: UUID().uuidString.lowercased(), category: "supplement", occurredAt: noon)
         try store.create(
             intake, components: [
                 IntakeComponent(componentID: "magnesium", name: "Magnesium", amount: 100, unit: .mg),
@@ -381,7 +381,7 @@ final class NutrientGapsTests: XCTestCase {
 
     func testAHandTypedVitaminDInInternationalUnitsIsRestatedToMcg() throws {
         let store = try makeStore()
-        let intake = Intake(id: UUID().uuidString.lowercased(), category: "food", occurredAt: noon, timeZoneIdentifier: "UTC")
+        let intake = Intake(id: UUID().uuidString.lowercased(), category: "food", occurredAt: noon)
         try store.create(
             intake, components: [
                 IntakeComponent(componentID: "d3drops", name: "Drops", amount: 400, unit: .iu),
@@ -396,7 +396,7 @@ final class NutrientGapsTests: XCTestCase {
 
     func testAnEntryWithTwoMissingComponentsCountsOnceAsMissing() throws {
         let store = try makeStore()
-        let intake = Intake(id: UUID().uuidString.lowercased(), category: "food", occurredAt: noon, timeZoneIdentifier: "UTC")
+        let intake = Intake(id: UUID().uuidString.lowercased(), category: "food", occurredAt: noon)
         try store.create(
             intake, components: [
                 IntakeComponent(componentID: "toast", name: "Toast", amount: 30, unit: .g),
@@ -423,7 +423,7 @@ final class NutrientGapsTests: XCTestCase {
 
     func testAKnownAmountAndABoundOfTheSameNutrientKeepTheKnownPartAndAddTheNote() throws {
         let store = try makeStore()
-        let intake = Intake(id: UUID().uuidString.lowercased(), category: "food", occurredAt: noon, timeZoneIdentifier: "UTC")
+        let intake = Intake(id: UUID().uuidString.lowercased(), category: "food", occurredAt: noon)
         try store.create(
             intake, components: [
                 IntakeComponent(componentID: "typedvitc", name: "Typed", amount: 30, unit: .g),
@@ -642,10 +642,71 @@ final class NutrientGapsTests: XCTestCase {
     }
 
     func testDaysBeforeCountsLocalDaysInTheEntrysOwnZone() {
-        let entry = Intake(id: "x", category: "food", occurredAt: noon - 6 * 86_400, timeZoneIdentifier: "UTC")
+        let entry = Intake(id: "x", category: "food", occurredAt: noon - 6 * 86_400)
         XCTAssertEqual(NutrientGapsViewModel.daysBefore(noon, entry), 6)
         let bad = Intake(id: "y", category: "food", occurredAt: noon, timeZoneIdentifier: "Not/AZone")
         XCTAssertNil(NutrientGapsViewModel.daysBefore(noon, bad))
+    }
+
+    // MARK: #1291, #1293 and the source line
+
+    /// Every nutrient with a Health mapping except the ones named, as a read that answered the rest.
+    private func healthRead(except failed: Set<String> = [], values: [String: Decimal] = [:]) -> HealthDayRead {
+        let keys = Set(
+            NutrientGapsViewModel.nutrients.filter { HealthKitWritePlanner.mapping(for: $0) != nil }
+                .map { HealthKitWritePlanner.canonicalKey(for: $0) }
+        ).subtracting(failed)
+        return HealthDayRead(.read(values: values, readKeys: keys), complete: failed.isEmpty)
+    }
+
+    /// #1291: one failed Health query must not give the other nutrients a known-zero day. Vitamin C is stated by one
+    /// logged day, so its average is that day's 100 mg, exact, over 1 day.
+    func testOneFailedHealthQueryAddsNoKnownZeroDaysToOtherNutrients() async throws {
+        let store = try makeStore()
+        try log(store, "Orange", at: noon, product: product("orange", kind: .food, nutrients: [
+            "vitaminC": .known(100, .mg),
+        ]))
+        let model = NutrientGapsViewModel(store: store, lookup: GapsSnapshotFacts())
+        model.healthDayReader = { [self] _, _ in healthRead(except: ["vitaminK"]) }
+        model.chooseSpan(.week, now: noon)
+        await model.refreshWeekHealth(now: noon)
+        let vitaminC = try XCTUnwrap(model.rows.first { $0.nutrient == "vitaminC" })
+        XCTAssertEqual(model.loggedDays, 1)
+        XCTAssertEqual(vitaminC.averagedOverDays, 1)
+        XCTAssertEqual(vitaminC.tally.fromFood, 100)
+        XCTAssertEqual(vitaminC.amountText, "100 mg")
+        let vitaminK = try XCTUnwrap(model.rows.first { $0.nutrient == "vitaminK" })
+        XCTAssertEqual(vitaminK.status, .unknown, "the failed query itself stays unknown")
+    }
+
+    /// #1291: a logged day with only a supplement that does not declare vitamin C says nothing about it, so Health's
+    /// zeros do not make it a known-zero day for vitamin C.
+    func testHealthZerosDoNotCountAsKnownDaysForNutrientsTheJournalDayDoesNotState() async throws {
+        let store = try makeStore()
+        try log(store, "Orange", at: noon, product: product("orange", kind: .food, nutrients: [
+            "vitaminC": .known(90, .mg),
+        ]))
+        try log(store, "Magnesium", at: noon - 86_400, category: "supplement",
+            product: product("mag", kind: .supplement, nutrients: ["magnesium": .known(100, .mg)]))
+        let model = NutrientGapsViewModel(store: store, lookup: GapsSnapshotFacts())
+        model.healthDayReader = { [self] _, _ in healthRead() }
+        model.chooseSpan(.week, now: noon)
+        await model.refreshWeekHealth(now: noon)
+        let vitaminC = try XCTUnwrap(model.rows.first { $0.nutrient == "vitaminC" })
+        XCTAssertEqual(vitaminC.averagedOverDays, 1)
+        XCTAssertEqual(vitaminC.tally.fromFood, 90)
+    }
+
+    /// The source line adds up to the figure: Health's part is named, and "All from supplements" is only said when
+    /// food and Health are both zero.
+    func testTheSourceLineNamesAppleHealthAndNeverSaysAllFromSupplementsWithHealthInTheTotal() throws {
+        let withHealth = try row("vitaminC", NutrientDayTally(fromSupplements: 50, fromHealth: 40, known: 2))
+        XCTAssertFalse(withHealth.detailLines.contains("All from supplements"))
+        XCTAssertEqual(withHealth.detailLines.first, "Supplements 50 mg, Apple Health 40 mg")
+        let all = try row("vitaminC", NutrientDayTally(fromFood: 30, fromSupplements: 50, fromHealth: 40, known: 3))
+        XCTAssertEqual(all.detailLines.first, "Food 30 mg, supplements 50 mg, Apple Health 40 mg")
+        let alone = try row("vitaminC", NutrientDayTally(fromSupplements: 50, known: 1))
+        XCTAssertEqual(alone.detailLines.first, "All from supplements")
     }
 
     func testClearingTheGroupShowsAmountsAloneAndForgetsTheChoice() throws {

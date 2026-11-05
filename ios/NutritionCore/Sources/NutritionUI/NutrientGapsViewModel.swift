@@ -138,11 +138,20 @@ public struct NutrientGapRow: Equatable, Identifiable {
     /// form-specific limit counts. Empty when there is nothing to add.
     public var detailLines: [String] {
         var lines: [String] = []
-        if tally.known > 0, tally.fromSupplements > 0, tally.fromFood > 0 {
-            lines.append(
-                "Food \(Self.figure(tally.fromFood, unit)), supplements \(Self.figure(tally.fromSupplements, unit))")
-        } else if tally.known > 0, tally.fromSupplements > 0 {
-            lines.append("All from supplements")
+        if tally.known > 0 {
+            // Every part above zero, so the line adds up to the figure above it. "All from supplements" is only said
+            // when food and Apple Health are both zero.
+            var parts: [String] = []
+            if tally.fromFood > 0 { parts.append("\(parts.isEmpty ? "Food" : "food") \(Self.figure(tally.fromFood, unit))") }
+            if tally.fromSupplements > 0 {
+                parts.append("\(parts.isEmpty ? "Supplements" : "supplements") \(Self.figure(tally.fromSupplements, unit))")
+            }
+            if tally.fromHealth > 0 { parts.append("Apple Health \(Self.figure(tally.fromHealth, unit))") }
+            if tally.fromSupplements > 0, tally.fromFood <= 0, tally.fromHealth <= 0 {
+                lines.append("All from supplements")
+            } else if parts.count > 1 {
+                lines.append(parts.joined(separator: ", "))
+            }
         }
         if tally.missing > 0 {
             lines.append("Unknown for \(tally.missing) \(tally.missing == 1 ? "entry" : "entries")")
@@ -366,8 +375,12 @@ public final class NutrientGapsViewModel: ObservableObject {
     /// Adds Health's day total to each nutrient Health can state. A completed query is a known amount (a known zero
     /// when Health had no samples); a query that failed or did not run is unknown, never zero, so the nutrient is
     /// counted as missing.
+    ///
+    /// On a day of the week (`weekDay`) a known zero only confirms a nutrient the day already states: the day's
+    /// answer for a nutrient nothing else states says nothing about it, so it must not become a stated day that
+    /// pulls that nutrient's average down. A positive amount, and a query that did not answer, are always kept.
     static func addingHealth(
-        _ tallies: [String: NutrientDayTally], outside: HealthIntakeTotals.Outside
+        _ tallies: [String: NutrientDayTally], outside: HealthIntakeTotals.Outside, weekDay: Bool = false
     ) -> [String: NutrientDayTally] {
         guard case .read(let values, let readKeys) = outside else { return tallies }
         var result = tallies
@@ -375,7 +388,9 @@ public final class NutrientGapsViewModel: ObservableObject {
             let canonical = HealthKitWritePlanner.canonicalKey(for: nutrient)
             var tally = result[nutrient] ?? NutrientDayTally()
             if readKeys.contains(canonical) {
-                tally.fromHealth += values[canonical] ?? 0
+                let amount = values[canonical] ?? 0
+                if weekDay, amount <= 0, result[nutrient] == nil { continue }
+                tally.fromHealth += amount
                 tally.known += 1
             } else {
                 tally.unknownHealth += 1
@@ -392,7 +407,7 @@ public final class NutrientGapsViewModel: ObservableObject {
     public func load(now: Date) {
         referenceGroup = preferences?.referenceGroup
         do {
-            let read = try Self.tallies(store: store, lookup: lookup, now: now, days: span.dayCount)
+            let read = try Self.tallies(store: store, lookup: lookup, now: now, days: span.dayCount
             loggedDays = read.loggedDays
             let weekMerged = Self.weekDays(
                 byDay: read.byDay, dates: read.dates, loggedDates: read.loggedDates, health: healthWeek)
@@ -483,7 +498,7 @@ public final class NutrientGapsViewModel: ObservableObject {
             // A day Health answered empty, which the journal did not log, says nothing: it must not add keys that
             // would count as stated days in the average. A failed or partial read still stays unknown.
             guard positive || healthFailed(outside) || logged.contains(date) else { continue }
-            byDate[date] = addingHealth(byDate[date] ?? [:], outside: outside)
+            byDate[date] = addingHealth(byDate[date] ?? [:], outside: outside, weekDay: true)
             if positive { logged.insert(date) }
         }
         let ordered = byDate.keys.sorted().map { byDate[$0] ?? [:] }
