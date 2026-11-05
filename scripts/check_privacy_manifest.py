@@ -12,6 +12,11 @@ those products' target directories and their target dependencies. Test targets
 and standalone targets the app does not link (a spike, for instance) are never
 scanned, so a restricted API used only there cannot demand a declaration.
 
+The app and every application or app-extension target it embeds (the widget
+extension, the Watch app and its widget extension) are separate bundles. Each
+bundle's sources are checked against the ``PrivacyInfo.xcprivacy`` among that
+bundle's own source directories; ``--manifest`` overrides the app's manifest only.
+
 Every scanned ``*.swift`` file is checked for the required-reason APIs Apple
 lists. A category a source uses must be declared in the manifest with a reason
 Apple publishes for that category, ``NSPrivacyTracking`` must be false, and the
@@ -59,7 +64,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ROOT = REPO_ROOT / "ios"
 APP_DIR_RELATIVE = Path("HealthNutrition")
 PACKAGE_DIR_RELATIVE = Path("NutritionCore")
-MANIFEST_RELATIVE = Path("Resources/PrivacyInfo.xcprivacy")
+MANIFEST_NAME = "PrivacyInfo.xcprivacy"
+MANIFEST_RELATIVE = Path("Resources") / MANIFEST_NAME
 PACKAGE_NAME = "NutritionCore"
 
 # category -> (the reason this project declares, the API spellings, every reason
@@ -183,22 +189,35 @@ def scan_string(source: str, start: int, hashes: int) -> tuple[int, str]:
     while i < n:
         ch = source[i]
         if ch == "\\":
-            run = 0
-            while i + run < n and source[i + run] == "\\":
-                run += 1
+            # The escape introducer is a backslash followed by the literal's hashes (a plain backslash when there
+            # are none). In a raw literal a backslash without them is ordinary text. Without hashes, backslashes
+            # pair up: an even run escapes itself and leaves the next character alone, so only the last backslash
+            # of an odd run escapes the character after it.
+            introducer = i
+            if hashes == 0:
+                run = 1
+                while i + run < n and source[i + run] == "\\":
+                    run += 1
+                if run % 2 == 0:
+                    i += run
+                    continue
+                introducer = i + run - 1
+            elif not source.startswith("\\" + "#" * hashes, i):
+                i += 1
+                continue
             marker = "\\" + "#" * hashes + "("
-            if run == 1 and source.startswith(marker, i):
-                out.append(blank(source[literal_start:i]))
-                end = matching_paren(source, i + len(marker) - 1)
+            if source.startswith(marker, introducer):
+                out.append(blank(source[literal_start:introducer]))
+                end = matching_paren(source, introducer + len(marker) - 1)
                 out.append("(")
-                out.append(mask(source[i + len(marker) : end - 1]))
+                out.append(mask(source[introducer + len(marker) : end - 1]))
                 out.append(")")
                 i = end
                 literal_start = i
                 continue
-            # An escape such as \" or \\: the escaped character is consumed with
-            # the backslash, so an escaped delimiter cannot end the literal.
-            i += run + 1
+            # An escape such as \" or \n: the escaped character is consumed with the introducer, so an escaped
+            # delimiter cannot end the literal.
+            i = introducer + 1 + hashes + 1
             continue
         if source.startswith(closing, i):
             out.append(blank(source[literal_start:i]))
@@ -325,46 +344,87 @@ def package_targets(package: Path) -> tuple[dict[str, list[str]], dict[str, dict
     return products, info
 
 
-def app_build_description(project: Path) -> tuple[list[Path], list[str]]:
-    """Return (app source directories, linked NutritionCore products)."""
+class Target:
+    """One target of the build description: its type, source paths, target dependencies and linked products."""
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.type = ""
+        self.sources: list[str] = []
+        self.target_dependencies: list[str] = []
+        self.products: list[str] = []
+
+
+def build_targets(project: Path) -> dict[str, Target]:
+    """Parse the ``targets:`` section of a project.yml into targets, in file order."""
     lines = project.read_text(encoding="utf-8").splitlines()
-    start = None
-    for index, line in enumerate(lines):
-        if re.match(r"^\s{2}\w+:\s*$", line) and index + 1 < len(lines) and "application" in "\n".join(lines[index + 1 : index + 8]):
-            start = index
-            break
-    if start is None:
-        raise UsageError(f"{project}: no application target found")
-    indent = len(lines[start]) - len(lines[start].lstrip())
-    body: list[tuple[int, str]] = []
-    for line in lines[start + 1 :]:
-        if line.strip() and (len(line) - len(line.lstrip())) <= indent:
-            break
-        body.append((len(line) - len(line.lstrip()), line))
-    sources: list[str] = []
-    products: list[str] = []
-    in_sources = False
-    sources_indent = 0
-    for line_indent, line in body:
+    targets: dict[str, Target] = {}
+    in_targets = False
+    current: Target | None = None
+    section = ""
+    for line in lines:
         stripped = line.strip()
-        if re.match(r"^sources\s*:", stripped):
-            in_sources = True
-            sources_indent = line_indent
+        if not stripped or stripped.startswith("#"):
             continue
-        if in_sources:
-            if line_indent <= sources_indent and stripped and not stripped.startswith("-"):
-                in_sources = False
-            else:
-                path = re.match(r"^-\s*path\s*:\s*(\S+)", stripped)
-                if path:
-                    sources.append(path.group(1).strip("\"'"))
+        indent = len(line) - len(line.lstrip())
+        if indent == 0:
+            in_targets = stripped.rstrip() == "targets:"
+            current = None
+            continue
+        if not in_targets:
+            continue
+        if indent == 2:
+            name = re.match(r"^(\w+)\s*:\s*$", stripped)
+            current = Target(name.group(1)) if name else None
+            if current is not None:
+                targets[current.name] = current
+            section = ""
+            continue
+        if current is None:
+            continue
+        if indent == 4:
+            key = re.match(r"^(\w+)\s*:\s*(.*)$", stripped)
+            section = key.group(1) if key else ""
+            if key and section == "type":
+                current.type = key.group(2).strip().strip("\"'")
+            continue
+        if section == "sources":
+            path = re.match(r"^-\s*path\s*:\s*(\S+)", stripped)
+            if path:
+                current.sources.append(path.group(1).strip("\"'"))
+        elif section == "dependencies":
+            # A dependency item starts with ``- target:`` or ``- package:``; ``product:`` belongs to the package item.
+            dependency = re.match(r"^-\s*target\s*:\s*(\S+)", stripped)
+            if dependency:
+                current.target_dependencies.append(dependency.group(1).strip("\"'"))
                 continue
-        product = re.match(r"^product\s*:\s*(\S+)", stripped)
-        if product:
-            products.append(product.group(1).strip("\"'"))
-    if not products:
-        raise UsageError(f"{project}: the application target links no {PACKAGE_NAME} product")
-    return sources, products
+            product = re.match(r"^(?:-\s*)?product\s*:\s*(\S+)", stripped)
+            if product:
+                current.products.append(product.group(1).strip("\"'"))
+    return targets
+
+
+def embedded_bundles(targets: dict[str, Target], project: Path) -> list[Target]:
+    """The first application target followed by every application and app-extension target it embeds.
+
+    Embedding is followed through ``- target:`` dependencies, so the Watch app brings in its own widget extension.
+    Test targets and anything the app does not depend on are not bundles of the archive.
+    """
+    app = next((target for target in targets.values() if target.type == "application"), None)
+    if app is None:
+        raise UsageError(f"{project}: no application target found")
+    bundles = [app]
+    seen = {app.name}
+    pending = [app]
+    while pending:
+        for name in pending.pop(0).target_dependencies:
+            dependency = targets.get(name)
+            if dependency is None or name in seen or dependency.type not in ("application", "app-extension"):
+                continue
+            seen.add(name)
+            bundles.append(dependency)
+            pending.append(dependency)
+    return bundles
 
 
 def contained(root: Path, base: Path, relative: str) -> Path:
@@ -381,17 +441,18 @@ def contained(root: Path, base: Path, relative: str) -> Path:
     return resolved
 
 
-def shipped_directories(root: Path) -> list[Path]:
-    """Directories whose Swift sources end up in the shipped app."""
-    project = root / APP_DIR_RELATIVE / "project.yml"
-    package = root / PACKAGE_DIR_RELATIVE / "Package.swift"
-    for path in (project, package):
-        if not path.is_file():
-            raise UsageError(f"{path}: no such file, cannot tell which code the app ships")
+class Bundle:
+    """A bundle of the archive: its Swift source directories and the privacy manifest it ships."""
 
-    source_paths, products = app_build_description(project)
+    def __init__(self, name: str, directories: list[Path], manifest: Path | None) -> None:
+        self.name = name
+        self.directories = directories
+        self.manifest = manifest
+
+
+def package_directories(root: Path, products: list[str], package: Path, *, require: bool) -> list[Path]:
+    """Directories of the NutritionCore targets the given products link, transitively."""
     product_targets, info = package_targets(package)
-
     wanted: set[str] = set()
     pending = [target for product in products for target in product_targets.get(product, [])]
     while pending:
@@ -403,20 +464,52 @@ def shipped_directories(root: Path) -> list[Path]:
             continue
         wanted.add(name)
         pending.extend(target["dependencies"])  # type: ignore[arg-type]
-    if not wanted:
+    if require and not wanted:
         raise UsageError(f"{package}: none of the linked products resolve to a target")
-
-    app_dir = root / APP_DIR_RELATIVE
     directories = []
-    for source in source_paths:
-        candidate = contained(root, app_dir, source)
-        if candidate.is_dir():
-            directories.append(candidate)
     for name in sorted(wanted):
         target_path = contained(root, root / PACKAGE_DIR_RELATIVE, str(info[name]["path"]))
         if target_path.is_dir():
             directories.append(target_path)
-    return [d for d in directories if "Tests" not in d.parts]
+    return directories
+
+
+def shipped_bundles(root: Path) -> list[Bundle]:
+    """One entry per bundle the archive embeds, each with the code compiled into it and its own manifest.
+
+    The first entry is the app. A bundle's manifest is the ``PrivacyInfo.xcprivacy`` among its own source
+    directories, so a widget's code is checked against the widget's manifest and never the app's.
+    """
+    project = root / APP_DIR_RELATIVE / "project.yml"
+    package = root / PACKAGE_DIR_RELATIVE / "Package.swift"
+    for path in (project, package):
+        if not path.is_file():
+            raise UsageError(f"{path}: no such file, cannot tell which code the app ships")
+
+    targets = build_targets(project)
+    bundles_found = embedded_bundles(targets, project)
+    app_dir = root / APP_DIR_RELATIVE
+    bundles: list[Bundle] = []
+    for index, target in enumerate(bundles_found):
+        if index == 0 and not target.products:
+            raise UsageError(f"{project}: the application target links no {PACKAGE_NAME} product")
+        directories: list[Path] = []
+        for source in target.sources:
+            candidate = contained(root, app_dir, source)
+            if candidate.is_dir():
+                directories.append(candidate)
+        source_directories = [d for d in directories if "Tests" not in d.parts]
+        if target.products:
+            directories.extend(package_directories(root, target.products, package, require=index == 0))
+        directories = [d for d in directories if "Tests" not in d.parts]
+        manifests = sorted(
+            candidate
+            for directory in source_directories
+            for candidate in directory.rglob(MANIFEST_NAME)
+            if candidate.is_file()
+        )
+        bundles.append(Bundle(target.name, directories, manifests[0] if manifests else None))
+    return bundles
 
 
 # The data types the account sends to the project's server. Each must be declared as linked to the user, not used
@@ -491,31 +584,11 @@ def load_manifest(path: Path) -> dict:
         raise UsageError(f"{path}: cannot read the privacy manifest ({exc})") from exc
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--root", type=Path, default=DEFAULT_ROOT, help="tree holding the app and its package")
-    parser.add_argument("--manifest", type=Path, default=None, help="path to PrivacyInfo.xcprivacy")
-    args = parser.parse_args(argv)
-
-    root: Path = args.root
-    manifest_path: Path = args.manifest if args.manifest is not None else root / APP_DIR_RELATIVE / MANIFEST_RELATIVE
-    if not root.is_dir():
-        print(f"{root}: no such directory")
-        return 2
-
-    try:
-        directories = shipped_directories(root)
-        manifest = load_manifest(manifest_path)
-    except UsageError as exc:
-        print(str(exc))
-        return 2
-
+def manifest_findings(manifest: dict, manifest_path: Path) -> list[str]:
+    """Findings for the tracking flag and the accessed-API declarations of one manifest."""
     findings: list[str] = []
     if manifest.get("NSPrivacyTracking") is not False:
         findings.append(f"{manifest_path}: NSPrivacyTracking must be false in this manifest")
-    findings.extend(collected_findings(manifest, manifest_path))
-
-    declared = declared_reasons(manifest)
     for category, reasons in declared_entries(manifest):
         if not isinstance(category, str):
             findings.append(f"{manifest_path}: an accessed-API entry has no usable NSPrivacyAccessedAPIType")
@@ -546,41 +619,101 @@ def main(argv: list[str] | None = None) -> int:
                     f"{manifest_path}: {category} declares {reason}, which Apple does not publish "
                     f"for that category; the published reasons are {allowed}"
                 )
+    return findings
 
+
+def scan_directories(root: Path, directories: list[Path]) -> dict[str, list[str]]:
+    """category -> the ``path:line`` sites that use it, over every Swift file under the directories.
+
+    Raises UsageError for a file that is not a regular file inside the checkout or cannot be read.
+    """
     used: dict[str, list[str]] = {}
+    seen: set[Path] = set()
     for directory in directories:
         for path in sorted(directory.rglob("*.swift")):
+            if path in seen:
+                continue
+            seen.add(path)
             # A pull request can add a symlink named like a Swift file. Only a regular file that stays inside the
             # checkout is read, so the check cannot be pointed at the machine it runs on.
             if path.is_symlink() or not path.is_file() or not path.resolve().is_relative_to(root.resolve()):
-                print(f"{path}: not a regular file inside the checkout")
-                return 2
+                raise UsageError(f"{path}: not a regular file inside the checkout")
             try:
                 source = path.read_text(encoding="utf-8")
             except (OSError, UnicodeDecodeError) as exc:
-                print(f"{path}: cannot read ({exc})")
-                return 2
+                raise UsageError(f"{path}: cannot read ({exc})") from exc
             for category, line in used_categories(source):
                 try:
                     shown = path.relative_to(root)
                 except ValueError:
                     shown = path
                 used.setdefault(category, []).append(f"{shown}:{line}")
+    return used
 
+
+def undeclared_findings(used: dict[str, list[str]], manifest: dict, manifest_path: Path) -> list[str]:
+    declared = declared_reasons(manifest)
+    findings: list[str] = []
     for category, sites in sorted(used.items()):
         reason, _, published = CATEGORIES.get(category, ("<unknown>", (), frozenset()))
         if not any(r in published for r in declared.get(category, [])):
             allowed = ", ".join(sorted(published)) or "none this project knows"
             findings.append(
-                f"{sites[0]}: {category} is used here but the manifest does not declare a reason "
+                f"{sites[0]}: {category} is used here but {manifest_path} does not declare a reason "
                 f"Apple publishes for it; this app declares {reason}, and the published reasons are {allowed}"
             )
+    return findings
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--root", type=Path, default=DEFAULT_ROOT, help="tree holding the app and its package")
+    parser.add_argument(
+        "--manifest", type=Path, default=None, help="path to the app's PrivacyInfo.xcprivacy (embedded bundles use their own)"
+    )
+    args = parser.parse_args(argv)
+
+    root: Path = args.root
+    if not root.is_dir():
+        print(f"{root}: no such directory")
+        return 2
+
+    findings: list[str] = []
+    declared_count = 0
+    try:
+        bundles = shipped_bundles(root)
+        for index, bundle in enumerate(bundles):
+            is_app = index == 0
+            if is_app:
+                manifest_path = args.manifest if args.manifest is not None else (
+                    bundle.manifest or root / APP_DIR_RELATIVE / MANIFEST_RELATIVE
+                )
+            elif bundle.manifest is not None:
+                manifest_path = bundle.manifest
+            else:
+                raise UsageError(
+                    f"{root / APP_DIR_RELATIVE}: {bundle.name} is embedded in the app but none of its source "
+                    f"directories holds a {MANIFEST_NAME}"
+                )
+            manifest = load_manifest(manifest_path)
+            findings.extend(manifest_findings(manifest, manifest_path))
+            if is_app:
+                findings.extend(collected_findings(manifest, manifest_path))
+            used = scan_directories(root, bundle.directories)
+            findings.extend(undeclared_findings(used, manifest, manifest_path))
+            declared_count += len(used)
+    except UsageError as exc:
+        print(str(exc))
+        return 2
 
     if findings:
         for finding in findings:
             print(finding)
         return 1
-    print(f"privacy manifest ok: {len(used)} required-reason category/categories declared, tracking off")
+    print(
+        f"privacy manifest ok: {declared_count} required-reason category/categories declared "
+        f"across {len(bundles)} bundle(s), tracking off"
+    )
     return 0
 
 
