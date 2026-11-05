@@ -62,6 +62,25 @@ final class InsightsAveragesTests: XCTestCase {
         XCTAssertEqual(result.lines.map(\.text), ["Protein: at least 40 g a day over 1 logged day"])
     }
 
+    /// Health adding nothing to a logged day that states no protein keeps the day unknown, as Today does, so it is
+    /// not averaged in as a zero.
+    func testAKnownZeroFromHealthDoesNotTurnAnUnknownJournalDayIntoZero() {
+        let result = make([
+            day("2023-11-15", protein: 60),
+            healthDay("2023-11-14", values: ["energy": 500], readKeys: ["energy", "protein"], journalProtein: nil, isLogged: true),
+        ])
+        XCTAssertEqual(result.lines.map(\.text), ["Protein: average 60 g a day over 1 logged day"])
+    }
+
+    /// A query that did not finish keeps the subtotal it converted, and the day reads as at least.
+    func testAnUnfinishedHealthQueryKeepsItsSubtotalAsAMinimum() {
+        let result = make([
+            healthDay("2023-11-15", values: ["protein": 25], readKeys: [], journalProtein: 40, isLogged: true),
+            healthDay("2023-11-14", values: ["protein": 30], readKeys: []),
+        ])
+        XCTAssertEqual(result.lines.map(\.text), ["Protein: at least 47.5 g a day over 2 logged days"])
+    }
+
     /// Water alone does not make a Health-only day a logged day.
     func testAWaterOnlyHealthDayIsLeftOut() {
         let result = make([

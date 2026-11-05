@@ -90,7 +90,8 @@ public struct InsightsAverages: Equatable {
                     break
                 case .unread:
                     isPartial = true
-                case .known(let healthAmount, let healthUnit):
+                case .known(let healthAmount, let healthUnit, let complete):
+                    if !complete { isPartial = true }
                     if case .known(let journalAmount, let journalUnit) = value {
                         if let converted = try? Quantity(value: healthAmount, unit: healthUnit).converted(to: journalUnit).value {
                             value = .known(journalAmount + converted, journalUnit)
@@ -98,11 +99,15 @@ public struct InsightsAverages: Equatable {
                             // An amount in a unit the journal's cannot be converted to is left out; the day reads at least.
                             isPartial = true
                         }
+                    } else if day.isLogged && healthAmount == 0 {
+                        // The journal has entries that state nothing for this nutrient and Health adds nothing: the day
+                        // stays unknown, as Today leaves it, rather than becoming a known zero.
+                        break
                     } else {
-                        // The journal states nothing: a complete nothing when the day has no entry, otherwise unknown,
-                        // so Health's amount is a minimum.
+                        // No entry in the journal is a complete nothing; entries that state nothing make Health's amount
+                        // a minimum.
                         value = .known(healthAmount, healthUnit)
-                        isPartial = day.isLogged
+                        if day.isLogged { isPartial = true }
                     }
                 }
                 if case .unknown = value { continue }
@@ -135,15 +140,18 @@ public struct InsightsAverages: Equatable {
     private enum HealthSide {
         case none
         case unread
-        case known(Decimal, MeasureUnit)
+        /// Health's amount for the nutrient; `complete` is false for a subtotal of a query that did not finish.
+        case known(Decimal, MeasureUnit, complete: Bool)
     }
 
     private static func healthSide(of outside: HealthIntakeTotals.Outside, for nutrient: String) -> HealthSide {
         guard case .read(let values, let readKeys) = outside, let mapping = HealthKitWritePlanner.mapping(for: nutrient)
         else { return .none }
         let key = HealthKitWritePlanner.canonicalKey(for: nutrient)
-        guard readKeys.contains(key) else { return .unread }
-        return .known(values[key] ?? 0, mapping.unit)
+        if readKeys.contains(key) { return .known(values[key] ?? 0, mapping.unit, complete: true) }
+        // A query that did not finish may still carry the subtotal of the samples it did convert.
+        if let subtotal = values[key] { return .known(subtotal, mapping.unit, complete: false) }
+        return .unread
     }
 
     /// Whole days from a "yyyy-MM-dd" key back to `today`: 0 for today. Nil when the key cannot be read.
