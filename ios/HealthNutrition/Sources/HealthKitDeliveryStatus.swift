@@ -300,7 +300,9 @@ final class HealthKitDeliveryStatus: AppleHealthConnecting {
 
     func run(now: Date = Date(), automatic: Bool = false) async {
         if automatic && authorizationProbe() != .requested {
-            refresh()
+            // Nothing to read for: Health has not been asked, so nothing is delivered, and the counts
+            // only feed the debug status line. Reading the journal here ran on the main actor on every
+            // reload, for people who never connect Apple Health.
             return
         }
         guard !isBusy else {
@@ -310,6 +312,9 @@ final class HealthKitDeliveryStatus: AppleHealthConnecting {
         isBusy = true
         defer { isBusy = false }
         var passTime = now
+        // An automatic run only needs the suspended ids, for the re-arm. The full read (pending queue,
+        // then one projection fetch per intake) is for runs a person asked for and the debug screen.
+        let fullRefresh = !automatic
         repeat {
             rerunRequested = false
             rearmSummary = nil
@@ -334,8 +339,8 @@ final class HealthKitDeliveryStatus: AppleHealthConnecting {
             var rearmed = true
             if authorizationPending {
                 authorizationPending = false
-                refresh()
-                rearmed = rearmSuspendedNow()
+                refresh(full: fullRefresh)
+                rearmed = rearmSuspendedNow(fullRefresh: fullRefresh)
             }
             // Recorded only once the re-arm it calls for has succeeded, so a launch that ended (or a
             // re-arm that failed) between the two compares against the old answer and tries again.
@@ -348,7 +353,7 @@ final class HealthKitDeliveryStatus: AppleHealthConnecting {
             let outcomes = await healthKitDelivery.runOnce(now: passTime)
             lastRunAt = passTime
             lastRunLines = outcomes.map(Self.line(for:))
-            refresh()
+            refresh(full: fullRefresh)
             passTime = Date()
         } while rerunRequested
     }
@@ -382,7 +387,7 @@ final class HealthKitDeliveryStatus: AppleHealthConnecting {
     /// The re-arm itself, without the busy check: the delivery pass calls it while it holds `isBusy`,
     /// before it reads the queue, so there is no second pass for it to race.
     @discardableResult
-    private func rearmSuspendedNow() -> Bool {
+    private func rearmSuspendedNow(fullRefresh: Bool = true) -> Bool {
         guard !suspendedIDs.isEmpty else { return true }
         let targets = suspendedIDs.sorted()
         var failures: [String] = []
@@ -399,18 +404,27 @@ final class HealthKitDeliveryStatus: AppleHealthConnecting {
             rearmSummary = "Re-arm failed for \(failures.count) of \(targets.count): "
                 + failures.joined(separator: "; ")
         }
-        refresh()
+        refresh(full: fullRefresh)
         return failures.isEmpty
     }
 
     /// Re-read the queue, so the counts are correct after a change made anywhere in the app.
-    func refresh() {
+    ///
+    /// `full: false` reads only the suspended operation ids (one narrow fetch that does not wait on the
+    /// store's write lock) and updates `suspended` and the re-arm state, leaving `pending` and
+    /// `needsAttention` as the last full read left them. Automatic runs use it: they fire on every
+    /// reload, on the main actor, and the other two counts are read only by the debug status line.
+    func refresh(full: Bool = true) {
         do {
-            let operations = try store.pendingOutbox().filter { $0.destination == .healthKit }
-            let needingAttention = try Self.needsAttentionCount(store: store, operations: operations)
             let parked = try store.suspendedOperationIDs()
             suspendedIDs = parked
-            counts = Counts(pending: operations.count, needsAttention: needingAttention, suspended: parked.count)
+            if full {
+                let operations = try store.pendingOutbox().filter { $0.destination == .healthKit }
+                let needingAttention = try Self.needsAttentionCount(store: store, operations: operations)
+                counts = Counts(pending: operations.count, needsAttention: needingAttention, suspended: parked.count)
+            } else {
+                counts.suspended = parked.count
+            }
             readError = nil
         } catch {
             counts = .none
@@ -489,6 +503,8 @@ struct HealthKitDeliveryDebugSection: View {
         Section("Health delivery (debug)") {
             Text(status.summaryLine)
                 .font(.footnote)
+                // Automatic runs no longer read the queue, so read it when the screen is shown.
+                .onAppear { status.refresh() }
             if let readError = status.readError {
                 Text(readError)
                     .font(.footnote)

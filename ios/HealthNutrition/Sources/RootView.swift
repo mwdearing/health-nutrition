@@ -126,6 +126,8 @@ struct RootView: View {
                     if !Self.isCapturingScreenshots {
                         Text(healthKitDeliveryStatus.summaryLine)
                             .font(.footnote)
+                            // Automatic runs no longer read the queue, so read it when the line appears.
+                            .onAppear { healthKitDeliveryStatus.refresh() }
                             .foregroundStyle(.secondary)
                             .padding(.horizontal)
                     }

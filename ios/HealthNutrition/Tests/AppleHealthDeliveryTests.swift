@@ -122,8 +122,40 @@ final class AppleHealthDeliveryTests: XCTestCase {
         await status.run(now: when, automatic: true)
 
         XCTAssertEqual(status.counts.suspended, 0)
+        status.refresh()
         XCTAssertEqual(status.counts.pending, 0, "the re-armed operation was delivered in the same pass")
         XCTAssertTrue(status.lastRunLines.contains { $0.hasPrefix("delivered \(operation.operationID)") })
+    }
+
+    /// An automatic run is the hot path: it fires on every reload, on the main actor. It must not read
+    /// the pending queue or walk the journal's projections (#1326); that read is for a person's run and
+    /// the debug screen. What it does keep current is the suspended count, which the re-arm needs.
+    func testAnAutomaticRunDoesNotReadTheQueueOrProjections() async throws {
+        let services = try makeServices()
+        let box = AccessBox()
+        let status = HealthKitDeliveryStatus(
+            healthKitDelivery: worker(services, writer: RecordingWriter()), store: services.journalStore,
+            authorizationProbe: { .requested }, accessProbe: { box.access })
+        await status.run(now: when, automatic: true)
+        try services.journalStore.create(
+            Intake(id: UUID().uuidString.lowercased(), category: "water", occurredAt: when, timeZoneIdentifier: "UTC"),
+            components: [IntakeComponent(componentID: "water", name: "Water", amount: 250, unit: .mL)],
+            product: nil, now: when)
+        let operation = try XCTUnwrap(try services.journalStore.pendingOutbox().first)
+        try services.journalStore.recordFailure(
+            operationID: operation.operationID, retryAt: nil, needsAttention: true,
+            reason: "HealthKit access is not granted, so it cannot be written")
+
+        await status.run(now: when, automatic: true)
+
+        XCTAssertEqual(status.counts.suspended, 1, "the suspended ids are still read, for the re-arm")
+        XCTAssertTrue(status.canRearmSuspended)
+        XCTAssertEqual(status.counts.pending, 0, "the pending queue is not read by an automatic run")
+        XCTAssertEqual(status.counts.needsAttention, 0, "projections are not walked by an automatic run")
+
+        status.refresh()
+        XCTAssertEqual(status.counts.pending, 1)
+        XCTAssertEqual(status.counts.needsAttention, 1, "the full read still counts them when asked")
     }
 
     /// Turning one type on and another off leaves the counts equal; the set of allowed types still
