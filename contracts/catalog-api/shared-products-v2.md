@@ -46,12 +46,9 @@ Fact equivalence compares case-sensitive keys and states, excluding display name
 
 ## A duplicate while the original is still being processed
 
-A receipt is written in the last step of the operation's transaction, so a duplicate (same operation ID, same canonical body) that reaches the server before the original commits is not a replay and never returns `replayed:true`. Account operations serialize on the live profile lock, so the duplicate waits for the original and then fails without committing anything:
+Every account operation first locks the caller's live profile row (`live_account`, `select ... for update`), before the receipt lookup. A duplicate (same operation ID, same canonical body and kind) that arrives while the original is still being processed therefore waits for it to finish. Once the original commits, the duplicate's receipt lookup finds the stored receipt and returns the original acknowledgment with `replayed:true`, exactly as for a replay of a completed operation. It writes no second revision, contribution, product or usage count, and it never answers `operation_conflict`: that code is reserved for the same operation ID with a different canonical body or kind. If the original instead fails and rolls back, no receipt exists and the duplicate runs as a first attempt.
 
-- an update fails with `revision_conflict`, because the original already advanced the caller's contribution revision past the duplicate's expected revision;
-- a first publication fails at the receipt's primary key `(account, operation ID)` and its transaction rolls back, so no second revision, contribution or product is kept.
-
-The server never answers `operation_conflict` for this case (that code means the body or kind differs), and none of these responses is an acknowledgment. A client that resends an interrupted operation (after a restart, or in process) must therefore send each operation ID from one place at a time and must not read a conflict on a resent row as proof that the original failed: the original may have committed. The app sends one operation ID at a time, and a conflict on a resent row goes to review, where the person sees the current state (#1051).
+A client that resends an interrupted operation, after a restart or in process, may rely on this: a `replayed:true` acknowledgment is a success and ends the operation. The app also sends one operation ID at a time (#1051).
 
 ## Canonical operation bytes
 
