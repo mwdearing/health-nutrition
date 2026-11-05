@@ -194,13 +194,14 @@ final class HealthKitReader: BodyActivityReading {
         }
     }
 
-    /// The newest weight sample at or before `date`.
+    /// What asking Health for the newest weight gave: a sample, no sample, or a failed query.
     private enum LatestWeight {
         case found(kilograms: Decimal, date: Date)
         case none
         case failed
     }
 
+    /// The newest weight sample at or before `date`.
     private func latestWeight(before date: Date) async -> LatestWeight {
         let predicate = HKQuery.predicateForSamples(withStart: nil, end: date, options: [])
         let descriptor = HKSampleQueryDescriptor(
