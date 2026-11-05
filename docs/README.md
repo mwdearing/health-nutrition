@@ -10,6 +10,7 @@ Public architecture decisions and design notes for this project live here.
 - [Journal, entry detail, Library, favorites and repeat](journal-library.md)
 - [Saved meals: model, storage and logging](saved-meals.md)
 - [Personal recipes: versions, calculation and logging](recipes.md)
+- [App Store Connect metadata: name, description, keywords, age rating and review notes](app-store-metadata.md)
 - [Privacy manifest: tracking, collected data and required-reason APIs](privacy-manifest.md)
 - [Erase all data: what the erase removes, and what it cannot reach](erase-all-data.md)
 - [Medication log: named medications and typed doses](medication-log.md)
