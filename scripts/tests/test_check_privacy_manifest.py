@@ -1026,3 +1026,57 @@ def test_test_targets_and_unembedded_targets_are_not_bundles(tmp_path: Path) -> 
     root = write_embedded_tree(tmp_path, {"HealthNutrition/Tests/AppTests.swift": USES_DEFAULTS})
     result = run(root)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_a_bundle_with_two_manifests_is_an_error(tmp_path: Path) -> None:
+    root = write_embedded_tree(tmp_path, {})
+    extra = root / "HealthNutrition" / "Widgets" / "Extra"
+    extra.mkdir()
+    (extra / "PrivacyInfo.xcprivacy").write_text(manifest_xml(declared=[], collected=[]), encoding="utf-8")
+    result = run(root)
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert "HealthNutritionWidgets" in result.stdout
+    assert "more than one" in result.stdout
+
+
+def test_a_watch_app_listed_before_the_ios_app_is_not_taken_for_the_app(tmp_path: Path) -> None:
+    marker = "\n  HealthNutritionWidgets:"
+    start = EMBEDDED_PROJECT_YML.index("  HealthNutrition:")
+    split = EMBEDDED_PROJECT_YML.index(marker)
+    watch_start = EMBEDDED_PROJECT_YML.index("\n  HealthNutritionWatch:")
+    tests_start = EMBEDDED_PROJECT_YML.index("\n  HealthNutritionTests:")
+    app_block = EMBEDDED_PROJECT_YML[start:split]
+    widgets_block = EMBEDDED_PROJECT_YML[split:watch_start]
+    watch_blocks = EMBEDDED_PROJECT_YML[watch_start:tests_start]
+    # Watch app and its widgets first, the iOS app last.
+    reordered = (
+        EMBEDDED_PROJECT_YML[:start] + watch_blocks.lstrip("\n") + widgets_block + "\n" + app_block
+        + EMBEDDED_PROJECT_YML[tests_start:]
+    )
+    assert reordered.index("HealthNutritionWatch:") < reordered.index("  HealthNutrition:")
+    root = write_embedded_tree(tmp_path, {})
+    (root / "HealthNutrition" / "project.yml").write_text(reordered, encoding="utf-8")
+    # The app declares UserDefaults and the Watch app (listed first) declares nothing; none of them uses it.
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "across 4 bundle(s)" in result.stdout
+
+
+def test_two_ios_application_targets_are_ambiguous(tmp_path: Path) -> None:
+    root = write_embedded_tree(tmp_path, {})
+    yml = (root / "HealthNutrition" / "project.yml").read_text(encoding="utf-8")
+    yml = yml.replace("    type: application\n    platform: watchOS", "    type: application\n    platform: iOS")
+    (root / "HealthNutrition" / "project.yml").write_text(yml, encoding="utf-8")
+    result = run(root)
+    assert result.returncode == 2, result.stdout + result.stderr
+
+
+def test_the_success_line_counts_each_category_once(tmp_path: Path) -> None:
+    root = write_embedded_tree(
+        tmp_path,
+        {"HealthNutrition/Shared/Snapshot.swift": USES_DEFAULTS},
+        declared={"Widgets": [USER_DEFAULTS], "Watch": [USER_DEFAULTS], "WatchWidgets": [USER_DEFAULTS]},
+    )
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "1 required-reason category/categories used and declared across 4 bundle(s)" in result.stdout

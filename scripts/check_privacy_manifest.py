@@ -350,6 +350,7 @@ class Target:
     def __init__(self, name: str) -> None:
         self.name = name
         self.type = ""
+        self.platform = ""
         self.sources: list[str] = []
         self.target_dependencies: list[str] = []
         self.products: list[str] = []
@@ -387,6 +388,8 @@ def build_targets(project: Path) -> dict[str, Target]:
             section = key.group(1) if key else ""
             if key and section == "type":
                 current.type = key.group(2).strip().strip("\"'")
+            elif key and section == "platform":
+                current.platform = key.group(2).strip().strip("\"'")
             continue
         if section == "sources":
             path = re.match(r"^-\s*path\s*:\s*(\S+)", stripped)
@@ -405,14 +408,21 @@ def build_targets(project: Path) -> dict[str, Target]:
 
 
 def embedded_bundles(targets: dict[str, Target], project: Path) -> list[Target]:
-    """The first application target followed by every application and app-extension target it embeds.
+    """The app (the one iOS application target) followed by every application and app-extension target it embeds.
 
     Embedding is followed through ``- target:`` dependencies, so the Watch app brings in its own widget extension.
     Test targets and anything the app does not depend on are not bundles of the archive.
     """
-    app = next((target for target in targets.values() if target.type == "application"), None)
-    if app is None:
+    applications = [target for target in targets.values() if target.type == "application"]
+    if not applications:
         raise UsageError(f"{project}: no application target found")
+    # A Watch app is an application target too and may be listed first, so the app is the iOS one. A single
+    # application target is the app whatever its platform.
+    if len(applications) > 1:
+        applications = [target for target in applications if target.platform.lower() == "ios"]
+    if len(applications) != 1:
+        raise UsageError(f"{project}: cannot tell which application target is the iOS app (needs exactly one)")
+    app = applications[0]
     bundles = [app]
     seen = {app.name}
     pending = [app]
@@ -503,11 +513,16 @@ def shipped_bundles(root: Path) -> list[Bundle]:
             directories.extend(package_directories(root, target.products, package, require=index == 0))
         directories = [d for d in directories if "Tests" not in d.parts]
         manifests = sorted(
+            set(
             candidate
             for directory in source_directories
             for candidate in directory.rglob(MANIFEST_NAME)
             if candidate.is_file()
+            )
         )
+        if len(manifests) > 1:
+            listed = ", ".join(str(m) for m in manifests)
+            raise UsageError(f"{project}: {target.name} has more than one {MANIFEST_NAME} ({listed}); it needs exactly one")
         bundles.append(Bundle(target.name, directories, manifests[0] if manifests else None))
     return bundles
 
@@ -679,7 +694,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     findings: list[str] = []
-    declared_count = 0
+    used_categories_seen: set[str] = set()
     try:
         bundles = shipped_bundles(root)
         for index, bundle in enumerate(bundles):
@@ -701,7 +716,7 @@ def main(argv: list[str] | None = None) -> int:
                 findings.extend(collected_findings(manifest, manifest_path))
             used = scan_directories(root, bundle.directories)
             findings.extend(undeclared_findings(used, manifest, manifest_path))
-            declared_count += len(used)
+            used_categories_seen.update(used)
     except UsageError as exc:
         print(str(exc))
         return 2
@@ -711,7 +726,7 @@ def main(argv: list[str] | None = None) -> int:
             print(finding)
         return 1
     print(
-        f"privacy manifest ok: {declared_count} required-reason category/categories declared "
+        f"privacy manifest ok: {len(used_categories_seen)} required-reason category/categories used and declared "
         f"across {len(bundles)} bundle(s), tracking off"
     )
     return 0
