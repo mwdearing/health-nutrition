@@ -83,6 +83,15 @@ final class ProductSaveConfirmationUITests: XCTestCase {
 
     /// Opens the editor for the fixed product from its Library row.
     private func openEditor(_ app: XCUIApplication) -> Bool {
+        // Narrow Library to the fixed product by name, so the Edit button tapped is this product's and not another row's.
+        let search = app.textFields["Search on this device"]
+        if search.waitForExistence(timeout: 5) {
+            search.tap()
+            if let current = search.value as? String, !current.isEmpty, current != "Search on this device" {
+                search.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count))
+            }
+            search.typeText(productName)
+        }
         let editRow = app.buttons["Edit and sharing review"].firstMatch
         guard editRow.waitForExistence(timeout: 10) else { return false }
         editRow.tap()
