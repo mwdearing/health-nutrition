@@ -46,9 +46,9 @@ Fact equivalence compares case-sensitive keys and states, excluding display name
 
 ## A duplicate while the original is still being processed
 
-Every account operation first locks the caller's live profile row (`live_account`, `select ... for update`), before the receipt lookup. A duplicate (same operation ID, same canonical body and kind) that arrives while the original is still being processed therefore waits for it to finish. Once the original commits, the duplicate's receipt lookup finds the stored receipt and returns the original acknowledgment with `replayed:true`, exactly as for a replay of a completed operation. It writes no second revision, contribution, product or usage count, and it never answers `operation_conflict`: that code is reserved for the same operation ID with a different canonical body or kind. If the original instead fails and rolls back, no receipt exists and the duplicate runs as a first attempt.
+Every account operation first locks the caller's live profile row (`live_account`, `select ... for update`), before the receipt lookup. A duplicate (same operation ID, same canonical body and kind) that arrives while a publish or withdraw original is still being processed therefore waits for it to finish. Once the original commits, the duplicate's receipt lookup finds the stored receipt and returns the original acknowledgment with `replayed:true`, exactly as for a replay of a completed operation. It writes no second revision, contribution, product or usage count, and `operation_conflict` stays reserved for the same operation ID with a different canonical body or kind. If the original fails and its transaction rolls back, no receipt exists and the duplicate runs as a first attempt. An operation that was canceled before commit is different: it leaves a cancellation marker, and the rules in the canceled-publication section decide what a later request with that operation ID gets.
 
-A client that resends an interrupted operation, after a restart or in process, may rely on this: a `replayed:true` acknowledgment is a success and ends the operation. The app also sends one operation ID at a time (#1051).
+A client that resends an interrupted publish or withdraw may rely on this: a `replayed:true` acknowledgment is a success and ends the operation (#1051).
 
 ## Canonical operation bytes
 
