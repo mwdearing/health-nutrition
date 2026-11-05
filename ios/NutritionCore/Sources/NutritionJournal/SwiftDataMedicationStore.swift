@@ -369,22 +369,6 @@ public final class SwiftDataMedicationStore: MedicationStore, JournalErasing, @u
             doses: try payload.doses.map(Self.restoredDose))
     }
 
-    /// Replaces the rows still to write and keeps the written ledger, in one save.
-    public func replanMedicationRestoreReceipt(_ receipt: String, planned: MedicationRestoreSet) throws {
-        writeLock.lock()
-        defer { writeLock.unlock() }
-        let context = ModelContext(try openContainer())
-        guard let row = try Self.receiptRow(context, receipt) else {
-            throw JournalImportError.corrupt("the medication restore receipt is missing")
-        }
-        let payload = try Self.decodeReceipt(row.name)
-        row.name = try Self.encodeReceipt(ReceiptPayload(
-            done: false, medications: planned.medications.map(Self.receiptMedication),
-            doses: planned.doses.map(Self.receiptDose), writtenMedications: payload.writtenMedications,
-            writtenDoses: payload.writtenDoses))
-        try context.save()
-    }
-
     /// Removes the receipt. A receipt that is not stored is not an error.
     public func removeMedicationRestoreReceipt(_ receipt: String) throws {
         writeLock.lock()
@@ -453,9 +437,9 @@ public final class SwiftDataMedicationStore: MedicationStore, JournalErasing, @u
     }
 
     /// Writes one restored dose and drops it from the receipt in one save. A dose is written only when no dose holds its
-    /// identifier and its medication is stored. It keeps its own unit, which a dose logged before its medication's unit
-    /// changed does not share with the medication.
-    public func writeRestoredDose(_ dose: MedicationDose, receipt: String) throws -> Bool {
+    /// identifier and its medication is stored under `medicationName`, ignoring case. It keeps its own unit, which a dose
+    /// logged before its medication's unit changed does not share with the medication.
+    public func writeRestoredDose(_ dose: MedicationDose, medicationName: String, receipt: String) throws -> Bool {
         try dose.validate()
         writeLock.lock()
         defer { writeLock.unlock() }
@@ -470,7 +454,7 @@ public final class SwiftDataMedicationStore: MedicationStore, JournalErasing, @u
             predicate: #Predicate<MedicationDoseRecord> { $0.id == key })).isEmpty
         let medication = try context.fetch(FetchDescriptor<MedicationRecord>(
             predicate: #Predicate<MedicationRecord> { $0.id == medicationKey })).first
-        let written = !doseHeld && medication != nil
+        let written = !doseHeld && medication.map { $0.name.lowercased() == medicationName.lowercased() } == true
         if written {
             context.insert(MedicationDoseRecord(
                 id: key, medicationID: medicationKey, takenAt: dose.takenAt,
@@ -490,7 +474,7 @@ public final class SwiftDataMedicationStore: MedicationStore, JournalErasing, @u
     /// Writes a batch of restored doses and drops them from the receipt in one save. The receipt is decoded and encoded once
     /// for the batch, so a restore of many doses rewrites it once per batch, not once per dose. Each dose is written only
     /// under the rules `writeRestoredDose` keeps.
-    public func writeRestoredDoses(_ doses: [MedicationDose], receipt: String) throws -> Int {
+    public func writeRestoredDoses(_ doses: [MedicationDose], medicationNames: [UUID: String], receipt: String) throws -> Int {
         for dose in doses { try dose.validate() }
         writeLock.lock()
         defer { writeLock.unlock() }
@@ -500,14 +484,18 @@ public final class SwiftDataMedicationStore: MedicationStore, JournalErasing, @u
         }
         let payload = try Self.decodeReceipt(receiptRow.name)
         var heldDoseIDs = Set(try context.fetch(FetchDescriptor<MedicationDoseRecord>()).map(\.id))
-        let storedMedicationIDs = Set(
-            try context.fetch(FetchDescriptor<MedicationRecord>()).filter { !Self.isReceipt($0) }.map(\.id))
+        let storedNames = Dictionary(
+            try context.fetch(FetchDescriptor<MedicationRecord>()).filter { !Self.isReceipt($0) }
+                .map { ($0.id, $0.name.lowercased()) },
+            uniquingKeysWith: { first, _ in first })
         var batchIDs = Set<String>()
         var written: [ReceiptDose] = []
         for dose in doses {
             let key = dose.id.uuidString
             batchIDs.insert(key)
-            guard !heldDoseIDs.contains(key), storedMedicationIDs.contains(dose.medicationID.uuidString) else { continue }
+            guard !heldDoseIDs.contains(key), let name = medicationNames[dose.medicationID],
+                  storedNames[dose.medicationID.uuidString] == name.lowercased()
+            else { continue }
             heldDoseIDs.insert(key)
             context.insert(MedicationDoseRecord(
                 id: key, medicationID: dose.medicationID.uuidString, takenAt: dose.takenAt,

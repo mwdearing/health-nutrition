@@ -141,17 +141,22 @@ What a restore writes:
   exported and restored in the old unit, also when the device's copy of the medication is in another unit. A dose
   goes into the file only with its medication. A dose whose medication is not in the file, two medications with one
   name (ignoring case), or a row that breaks a rule refuses the whole file as `corrupt` before anything is written.
-  The receipt, resume and undo work as they do for goals. An undo removes a restored medication only while it holds
-  no dose, checked and removed in one save, so a dose the person logs meanwhile stays. A row an undo removes goes
-  back on the receipt, so importing the same file again after a partial undo restores it. A receipt the build cannot
-  read (a file damaged between two runs) does not stop the file: the next import removes it and plans the rows again
-  from the device, add-only by id and name, so a row the stopped run wrote is not written twice. A receipt that still
-  names a dose of a medication renamed on the device since the stop has its rows still to write planned again the
-  same way, so a resume never writes a dose onto a medication of another name; the rows earlier runs wrote stay on
-  its ledger, so they are counted and an undo still removes them. An undo of a row the person already deleted does not queue it
-  again on the receipt. An undo that cannot read the receipt keeps the flag, and that next import then
-  finishes the restore. Erasing the medication log removes any receipt with the rows. The log is exported whether
-  or not the Medication log switch is on.
+  The receipt, resume and undo work as they do for goals. The receipt lists the rows still to write and a ledger of
+  every row the restore wrote, from any run; a row stays on the ledger until an undo removes it or finds it gone.
+  A resume writes only the rows still listed, so a row a stopped run wrote and the person then deleted is not written
+  again by that receipt. A dose is written only while its medication is stored under the name the file gives it,
+  checked in the save that writes the dose, so a medication renamed on the device, between two runs or during one,
+  gets none of the file's doses. An undo removes only rows on the ledger that are still stored exactly as written: a
+  restored medication only while it holds no dose, checked and removed in one save, so a dose the person logs
+  meanwhile stays. A row an undo removes goes back on the receipt, so importing the same file again after a partial
+  undo restores it; a row the person had already deleted is not put back. A receipt left marked done by a finished
+  restore whose cleanup failed is removed by the next fresh import of the file, which plans from the device.
+  A receipt the build cannot read (a file damaged between two runs) does not stop the file: the next import removes
+  it and plans the rows again from the device, add-only by id and name. Its ledger is lost with it, which the app
+  cannot avoid: the rows earlier runs wrote are no longer counted or removed by an undo, and a row the person deleted
+  since those runs can come back. An undo that cannot read the receipt keeps the flag, and the next import then
+  finishes the restore that way. Erasing the medication log removes any receipt with the rows. The log is exported
+  whether or not the Medication log switch is on.
 
 Amounts are read as exact decimal text and stored as `Decimal`, never as a binary float. A component whose
 `value_state` is `unknown` is **refused** with `corrupt`: the journal keeps a missing amount as a

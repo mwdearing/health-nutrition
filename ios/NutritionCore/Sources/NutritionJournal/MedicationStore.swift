@@ -47,9 +47,6 @@ public protocol MedicationStore: AnyObject, Sendable {
     func recordMedicationRestoreReceipt(_ receipt: String, planned: MedicationRestoreSet) throws
     /// The rows a restore recorded under this receipt and has not written yet, or nil when it recorded none.
     func medicationRestoreReceipt(_ receipt: String) throws -> MedicationRestoreSet?
-    /// Replaces the rows the receipt still has to write with `planned` and marks it not done, in one save. The rows it
-    /// lists as written stay, so an undo still removes what earlier runs wrote. Refused when no receipt is stored.
-    func replanMedicationRestoreReceipt(_ receipt: String, planned: MedicationRestoreSet) throws
     /// Forgets the receipt once nothing needs it. A receipt that is not there is not an error.
     func removeMedicationRestoreReceipt(_ receipt: String) throws
     /// Whether the restore's rows were all written, or nil when there is no receipt.
@@ -61,12 +58,15 @@ public protocol MedicationStore: AnyObject, Sendable {
     /// when a medication already holds its identifier or, ignoring case, its name. The medication leaves the receipt either way.
     func writeRestoredMedication(_ medication: Medication, receipt: String) throws -> Bool
     /// Writes one restored dose in its own unit and drops it from the receipt in the same save. Returns false, writing
-    /// nothing, when a dose already holds the identifier or its medication is not stored. A dose keeps the unit it was
-    /// logged in, which can differ from its medication's current unit. The dose leaves the receipt either way.
-    func writeRestoredDose(_ dose: MedicationDose, receipt: String) throws -> Bool
+    /// nothing, when a dose already holds the identifier, or its medication is not stored under `medicationName`
+    /// (ignoring case), the name the file gives it: the check and the write share the save, so a dose never lands on a
+    /// medication renamed meanwhile. A dose keeps the unit it was logged in, which can differ from its medication's
+    /// current unit. The dose leaves the receipt either way.
+    func writeRestoredDose(_ dose: MedicationDose, medicationName: String, receipt: String) throws -> Bool
     /// Writes a batch of restored doses as `writeRestoredDose` does, all with their receipt entries in one save, so the
-    /// receipt is read and written once per batch rather than once per dose. Returns how many doses were written.
-    func writeRestoredDoses(_ doses: [MedicationDose], receipt: String) throws -> Int
+    /// receipt is read and written once per batch rather than once per dose. `medicationNames` gives the file's name
+    /// for each medication; a dose whose medication has none is not written. Returns how many doses were written.
+    func writeRestoredDoses(_ doses: [MedicationDose], medicationNames: [UUID: String], receipt: String) throws -> Int
     /// Every row the restore under this receipt wrote, from any run, so an undo removes exactly those.
     func medicationRestoreWritten(_ receipt: String) throws -> MedicationRestoreSet
     /// Undoes one dose a restore wrote: removes it only while the store holds exactly that dose, checked and removed in
@@ -101,9 +101,6 @@ extension MedicationStore {
         throw JournalImportError.corrupt("this medication store keeps no restore receipt")
     }
     public func medicationRestoreReceipt(_ receipt: String) throws -> MedicationRestoreSet? { nil }
-    public func replanMedicationRestoreReceipt(_ receipt: String, planned: MedicationRestoreSet) throws {
-        throw JournalImportError.corrupt("this medication store keeps no restore receipt")
-    }
     public func removeMedicationRestoreReceipt(_ receipt: String) throws {}
     public func medicationRestoreReceiptDone(_ receipt: String) throws -> Bool? { nil }
     public func markMedicationRestoreReceiptDone(_ receipt: String) throws {
@@ -112,13 +109,17 @@ extension MedicationStore {
     public func writeRestoredMedication(_ medication: Medication, receipt: String) throws -> Bool {
         throw JournalImportError.corrupt("this medication store keeps no restore receipt")
     }
-    public func writeRestoredDose(_ dose: MedicationDose, receipt: String) throws -> Bool {
+    public func writeRestoredDose(_ dose: MedicationDose, medicationName: String, receipt: String) throws -> Bool {
         throw JournalImportError.corrupt("this medication store keeps no restore receipt")
     }
     public func medicationRestoreWritten(_ receipt: String) throws -> MedicationRestoreSet { MedicationRestoreSet() }
     /// One dose at a time, for a store that keeps no batch write of its own.
-    public func writeRestoredDoses(_ doses: [MedicationDose], receipt: String) throws -> Int {
-        try doses.reduce(0) { count, dose in try writeRestoredDose(dose, receipt: receipt) ? count + 1 : count }
+    /// A dose with no name in `medicationNames` is passed an empty name, which no stored medication has.
+    public func writeRestoredDoses(_ doses: [MedicationDose], medicationNames: [UUID: String], receipt: String) throws -> Int {
+        try doses.reduce(0) { count, dose in
+            try writeRestoredDose(dose, medicationName: medicationNames[dose.medicationID] ?? "", receipt: receipt)
+                ? count + 1 : count
+        }
     }
     public func undoRestoredDose(_ dose: MedicationDose, receipt: String?) throws -> Bool {
         throw JournalImportError.corrupt("this medication store keeps no restore receipt")

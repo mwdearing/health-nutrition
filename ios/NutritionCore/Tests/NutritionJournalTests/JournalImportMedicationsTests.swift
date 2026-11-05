@@ -74,6 +74,12 @@ final class JournalImportMedicationsTests: XCTestCase {
 
     private func doseIDs(_ store: MedicationStore) throws -> Set<UUID> { Set(try store.allDoses().map(\.id)) }
 
+    /// Writes one restored dose under the name the file gives its medication, as the restore does.
+    private func writeDose(_ dose: MedicationDose, into store: SwiftDataMedicationStore, receipt: String) throws -> Bool {
+        let name = [vial, pen, tablet].first { $0.id == dose.medicationID }?.name ?? ""
+        return try store.writeRestoredDose(dose, medicationName: name, receipt: receipt)
+    }
+
     private func importFile(_ data: Data, into store: MedicationStore?, journal: SwiftDataJournalStore? = nil) throws
         -> JournalImportSummary
     {
@@ -371,7 +377,7 @@ final class JournalImportMedicationsTests: XCTestCase {
         try journal.markRestoreInProgress(fileDigest: digest)
         try store.recordMedicationRestoreReceipt(digest, planned: MedicationRestoreSet(medications: [vial, pen], doses: fileDoses))
         for medication in [vial, pen] { XCTAssertTrue(try store.writeRestoredMedication(medication, receipt: digest)) }
-        for dose in fileDoses { XCTAssertTrue(try store.writeRestoredDose(dose, receipt: digest)) }
+        for dose in fileDoses { XCTAssertTrue(try writeDose(dose, into: store, receipt: digest)) }
         try store.markMedicationRestoreReceiptDone(digest)
         try store.removeDose(id: fileDoses[2].id)
 
@@ -436,8 +442,8 @@ final class JournalImportMedicationsTests: XCTestCase {
         XCTAssertNil(try sameJournal.restoreInProgressDigest())
     }
 
-    /// A medication renamed on the device between two runs gets none of the file's doses on resume: the receipt that
-    /// still names them is dropped and the rows are planned again under the id and name rule.
+    /// A medication renamed on the device between two runs gets none of the file's doses on resume: the store writes a
+    /// dose only while its medication has the file's name. The receipt and its ledger are kept.
     func testAResumeWritesNoDoseOntoAMedicationRenamedSinceTheStop() throws {
         let store = try medicationStore()
         let data = try fullExport()
@@ -460,8 +466,8 @@ final class JournalImportMedicationsTests: XCTestCase {
         XCTAssertNil(try journal.restoreInProgressDigest())
     }
 
-    /// A replan after a rename keeps the rows earlier runs wrote in the ledger, so an undo still removes them.
-    func testAnUndoAfterARenamedResumeRemovesWhatTheStoppedRunWrote() throws {
+    /// A resume over a renamed medication keeps the rows earlier runs wrote on the ledger, so an undo still removes them.
+    func testAnUndoAfterAResumeOverARenamedMedicationRemovesWhatTheStoppedRunWrote() throws {
         let base = try medicationStore()
         let data = try fullExport()
         let digest = JournalImporter.fileDigest(data)
@@ -475,8 +481,7 @@ final class JournalImportMedicationsTests: XCTestCase {
         let store = ScriptedMedicationStore(base: base) { _, _ in throw JournalImportError.corrupt("stopped") }
         XCTAssertThrowsError(try importFile(data, into: store, journal: journal))
         XCTAssertEqual(
-            try base.medicationRestoreReceipt(digest), MedicationRestoreSet(doses: [fileDoses[2]]),
-            "only the pen's dose is left to write")
+            try base.medicationRestoreReceipt(digest), MedicationRestoreSet(doses: fileDoses), "the stopped resume wrote nothing")
 
         let written = try base.medicationRestoreWritten(digest)
         XCTAssertEqual(written, MedicationRestoreSet(medications: [vial, pen]), "the ledger keeps both medications")
@@ -485,13 +490,124 @@ final class JournalImportMedicationsTests: XCTestCase {
         XCTAssertEqual(try base.medications(), [renamed], "the pen the stopped run wrote is removed")
     }
 
+    /// A dose a stopped run wrote and the person then deleted is not written again by a resume of that receipt, and the
+    /// ledger still counts it: the receipt lists only the rows still to write.
+    func testAResumeDoesNotReAddADoseTheStoppedRunWroteAndThePersonDeleted() throws {
+        let store = try medicationStore()
+        let data = try fullExport()
+        let digest = JournalImporter.fileDigest(data)
+        let journal = try journal()
+        try journal.markRestoreInProgress(fileDigest: digest)
+        try store.recordMedicationRestoreReceipt(digest, planned: MedicationRestoreSet(medications: [vial, pen], doses: fileDoses))
+        XCTAssertTrue(try store.writeRestoredMedication(vial, receipt: digest))
+        XCTAssertTrue(try writeDose(fileDoses[0], into: store, receipt: digest))
+        try store.removeDose(id: fileDoses[0].id)
+
+        let summary = try importFile(data, into: store, journal: journal)
+
+        XCTAssertEqual(try doseIDs(store), [fileDoses[1].id, fileDoses[2].id], "the deleted dose stays gone")
+        XCTAssertEqual(summary.medications, 2)
+        XCTAssertEqual(summary.medicationDoses, 3, "every dose this restore wrote, from any run, is counted")
+        XCTAssertNil(try journal.restoreInProgressDigest())
+    }
+
+    /// The same with the medication renamed before the retry: the deleted dose stays gone, and the renamed medication
+    /// gets none of the file's doses.
+    func testADoseWrittenThenDeletedStaysGoneWhenItsMedicationIsRenamedBeforeTheRetry() throws {
+        let store = try medicationStore()
+        let data = try fullExport()
+        let digest = JournalImporter.fileDigest(data)
+        let journal = try journal()
+        try journal.markRestoreInProgress(fileDigest: digest)
+        try store.recordMedicationRestoreReceipt(digest, planned: MedicationRestoreSet(medications: [vial, pen], doses: fileDoses))
+        XCTAssertTrue(try store.writeRestoredMedication(vial, receipt: digest))
+        XCTAssertTrue(try writeDose(fileDoses[0], into: store, receipt: digest))
+        try store.removeDose(id: fileDoses[0].id)
+        let renamed = Medication(id: vial.id, name: "Example other", unit: .mg, scheduleDays: 7)
+        try store.saveMedication(renamed)
+
+        let summary = try importFile(data, into: store, journal: journal)
+
+        XCTAssertEqual(try doseIDs(store), [fileDoses[2].id], "the deleted dose stays gone; the renamed vial gets no dose")
+        XCTAssertEqual(try store.medications(), [renamed, pen])
+        XCTAssertEqual(summary.medications, 2, "the vial the stopped run wrote and the pen")
+        XCTAssertEqual(summary.medicationDoses, 2, "the dose the stopped run wrote and the pen's")
+        XCTAssertNil(try store.medicationRestoreReceiptDone(digest))
+        XCTAssertNil(try journal.restoreInProgressDigest())
+    }
+
+    /// The store checks the name in the save that writes the dose, single or batched, ignoring case.
+    func testARestoredDoseIsNeverWrittenOntoAMedicationOfAnotherName() throws {
+        let store = try medicationStore()
+        try store.saveMedication(Medication(id: vial.id, name: "Example other", unit: .mg))
+        let third = dose(4, vial)
+        try store.recordMedicationRestoreReceipt("r", planned: MedicationRestoreSet(doses: [fileDoses[0], fileDoses[1], third]))
+
+        XCTAssertFalse(try store.writeRestoredDose(fileDoses[0], medicationName: vial.name, receipt: "r"))
+        XCTAssertEqual(try store.writeRestoredDoses([fileDoses[1]], medicationNames: [vial.id: vial.name], receipt: "r"), 0)
+        XCTAssertTrue(try store.writeRestoredDose(third, medicationName: "EXAMPLE OTHER", receipt: "r"), "the stored name")
+
+        XCTAssertEqual(try store.allDoses(), [third])
+        XCTAssertEqual(try store.medicationRestoreReceipt("r"), MedicationRestoreSet(), "every dose left the receipt")
+        XCTAssertEqual(try store.medicationRestoreWritten("r"), MedicationRestoreSet(doses: [third]))
+    }
+
+    /// A retry after a partial undo does not bring back a dose the restore wrote and the person deleted before the undo.
+    func testARetryAfterAPartialUndoDoesNotReAddADoseThePersonDeleted() throws {
+        let base = try medicationStore()
+        let sameJournal = try journal()
+        let data = try fullExport()
+        let deleted = fileDoses[0].id
+        let logged = MedicationDose(
+            medicationID: vial.id, takenAt: Date(timeIntervalSince1970: 1_776_900_000), timeZoneIdentifier: "UTC",
+            amount: 1, unit: .mg)
+        var writes = 0
+        let store = ScriptedMedicationStore(base: base) { _, base in
+            writes += 1
+            // Both medications and the first dose are written; the person deletes that dose, logs one of their own of the
+            // vial (so the undo keeps the vial and is partial), then a write fails.
+            if writes == 4 {
+                try base.removeDose(id: deleted)
+                try base.saveDose(logged)
+                throw JournalImportError.corrupt("stopped")
+            }
+        }
+        XCTAssertThrowsError(try importFile(data, into: store, journal: sameJournal))
+        XCTAssertFalse(try base.medications().contains(pen), "the undo removed the restored pen")
+
+        _ = try importFile(data, into: base, journal: sameJournal)
+
+        XCTAssertEqual(try base.medications(), [pen, vial])
+        XCTAssertEqual(try doseIDs(base), [fileDoses[1].id, fileDoses[2].id, logged.id], "the deleted dose stays gone")
+        XCTAssertNil(try base.medicationRestoreReceipt(JournalImporter.fileDigest(data)))
+    }
+
+    /// A receipt left marked done by a finished restore whose cleanup failed is not this import's: a fresh import of
+    /// the file removes it and plans from the device, so it adds what is missing, as any restore does.
+    func testAReceiptLeftDoneByAFinishedRestoreIsReplacedByTheNextImport() throws {
+        let store = try medicationStore()
+        let data = try fullExport()
+        let digest = JournalImporter.fileDigest(data)
+        _ = try importFile(data, into: store)
+        try store.recordMedicationRestoreReceipt(digest, planned: MedicationRestoreSet())
+        try store.markMedicationRestoreReceiptDone(digest)
+        try store.removeDose(id: fileDoses[2].id)
+
+        let summary = try importFile(data, into: store)
+
+        XCTAssertTrue(try doseIDs(store).contains(fileDoses[2].id), "the import adds the missing dose")
+        XCTAssertEqual(summary.medications, 0)
+        XCTAssertEqual(summary.medicationDoses, 1)
+        XCTAssertNil(try store.medicationRestoreReceipt(digest))
+    }
+
     /// An undo of a row the person already deleted counts it as undone and does not queue it again, so a retry from the
     /// same receipt does not bring it back.
     func testAnUndoOfARowAlreadyGoneDoesNotQueueItAgain() throws {
         let store = try medicationStore()
         try store.recordMedicationRestoreReceipt("r", planned: MedicationRestoreSet(medications: [vial], doses: [fileDoses[1]]))
         XCTAssertTrue(try store.writeRestoredMedication(vial, receipt: "r"))
-        XCTAssertTrue(try store.writeRestoredDose(fileDoses[1], receipt: "r"))
+        XCTAssertTrue(try writeDose(fileDoses[1], into: store, receipt: "r"))
         try store.markMedicationRestoreReceiptDone("r")
         try store.removeMedication(id: vial.id)
 
@@ -511,8 +627,8 @@ final class JournalImportMedicationsTests: XCTestCase {
         XCTAssertTrue(try store.writeRestoredMedication(vial, receipt: "r"))
         XCTAssertFalse(try store.writeRestoredMedication(vial, receipt: "r"), "a held id is never written over")
         XCTAssertFalse(try store.writeRestoredMedication(pen, receipt: "r"), "a held name is never written over")
-        XCTAssertTrue(try store.writeRestoredDose(fileDoses[1], receipt: "r"))
-        XCTAssertFalse(try store.writeRestoredDose(fileDoses[2], receipt: "r"), "a dose whose medication is not stored")
+        XCTAssertTrue(try writeDose(fileDoses[1], into: store, receipt: "r"))
+        XCTAssertFalse(try writeDose(fileDoses[2], into: store, receipt: "r"), "a dose whose medication is not stored")
 
         XCTAssertEqual(try store.medicationRestoreReceipt("r"), MedicationRestoreSet(), "written rows leave the plan")
         XCTAssertEqual(
@@ -658,9 +774,6 @@ private final class ScriptedMedicationStore: MedicationStore, @unchecked Sendabl
     func medicationRestoreReceipt(_ receipt: String) throws -> MedicationRestoreSet? {
         try base.medicationRestoreReceipt(receipt)
     }
-    func replanMedicationRestoreReceipt(_ receipt: String, planned: MedicationRestoreSet) throws {
-        try base.replanMedicationRestoreReceipt(receipt, planned: planned)
-    }
     func removeMedicationRestoreReceipt(_ receipt: String) throws { try base.removeMedicationRestoreReceipt(receipt) }
     func medicationRestoreReceiptDone(_ receipt: String) throws -> Bool? { try base.medicationRestoreReceiptDone(receipt) }
     func markMedicationRestoreReceiptDone(_ receipt: String) throws { try base.markMedicationRestoreReceiptDone(receipt) }
@@ -668,9 +781,9 @@ private final class ScriptedMedicationStore: MedicationStore, @unchecked Sendabl
         try onWrite(medication.id, base)
         return try base.writeRestoredMedication(medication, receipt: receipt)
     }
-    func writeRestoredDose(_ dose: MedicationDose, receipt: String) throws -> Bool {
+    func writeRestoredDose(_ dose: MedicationDose, medicationName: String, receipt: String) throws -> Bool {
         try onWrite(dose.id, base)
-        return try base.writeRestoredDose(dose, receipt: receipt)
+        return try base.writeRestoredDose(dose, medicationName: medicationName, receipt: receipt)
     }
     func medicationRestoreWritten(_ receipt: String) throws -> MedicationRestoreSet {
         try base.medicationRestoreWritten(receipt)
