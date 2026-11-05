@@ -281,6 +281,12 @@ public final class BodyActivityViewModel: ObservableObject {
         readings.weightReadFailed && readings.latestWeightKg == nil ? Self.weightUnreadableText : nil
     }
 
+    /// Health never says whether read access was refused, so a total from other apps reads as complete either way.
+    public static let outsideNoteText = "Other apps' entries are included only where Health lets this app read them."
+
+    /// The note shown under the other-apps line, whenever that line is shown.
+    public var outsideNote: String? { outsideText == nil ? nil : Self.outsideNoteText }
+
     /// "From other apps: 620 kcal, 48 g protein, 16 fl oz water", naming only what other apps logged today.
     public var outsideText: String? {
         // A partial failure still shows the values that were read; the failure copy is only for a read with nothing.
@@ -421,6 +427,9 @@ public struct BodyActivityCard: View {
             // Connected in Settings: other apps' intake still counts, or says it could not be read.
             if let outside = model.outsideText {
                 Text(outside).font(.footnote).foregroundStyle(TokenColors.textSecondary)
+                if let note = model.outsideNote {
+                    Text(note).font(.footnote).foregroundStyle(TokenColors.textSecondary)
+                }
             }
         } else if model.readings.isEmpty {
             Text(BodyActivityViewModel.emptyDetail)
@@ -452,6 +461,9 @@ public struct BodyActivityCard: View {
             }
             if let outside = model.outsideText {
                 Text(outside).font(.footnote).foregroundStyle(TokenColors.textSecondary)
+                if let note = model.outsideNote {
+                    Text(note).font(.footnote).foregroundStyle(TokenColors.textSecondary)
+                }
             }
         }
     }

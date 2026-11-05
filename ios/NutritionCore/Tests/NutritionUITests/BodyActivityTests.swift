@@ -128,6 +128,18 @@ final class BodyActivityTests: XCTestCase {
         XCTAssertEqual(model.outsideText, "From other apps: could not be read")
     }
 
+    func testTheOtherAppsLineCarriesTheReadAccessNote() async {
+        let reader = FakeReader()
+        reader.hasAskedForReadAccess = true
+        reader.readings = BodyActivityReadings(
+            outsideNutrients: ["energy": 620], outsideRead: true, outsideReadKeys: ["energy"])
+        let model = BodyActivityViewModel(reader: reader, unitSystem: { .usCustomary })
+        await model.load(now: now)
+
+        XCTAssertEqual(
+            model.outsideNote, "Other apps' entries are included only where Health lets this app read them.")
+    }
+
     func testNoOutsideTotalsMeansNoOutsideLine() async {
         let reader = FakeReader()
         reader.hasAskedForReadAccess = true
@@ -136,6 +148,7 @@ final class BodyActivityTests: XCTestCase {
         await model.load(now: now)
 
         XCTAssertNil(model.outsideText)
+        XCTAssertNil(model.outsideNote, "no other-apps line, no note")
     }
 
     func testWeightFollowsTheUnitSystem() async {
