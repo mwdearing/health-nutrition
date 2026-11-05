@@ -270,9 +270,19 @@ final class AppStoreScreenshotUITests: XCTestCase {
             app.swipeUp()
             scrolls += 1
         }
+        dismissKeyboard()
         menu.tap()
         let choice = app.buttons[option]
-        if !choice.waitForExistence(timeout: 5) { debugFail("no-row-option-\(title)-\(option)", "no \(option) in the \(title) menu"); return }
+        // A long menu lists only the rows near the top until it is scrolled, so it is swiped up until the option shows.
+        var menuScrolls = 0
+        while !(choice.exists && choice.isHittable) && menuScrolls < 8 {
+            app.swipeUp()
+            menuScrolls += 1
+        }
+        if !(choice.exists && choice.isHittable) {
+            debugFail("no-row-option-\(title)-\(option)", "no \(option) in the \(title) menu")
+            return
+        }
         choice.tap()
     }
 
@@ -363,8 +373,9 @@ final class AppStoreScreenshotUITests: XCTestCase {
         dismissKeyboard()
         XCTAssertTrue(logButton.isEnabled, "Log is disabled after the amounts were typed")
         logButton.tap()
-        XCTAssertTrue(
-            pollUntil(timeout: 20, { !self.app.navigationBars["Amounts only"].exists }), "the sheet did not close after Log")
+        if !pollUntil(timeout: 20, { !self.app.navigationBars["Amounts only"].exists }) {
+            debugFail("log-did-not-close-\(name)", "the sheet did not close after Log")
+        }
         XCTAssertTrue(
             app.buttons["Amounts only"].waitForExistence(timeout: 20), "the Add screen did not come back after Log")
     }
