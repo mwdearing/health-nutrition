@@ -351,4 +351,94 @@ final class JournalWeekSummaryTests: XCTestCase {
 
         XCTAssertEqual(model.weekSummary?.headline, "Nothing logged this week.")
     }
+
+    // MARK: Apple Health
+
+    private func dayKey(_ back: Int) -> String {
+        JournalViewModel.dayKey(daysBack(back), zone: TimeZone(identifier: "UTC") ?? .current)
+    }
+
+    private func healthProtein(_ grams: Decimal) -> HealthIntakeTotals.Outside {
+        .read(values: ["protein": grams], readKeys: ["protein"])
+    }
+
+    /// Two days with nothing in the journal but protein in Apple Health read as logged, with Health's average: (40 + 50) / 2.
+    func testDaysOnlyHealthStatesCountAsLoggedWithHealthsAverage() throws {
+        let journal = try makeJournalStore()
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        try logWater(journal, daysBack: 0)
+
+        let model = makeModel(journal, goals: goals)
+        model.outsideIntakeByDay = [dayKey(1): healthProtein(40), dayKey(2): healthProtein(50)]
+        model.load(now: weekNow)
+
+        XCTAssertEqual(model.weekSummary?.headline, "Logged 2 of 7 days")
+        XCTAssertEqual(model.weekSummary?.goalLines, ["Protein: average 45 g a day against 60 g"])
+    }
+
+    /// A journal day gets Health's amount added: 13 g logged here plus 7 g from another app is 20 g.
+    func testHealthsAmountIsAddedToAJournalDay() throws {
+        let journal = try makeJournalStore()
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        try logProtein(journal, daysBack: 0, 13)
+
+        let model = makeModel(journal, goals: goals)
+        model.outsideIntakeByDay = [dayKey(0): healthProtein(7)]
+        model.load(now: weekNow)
+
+        XCTAssertEqual(model.weekSummary?.headline, "Logged 1 of 7 days")
+        XCTAssertEqual(model.weekSummary?.goalLines, ["Protein: average 20 g a day against 60 g"])
+    }
+
+    /// Water alone, an empty answer and a read that failed state no intake, so none of them makes a logged day.
+    func testHealthThatStatesNoIntakeDoesNotMakeALoggedDay() throws {
+        let journal = try makeJournalStore()
+        try logWater(journal, daysBack: 0)
+
+        let model = makeModel(journal)
+        model.outsideIntakeByDay = [
+            dayKey(1): .read(values: ["water": 500], readKeys: ["water"]),
+            dayKey(2): .read(values: [:], readKeys: ["protein"]),
+            dayKey(3): .read(values: [:], readKeys: []),
+            dayKey(4): .notConnected,
+        ]
+        model.load(now: weekNow)
+
+        XCTAssertEqual(model.weekSummary?.headline, "Nothing logged this week.")
+    }
+
+    /// The week card reads Health for all seven days, not only the days on screen, and rebuilds from it.
+    func testTheWeekReadAsksHealthForSevenDaysAndRebuildsTheCard() async throws {
+        let journal = try makeJournalStore()
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        try logWater(journal, daysBack: 0)
+
+        let model = makeModel(journal, goals: goals)
+        var asked = 0
+        model.healthDayReader = { _, _ in
+            asked += 1
+            return HealthDayRead(.read(values: ["protein": 30], readKeys: ["protein"]))
+        }
+        model.load(now: weekNow)
+        await model.loadWeekHealthTotals(now: weekNow)
+
+        XCTAssertEqual(asked, 7)
+        XCTAssertEqual(model.weekSummary?.headline, "Logged 7 of 7 days")
+        XCTAssertEqual(model.weekSummary?.goalLines, ["Protein: average 30 g a day against 60 g"])
+    }
+
+    /// With Health not connected the card is exactly what it was.
+    func testWithHealthNotConnectedTheCardIsUnchanged() async throws {
+        let journal = try makeJournalStore()
+        try logProtein(journal, daysBack: 0, 13)
+
+        let model = makeModel(journal)
+        model.load(now: weekNow)
+        await model.loadWeekHealthTotals(now: weekNow)
+
+        XCTAssertEqual(model.weekSummary?.headline, "Logged 1 of 7 days")
+    }
 }
