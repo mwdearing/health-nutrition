@@ -99,8 +99,10 @@ public struct InsightsAverages: Equatable {
                         if journalUnit.symbol == healthUnit.symbol {
                             value = .known(journalAmount + healthAmount, journalUnit)
                         } else {
-                            // As Today does, an amount in another unit than Health's is never converted or added: the
-                            // journal's figure stands and the day reads at least.
+                            // As Today does, an amount in another unit than Health's is never converted or added: Health's
+                            // positive amount stands alone as a minimum, and with nothing from Health the journal's figure
+                            // stands, also as a minimum.
+                            if healthAmount > 0 { value = .known(healthAmount, healthUnit) }
                             isPartial = true
                         }
                     } else if healthAmount == 0 {

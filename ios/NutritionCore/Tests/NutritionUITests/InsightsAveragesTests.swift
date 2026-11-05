@@ -144,8 +144,7 @@ final class InsightsAveragesTests: XCTestCase {
         let result = make([InsightsAverages.Day(
             key: "2023-11-15", totals: DailyTotals(totals: ["protein": total]), isLogged: true,
             outside: .read(values: ["protein": 20], readKeys: ["protein"]))])
-        XCTAssertTrue(result.lines.first?.text.hasPrefix("Protein: at least") == true, "\(result.lines.map(\.text))")
-        XCTAssertFalse(result.lines.first?.text.contains("20") == true)
+        XCTAssertEqual(result.lines.map(\.text), ["Protein: at least 20 g a day over 1 logged day"])
     }
 
     /// Water alone does not make a Health-only day a logged day.
