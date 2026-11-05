@@ -7,9 +7,22 @@ import XCTest
 final class BodyActivityTests: XCTestCase {
     private final class FakeReader: BodyActivityReading {
         var hasAskedForReadAccess = false
+        var nutrientAsked = false
+        var hasAskedForNutrientReadAccess: Bool { hasAskedForReadAccess || nutrientAsked }
         var readings = BodyActivityReadings.empty
         private(set) var requests = 0
         private(set) var reads = 0
+        private(set) var outsideOnlyReads = 0
+
+        func readOutsideIntake(now: Date) async -> BodyActivityReadings {
+            outsideOnlyReads += 1
+            var outside = BodyActivityReadings.empty
+            outside.outsideRead = readings.outsideRead
+            outside.outsideNutrients = readings.outsideNutrients
+            outside.outsideReadKeys = readings.outsideReadKeys
+            outside.outsideReadFailed = readings.outsideReadFailed
+            return outside
+        }
 
         func requestReadAccess() async {
             requests += 1
@@ -32,6 +45,48 @@ final class BodyActivityTests: XCTestCase {
 
         XCTAssertTrue(model.showsConnect)
         XCTAssertEqual(reader.reads, 0, "Health is not read before the request has been shown")
+    }
+
+    /// Connecting Apple Health in Settings asked for the nutrient types: other apps' intake counts on Today
+    /// without the card's request, and the card still offers its own button (#1219).
+    func testNutrientAccessFromSettingsCountsOutsideIntakeWithoutTheCardRequest() async {
+        let reader = FakeReader()
+        reader.nutrientAsked = true
+        reader.readings = BodyActivityReadings(
+            steps: 5000, outsideNutrients: ["energy": 620], outsideRead: true, outsideReadKeys: ["energy"])
+        let model = BodyActivityViewModel(reader: reader, unitSystem: { .metric })
+
+        await model.load(now: now)
+
+        XCTAssertEqual(reader.outsideOnlyReads, 1)
+        XCTAssertEqual(reader.reads, 0, "the card's own types are not read before the card is asked")
+        XCTAssertEqual(model.readings.outsideIntake, .read(values: ["energy": 620], readKeys: ["energy"]))
+        XCTAssertTrue(model.showsConnect, "the card still asks for steps, energy, weight and height")
+        XCTAssertNil(model.readings.steps, "only the outside intake is kept")
+    }
+
+    func testNutrientAccessWithAFailedReadIsNeverShownAsZero() async {
+        let reader = FakeReader()
+        reader.nutrientAsked = true
+        reader.readings = BodyActivityReadings(outsideReadFailed: true, outsideRead: true, outsideReadKeys: [])
+        let model = BodyActivityViewModel(reader: reader, unitSystem: { .metric })
+
+        await model.load(now: now)
+
+        XCTAssertEqual(model.readings.outsideIntake, .read(values: [:], readKeys: []), "no key is a known zero")
+        XCTAssertTrue(model.readings.outsideReadFailed)
+        XCTAssertTrue(model.showsConnect)
+        XCTAssertEqual(model.outsideText, "From other apps: could not be read", "the card says so rather than staying silent")
+    }
+
+    func testNutrientAccessWithNoOutsideReadStaysNotConnected() async {
+        let reader = FakeReader()
+        reader.nutrientAsked = true
+        let model = BodyActivityViewModel(reader: reader, unitSystem: { .metric })
+
+        await model.load(now: now)
+
+        XCTAssertEqual(model.readings.outsideIntake, .notConnected)
     }
 
     func testConnectingAsksOnceThenReads() async {
