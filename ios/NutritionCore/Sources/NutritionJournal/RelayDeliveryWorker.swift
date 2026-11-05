@@ -1324,7 +1324,7 @@ public struct RelayDeliveryWorker: Sendable {
             return outcome
         case .staleRevision:
             let outcome = RelayDeliveryOutcome.superseded(
-                operationID: item.operationID, detail: response.detail)
+                operationID: item.operationID, detail: Self.cappedReceiverText(response.detail))
             if case .outbox(let operation) = item.origin {
                 return acknowledge(operation, now: now, outcome: outcome)
             }
