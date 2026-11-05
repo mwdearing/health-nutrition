@@ -18,7 +18,7 @@ final class CustomProductEditorTypedAmountTests: XCTestCase {
         XCTAssertThrowsError(try CustomProductEditorViewModel.decimal("2,5", field: "Protein", decimalSeparator: "."))
         XCTAssertThrowsError(try CustomProductEditorViewModel.decimal("1.234,5", field: "Protein", decimalSeparator: ","))
     }
-    func testEveryFieldProblemReadsAsASentenceWithoutCodeNames() {
+    @MainActor func testEveryFieldProblemReadsAsASentenceWithoutCodeNames() {
         let cases: [(String, CustomProductFieldError.Code)] = [
             ("Protein", .invalidAmount), ("serving", .invalidAmount), ("serving.quantity", .invalidAmount),
             ("facts[0].amount", .invalidAmount), ("serving", .servingRequired), ("barcode", .invalidBarcode),
