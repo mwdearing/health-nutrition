@@ -81,7 +81,7 @@ final class CustomProductMappingTests: XCTestCase {
             source: ProductSourceDTO(productID: id, representativeRevision: "7", attribution: "Community"),
             verification: ProductVerification(status: .sharedUnverified), support: ProductSupport(distinctAccounts: "1", verificationThreshold: "3"), missingFacts: false, alternatives: [])
         let staged = try CustomProductMapping.stagedDraft(from: product)
-        XCTAssertEqual(staged.facts.first?.displayName, "Vitamin D")
+        XCTAssertEqual(staged.facts.first { $0.key == "vitaminD" }?.displayName, "Vitamin D")
         XCTAssertEqual(staged.facts.first { $0.key == "vitaminD" }?.value, .known(10, .mcg), "vitamin D is micrograms, not grams")
         XCTAssertEqual(staged.facts.first { $0.key == "calcium" }?.value, .known(120, .mg), "calcium is milligrams, not grams")
 
