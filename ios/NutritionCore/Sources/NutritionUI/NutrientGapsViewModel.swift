@@ -452,8 +452,8 @@ public final class NutrientGapsViewModel: ObservableObject {
             }
             let end = offset == 0 ? now : (calendar.date(byAdding: .day, value: 1, to: day) ?? now)
             let read = await reader(day, end)
-            // An incomplete day read is unknown for the whole day: its partial keys are not trusted (#1240).
-            result[Self.localDateKey(day, calendar: calendar)] = read.complete ? read.outside : .read(values: [:], readKeys: [])
+            // Keep the read's per-nutrient readKeys: a nutrient missing from them is unknown, the others stay known (as on the Diary).
+            result[Self.localDateKey(day, calendar: calendar)] = read.outside
         }
         guard !Task.isCancelled else { return }
         healthWeek = result
