@@ -230,6 +230,19 @@ public actor CommunityAuth {
         return true
     }
 
+    /// Whether a refresh answer means the stored session is finished. GoTrue answers 400 or 401 for a rejected
+    /// refresh token. A 403 ends it only when the body names a banned account; a proxy or WAF 403 for a good
+    /// token keeps the session.
+    static func endsSession(status: Int, body: Data) -> Bool {
+        switch status {
+        case 400, 401: return true
+        case 403:
+            struct Failure: Decodable { let error_code: String? }
+            return (try? JSONDecoder().decode(Failure.self, from: body))?.error_code == "user_banned"
+        default: return false
+        }
+    }
+
     /// POST /auth/v1/token?grant_type=refresh_token. A rejected refresh token ends the session.
     private func refresh(
         _ refreshToken: String,
@@ -248,9 +261,7 @@ public actor CommunityAuth {
             return try acceptRefresh(
                 data, response, startedAt: startedAt, startedAtIntent: startedAtIntent, owner: owner
             )
-        // A 403 is not a rejected refresh token: GoTrue answers 400 or 401 for that, and a proxy or WAF can answer
-        // 403 for a good token. It falls through to the generic error and keeps the stored session.
-        case 400, 401:
+        case _ where Self.endsSession(status: response.statusCode, body: data):
             let session: CommunitySession?
             do {
                 // Load the session even if an explicit auth attempt has started since this refresh.

@@ -167,6 +167,17 @@ final class CommunityAuthTests: XCTestCase {
         XCTAssertEqual(try store.load(), stored)
     }
 
+    func testABannedAccountRefreshAnswerStillClearsTheStore() async throws {
+        let transport = FakeCommunityTransport([
+            .response(status: 403, body: #"{"code":403,"error_code":"user_banned","msg":"User is banned"}"#),
+        ])
+        let store = InMemoryCommunitySessionStore(testSession(expiresAt: testNow.addingTimeInterval(30)))
+        let auth = try makeAuth(transport: transport, store: store)
+
+        await assertCommunityError(.signedOut) { try await auth.validSession() }
+        XCTAssertNil(try store.load())
+    }
+
     func testNetworkFailureDuringRefreshKeepsStore() async throws {
         let transport = FakeCommunityTransport([.failure(URLError(.notConnectedToInternet))])
         let stored = testSession(expiresAt: testNow.addingTimeInterval(30))
