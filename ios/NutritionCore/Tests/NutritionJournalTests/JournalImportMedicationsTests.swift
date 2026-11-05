@@ -80,14 +80,19 @@ final class JournalImportMedicationsTests: XCTestCase {
         try JournalImporter.importExport(data, into: try journal ?? self.journal(), favorites: nil, medications: store)
     }
 
-    private func assertRefused(_ data: Data, into store: MedicationStore, file: StaticString = #filePath, line: UInt = #line) {
+    /// Asserts the file is refused with exactly `expected`, so a refusal for another reason fails the test.
+    private func assertRefused(
+        _ data: Data, into store: MedicationStore, as expected: JournalImportError,
+        file: StaticString = #filePath, line: UInt = #line
+    ) {
         XCTAssertThrowsError(try importFile(data, into: store), file: file, line: line) { error in
-            switch error {
-            case JournalImportError.corrupt, JournalImportError.malformed: break
-            default: XCTFail("expected corrupt or malformed, got \(error)", file: file, line: line)
-            }
+            XCTAssertEqual(error as? JournalImportError, expected, file: file, line: line)
         }
     }
+
+    private let badMedicationID = JournalImportError.corrupt(
+        "the export lists a medication with an id that is not a UUID, twice, or a unit this build does not know")
+    private let badDoseID = JournalImportError.corrupt("the export lists a dose with an id that is not a UUID, or twice")
 
     // MARK: - Adding
 
@@ -155,6 +160,19 @@ final class JournalImportMedicationsTests: XCTestCase {
         XCTAssertEqual(summary.medicationDoses, 0)
     }
 
+    func testAMedicationWhoseIDIsStoredUnderAnotherNameIsLeftOutWithItsDoses() throws {
+        let store = try medicationStore()
+        let renamed = Medication(id: vial.id, name: "Example other", unit: .mg)
+        try store.saveMedication(renamed)
+
+        let summary = try importFile(try medicationsExport([vial], Array(fileDoses.prefix(2))), into: store)
+
+        XCTAssertEqual(try store.medications(), [renamed], "the device's medication is kept as it is")
+        XCTAssertEqual(try store.allDoses(), [], "a dose never lands on a medication of another name")
+        XCTAssertEqual(summary.medications, 0)
+        XCTAssertEqual(summary.medicationDoses, 0)
+    }
+
     func testADoseForADeviceMedicationWithAnotherUnitIsAddedInItsOwnUnit() throws {
         let store = try medicationStore()
         let own = Medication(id: vial.id, name: "Example vial", unit: .mL)
@@ -173,7 +191,9 @@ final class JournalImportMedicationsTests: XCTestCase {
         let store = try medicationStore()
         try store.saveMedication(vial)
 
-        assertRefused(try medicationsExport([pen], [fileDoses[1], fileDoses[2]]), into: store)
+        assertRefused(
+            try medicationsExport([pen], [fileDoses[1], fileDoses[2]]), into: store,
+            as: .corrupt("the dose \(fileDoses[1].id.uuidString) names a medication that is not in the export"))
 
         XCTAssertEqual(try store.medications(), [vial], "a refused file writes nothing")
         XCTAssertEqual(try store.allDoses(), [])
@@ -198,7 +218,9 @@ final class JournalImportMedicationsTests: XCTestCase {
         let store = try medicationStore()
         let twin = Medication(name: "example VIAL", unit: .mL)
 
-        assertRefused(try medicationsExport([vial, twin], [fileDoses[0]]), into: store)
+        assertRefused(
+            try medicationsExport([vial, twin], [fileDoses[0]]), into: store,
+            as: .corrupt("the export lists two medications named example VIAL"))
 
         XCTAssertEqual(try store.medications(), [])
         XCTAssertEqual(try store.allDoses(), [])
@@ -206,27 +228,31 @@ final class JournalImportMedicationsTests: XCTestCase {
 
     func testAMedicationOrDoseThatBreaksARuleIsRefused() throws {
         let store = try medicationStore()
-        assertRefused(try medicationsExport([vial], [dose(2, vial, amount: 0)]), into: store)
-        assertRefused(try medicationsExport([vial], [dose(2, vial, amount: 1001)]), into: store)
-        assertRefused(try medicationsExport([Medication(name: " Example vial", unit: .mg)], []), into: store)
+        let doseBreaksARule = JournalImportError.corrupt("the dose \(dose(2, vial).id.uuidString) breaks a rule this build keeps")
+        assertRefused(try medicationsExport([vial], [dose(2, vial, amount: 0)]), into: store, as: doseBreaksARule)
+        assertRefused(try medicationsExport([vial], [dose(2, vial, amount: 1001)]), into: store, as: doseBreaksARule)
+        let spaced = Medication(name: " Example vial", unit: .mg)
+        assertRefused(
+            try medicationsExport([spaced], []), into: store,
+            as: .corrupt("the medication \(spaced.id.uuidString) breaks a rule this build keeps"))
         assertRefused(try mutated(try fullExport()) { root in
             var list = root["medications"] as? [[String: Any]] ?? []
             list[0]["unit"] = "grains"
             root["medications"] = list
-        }, into: store)
+        }, into: store, as: badMedicationID)
         assertRefused(try mutated(try fullExport()) { root in
             var list = root["medication_doses"] as? [[String: Any]] ?? []
             list[0]["id"] = "not an id"
             root["medication_doses"] = list
-        }, into: store)
+        }, into: store, as: badDoseID)
         XCTAssertEqual(try store.medications(), [])
         XCTAssertEqual(try store.allDoses(), [])
     }
 
     func testTheSameIDTwiceIsRefused() throws {
         let store = try medicationStore()
-        assertRefused(try medicationsExport([vial], [fileDoses[1], fileDoses[1]]), into: store)
-        assertRefused(try medicationsExport([vial, vial], []), into: store)
+        assertRefused(try medicationsExport([vial], [fileDoses[1], fileDoses[1]]), into: store, as: badDoseID)
+        assertRefused(try medicationsExport([vial, vial], []), into: store, as: badMedicationID)
         XCTAssertEqual(try store.medications(), [])
     }
 
@@ -355,6 +381,59 @@ final class JournalImportMedicationsTests: XCTestCase {
             }
         }
         XCTAssertFalse(try doseIDs(store).contains(fileDoses[2].id), "a dose the person deleted must not come back")
+    }
+
+    /// A receipt damaged between two runs no longer stops the file: the next import removes it, plans the rows again
+    /// from the device, adds what is missing, and clears the receipt and the flag.
+    func testAnUnreadableReceiptIsRemovedAndTheResumeFinishes() throws {
+        let store = try medicationStore()
+        let data = try fullExport()
+        let digest = JournalImporter.fileDigest(data)
+        let journal = try journal()
+        try journal.markRestoreInProgress(fileDigest: digest)
+        try store.recordMedicationRestoreReceipt(digest, planned: MedicationRestoreSet(medications: [vial, pen], doses: fileDoses))
+        XCTAssertTrue(try store.writeRestoredMedication(vial, receipt: digest))
+        try store.writeUnreadableReceiptForTesting(digest)
+        XCTAssertThrowsError(try store.medicationRestoreReceiptDone(digest)) { error in
+            XCTAssertEqual(error as? MedicationStoreError, .unreadableReceipt)
+        }
+
+        let summary = try importFile(data, into: store, journal: journal)
+
+        XCTAssertEqual(try store.medications(), [pen, vial])
+        XCTAssertEqual(try doseIDs(store), Set(fileDoses.map(\.id)))
+        XCTAssertEqual(summary.medications, 1, "the vial the stopped run wrote is held, so only the pen is new")
+        XCTAssertEqual(summary.medicationDoses, 3)
+        XCTAssertNil(try store.medicationRestoreReceiptDone(digest), "the receipt is gone")
+        XCTAssertNil(try journal.restoreInProgressDigest(), "the flag is cleared")
+    }
+
+    /// A receipt damaged during the restore leaves the undo unable to read what it wrote, so the flag stays. That is not
+    /// a dead end: importing the same file again finishes the restore.
+    func testAReceiptDamagedDuringTheRestoreDoesNotStopTheRetry() throws {
+        let base = try medicationStore()
+        let sameJournal = try journal()
+        let data = try fullExport()
+        let digest = JournalImporter.fileDigest(data)
+        var writes = 0
+        let store = ScriptedMedicationStore(base: base) { _, base in
+            writes += 1
+            if writes == 4 {
+                try base.writeUnreadableReceiptForTesting(digest)
+                throw JournalImportError.corrupt("stopped")
+            }
+        }
+        XCTAssertThrowsError(try importFile(data, into: store, journal: sameJournal)) { error in
+            guard case JournalImportError.partialRestore = error else { return XCTFail("expected partialRestore, got \(error)") }
+        }
+        XCTAssertEqual(try sameJournal.restoreInProgressDigest(), digest, "rows of unknown origin keep the flag")
+
+        _ = try importFile(data, into: base, journal: sameJournal)
+
+        XCTAssertEqual(try base.medications(), [pen, vial])
+        XCTAssertEqual(try doseIDs(base), Set(fileDoses.map(\.id)))
+        XCTAssertNil(try base.medicationRestoreReceiptDone(digest))
+        XCTAssertNil(try sameJournal.restoreInProgressDigest())
     }
 
     func testAWrittenRowLeavesTheReceiptAndJoinsItsLedger() throws {

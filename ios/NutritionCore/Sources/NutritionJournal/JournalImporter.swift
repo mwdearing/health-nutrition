@@ -354,7 +354,7 @@ public enum JournalImporter {
             // a row it would write is still missing from the device.
             var medicationsPending = false
             if let medicationsTarget {
-                switch try medicationsTarget.medicationRestoreReceiptDone(digest) {
+                switch try medicationReceiptDone(digest, in: medicationsTarget) {
                 case .some(let done): medicationsPending = !done
                 case .none:
                     let planned = try plannedMedications(plan, in: medicationsTarget)
@@ -396,9 +396,9 @@ public enum JournalImporter {
             }
             // Medications come after goals, add-only and by id: a receipt marked done means every row was written already, so
             // nothing is added again; a receipt not yet done names what the stopped run recorded, and resume adds exactly those.
-            if let medicationsTarget, try medicationsTarget.medicationRestoreReceiptDone(digest) != true {
+            if let medicationsTarget, try medicationReceiptDone(digest, in: medicationsTarget) != true {
                 let recorded: MedicationRestoreSet
-                if let existing = try medicationsTarget.medicationRestoreReceipt(digest) {
+                if let existing = try medicationReceipt(digest, in: medicationsTarget) {
                     recorded = existing
                 } else {
                     recorded = try plannedMedications(plan, in: medicationsTarget)
@@ -468,7 +468,7 @@ public enum JournalImporter {
                 // first is written, and a receipt already on the store is reused, so a row the person deleted is not added back.
                 if let medicationsTarget {
                     let recorded: MedicationRestoreSet
-                    if let existing = try medicationsTarget.medicationRestoreReceipt(digest) {
+                    if let existing = try medicationReceipt(digest, in: medicationsTarget) {
                         recorded = existing
                     } else {
                         recorded = try plannedMedications(plan, in: medicationsTarget)
@@ -534,7 +534,8 @@ public enum JournalImporter {
                     throw JournalImportError.partialRestore(retainedIntakes: 0, retainedTombstones: 0)
                 }
                 // Medications come last of the three, and only the rows this run wrote. A row that cannot be removed keeps its
-                // receipt and the flag. A ledger that cannot be read leaves the rows unknown, which keeps the flag.
+                // receipt and the flag. A ledger that cannot be read leaves the rows unknown, which keeps the flag: the next
+                // import of the file then finds the receipt unreadable, removes it and finishes the restore add-only.
                 var medicationsLeft = false
                 if let medicationsTarget {
                     if let written = try? medicationsTarget.medicationRestoreWritten(digest) {
@@ -1074,9 +1075,11 @@ public enum JournalImporter {
     }
 
     /// The medications and doses a restore would add to this device: a file medication only when the device holds neither
-    /// its identifier nor its name, and a dose only when the device holds no dose with its identifier and holds its
-    /// medication, or the medication is one the restore adds. The dose keeps its own unit. Read now, so a resume sees the
-    /// device as it is.
+    /// its identifier nor its name, and a dose only when the device holds no dose with its identifier and either the
+    /// restore adds its medication or the device holds its medication under the file's name, ignoring case. A file
+    /// medication whose identifier the device holds under another name is left out with its doses, as one whose name
+    /// is taken is, so a dose never lands on a medication of another name. The dose keeps its own unit. Read now, so a
+    /// resume sees the device as it is.
     static func plannedMedications(_ plan: JournalRestorePlan, in store: MedicationStore) throws -> MedicationRestoreSet {
         let stored = try store.medications()
         let storedIDs = Set(stored.map(\.id))
@@ -1085,12 +1088,34 @@ public enum JournalImporter {
             !storedIDs.contains($0.id) && !storedNames.contains($0.name.lowercased())
         }
         let plannedIDs = Set(medications.map(\.id))
+        let storedNameByID = Dictionary(stored.map { ($0.id, $0.name.lowercased()) }, uniquingKeysWith: { first, _ in first })
+        let heldUnderFileName = Set(plan.medications.filter { storedNameByID[$0.id] == $0.name.lowercased() }.map(\.id))
         let storedDoseIDs = Set(try store.allDoses().map(\.id))
         let doses = plan.medicationDoses.filter { dose in
             !storedDoseIDs.contains(dose.id)
-                && (plannedIDs.contains(dose.medicationID) || storedIDs.contains(dose.medicationID))
+                && (plannedIDs.contains(dose.medicationID) || heldUnderFileName.contains(dose.medicationID))
         }
         return MedicationRestoreSet(medications: medications, doses: doses)
+    }
+
+    /// Whether the medication receipt is done, as `MedicationStore.medicationRestoreReceiptDone` reads it. A receipt this
+    /// build cannot read is removed and reads as none, so the restore plans its rows again from the device, add-only by
+    /// identifier and name, as a run that never reached the medications would. A row the stopped run wrote is then held
+    /// and is not written again; a row the person deleted since that run can come back, which an unreadable receipt
+    /// cannot prevent. Without this, the receipt would stop every later restore and undo of the file.
+    static func medicationReceiptDone(_ digest: String, in store: MedicationStore) throws -> Bool? {
+        do { return try store.medicationRestoreReceiptDone(digest) } catch MedicationStoreError.unreadableReceipt {
+            try store.removeMedicationRestoreReceipt(digest)
+            return nil
+        }
+    }
+
+    /// The rows the medication receipt still names, with an unreadable receipt removed and read as none, as above.
+    static func medicationReceipt(_ digest: String, in store: MedicationStore) throws -> MedicationRestoreSet? {
+        do { return try store.medicationRestoreReceipt(digest) } catch MedicationStoreError.unreadableReceipt {
+            try store.removeMedicationRestoreReceipt(digest)
+            return nil
+        }
     }
 
     /// Writes the planned rows, medications first and then doses, each with its receipt entry in one save. A row the device

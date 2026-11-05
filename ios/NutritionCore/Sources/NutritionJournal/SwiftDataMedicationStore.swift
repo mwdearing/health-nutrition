@@ -305,7 +305,7 @@ public final class SwiftDataMedicationStore: MedicationStore, JournalErasing, @u
 
     private static func restoredMedication(_ entry: ReceiptMedication) throws -> Medication {
         guard let id = UUID(uuidString: entry.id), let unit = MedicationUnit(rawValue: entry.unit) else {
-            throw JournalImportError.corrupt("the medication restore receipt holds a row this build cannot read")
+            throw MedicationStoreError.unreadableReceipt
         }
         return Medication(
             id: id, name: entry.name, unit: unit, scheduleDays: entry.scheduleDays, isArchived: entry.isArchived)
@@ -316,7 +316,7 @@ public final class SwiftDataMedicationStore: MedicationStore, JournalErasing, @u
               let unit = MedicationUnit(rawValue: entry.unit), DecimalText.isValidDecimalText(entry.amount),
               let amount = DecimalText.decode(entry.amount)
         else {
-            throw JournalImportError.corrupt("the medication restore receipt holds a row this build cannot read")
+            throw MedicationStoreError.unreadableReceipt
         }
         return MedicationDose(
             id: id, medicationID: medicationID, takenAt: entry.takenAt, timeZoneIdentifier: entry.timeZone,
@@ -327,8 +327,12 @@ public final class SwiftDataMedicationStore: MedicationStore, JournalErasing, @u
         String(decoding: try JSONEncoder().encode(payload), as: UTF8.self)
     }
 
+    /// A receipt whose text does not decode throws `MedicationStoreError.unreadableReceipt`, so the caller can tell it from
+    /// a store that failed. `removeMedicationRestoreReceipt` never decodes, so such a receipt can always be removed.
     private static func decodeReceipt(_ text: String) throws -> ReceiptPayload {
-        try JSONDecoder().decode(ReceiptPayload.self, from: Data(text.utf8))
+        do { return try JSONDecoder().decode(ReceiptPayload.self, from: Data(text.utf8)) } catch {
+            throw MedicationStoreError.unreadableReceipt
+        }
     }
 
     /// The receipt row for `receipt`, or nil when none is stored. The caller holds writeLock for a write.
@@ -714,6 +718,16 @@ public final class SwiftDataMedicationStore: MedicationStore, JournalErasing, @u
         }
         if let name { row.name = name }
         if let unitText { row.unitText = unitText }
+        try context.save()
+    }
+
+    /// Rewrites a stored restore receipt into text no build can decode, as a file damaged between two runs would hold.
+    func writeUnreadableReceiptForTesting(_ receipt: String) throws {
+        let context = ModelContext(try openContainer())
+        guard let row = try Self.receiptRow(context, receipt) else {
+            throw MedicationStoreError.corruptRecord(Self.receiptPrefix + receipt)
+        }
+        row.name = "not a receipt"
         try context.save()
     }
 

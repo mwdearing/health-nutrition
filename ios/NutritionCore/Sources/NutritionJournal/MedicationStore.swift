@@ -15,6 +15,9 @@ public enum MedicationStoreError: Error, Sendable, Equatable {
     /// A stored row that cannot be read: a bad identifier, an unknown unit, an unreadable amount, or a
     /// row that fails validation. The associated text names the row. Such a row fails the whole read.
     case corruptRecord(String)
+    /// A restore receipt this build cannot read. The receipt alone can then be removed, and the medication log erase
+    /// removes it with the rows.
+    case unreadableReceipt
 }
 
 /// Where the medication log is kept: the medications a person named and the doses they typed.
