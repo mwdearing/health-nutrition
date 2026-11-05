@@ -113,6 +113,13 @@ final class LogSupplementShortcutTests: XCTestCase {
             lateEvening)
     }
 
+    func testATieAcrossMidnightGoesToTheTimeThatHasPassed() {
+        let before = ReminderTime(hour: 23, minute: 30)
+        let after = ReminderTime(hour: 0, minute: 30)
+        XCTAssertEqual(
+            SupplementShortcut.nearestOpenTime(in: [after, before], to: date(hour: 0), calendar: utc), before)
+    }
+
     func testATieGoesToTheEarlierTimeAndAnEmptyListToNil() {
         XCTAssertEqual(
             SupplementShortcut.nearestOpenTime(in: [evening, morning], to: date(hour: 14), calendar: utc), morning)

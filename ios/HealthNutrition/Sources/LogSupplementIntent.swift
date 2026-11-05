@@ -68,7 +68,9 @@ enum SupplementShortcut {
             let a = distance(first)
             let b = distance(second)
             if a != b { return a < b }
-            return first.hour * 60 + first.minute < second.hour * 60 + second.minute
+            // Equally near: the one that has already passed, counting back from now across midnight.
+            func sinceThen(_ time: ReminderTime) -> Int { (current - (time.hour * 60 + time.minute) + 1440) % 1440 }
+            return sinceThen(first) < sinceThen(second)
         }
     }
 
