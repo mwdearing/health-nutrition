@@ -196,6 +196,19 @@ public struct NutrientKeyChoice: Identifiable, Equatable {
         try CustomProductValidation.validate(value)
         return value
     }
+    /// True when Save will also queue and send this product: a new product, with the same eligibility check the
+    /// save path makes. Read when the form is drawn, so the button names what a tap does.
+    public var savesAndShares: Bool {
+        guard revision == nil, legacy == nil, let sharing else { return false }
+        return ((try? sharing.newProductEligibility(using: store)) ?? nil) != nil
+    }
+    public var saveButtonTitle: String { savesAndShares ? "Save and share product" : "Save product on this device" }
+    /// What Save does, shown above the button. The upload sentence appears only when the upload will happen.
+    public var saveScopeMessage: String {
+        savesAndShares
+            ? "Sharing is on, so saving this new product also sends its name, brand, barcode, serving and nutrient facts to the community catalog."
+            : "Saves this product on this device only."
+    }
     @discardableResult public func save(now: Date) throws -> CustomProductRevision {
         // Refused before validation: the unnamed row already shows its note.
         guard canSave else { throw CustomProductFieldError(field: "ingredient", code: .required) }

@@ -109,13 +109,14 @@ public struct CustomProductEditorView: View {
             }
             Section {
                 Toggle("Open intake details after saving", isOn: $openDetails)
-                Button("Save product on this device") {
+                Text(model.saveScopeMessage).font(.footnote)
+                Button(model.saveButtonTitle) {
                     do {
                         let saved = try model.save(now: Date())
                         onSaved(saved, openDetails)
                     } catch { }
                 }
-                .accessibilityHint("Saves without logging an intake. Eligible new products are queued for sharing.")
+                .accessibilityHint("Saves without logging an intake. When sharing is on, a new product is also shared.")
                 .disabled(!model.canSave)
                 if let message = model.errorMessage { Text(message).foregroundStyle(TokenColors.error) }
             }

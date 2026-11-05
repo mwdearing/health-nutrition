@@ -61,6 +61,34 @@ final class CustomProductEditorTests: XCTestCase {
         _ = try localEditor.save(now: Date())
         XCTAssertTrue(localStore.operations.isEmpty)
     }
+    @MainActor func testSaveButtonAndScopeLineNameSharingOnlyWhenNewProductWillBeSent() async throws {
+        let store = ProductEditorStorePort()
+        let local = CustomProductEditorViewModel(store: store)
+        XCTAssertFalse(local.savesAndShares)
+        XCTAssertEqual(local.saveButtonTitle, "Save product on this device")
+        XCTAssertEqual(local.saveScopeMessage, "Saves this product on this device only.")
+
+        let coordinator = ProductShareCoordinator(store: store, service: ProductSearchServicePort())
+        let model = CustomProductEditorViewModel(store: store, sharing: coordinator)
+        XCTAssertFalse(model.savesAndShares, "no account context yet")
+        coordinator.updateAccountContext(.init(ownerID: UUID(), profileReady: true, sharingAllowed: true,
+            consentVersion: 2, serverGeneration: "0", localSessionEpoch: UUID(), backendSupported: true))
+        XCTAssertTrue(model.savesAndShares)
+        XCTAssertEqual(model.saveButtonTitle, "Save and share product")
+        XCTAssertTrue(model.saveScopeMessage.contains("community catalog"))
+
+        coordinator.updateAccountContext(.init(ownerID: UUID(), profileReady: true, sharingAllowed: true,
+            consentVersion: 0, serverGeneration: "0", localSessionEpoch: UUID(), backendSupported: true))
+        XCTAssertFalse(model.savesAndShares, "disclosure not acknowledged")
+        XCTAssertEqual(model.saveButtonTitle, "Save product on this device")
+
+        coordinator.updateAccountContext(.init(ownerID: UUID(), profileReady: true, sharingAllowed: true,
+            consentVersion: 2, serverGeneration: "0", localSessionEpoch: UUID(), backendSupported: true))
+        model.name = "Synthetic title"
+        _ = try model.save(now: Date())
+        XCTAssertFalse(model.savesAndShares, "an edit never shares automatically")
+        XCTAssertEqual(model.saveButtonTitle, "Save product on this device")
+    }
     @MainActor func testNewSaveReadsCurrentAccountAndRejectsObsoleteAdmissionOrStore() async throws {
         let store = ProductEditorStorePort(), service = ProductSearchServicePort()
         let coordinator = ProductShareCoordinator(store: store, service: service)
