@@ -522,6 +522,15 @@ public protocol JournalStore: AnyObject, Sendable {
     func close()
 }
 
+/// A store that holds a delete back for its Undo window. A separate protocol, so a stand-in that never holds
+/// one need not change; a worker that is not given one treats an upsert whose intake is gone as superseded.
+public protocol JournalDeleteHold: AnyObject, Sendable {
+    /// When the Undo window of an unacknowledged delete of the intake closes, or nil when no delete of it is
+    /// being held. An upsert for an intake with a held delete is not superseded yet: Undo brings the intake back,
+    /// and an acknowledged upsert is never delivered.
+    func deleteHoldEnd(intakeID: String) throws -> Date?
+}
+
 /// How long a delete can still be taken back. A delete reaches Apple Health and the relay only after it.
 public enum JournalUndo {
     public static let deleteWindow: TimeInterval = 10

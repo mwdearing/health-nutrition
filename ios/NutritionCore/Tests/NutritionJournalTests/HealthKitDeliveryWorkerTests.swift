@@ -572,6 +572,48 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         XCTAssertEqual(writer.saveCalls, 0, "a sample written after the delete would undo it")
     }
 
+    /// A delete is hidden from the queue for its Undo window, so an upsert that is still due when the entry is
+    /// deleted finds its intake gone with no delete beside it. Acknowledging it then is final: Undo brings the
+    /// entry back and nothing would ever write it to Health.
+    func testAnUpsertIsKeptWhileItsDeleteIsInsideTheUndoWindowAndWrittenAfterAnUndo() async throws {
+        let (store, writer, _, worker) = try makeWorker()
+
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        let upsertID = try XCTUnwrap(healthKitOperation(store, kind: .upsert)?.operationID)
+        try store.delete(intakeID: intakeID, now: Date())
+
+        let held = await worker.runOnce(now: Date())
+
+        guard case .notDue(let id, let until) = try XCTUnwrap(held.first), held.count == 1 else {
+            return XCTFail("an upsert whose delete is still held waits, got \(held)")
+        }
+        XCTAssertEqual(id, upsertID)
+        XCTAssertGreaterThan(until, Date(), "it is due again when the Undo window closes")
+        XCTAssertEqual(try healthKitOperation(store, kind: .upsert)?.operationID, upsertID, "the row stays pending")
+        XCTAssertEqual(writer.saveCalls, 0)
+
+        try store.undoDelete(intakeID: intakeID)
+        let outcomes = await worker.runOnce(now: Date())
+
+        XCTAssertEqual(outcomes, [.delivered(operationID: upsertID, samples: 1)])
+        XCTAssertEqual(writer.saved.map(\.syncIdentifier), [waterIdentifier(intakeID)])
+        XCTAssertEqual(try projectionState(store, intakeID: intakeID), .succeeded)
+    }
+
+    /// Once the Undo window has closed the delete is offered, so the upsert is superseded as before.
+    func testAnUpsertIsSupersededOnceTheDeleteIsPastItsUndoWindow() async throws {
+        let (store, writer, _, worker) = try makeWorker()
+
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        try store.delete(intakeID: intakeID, now: Date().addingTimeInterval(-JournalUndo.deleteWindow - 1))
+        let upsertID = try XCTUnwrap(healthKitOperation(store, kind: .upsert)?.operationID)
+
+        let outcomes = await worker.runOnce(now: Date())
+
+        XCTAssertEqual(outcomes.first, .superseded(operationID: upsertID))
+        XCTAssertEqual(writer.saveCalls, 0)
+    }
+
     // MARK: - Authorization
 
     func testADeniedTypeLeavesTheOperationNeedingAttentionAndIsNotRetried() async throws {
