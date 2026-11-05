@@ -144,7 +144,8 @@ final class AppServices {
             lookup: SnapshotNutrientFacts(), referencePreferences: displayPreferences,
             preferences: displayPreferences)
         goals = GoalsViewModel(store: goalStore, journal: journalStore, preferences: displayPreferences)
-        medicationLog = MedicationLogViewModel(store: medicationStore, preferences: displayPreferences)
+        medicationLog = MedicationLogViewModel(
+            store: medicationStore, preferences: displayPreferences, eraser: medicationStore)
         let savedMealStore = UserDefaultsSavedMealStore()
         let savedMeals = SavedMealsModel(store: savedMealStore, journal: journalStore)
         self.savedMeals = savedMeals
@@ -251,6 +252,8 @@ final class AppServices {
             medications: medicationStore, medicationPreferences: displayPreferences)
         // Each Diary day header adds what other apps logged to Apple Health that day, read as the day comes on screen.
         journal.healthDayReader = { start, end in await healthReader.outsideIntakeDay(from: start, to: end) }
+        // Through the local `todayModel`: `self.today` cannot be read before every stored property is set.
+        todayModel.healthDayReader = { start, end in await healthReader.outsideIntakeDay(from: start, to: end) }
         goals.latestHeightCentimeters = { [bodyActivity] in bodyActivity.readings.latestHeightCm }
         // Set after every stored property, so the Library can link to the supplement list.
         library.supplementStack = supplementStack
@@ -427,16 +430,10 @@ final class AppServices {
             journalStore.close()
             throw StoreStartupError.goals(error)
         }
-        let medicationStore: SwiftDataMedicationStore
-        do {
-            medicationStore = try SwiftDataMedicationStore(url: directory.appendingPathComponent("medications.store"))
-        } catch {
-            goalStore.close()
-            recipeStore.close()
-            favoritesStore.close()
-            journalStore.close()
-            throw StoreStartupError.medications(error)
-        }
+        // Never blocks launch: a file that cannot be opened is retried on each read, and the Medication log offers
+        // to clear it.
+        let medicationURL = directory.appendingPathComponent("medications.store")
+        let medicationStore = SwiftDataMedicationStore(retryingOpenAt: medicationURL)
         return AppServices(
             journalStore: journalStore, favoritesStore: favoritesStore, recipeStore: recipeStore,
             goalStore: goalStore, medicationStore: medicationStore, displayPreferences: displayPreferences,
@@ -450,7 +447,6 @@ final class AppServices {
         case favorites(Error)
         case recipes(Error)
         case goals(Error)
-        case medications(Error)
 
         var errorDescription: String? {
             switch self {
@@ -462,8 +458,6 @@ final class AppServices {
                 return "The recipes store file could not be opened: \(error.localizedDescription)"
             case .goals(let error):
                 return "The daily goals store file could not be opened: \(error.localizedDescription)"
-            case .medications(let error):
-                return "The medication log store file could not be opened: \(error.localizedDescription)"
             }
         }
     }

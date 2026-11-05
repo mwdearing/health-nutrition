@@ -45,7 +45,8 @@ Every call first gets a valid session from `validSession()`, so a signed-out cal
 | --- | --- |
 | `profile()` | GET `/rest/v1/profiles` for the signed-in user's row. A missing row reads as no name and sharing on. |
 | `updateProfile(displayName:shareLabels:)` | PATCH `/rest/v1/profiles` for the user's row with `Prefer: return=representation`. A cleared name is sent as null. |
-| `deleteAccount()` | POST `/rest/v1/rpc/delete_my_account`. The local session is cleared only after the server accepts. |
+| `deleteAccount()` | POST `/functions/v1/apple-grant` `{"action":"revoke"}` first (the server revokes the Sign in with Apple grant; any non-2xx stops the deletion), then POST `/rest/v1/rpc/delete_my_account`. The local session is cleared only after the server accepts. |
+| `auth.signInWithApple(...authorizationCode:)` | After the session is accepted, POST `/functions/v1/apple-grant` `{"action":"store","authorization_code":...}`. Best effort: a failure never fails the sign-in. |
 | `submitLabel(_:)` | POST `/rest/v1/rpc/submit_label` with `p_barcode`, `p_basis`, `p_serving_text`, `p_product_name`, `p_brand`, `p_nutrients`. The decoder accepts `received`, `shared` and the legacy `verified` reply for compatibility; community agreement must not produce a `verified` reply. |
 | `lookupLabel(barcode:)` | POST `/rest/v1/rpc/lookup_label_v2` with `p_barcode`. Returns each label with an explicit `verificationSource` (`community` or `owner_reviewed`), plus compatibility `verified` and `supportingAccounts` values. |
 

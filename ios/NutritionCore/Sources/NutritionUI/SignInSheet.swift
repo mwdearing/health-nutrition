@@ -117,7 +117,9 @@ public struct SignInSheet: View {
                 return
             }
             let nonce = appleNonce
-            Task { await model.signInWithApple(idToken: token, nonce: nonce) }
+            // The one-time authorization code lets the server keep the grant so deleting the account can revoke it.
+            let code = credential.authorizationCode.flatMap { String(data: $0, encoding: .utf8) }
+            Task { await model.signInWithApple(idToken: token, nonce: nonce, authorizationCode: code) }
         }
     }
     #endif

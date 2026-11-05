@@ -37,10 +37,17 @@ final class HealthKitReader: BodyActivityReading {
 
     var hasAskedForReadAccess: Bool { defaults.bool(forKey: Self.askedKey) }
 
+    /// Whether nutrient read access was asked for, by the Activity card's request or by Connect Apple Health in
+    /// Settings (which asks for every mapped nutrient type). Outside intake needs only this, not the card's request.
+    var hasAskedForNutrientReadAccess: Bool {
+        hasAskedForReadAccess || defaults.bool(forKey: HealthKitConnectKeys.nutritionReadRequested)
+    }
+
     /// Erase all data returns the card to its opt-in state: the next read waits for the person again.
     nonisolated static func forgetReadAccess(defaults: UserDefaults = .standard) {
         defaults.removeObject(forKey: Self.askedKey)
         for key in Self.legacyAskedKeys { defaults.removeObject(forKey: key) }
+        defaults.removeObject(forKey: HealthKitConnectKeys.nutritionReadRequested)
     }
 
     func requestReadAccess() async {
@@ -51,6 +58,19 @@ final class HealthKitReader: BodyActivityReading {
         } catch {
             // Nothing was asked, so the card keeps offering the button.
         }
+    }
+
+    /// Only the outside intake, for a person who connected Apple Health in Settings but has not been shown the
+    /// Activity card's request: steps, energy, weight and height are not read.
+    func readOutsideIntake(now: Date) async -> BodyActivityReadings {
+        guard HKHealthStore.isHealthDataAvailable() else { return .empty }
+        var readings = BodyActivityReadings()
+        readings.outsideRead = true
+        let outside = await outsideNutrientTotals(from: Calendar.current.startOfDay(for: now), to: now)
+        readings.outsideNutrients = outside.totals
+        readings.outsideReadKeys = outside.readKeys
+        readings.outsideReadFailed = outside.failed
+        return readings
     }
 
     func read(now: Date) async -> BodyActivityReadings {
@@ -64,9 +84,14 @@ final class HealthKitReader: BodyActivityReading {
         readings.outsideNutrients = outside.totals
         readings.outsideReadKeys = outside.readKeys
         readings.outsideReadFailed = outside.failed
-        if let latest = await latestWeight(before: now) {
-            readings.latestWeightKg = latest.kilograms
-            readings.latestWeightDate = latest.date
+        switch await latestWeight(before: now) {
+        case .found(let kilograms, let date):
+            readings.latestWeightKg = kilograms
+            readings.latestWeightDate = date
+        case .none:
+            break
+        case .failed:
+            readings.weightReadFailed = true
         }
         readings.latestHeightCm = await latestHeightCentimeters(before: now)
         let weightWindowStart = Calendar.current.date(byAdding: .day, value: -27, to: startOfDay) ?? startOfDay
@@ -77,7 +102,7 @@ final class HealthKitReader: BodyActivityReading {
     /// One Diary day's totals from samples other apps wrote, for that day's header, and whether every query succeeded,
     /// so a day with a failed query is read again. Not connected until read access was asked for, as on Today.
     func outsideIntakeDay(from start: Date, to end: Date) async -> HealthDayRead {
-        guard HKHealthStore.isHealthDataAvailable(), hasAskedForReadAccess else { return HealthDayRead(.notConnected) }
+        guard HKHealthStore.isHealthDataAvailable(), hasAskedForNutrientReadAccess else { return HealthDayRead(.notConnected) }
         let outside = await outsideNutrientTotals(from: start, to: end)
         return HealthDayRead(.read(values: outside.totals, readKeys: outside.readKeys), complete: !outside.failed)
     }
@@ -169,15 +194,25 @@ final class HealthKitReader: BodyActivityReading {
         }
     }
 
+    /// What asking Health for the newest weight gave: a sample, no sample, or a failed query.
+    private enum LatestWeight {
+        case found(kilograms: Decimal, date: Date)
+        case none
+        case failed
+    }
+
     /// The newest weight sample at or before `date`.
-    private func latestWeight(before date: Date) async -> (kilograms: Decimal, date: Date)? {
+    private func latestWeight(before date: Date) async -> LatestWeight {
         let predicate = HKQuery.predicateForSamples(withStart: nil, end: date, options: [])
         let descriptor = HKSampleQueryDescriptor(
             predicates: [.quantitySample(type: HKQuantityType(.bodyMass), predicate: predicate)],
             sortDescriptors: [SortDescriptor(\.endDate, order: .reverse)],
             limit: 1)
-        guard let sample = try? await descriptor.result(for: healthStore).first else { return nil }
-        return (Decimal(sample.quantity.doubleValue(for: .gramUnit(with: .kilo))), sample.endDate)
+        let samples: [HKQuantitySample]
+        do { samples = try await descriptor.result(for: healthStore) } catch { return .failed }
+        guard let sample = samples.first else { return .none }
+        return .found(
+            kilograms: Decimal(sample.quantity.doubleValue(for: .gramUnit(with: .kilo))), date: sample.endDate)
     }
 
     /// The newest height sample at or before `date`, in centimeters.

@@ -5,6 +5,11 @@ import NutritionUI
 import Observation
 import SwiftUI
 
+/// Defaults keys shared with `HealthKitReader`, outside the main actor so its nonisolated erase can use them.
+enum HealthKitConnectKeys {
+    static let nutritionReadRequested = "healthKit.nutritionReadRequested"
+}
+
 /// The driver of the real HealthKit delivery worker, in every build.
 ///
 /// This model is what makes `HealthKitDeliveryWorker` reachable: it runs one delivery pass, asks
@@ -62,7 +67,7 @@ final class HealthKitDeliveryStatus: AppleHealthConnecting {
     }
 
     /// Set once the request that includes nutrient read access has been answered on this device.
-    static let readAskedKey = "healthKit.nutritionReadRequested"
+    static let readAskedKey = HealthKitConnectKeys.nutritionReadRequested
 
     /// The mapped types HealthKit resolves, read once so the request, the gate and the spike all
     /// agree on what "every mapped type" means.

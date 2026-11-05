@@ -154,6 +154,57 @@ final class BoundedResponseLoaderTests: XCTestCase {
 #endif
     }
 
+    func testARedirectToAnotherHostDropsTheKeyHeaderAndASameHostRedirectKeepsIt() {
+        var original = URLRequest(url: URL(string: "https://provider.invalid/search")!)
+        original.setValue("secret", forHTTPHeaderField: "X-Api-Key")
+        var elsewhere = URLRequest(url: URL(string: "https://other.invalid/final")!)
+        elsewhere.setValue("secret", forHTTPHeaderField: "X-Api-Key")
+        var sameHost = URLRequest(url: URL(string: "https://PROVIDER.invalid/final")!)
+        sameHost.setValue("secret", forHTTPHeaderField: "X-Api-Key")
+        elsewhere.setValue("secret", forHTTPHeaderField: "x-api-key")
+        elsewhere.setValue("anon", forHTTPHeaderField: "apikey")
+        elsewhere.setValue("Bearer token", forHTTPHeaderField: "Authorization")
+        let stripped = BoundedResponseOperation.strippingKeyOnCrossHostRedirect(elsewhere, from: original)
+        for name in ["X-Api-Key", "apikey", "Authorization"] {
+            XCTAssertNil(stripped.value(forHTTPHeaderField: name), name)
+        }
+        XCTAssertEqual(BoundedResponseOperation.strippingKeyOnCrossHostRedirect(sameHost, from: original)
+            .value(forHTTPHeaderField: "X-Api-Key"), "secret")
+        var keyed = URLRequest(url: URL(string: "https://provider.invalid/final")!)
+        keyed.setValue("secret", forHTTPHeaderField: "X-Api-Key")
+        XCTAssertNil(BoundedResponseOperation.strippingKeyOnCrossHostRedirect(keyed, from: nil)
+            .value(forHTTPHeaderField: "X-Api-Key"))
+        for target in ["http://provider.invalid/final", "https://provider.invalid:8443/final"] {
+            var moved = URLRequest(url: URL(string: target)!)
+            moved.setValue("secret", forHTTPHeaderField: "X-Api-Key")
+            XCTAssertNil(BoundedResponseOperation.strippingKeyOnCrossHostRedirect(moved, from: original)
+                .value(forHTTPHeaderField: "X-Api-Key"), target)
+        }
+    }
+
+    func testAForwardingDelegateCannotPutTheKeyBackOnACrossHostRedirect() {
+        let delegate = KeyRestoringDelegate()
+        let configuration = URLSessionConfiguration.ephemeral
+        let session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
+        let operation = BoundedResponseOperation(
+            originalSession: session, configuration: configuration, forwardingDelegate: delegate,
+            delegateQueue: session.delegateQueue, maxBytes: 4)
+        var first = URLRequest(url: URL(string: "https://provider.invalid/search")!)
+        first.setValue("secret", forHTTPHeaderField: "X-Api-Key")
+        let task = session.dataTask(with: first)
+        let response = HTTPURLResponse(
+            url: first.url!, statusCode: 302, httpVersion: "HTTP/1.1", headerFields: nil)!
+        let completed = expectation(description: "redirect policy completed")
+        operation.urlSession(session, task: task, willPerformHTTPRedirection: response,
+                             newRequest: URLRequest(url: URL(string: "https://other.invalid/final")!)) { request in
+            XCTAssertNotNil(request)
+            XCTAssertNil(request?.value(forHTTPHeaderField: "X-Api-Key"))
+            completed.fulfill()
+        }
+        wait(for: [completed], timeout: 2)
+        session.invalidateAndCancel()
+    }
+
 #if canImport(FoundationNetworking)
     func testLinuxDelegateForwardingRoutesRedirectDecisionOnce() {
         let delegate = RedirectRefusingDelegate(onRedirect: {})
@@ -449,5 +500,17 @@ private final class RedirectRefusingDelegate: NSObject, URLSessionTaskDelegate, 
         completionHandler: @escaping BoundedAuthenticationChallengeHandler
     ) {
         completionHandler(.performDefaultHandling, nil)
+    }
+}
+
+/// A task delegate that follows every redirect and puts the key back on the request it returns.
+private final class KeyRestoringDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    func urlSession(
+        _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest, completionHandler: @escaping BoundedRedirectHandler
+    ) {
+        var restored = request
+        restored.setValue("secret", forHTTPHeaderField: "X-Api-Key")
+        completionHandler(restored)
     }
 }

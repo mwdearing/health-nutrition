@@ -70,12 +70,30 @@ public struct KeychainCommunitySessionStore: CommunitySessionStore {
 
     public func save(_ session: CommunitySession) throws {
         let data = try JSONEncoder().encode(session)
+        let accessible = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        // Update in place first: a refreshed session replaces the stored one without a moment when none is stored,
+        // so a failed write cannot lose the only copy of a rotated refresh token.
+        let update = SecItemUpdate(
+            baseQuery() as CFDictionary,
+            [kSecValueData as String: data, kSecAttrAccessible as String: accessible] as CFDictionary)
+        guard try Self.saveStep(afterUpdate: update) == .add else { return }
         var item = baseQuery()
         item[kSecValueData as String] = data
-        item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        _ = SecItemDelete(baseQuery() as CFDictionary)
+        item[kSecAttrAccessible as String] = accessible
         guard SecItemAdd(item as CFDictionary, nil) == errSecSuccess else {
             throw CommunityError.storage
+        }
+    }
+
+    enum SaveStep: Equatable { case saved, add }
+
+    /// What a save does after trying to update the stored session: nothing more when it was updated, an add when
+    /// none was stored yet, and a storage error for any other status.
+    static func saveStep(afterUpdate status: OSStatus) throws -> SaveStep {
+        switch status {
+        case errSecSuccess: return .saved
+        case errSecItemNotFound: return .add
+        default: throw CommunityError.storage
         }
     }
 

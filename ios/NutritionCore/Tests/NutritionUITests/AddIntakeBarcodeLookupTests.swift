@@ -454,8 +454,16 @@ final class AddIntakeBarcodeLookupTests: XCTestCase {
         model.unit = .mL
         model.kind = .food
         XCTAssertTrue(model.save(now: now))
-        model.kind = .supplement
-        XCTAssertTrue(model.save(now: now))
+        // A second entry is a second draft; one draft saves once.
+        let second = AddIntakeViewModel(
+            store: store, now: now, timeZoneIdentifier: "UTC",
+            lookup: FakeBarcodeLookup(result: .found(oatMilk())))
+        second.barcode = validBarcode
+        await second.lookUpBarcode()
+        second.amountText = "250"
+        second.unit = .mL
+        second.kind = .supplement
+        XCTAssertTrue(second.save(now: now))
         let ids = try store.activeIntakes().map { intake in
             try XCTUnwrap(store.revisions(of: intake.id).first?.productSnapshotID)
         }
@@ -534,11 +542,16 @@ final class AddIntakeBarcodeLookupTests: XCTestCase {
         model.amountText = "250"
         XCTAssertTrue(model.save(now: now))
 
-        model.name = "Oat drink, one bottle"
-        model.amountText = "1000"
-        XCTAssertTrue(model.save(now: now))
+        let second = AddIntakeViewModel(
+            store: store, now: now, timeZoneIdentifier: "UTC",
+            lookup: FakeBarcodeLookup(result: .found(oatMilk())))
+        second.barcode = validBarcode
+        await second.lookUpBarcode()
+        second.name = "Oat drink, one bottle"
+        second.amountText = "1000"
+        XCTAssertTrue(second.save(now: now))
 
-        XCTAssertNil(model.saveError)
+        XCTAssertNil(second.saveError)
         XCTAssertEqual(try store.activeIntakes().count, 2)
     }
 

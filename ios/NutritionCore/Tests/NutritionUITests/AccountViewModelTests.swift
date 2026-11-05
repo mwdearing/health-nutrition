@@ -61,6 +61,7 @@ final class FakeAccountService: CommunityAccountServicing, @unchecked Sendable {
     /// When set, `profile()` waits at this gate before it answers.
     var profileGate: CallGate?
     private(set) var appleCalls: [(idToken: String, nonce: String)] = []
+    private(set) var appleAuthorizationCodes: [String?] = []
     private(set) var codeRequests: [String] = []
     private(set) var verifyCalls: [(email: String, code: String)] = []
     private(set) var updates: [(displayName: String?, shareLabels: Bool)] = []
@@ -83,6 +84,11 @@ final class FakeAccountService: CommunityAccountServicing, @unchecked Sendable {
         appleCalls.append((idToken, nonce))
         await appleGate?.pass()
         return try appleResult.get()
+    }
+
+    func signInWithApple(idToken: String, nonce: String, authorizationCode: String?) async throws -> CommunitySession {
+        appleAuthorizationCodes.append(authorizationCode)
+        return try await signInWithApple(idToken: idToken, nonce: nonce)
     }
 
     func requestEmailCode(email: String) async throws {
@@ -189,6 +195,14 @@ final class AccountViewModelTests: XCTestCase {
         await model.load()
         XCTAssertEqual(model.phase, .signedIn)
         XCTAssertEqual(model.email, "person@example.com")
+    }
+
+    func testAppleSignInPassesTheAuthorizationCodeToTheService() async throws {
+        let (model, service, _) = makeModel()
+        await model.signInWithApple(idToken: "test-apple-token", nonce: "test-raw-nonce", authorizationCode: "test-auth-code")
+        XCTAssertEqual(model.phase, .signedIn)
+        XCTAssertEqual(service.appleAuthorizationCodes, ["test-auth-code"])
+        XCTAssertEqual(service.appleCalls.count, 1)
     }
 
     func testAppleSignInSucceedsAndPassesTheTokenAndNonce() async throws {
