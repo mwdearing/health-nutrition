@@ -285,7 +285,7 @@ public final class BodyActivityViewModel: ObservableObject {
     public static let outsideNoteText = "Other apps' entries are included only where Health lets this app read them."
 
     /// The note shown under the other-apps line, whenever that line is shown.
-    public var outsideNote: String? { outsideText == nil ? nil : Self.outsideNoteText }
+    public var outsideNote: String? { nil }
 
     /// "From other apps: 620 kcal, 48 g protein, 16 fl oz water", naming only what other apps logged today.
     public var outsideText: String? {
