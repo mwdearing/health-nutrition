@@ -213,7 +213,9 @@ struct RootView: View {
         // One entry sheet for the whole shell, so Today and the Journal open the same screen: both
         // name an entry into `selectedIntakeID` and one sheet presents over whichever tab is showing.
         // Hanging it on a single tab would leave the other tab's rows dead.
-        .sheet(isPresented: detailSheetPresented) {
+        // Every way out of the entry reloads the screens behind it: Done and Close, and also a swipe down after
+        // Log again or a partial Log on other days, which write entries without going through `onFinished`.
+        .sheet(isPresented: detailSheetPresented, onDismiss: { self.reload() }) {
             NavigationStack {
                 if let intakeID = selectedIntakeID {
                     EntryDetailView(
@@ -221,10 +223,8 @@ struct RootView: View {
                             store: services.journalStore, intakeID: intakeID,
                             preferences: services.displayPreferences),
                         now: { Date() },
-                        onFinished: {
-                            selectedIntakeID = nil
-                            reload()
-                        },
+                        // Closing the sheet runs its `onDismiss`, which reloads.
+                        onFinished: { selectedIntakeID = nil },
                         onSaved: { self.saveNotice = SaveNotice(SaveLabels.entrySaved) },
                         // A re-armed delivery is sent by the next pass, so one is run now; the open entry
                         // reloads its own model when it settles, so it shows what the pass decided.
