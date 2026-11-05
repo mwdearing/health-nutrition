@@ -132,15 +132,20 @@ final class AppStoreScreenshotUITests: XCTestCase {
         dismissKeyboard()
         try choose("Kind", option: "Supplement")
         try choose("Facts are stated", option: "Per serving")
-        let addFact = app.buttons["Add fact"]
-        var factScrolls = 0
-        while !(addFact.exists && addFact.isHittable) && factScrolls < 6 {
+        try addFact(nutrient: "Vitamin D", amount: "20", unit: "mcg")
+        try addFact(nutrient: "Vitamin C", amount: "90", unit: "mg")
+        try addFact(nutrient: "Calcium", amount: "200", unit: "mg")
+        try addFact(nutrient: "Magnesium", amount: "100", unit: "mg")
+        let save = app.buttons["Save product on this device"]
+        var saveScrolls = 0
+        while !(save.exists && save.isHittable) && saveScrolls < 6 {
             app.swipeUp()
-            factScrolls += 1
+            saveScrolls += 1
         }
-        XCTAssertTrue(addFact.exists, "no Add fact button")
-        addFact.tap()
-        debugFail("fact-row", "learning the fact row layout")
+        if !(save.exists && save.isHittable) { debugFail("no-save-product", "no Save product button"); return }
+        save.tap()
+        RunLoop.current.run(until: Date().addingTimeInterval(2))
+        debugFail("after-save-product", "learning what follows saving the product")
     }
 
     func test9_CaptureTheStoreScreens() throws {
@@ -227,6 +232,50 @@ final class AppStoreScreenshotUITests: XCTestCase {
         XCTAssertTrue(element("todayDate").waitForExistence(timeout: 30), "the Today screen did not appear")
     }
 
+    /// Adds one stated fact to the product editor: the new row is the last one, so its menus are the last matches.
+    private func addFact(nutrient: String, amount: String, unit: String) throws {
+        let addFact = app.buttons["Add fact"]
+        var scrolls = 0
+        while !(addFact.exists && addFact.isHittable) && scrolls < 8 {
+            app.swipeUp()
+            scrolls += 1
+        }
+        if !(addFact.exists && addFact.isHittable) { debugFail("no-add-fact-\(nutrient)", "no Add fact button"); return }
+        addFact.tap()
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        try pickInLastRow("Nutrient", option: nutrient)
+        try pickInLastRow("Fact state", option: "Known amount")
+        let amountFields = app.textFields.matching(NSPredicate(format: "placeholderValue == %@", "Amount"))
+        if !pollUntil(timeout: 10, { amountFields.count > 0 }) { debugFail("no-amount-\(nutrient)", "no Amount field for \(nutrient)"); return }
+        let amountField = amountFields.allElementsBoundByIndex.last!
+        var fieldScrolls = 0
+        while !amountField.isHittable && fieldScrolls < 6 {
+            app.swipeUp()
+            fieldScrolls += 1
+        }
+        amountField.tap()
+        if !pollUntil(timeout: 5, { self.app.keyboards.count > 0 }) { debugFail("amount-no-focus-\(nutrient)", "the Amount field did not take focus"); return }
+        app.typeText(amount)
+        dismissKeyboard()
+        try pickInLastRow("Fact unit", option: unit)
+    }
+
+    /// Picks `option` in the menu whose label starts with `title`, taking the last such menu on screen.
+    private func pickInLastRow(_ title: String, option: String) throws {
+        let menus = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", title))
+        if !pollUntil(timeout: 10, { menus.count > 0 }) { debugFail("no-row-menu-\(title)", "no \(title) menu"); return }
+        let menu = menus.allElementsBoundByIndex.last!
+        var scrolls = 0
+        while !menu.isHittable && scrolls < 6 {
+            app.swipeUp()
+            scrolls += 1
+        }
+        menu.tap()
+        let choice = app.buttons[option]
+        if !choice.waitForExistence(timeout: 5) { debugFail("no-row-option-\(title)-\(option)", "no \(option) in the \(title) menu"); return }
+        choice.tap()
+    }
+
     private func openAddHome() throws {
         if app.buttons["Amounts only"].exists { return }
         let add = app.buttons.matching(NSPredicate(format: "label == %@", "Add food, drink, or supplement"))
@@ -306,9 +355,6 @@ final class AppStoreScreenshotUITests: XCTestCase {
         try type(calories, intoFieldStartingWith: "Calories")
         try type(protein, intoFieldStartingWith: "Protein")
         try type(carbs, intoFieldStartingWith: "Carbs")
-        // Fat is a nice-to-have in the shots (Today shows it): when the field cannot be focused the entry is still
-        // logged without it.
-        try type(fat, intoFieldStartingWith: "Fat", required: false)
         try type(name, intoFieldStartingWith: "Name")
         if daysAgo > 0 { try chooseDay(daysAgo: daysAgo) }
 
