@@ -427,6 +427,10 @@ REQUIRED_COLLECTED_TYPES = (
     "NSPrivacyCollectedDataTypeName",
     # The values of a scanned label shared with the community catalog.
     "NSPrivacyCollectedDataTypeOtherUserContent",
+    # Barcodes and search words sent with the signed-in account to the project's server.
+    "NSPrivacyCollectedDataTypeSearchHistory",
+    # The hCaptcha human check on email sign-in; its token travels in the same request as the email.
+    "NSPrivacyCollectedDataTypeProductInteraction",
 )
 APP_FUNCTIONALITY = "NSPrivacyCollectedDataTypePurposeAppFunctionality"
 
