@@ -115,7 +115,7 @@ final class AddIntakeServingTests: XCTestCase {
     func testACommittedServingCountIsStoredAsGrams() throws {
         let component = try savedComponent {
             $0.applyLookedUp(picked(serving: ServingDefinition(quantity: 2, unit: .oz)))
-            $0.servingCount = "3."
+            $0.setServingCount("3.")
             $0.commitServingCount()
         }
         XCTAssertEqual(component.unit, .g)
