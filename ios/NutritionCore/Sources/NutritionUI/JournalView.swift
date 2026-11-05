@@ -128,8 +128,8 @@ public struct JournalView: View {
             }
             // The week card also counts days only Apple Health states, so Health is read for all seven of its days, not
             // just the days on screen.
-            .task(id: model.healthWeekTaskID) {
-                await model.loadWeekHealthTotals(now: now())
+            .task(id: model.healthWeekTaskID(now: now())) {
+                await model.loadRecentHealthTotals(days: 7, now: now())
             }
             // A time-zone change while the app is open reloads the days in the new zone (#648).
             .task {

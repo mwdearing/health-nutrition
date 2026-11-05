@@ -426,6 +426,33 @@ final class JournalWeekSummaryTests: XCTestCase {
             model.weekSummary?.goalLines, ["Protein: average 13 g a day against 60 g (1 day could not be totaled)"])
     }
 
+    /// A Health-only day stated by another nutrient, whose protein query succeeded with no samples, is a known zero for
+    /// protein: it averages in as 0 g, it is not left out.
+    func testAHealthOnlyDayWithNoProteinSamplesAveragesAsZero() throws {
+        let journal = try makeJournalStore()
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        try logProtein(journal, daysBack: 0, 30)
+
+        let model = makeModel(journal, goals: goals)
+        model.outsideIntakeByDay = [dayKey(1): .read(values: ["energy": 500], readKeys: ["energy", "protein"])]
+        model.load(now: weekNow)
+
+        XCTAssertEqual(model.weekSummary?.goalLines, ["Protein: average 15 g a day against 60 g"])
+    }
+
+    /// The partial subtotal of a nutrient some of whose samples could not be read is not a stated intake.
+    func testAPartiallyReadNutrientDoesNotMakeALoggedDay() throws {
+        let journal = try makeJournalStore()
+        try logWater(journal, daysBack: 0)
+
+        let model = makeModel(journal)
+        model.outsideIntakeByDay = [dayKey(1): .read(values: ["protein": 20], readKeys: [])]
+        model.load(now: weekNow)
+
+        XCTAssertEqual(model.weekSummary?.headline, "Nothing logged this week.")
+    }
+
     /// A journal with no day at all shows its empty state, not a week card, even when Health holds intake.
     func testAnEmptyJournalHasNoWeekCardWhateverHealthHolds() throws {
         let model = makeModel(try makeJournalStore())
@@ -449,7 +476,7 @@ final class JournalWeekSummaryTests: XCTestCase {
             return HealthDayRead(.read(values: ["protein": 30], readKeys: ["protein"]))
         }
         model.load(now: weekNow)
-        await model.loadWeekHealthTotals(now: weekNow)
+        await model.loadRecentHealthTotals(days: 7, now: weekNow)
 
         XCTAssertEqual(asked, 7)
         XCTAssertEqual(model.weekSummary?.headline, "Logged 7 of 7 days")
@@ -463,7 +490,7 @@ final class JournalWeekSummaryTests: XCTestCase {
 
         let model = makeModel(journal)
         model.load(now: weekNow)
-        await model.loadWeekHealthTotals(now: weekNow)
+        await model.loadRecentHealthTotals(days: 7, now: weekNow)
 
         XCTAssertEqual(model.weekSummary?.headline, "Logged 1 of 7 days")
     }

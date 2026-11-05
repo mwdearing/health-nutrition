@@ -192,24 +192,28 @@ public final class JournalViewModel: ObservableObject {
         copyFailed = failed
     }
 
-    /// Reads Apple Health for each of the seven days the week card covers, today included, so a day whose intake is only in
-    /// Health counts as logged and its amounts join the goal averages. Each day goes through the one-day read, so a past
-    /// day is read once and kept, today is read again, and a failed or not-connected read leaves the card as it was.
-    public func loadWeekHealthTotals(now: Date) async {
-        guard healthDayReader != nil else { return }
+    /// The yyyy-MM-dd keys of the days Apple Health has read a stated food or drink amount for, for the Insights week.
+    public var healthIntakeDayKeys: Set<String> {
+        Set(outsideIntakeByDay.filter { $0.value.statesIntake }.keys)
+    }
+
+    /// Reads Apple Health for each of the last `days` days ending today, for Insights, which has no Diary rows for a
+    /// day that only Health knows. Past days are read once and kept.
+    public func loadRecentHealthTotals(days: Int, now: Date) async {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = dayZone
-        let startOfToday = calendar.startOfDay(for: now)
-        for back in 0..<Self.weekLength {
-            guard !Task.isCancelled,
-                  let day = calendar.date(byAdding: .day, value: -back, to: startOfToday) else { return }
+        let today = calendar.startOfDay(for: now)
+        for offset in 0..<max(0, days) {
+            guard let day = calendar.date(byAdding: .day, value: -offset, to: today) else { continue }
             await loadHealthTotals(forDayKey: Self.dayKey(day, zone: dayZone), now: now)
         }
     }
 
-    /// The identity of the week's Health read: the Diary's zone and the forget count, so a zone change or forgetting the
-    /// figures starts a fresh read of the week.
-    public var healthWeekTaskID: String { "week|\(dayZone.identifier)|\(healthReadEpoch)" }
+    /// The identity of the week's Health read: the Diary's zone, the forget count and today's date, so a zone change,
+    /// forgetting the figures or the day turning over while the Diary stays open starts a fresh read of the week.
+    public func healthWeekTaskID(now: Date) -> String {
+        "week|\(dayZone.identifier)|\(healthReadEpoch)|\(Self.dayKey(now, zone: dayZone))"
+    }
 
     /// The identity of a day row's Health read: the day and the Diary's zone, so a zone change starts a fresh read for
     /// each day on screen rather than leaving it journal-only until it scrolls away and back.
@@ -934,12 +938,17 @@ public final class JournalViewModel: ObservableObject {
             nutrient: goal.nutrient, total: day.totals?.total(for: goal.nutrient), goal: goal,
             knownSum: day.totals?.knownSum(for: goal.nutrient),
             missingCount: day.totals?.missingCount(for: goal.nutrient) ?? 0)
-        guard case .read(_, let readKeys) = day.outside,
-              readKeys.contains(HealthKitWritePlanner.canonicalKey(for: goal.nutrient))
+        let canonical = HealthKitWritePlanner.canonicalKey(for: goal.nutrient)
+        guard case .read(let values, let readKeys) = day.outside, readKeys.contains(canonical)
         else {
             // Health added nothing here: a day with a journal total reads it as before; a day only Health states, whose
             // query for this nutrient failed, cannot be totaled.
             return day.totals?.total(for: goal.nutrient)?.value
+        }
+        // A day only Health states: its query for this nutrient succeeded, so no sample is a known zero, not an unknown.
+        if day.totals == nil {
+            guard let unit = HealthKitWritePlanner.mapping(for: goal.nutrient)?.unit else { return nil }
+            return .known(values[canonical] ?? 0, unit)
         }
         let combined = HealthIntakeTotals.combine([journalLine], outside: day.outside).first ?? journalLine
         return combined.isPartial ? nil : combined.amount
