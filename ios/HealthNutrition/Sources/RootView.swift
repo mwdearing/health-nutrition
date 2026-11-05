@@ -172,7 +172,6 @@ struct RootView: View {
                     LibraryProductEditorSheet(model: editor.model, sharing: services.library.productSharing) { product, openDetails in
                         services.library.load()
                         if openDetails { self.pendingLibraryDetails = product }
-                        self.saveNotice = SaveNotice(SaveLabels.productSaved)
                         self.libraryEditor = nil
                     }
                 }
