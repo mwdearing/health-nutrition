@@ -215,8 +215,11 @@ final class AppStoreScreenshotUITests: XCTestCase {
         let day = app.buttons[dayName]
         if !day.waitForExistence(timeout: 5) { debugFail("no-day-\(daysAgo)", "no calendar day named \(dayName)"); return }
         day.tap()
-        // A tap outside the calendar closes it.
+        // A tap outside the calendar closes it; the form is touched again only once the calendar is gone, because a
+        // tap that lands while it closes is swallowed.
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.02)).tap()
+        _ = pollUntil(timeout: 10, { !day.exists })
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
     }
 
     /// Keeps a shot and the element tree under debug/, then fails the step.
@@ -373,6 +376,10 @@ final class AppStoreScreenshotUITests: XCTestCase {
         dismissKeyboard()
         XCTAssertTrue(logButton.isEnabled, "Log is disabled after the amounts were typed")
         logButton.tap()
+        // One more tap if the first was swallowed while a popover was closing.
+        if !pollUntil(timeout: 6, { !self.app.navigationBars["Amounts only"].exists }), logButton.exists, logButton.isHittable {
+            logButton.tap()
+        }
         if !pollUntil(timeout: 20, { !self.app.navigationBars["Amounts only"].exists }) {
             debugFail("log-did-not-close-\(name)", "the sheet did not close after Log")
         }
@@ -458,6 +465,8 @@ final class AppStoreScreenshotUITests: XCTestCase {
             .first(where: { $0.exists && $0.isHittable && $0.frame.minY > lowerHalf })
         {
             done.tap()
+        } else if app.keyboards.buttons["return"].exists {
+            app.keyboards.buttons["return"].tap()
         } else {
             app.navigationBars.staticTexts.firstMatch.tap()
         }
