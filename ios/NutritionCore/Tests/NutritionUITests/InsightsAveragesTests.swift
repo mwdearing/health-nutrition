@@ -112,6 +112,17 @@ final class InsightsAveragesTests: XCTestCase {
         XCTAssertEqual(result.lines.map(\.text), ["Protein: at least 30 g a day over 1 logged day"])
     }
 
+    /// A journal total that could not be formed (incomplete coverage, no entry missing) still makes Health's amount a minimum.
+    func testHealthIsAMinimumWhenTheJournalTotalHasIncompleteCoverage() {
+        let total = NutrientTotal(
+            value: .unknown,
+            coverage: Coverage(knownCount: 1, totalCount: 1, hasBelowReportingThreshold: false, hasUnknown: true))
+        let result = make([InsightsAverages.Day(
+            key: "2023-11-15", totals: DailyTotals(totals: ["protein": total]), isLogged: true,
+            outside: .read(values: ["protein": 30], readKeys: ["protein"]))])
+        XCTAssertEqual(result.lines.map(\.text), ["Protein: at least 30 g a day over 1 logged day"])
+    }
+
     /// An amount in another unit than Health's is not converted or added, as on Today: the journal's figure stands.
     func testAJournalAmountInAnotherUnitIsNotAddedToHealths() {
         let total = NutrientTotal(

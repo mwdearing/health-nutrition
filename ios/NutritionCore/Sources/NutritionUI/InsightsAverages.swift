@@ -108,7 +108,10 @@ public struct InsightsAverages: Equatable {
                         value = .known(healthAmount, healthUnit)
                         // Entries that carry no value for the nutrient make Health's amount a minimum; with none, the
                         // journal side is a complete nothing and Health's amount is the day.
-                        if day.totals.missingCount(for: nutrient) > 0 { isPartial = true }
+                        // A total the journal could not form (incompatible units, say) has incomplete coverage though no
+                        // entry is missing a value, so it counts the same.
+                        if day.totals.missingCount(for: nutrient) > 0
+                            || day.totals.total(for: nutrient)?.coverage.hasUnknown == true { isPartial = true }
                     }
                 }
                 guard case .known(let amount, let amountUnit) = value else { continue }
