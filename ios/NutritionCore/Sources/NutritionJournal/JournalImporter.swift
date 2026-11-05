@@ -357,7 +357,8 @@ public enum JournalImporter {
                 switch try medicationsTarget.medicationRestoreReceiptDone(digest) {
                 case .some(let done): medicationsPending = !done
                 case .none:
-                    medicationsPending = try !plannedMedications(plan, in: medicationsTarget).isEmpty
+                    let planned = try plannedMedications(plan, in: medicationsTarget)
+                    medicationsPending = !(planned.medications.isEmpty && planned.doses.isEmpty)
                 }
             }
             if savedMealsWritten && favoritesWritten && !goalsPending && !medicationsPending {
