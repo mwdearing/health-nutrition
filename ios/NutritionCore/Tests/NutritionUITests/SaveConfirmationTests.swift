@@ -22,6 +22,6 @@ final class SaveConfirmationTests: XCTestCase {
     func testProductSavedWordingIsPinned() {
         XCTAssertEqual(SaveLabels.productSaved, "Product saved")
         XCTAssertEqual(SaveLabels.productSaved(afterSharePromiseLost: false), "Product saved")
-        XCTAssertEqual(SaveLabels.productSaved(afterSharePromiseLost: true), "Saved on this device only; sharing is off")
+        XCTAssertEqual(SaveLabels.productSaved(afterSharePromiseLost: true), "Saved on this device only; sharing isn't available right now")
     }
 }
