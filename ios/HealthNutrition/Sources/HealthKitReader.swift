@@ -40,7 +40,7 @@ final class HealthKitReader: BodyActivityReading {
     /// Whether nutrient read access was asked for, by the Activity card's request or by Connect Apple Health in
     /// Settings (which asks for every mapped nutrient type). Outside intake needs only this, not the card's request.
     var hasAskedForNutrientReadAccess: Bool {
-        hasAskedForReadAccess || defaults.bool(forKey: HealthKitConnectKeys.nutritionReadRequested)
+        hasAskedForReadAccess
     }
 
     /// Erase all data returns the card to its opt-in state: the next read waits for the person again.
