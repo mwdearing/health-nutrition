@@ -439,8 +439,17 @@ final class AppStoreScreenshotUITests: XCTestCase {
 
     private func dismissKeyboard() {
         guard app.keyboards.count > 0 else { return }
-        let done = app.buttons["Done"]
-        if done.exists && done.isHittable { done.tap() } else { app.navigationBars.staticTexts.firstMatch.tap() }
+        // The number pads put a Done in the toolbar (more than one element can carry it), so the first one that can
+        // be tapped is used; a title tap is the fallback.
+        // Only a Done in the lower half belongs to the keyboard; the Settings sheet's own Done is at the top.
+        let lowerHalf = app.windows.firstMatch.frame.height * 0.4
+        if let done = app.buttons.matching(NSPredicate(format: "label == %@", "Done")).allElementsBoundByIndex
+            .first(where: { $0.exists && $0.isHittable && $0.frame.minY > lowerHalf })
+        {
+            done.tap()
+        } else {
+            app.navigationBars.staticTexts.firstMatch.tap()
+        }
         _ = pollUntil(timeout: 5, { self.app.keyboards.count == 0 })
     }
 
