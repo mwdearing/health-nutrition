@@ -1087,7 +1087,7 @@ public enum JournalImporter {
     private static func checkTimeZone(_ identifier: String, of intakeID: String) throws {
         guard !identifier.isEmpty, IntakeContextTimestamp.portableZone(identifier: identifier) != nil else {
             throw JournalImportError.corrupt(
-                "\(intakeID) has the time zone \"\(identifier)\", which is not a time zone")
+                "\(intakeID) has the time zone \"\(identifier)\", which is not a time zone name this app can use")
         }
     }
 
