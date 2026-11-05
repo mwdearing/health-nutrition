@@ -130,7 +130,7 @@ public struct TodayView: View {
         .onAppear { model.load(now: now()) }
         // Midnight, a time-zone change or a clock change while the app is open moves Today to the new day.
         .task {
-            await model.runDayChangeReloads({ Self.dayChanges() }, now: now)
+            await model.runDayChangeReloads({ Self.dayChanges().values }, now: now)
         }
     }
 
