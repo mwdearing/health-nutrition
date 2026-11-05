@@ -28,7 +28,15 @@ final class CustomProductMigrationTests: XCTestCase {
         let reopened = try SwiftDataJournalStore(url: path)
         XCTAssertEqual(try reopened.product(snapshotID: "legacy-snapshot"), snapshot)
     }
-    private func writeV6(_ path: URL) throws {
+    func testAProductWhoseNutrientPayloadIsDamagedIsAnErrorNotAnEmptyProduct() throws {
+        let path = try url()
+        try writeV6(path, nutrientsJSON: "{not json")
+        let store = try SwiftDataJournalStore(url: path)
+        XCTAssertThrowsError(try store.product(snapshotID: "legacy-snapshot")) { error in
+            XCTAssertEqual(error as? JournalError, .corruptRecord("product nutrients"))
+        }
+    }
+    private func writeV6(_ path: URL, nutrientsJSON: String = "[{\"id\":\"protein\",\"state\":\"known\",\"valueText\":\"1.25\",\"unitSymbol\":\"g\"}]") throws {
         let schema = Schema(versionedSchema: JournalSchemaV6.self)
         let container = try ModelContainer(for: schema, configurations: ModelConfiguration(schema: schema, url: path, cloudKitDatabase: .none))
         let context = ModelContext(container)
@@ -36,7 +44,7 @@ final class CustomProductMigrationTests: XCTestCase {
         let id = "00000000-0000-4000-8000-000000000001"
         context.insert(JournalSchemaV6.IntakeRecord(intakeID: id, category: "supplement", occurredAt: when, timeZoneIdentifier: "UTC", meal: nil, note: nil, lifecycleRaw: "active", currentRevision: 1))
         context.insert(JournalSchemaV6.RevisionRecord(intakeID: id, number: 1, componentsJSON: "[]", productSnapshotID: "legacy-snapshot", changeReason: "created", createdAt: when, occurredAt: when, timeZoneIdentifier: "UTC"))
-        context.insert(JournalSchemaV6.ProductRecord(snapshotID: "legacy-snapshot", productID: "legacy-product", name: "Synthetic V6", brand: nil, barcode: nil, labelBasis: "per100g", catalogOrigin: "synthetic", catalogVersion: "1", nutrientsJSON: "[{\"id\":\"protein\",\"state\":\"known\",\"valueText\":\"1.25\",\"unitSymbol\":\"g\"}]", kindRaw: "supplement"))
+        context.insert(JournalSchemaV6.ProductRecord(snapshotID: "legacy-snapshot", productID: "legacy-product", name: "Synthetic V6", brand: nil, barcode: nil, labelBasis: "per100g", catalogOrigin: "synthetic", catalogVersion: "1", nutrientsJSON: nutrientsJSON, kindRaw: "supplement"))
         context.insert(JournalSchemaV6.ProjectionRecord(intakeID: id, revision: 1, destinationRaw: "relay", actionRaw: "upsert", stateRaw: "pending", isCurrent: true))
         context.insert(JournalSchemaV6.OutboxRecord(operationID: UUID().uuidString, kindRaw: "upsert", intakeID: id, revision: 1, destinationRaw: "relay", payloadHash: "synthetic"))
         try context.save()

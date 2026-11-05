@@ -1500,6 +1500,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
                 guard let productRow = productRows.first else {
                     throw JournalError.corruptRecord("product")
                 }
+                try Self.requireReadableNutrients(productRow)
                 product = Self.snapshot(from: productRow)
             }
             let number = current + 1
@@ -2541,7 +2542,9 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
         let context = ModelContext(try openContainer())
         let rows = try context.fetch(FetchDescriptor<ProductRecord>(
             predicate: #Predicate<ProductRecord> { $0.snapshotID == snapshotID }))
-        return rows.first.map(Self.snapshot(from:))
+        guard let row = rows.first else { return nil }
+        try Self.requireReadableNutrients(row)
+        return Self.snapshot(from: row)
     }
 
     // MARK: Helpers
@@ -2666,6 +2669,16 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
         encoder.outputFormatting = [.sortedKeys]
         guard let data = try? encoder.encode(stored) else { return "[]" }
         return String(decoding: data, as: UTF8.self)
+    }
+
+    /// Refuses a product whose stored nutrient payload cannot be decoded at all, so a damaged row is an error and
+    /// not a product that states no nutrients. A row with no payload, or with entries that cannot be read, still
+    /// reads as before. Write paths keep reading leniently so a damaged row can still be saved over.
+    static func requireReadableNutrients(_ row: ProductRecord) throws {
+        guard let json = row.nutrientsJSON else { return }
+        guard let data = json.data(using: .utf8),
+            (try? JSONDecoder().decode([StoredNutrient].self, from: data)) != nil
+        else { throw JournalError.corruptRecord("product nutrients") }
     }
 
     /// The printed names stored beside the values, keyed the same way. A payload written before the
