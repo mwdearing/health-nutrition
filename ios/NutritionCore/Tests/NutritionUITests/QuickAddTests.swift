@@ -20,6 +20,24 @@ final class QuickAddTests: XCTestCase {
         QuickAddViewModel(store: store, meal: meal, now: { self.now }, timeZoneIdentifier: { "UTC" })
     }
 
+    func testSavingTwiceOnOneDraftWritesOneEntry() throws {
+        let store = try makeStore()
+        let model = makeModel(store)
+        model.caloriesText = "300"
+        XCTAssertNotNil(model.save())
+        XCTAssertNil(model.save())
+        XCTAssertEqual(try store.activeIntakes().count, 1)
+        XCTAssertTrue(model.hasSaved)
+    }
+
+    func testAFailedQuickAddDoesNotLockTheDraft() throws {
+        let model = makeModel(try makeStore())
+        XCTAssertNil(model.save())
+        XCTAssertFalse(model.hasSaved)
+        model.caloriesText = "300"
+        XCTAssertNotNil(model.save())
+    }
+
     func testFreshQuickAddHasNoTypedInput() throws {
         XCTAssertFalse(makeModel(try makeStore()).hasTypedInput)
     }

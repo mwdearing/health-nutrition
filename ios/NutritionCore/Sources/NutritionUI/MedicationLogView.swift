@@ -185,6 +185,8 @@ private struct LogDoseSheet: View {
     @State private var siteText = ""
     @State private var noteText = ""
     @State private var errorText: String?
+    /// Set before the dose is saved and kept after it succeeds, so a tap during the dismissal saves nothing.
+    @State private var saveGate = OneShotSave()
 
     var body: some View {
         NavigationStack {
@@ -215,11 +217,14 @@ private struct LogDoseSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
+                        guard saveGate.begin() else { return }
                         errorText = model.logDose(
                             medicationID: row.id, amountText: amountText, takenAt: takenAt,
                             siteText: siteText, noteText: noteText)
+                        saveGate.finish(success: errorText == nil)
                         if errorText == nil { dismiss() }
                     }
+                    .disabled(saveGate.isLocked)
                 }
             }
         }

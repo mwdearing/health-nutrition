@@ -507,13 +507,32 @@ final class JournalWeekSummaryTests: XCTestCase {
         XCTAssertEqual(model.weekSummary?.goalLines, ["Protein: average 40 g a day against 60 g"])
     }
 
-    /// A journal with no day at all shows its empty state, not a week card, even when Health holds intake.
-    func testAnEmptyJournalHasNoWeekCardWhateverHealthHolds() throws {
+    /// A journal with no entries at all still has a week card when Apple Health states intake for days of the week, and
+    /// the empty state's wording stops claiming the journal holds nothing next to it.
+    func testAnEmptyJournalWithHealthIntakeShowsTheWeekCard() throws {
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        let model = makeModel(try makeJournalStore(), goals: goals)
+        model.outsideIntakeByDay = [dayKey(1): healthProtein(40), dayKey(2): healthProtein(50)]
+        model.load(now: weekNow)
+
+        XCTAssertEqual(model.weekSummary?.headline, "Logged 2 of 7 days")
+        XCTAssertEqual(model.weekSummary?.goalLines, ["Protein: average 45 g a day against 60 g"])
+        XCTAssertEqual(model.emptyStateTitle, "No entries in this journal yet")
+        XCTAssertEqual(
+            model.emptyStateMessage,
+            "The week above counts days from Apple Health. Everything you log here is listed by day.")
+    }
+
+    /// With Health not connected, or stating no intake, an empty journal shows its empty state alone, as before.
+    func testAnEmptyJournalWithoutHealthIntakeShowsOnlyTheEmptyState() throws {
         let model = makeModel(try makeJournalStore())
-        model.outsideIntakeByDay = [dayKey(1): healthProtein(40)]
+        model.outsideIntakeByDay = [dayKey(1): .read(values: ["water": 500], readKeys: ["water"]), dayKey(2): .notConnected]
         model.load(now: weekNow)
 
         XCTAssertNil(model.weekSummary)
+        XCTAssertEqual(model.emptyStateTitle, "Your journal is empty")
+        XCTAssertEqual(model.emptyStateMessage, "Everything you log is listed here by day.")
     }
 
     /// The week card reads Health for all seven days, not only the days on screen, and rebuilds from it.
