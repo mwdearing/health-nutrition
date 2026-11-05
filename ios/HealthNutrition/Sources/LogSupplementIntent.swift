@@ -62,7 +62,7 @@ enum SupplementShortcut {
         // The distance wraps at midnight: at 00:10 with 23:00 and 08:00 open, 23:00 is 70 minutes away.
         func distance(_ time: ReminderTime) -> Int {
             let apart = abs(time.hour * 60 + time.minute - current)
-            return min(apart, 1440 - apart)
+            return apart
         }
         return times.min { first, second in
             let a = distance(first)

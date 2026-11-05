@@ -156,16 +156,6 @@ public final class ReminderController: ObservableObject {
 
     private func applyTime(erased: Int) async {
         guard preferences.isReminderOn else { return }
-        // Notifications may have been withdrawn since the switch was turned on; say so now, not at the next launch.
-        let permission = await scheduler.permission()
-        guard erased == erasures.count else { return }
-        guard permission == .allowed else {
-            scheduler.cancelDaily()
-            preferences.setReminderOn(false)
-            isOn = false
-            message = Self.withdrawnMessage
-            return
-        }
         do {
             try await scheduler.scheduleDaily(at: preferences.reminderTime)
         } catch {
