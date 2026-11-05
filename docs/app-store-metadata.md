@@ -130,7 +130,7 @@ Privacy: the privacy manifest, the policy and the App Store privacy answers are 
 
 ## Before you submit
 
-- Community catalog and sign-in: checked on 2026-11-04, so the copy stays. The \`testflight\` GitHub environment, which the signed build reads, holds \`SUPABASE_URL\` and \`SUPABASE_ANON_KEY\` (names only; the values were not read). The linked hosted project answers over HTTPS (a read-only request to its REST and Auth endpoints returned 401 "No API key found", which is the Supabase gateway responding), and the host records show the migrations applied through \`20261012000000\`. README.md still says the repository itself does not show a hosted service, because it cannot; this is the evidence. Not checked: that the secret's value is that same project's address.
+- Community catalog and sign-in: checked on 2026-11-04, so the copy stays. The `testflight` GitHub environment, which the signed build reads, holds `SUPABASE_URL` and `SUPABASE_ANON_KEY` (names only; the values were not read). The linked hosted project answers over HTTPS (a read-only request to its REST and Auth endpoints returned 401 "No API key found", which is the Supabase gateway responding), and the host records show the migrations applied through `20261012000000`. README.md still says the repository itself does not show a hosted service, because it cannot; this is the evidence. Not checked: that the secret's value is that same project's address.
 - Confirm the name is free in App Store Connect.
 
 ## Claims boundary
