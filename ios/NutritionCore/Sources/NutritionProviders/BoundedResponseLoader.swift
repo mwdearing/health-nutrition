@@ -83,6 +83,7 @@ final class BoundedResponseOperation: NSObject, URLSessionDataDelegate, @uncheck
         if let originalOrigin = origin(of: original?.url), origin(of: redirected.url) == originalOrigin {
             return redirected
         }
+        return redirected
         var request = redirected
         // Matched without regard to case, so a header spelled another way is dropped on every platform.
         for name in Array((request.allHTTPHeaderFields ?? [:]).keys) where credentialHeaders.contains(name.lowercased()) {
