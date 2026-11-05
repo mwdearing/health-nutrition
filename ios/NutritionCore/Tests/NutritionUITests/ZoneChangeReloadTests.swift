@@ -84,6 +84,31 @@ final class ZoneChangeReloadTests: XCTestCase {
         XCTAssertNotEqual(today.dateSubtitle, subtitleBefore, "the date under the title moved to the next day")
     }
 
+    /// A day change drops the previous day's Health readings and asks the app to read Health again.
+    func testADayChangeClearsHealthReadingsAndAsksForAFreshRead() async throws {
+        let store = try makeStore()
+        let today = TodayViewModel(store: store, timeZoneIdentifier: "UTC")
+        today.activeEnergyKcal = 450
+        today.outsideIntake = .read(values: ["water": 500], readKeys: ["water"])
+        var asked = 0
+        var readingsWhenAsked: (Decimal?, HealthIntakeTotals.Outside)?
+        today.onDayChange = {
+            asked += 1
+            readingsWhenAsked = (today.activeEnergyKcal, today.outsideIntake)
+        }
+        let later = now.addingTimeInterval(86_400)
+        let changes = AsyncStream<Void> { continuation in
+            continuation.yield(())
+            continuation.finish()
+        }
+        await today.runDayChangeReloads({ changes }, now: { later })
+        XCTAssertNil(today.activeEnergyKcal, "yesterday's active energy is dropped")
+        XCTAssertEqual(today.outsideIntake, .notConnected, "yesterday's Health intake is dropped")
+        XCTAssertEqual(asked, 1, "the change asked for a fresh Health read, and the first load did not")
+        XCTAssertNil(readingsWhenAsked?.0)
+        XCTAssertEqual(readingsWhenAsked?.1, .notConnected)
+    }
+
     private final class StartCounter { var count = 0 }
 
     /// #654: a stream that throws is started again, so a later zone change still reloads the Diary.
