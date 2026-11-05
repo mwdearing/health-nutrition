@@ -473,7 +473,7 @@ public final class JournalViewModel: ObservableObject {
                 zone: TimeZone(identifier: journalZoneID()) ?? TimeZone.current,
                 goals: storedGoals, hidden: hiddenGoals, unitSystem: self.preferences.unitSystem,
                 displayNames: printedNames(in: intakesByDay.values.flatMap { $0 }.filter { $0.occurredAt >= weekWindowStart(now: now) && $0.occurredAt <= now }, goals: storedGoals),
-                outsideByDay: outsideIntakeByDay)
+                outsideByDay: [:])
             skippedCount = skipped
             errorMessage = nil
             goalsErrorMessage = goalsReadFailed ? GoalsViewModel.readFailedMessage : nil
