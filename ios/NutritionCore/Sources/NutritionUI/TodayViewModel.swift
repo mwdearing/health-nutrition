@@ -148,6 +148,9 @@ public final class TodayViewModel: ObservableObject {
     public var outsideIntake: HealthIntakeTotals.Outside = .notConnected
     /// Reads Apple Health for one interval, for the Vitamins and minerals Week view. Set by the app; nil until then.
     public var healthDayReader: (@MainActor (Date, Date) async -> HealthDayRead)?
+    /// Called on each change of day, zone or clock after the Health readings above were cleared, so the app can
+    /// read Health again for the new day. Set by the app; nil until then.
+    public var onDayChange: (@MainActor () -> Void)?
     /// Says the calorie goal was raised by activity, and by how much; nil when it was not.
     @Published public private(set) var activityGoalNote: String?
     static let energyKey = "energy"
@@ -263,6 +266,25 @@ public final class TodayViewModel: ObservableObject {
         let tracked = defaultTrackedNutrientsOrGoals(goals: goals, fallback: fallback)
         guard !tracked.contains(DailyTotalsBuilder.waterKey) else { return tracked }
         return tracked + [DailyTotalsBuilder.waterKey]
+    }
+
+    /// Reloads Today on each change of day, time zone or clock while the screen stays open, so its date, rows
+    /// and totals follow the device without a foreground or a write (the Diary does the same for a zone change, #648).
+    /// The changes are injected so a test can send one without a system notification. It reloads once when the
+    /// subscription starts, so a change that landed before it was made is applied.
+    public func runDayChangeReloads<Changes: AsyncSequence>(
+        _ makeChanges: @escaping () -> Changes, now: @escaping () -> Date
+    ) async where Changes.Element == Void {
+        var changes = makeChanges().makeAsyncIterator()
+        load(now: now())
+        while (try? await changes.next()) != nil {
+            // The Health readings are the previous day's until the activity card reads again, so drop them: the
+            // totals are journal-only meanwhile rather than yesterday's, and the hook asks for a fresh read.
+            activeEnergyKcal = nil
+            outsideIntake = .notConnected
+            load(now: now())
+            onDayChange?()
+        }
     }
 
     /// Reloads Today: active intakes whose own-zone day is today's date in the current zone, the Diary's today.
