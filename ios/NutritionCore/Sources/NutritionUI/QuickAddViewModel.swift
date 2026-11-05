@@ -65,6 +65,8 @@ public final class QuickAddViewModel: ObservableObject, Identifiable {
     /// When the amounts were eaten. Nil until the picker is changed, so an untouched entry is dated to the moment of saving.
     @Published public var occurredAt: Date?
     @Published public private(set) var saveError: String?
+    /// True once this draft has been written. A second tap on Log, before the sheet is gone, writes nothing.
+    @Published public private(set) var hasSaved = false
 
     private let store: JournalStore
     private let now: () -> Date
@@ -131,6 +133,7 @@ public final class QuickAddViewModel: ObservableObject, Identifiable {
     /// Writes one entry and returns the token an undo toast needs, or nil when nothing was written.
     @discardableResult
     public func save() -> AddUndoToken? {
+        guard !hasSaved else { return nil }
         saveError = nil
         guard canSave else { return nil }
         var nutrients: [String: NutrientValue] = [:]
@@ -159,6 +162,7 @@ public final class QuickAddViewModel: ObservableObject, Identifiable {
             saveError = "Could not save the entry."
             return nil
         }
+        hasSaved = true
         return AddUndoToken(
             intakeID: intake.id, message: "Added \(entryName), \(Self.summary(of: nutrients))",
             expiresAt: date.addingTimeInterval(10))

@@ -57,8 +57,8 @@ public struct JournalView: View {
                 }
                 if model.isEmpty {
                     EmptyState(
-                        title: "Your journal is empty",
-                        message: "Everything you log is listed here by day.",
+                        title: model.emptyStateTitle,
+                        message: model.emptyStateMessage,
                         systemImage: "book",
                         actionTitle: onAdd == nil ? nil : AddIntakeAction.title,
                         action: onAdd)

@@ -16,7 +16,7 @@ final class CustomProductUnnamedIngredientTests: XCTestCase {
         XCTAssertEqual(model.facts[0].key, "ingredient:")
         XCTAssertEqual(model.unnamedIngredientNote(for: rowID), "Add a name for this ingredient.")
         XCTAssertFalse(model.canSave)
-        XCTAssertThrowsError(try model.save(now: Date()))
+        XCTAssertThrowsError(try model.save(now: Date(), shareAsShown: true))
         XCTAssertTrue(store.commands.isEmpty)
     }
     @MainActor func testWhitespaceOnlyOtherIngredientIsBlockedTheSameWay() throws {
@@ -28,7 +28,7 @@ final class CustomProductUnnamedIngredientTests: XCTestCase {
         model.setIngredientName("   ", for: rowID)
         XCTAssertEqual(model.unnamedIngredientNote(for: rowID), "Add a name for this ingredient.")
         XCTAssertFalse(model.canSave)
-        XCTAssertThrowsError(try model.save(now: Date()))
+        XCTAssertThrowsError(try model.save(now: Date(), shareAsShown: true))
         XCTAssertTrue(store.commands.isEmpty)
     }
     @MainActor func testTypingANameClearsNoteAndAllowsSave() throws {
@@ -43,7 +43,7 @@ final class CustomProductUnnamedIngredientTests: XCTestCase {
         model.setIngredientName("Activity", for: rowID)
         XCTAssertNil(model.unnamedIngredientNote(for: rowID))
         XCTAssertTrue(model.canSave)
-        let saved = try model.save(now: Date(timeIntervalSince1970: 1))
+        let saved = try model.save(now: Date(timeIntervalSince1970: 1), shareAsShown: true)
         XCTAssertEqual(saved.content.facts.map(\.key), ["ingredient:Activity"])
         XCTAssertEqual(store.commands.count, 1)
     }
