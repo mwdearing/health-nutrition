@@ -84,9 +84,14 @@ final class HealthKitReader: BodyActivityReading {
         readings.outsideNutrients = outside.totals
         readings.outsideReadKeys = outside.readKeys
         readings.outsideReadFailed = outside.failed
-        if let latest = await latestWeight(before: now) {
-            readings.latestWeightKg = latest.kilograms
-            readings.latestWeightDate = latest.date
+        switch await latestWeight(before: now) {
+        case .found(let kilograms, let date):
+            readings.latestWeightKg = kilograms
+            readings.latestWeightDate = date
+        case .none:
+            break
+        case .failed:
+            readings.weightReadFailed = true
         }
         readings.latestHeightCm = await latestHeightCentimeters(before: now)
         let weightWindowStart = Calendar.current.date(byAdding: .day, value: -27, to: startOfDay) ?? startOfDay
@@ -190,14 +195,23 @@ final class HealthKitReader: BodyActivityReading {
     }
 
     /// The newest weight sample at or before `date`.
-    private func latestWeight(before date: Date) async -> (kilograms: Decimal, date: Date)? {
+    private enum LatestWeight {
+        case found(kilograms: Decimal, date: Date)
+        case none
+        case failed
+    }
+
+    private func latestWeight(before date: Date) async -> LatestWeight {
         let predicate = HKQuery.predicateForSamples(withStart: nil, end: date, options: [])
         let descriptor = HKSampleQueryDescriptor(
             predicates: [.quantitySample(type: HKQuantityType(.bodyMass), predicate: predicate)],
             sortDescriptors: [SortDescriptor(\.endDate, order: .reverse)],
             limit: 1)
-        guard let sample = try? await descriptor.result(for: healthStore).first else { return nil }
-        return (Decimal(sample.quantity.doubleValue(for: .gramUnit(with: .kilo))), sample.endDate)
+        let samples: [HKQuantitySample]
+        do { samples = try await descriptor.result(for: healthStore) } catch { return .failed }
+        guard let sample = samples.first else { return .none }
+        return .found(
+            kilograms: Decimal(sample.quantity.doubleValue(for: .gramUnit(with: .kilo))), date: sample.endDate)
     }
 
     /// The newest height sample at or before `date`, in centimeters.

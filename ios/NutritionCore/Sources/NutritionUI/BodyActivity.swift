@@ -34,6 +34,8 @@ public struct BodyActivityReadings: Equatable, Sendable {
     public var outsideNutrients: [String: Decimal]
     /// True when reading other apps' entries failed, so the card says so instead of showing nothing.
     public var outsideReadFailed: Bool
+    /// True when Health could not be asked for the weight, so the card says so instead of "no weight yet".
+    public var weightReadFailed: Bool
     /// True only when the app target actually tried to read other apps' entries this time.
     public var outsideRead: Bool
     /// The canonical keys whose Health query succeeded this read. A key here with no value is a known zero.
@@ -43,8 +45,9 @@ public struct BodyActivityReadings: Equatable, Sendable {
         steps: Decimal? = nil, activeEnergyKcal: Decimal? = nil, latestWeightKg: Decimal? = nil,
         latestWeightDate: Date? = nil, weightSamples: [WeightSample] = [],
         outsideNutrients: [String: Decimal] = [:], outsideReadFailed: Bool = false, outsideRead: Bool = false,
-        outsideReadKeys: Set<String> = []
+        outsideReadKeys: Set<String> = [], weightReadFailed: Bool = false
     ) {
+        self.weightReadFailed = weightReadFailed
         self.outsideNutrients = outsideNutrients
         self.outsideReadFailed = outsideReadFailed
         self.outsideRead = outsideRead
@@ -271,6 +274,13 @@ public final class BodyActivityViewModel: ObservableObject {
         readings.latestWeightKg.map { weight($0) }
     }
 
+    /// Shown in place of the weight when Health could not be read for it and no weight is known.
+    public static let weightUnreadableText = "Weight could not be read from Health"
+
+    public var weightUnreadableNotice: String? {
+        readings.weightReadFailed && readings.latestWeightKg == nil ? Self.weightUnreadableText : nil
+    }
+
     /// "From other apps: 620 kcal, 48 g protein, 16 fl oz water", naming only what other apps logged today.
     public var outsideText: String? {
         // A partial failure still shows the values that were read; the failure copy is only for a read with nothing.
@@ -422,6 +432,8 @@ public struct BodyActivityCard: View {
             }
             if let weight = model.weightText {
                 Text("Weight \(weight)")
+            } else if let unreadable = model.weightUnreadableNotice {
+                Text(unreadable).font(.footnote).foregroundStyle(TokenColors.textSecondary)
             }
             if let trend = model.weightTrendText {
                 Text(trend).font(.footnote).foregroundStyle(TokenColors.textSecondary)

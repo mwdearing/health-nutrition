@@ -152,6 +152,29 @@ final class BodyActivityTests: XCTestCase {
         XCTAssertEqual(model.weightText, "80 kg")
     }
 
+    func testAFailedWeightReadSaysSoAndIsNotAnEmptyCard() async {
+        let reader = FakeReader()
+        reader.hasAskedForReadAccess = true
+        reader.readings = BodyActivityReadings(weightReadFailed: true)
+        let model = BodyActivityViewModel(reader: reader, unitSystem: { .usCustomary })
+        await model.load(now: now)
+
+        XCTAssertNil(model.weightText)
+        XCTAssertEqual(model.weightUnreadableNotice, "Weight could not be read from Health")
+        XCTAssertFalse(model.readings.isEmpty)
+    }
+
+    func testAKnownWeightIsNotReplacedByTheUnreadableNotice() async {
+        let reader = FakeReader()
+        reader.hasAskedForReadAccess = true
+        reader.readings = BodyActivityReadings(latestWeightKg: 80, latestWeightDate: now, weightReadFailed: true)
+        let model = BodyActivityViewModel(reader: reader, unitSystem: { .metric })
+        await model.load(now: now)
+
+        XCTAssertEqual(model.weightText, "80 kg")
+        XCTAssertNil(model.weightUnreadableNotice)
+    }
+
     func testForgettingTheRequestClearsWhatWasShown() async {
         let reader = FakeReader()
         reader.hasAskedForReadAccess = true
