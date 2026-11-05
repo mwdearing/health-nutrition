@@ -1359,7 +1359,7 @@ public struct RelayDeliveryWorker: Sendable {
     /// so a long or hostile reply is cut here rather than carried whole.
     static let receiverTextLimit = 200
 
-    /// The receiver's text cut to `receiverTextLimit` characters, or nil when it sent none.
+    /// The receiver's text cut to `receiverTextLimit` Unicode scalars, or nil when it sent none.
     static func cappedReceiverText(_ text: String?) -> String? {
         guard let text else { return nil }
         // Counted in Unicode scalars, not characters: one character can be an endless run of combining marks.
