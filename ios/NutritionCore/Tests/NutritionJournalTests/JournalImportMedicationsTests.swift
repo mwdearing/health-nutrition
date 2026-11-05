@@ -454,10 +454,35 @@ final class JournalImportMedicationsTests: XCTestCase {
         XCTAssertEqual(try store.medications(), [renamed, pen], "ordered by name: the renamed vial comes first")
         XCTAssertEqual(try store.doses(of: vial.id), [], "no dose lands on the renamed medication")
         XCTAssertEqual(try doseIDs(store), [fileDoses[2].id])
-        XCTAssertEqual(summary.medications, 1)
+        XCTAssertEqual(summary.medications, 2, "the vial the stopped run wrote is still counted")
         XCTAssertEqual(summary.medicationDoses, 1)
         XCTAssertNil(try store.medicationRestoreReceiptDone(digest))
         XCTAssertNil(try journal.restoreInProgressDigest())
+    }
+
+    /// A replan after a rename keeps the rows earlier runs wrote in the ledger, so an undo still removes them.
+    func testAnUndoAfterARenamedResumeRemovesWhatTheStoppedRunWrote() throws {
+        let base = try medicationStore()
+        let data = try fullExport()
+        let digest = JournalImporter.fileDigest(data)
+        let journal = try journal()
+        try journal.markRestoreInProgress(fileDigest: digest)
+        try base.recordMedicationRestoreReceipt(digest, planned: MedicationRestoreSet(medications: [vial, pen], doses: fileDoses))
+        XCTAssertTrue(try base.writeRestoredMedication(vial, receipt: digest))
+        XCTAssertTrue(try base.writeRestoredMedication(pen, receipt: digest))
+        let renamed = Medication(id: vial.id, name: "Example other", unit: .mg, scheduleDays: 7)
+        try base.saveMedication(renamed)
+        let store = ScriptedMedicationStore(base: base) { _, _ in throw JournalImportError.corrupt("stopped") }
+        XCTAssertThrowsError(try importFile(data, into: store, journal: journal))
+        XCTAssertEqual(
+            try base.medicationRestoreReceipt(digest), MedicationRestoreSet(doses: [fileDoses[2]]),
+            "only the pen's dose is left to write")
+
+        let written = try base.medicationRestoreWritten(digest)
+        XCTAssertEqual(written, MedicationRestoreSet(medications: [vial, pen]), "the ledger keeps both medications")
+        XCTAssertFalse(JournalImporter.undoMedications(written, in: base, receipt: digest), "the renamed vial is kept")
+
+        XCTAssertEqual(try base.medications(), [renamed], "the pen the stopped run wrote is removed")
     }
 
     /// An undo of a row the person already deleted counts it as undone and does not queue it again, so a retry from the
@@ -632,6 +657,9 @@ private final class ScriptedMedicationStore: MedicationStore, @unchecked Sendabl
     }
     func medicationRestoreReceipt(_ receipt: String) throws -> MedicationRestoreSet? {
         try base.medicationRestoreReceipt(receipt)
+    }
+    func replanMedicationRestoreReceipt(_ receipt: String, planned: MedicationRestoreSet) throws {
+        try base.replanMedicationRestoreReceipt(receipt, planned: planned)
     }
     func removeMedicationRestoreReceipt(_ receipt: String) throws { try base.removeMedicationRestoreReceipt(receipt) }
     func medicationRestoreReceiptDone(_ receipt: String) throws -> Bool? { try base.medicationRestoreReceiptDone(receipt) }

@@ -146,8 +146,9 @@ What a restore writes:
   back on the receipt, so importing the same file again after a partial undo restores it. A receipt the build cannot
   read (a file damaged between two runs) does not stop the file: the next import removes it and plans the rows again
   from the device, add-only by id and name, so a row the stopped run wrote is not written twice. A receipt that still
-  names a dose of a medication renamed on the device since the stop is replanned the same way, so a resume never
-  writes a dose onto a medication of another name. An undo of a row the person already deleted does not queue it
+  names a dose of a medication renamed on the device since the stop has its rows still to write planned again the
+  same way, so a resume never writes a dose onto a medication of another name; the rows earlier runs wrote stay on
+  its ledger, so they are counted and an undo still removes them. An undo of a row the person already deleted does not queue it
   again on the receipt. An undo that cannot read the receipt keeps the flag, and that next import then
   finishes the restore. Erasing the medication log removes any receipt with the rows. The log is exported whether
   or not the Medication log switch is on.

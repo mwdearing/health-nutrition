@@ -1111,9 +1111,10 @@ public enum JournalImporter {
     }
 
     /// The rows the medication receipt still names, with an unreadable receipt removed and read as none, as above. A
-    /// receipt is also removed and read as none when it still names a dose of a medication the device now holds under
-    /// another name than the file's, ignoring case (one renamed between two runs): the rows are then planned again with
-    /// the rule `plannedMedications` keeps, so a resumed run never writes a dose onto a medication of another name.
+    /// receipt that still names a dose of a medication the device now holds under another name than the file's, ignoring
+    /// case (one renamed between two runs), is planned again with the rule `plannedMedications` keeps, so a resumed run
+    /// never writes a dose onto a medication of another name. Only its rows still to write are replaced: the rows
+    /// earlier runs wrote stay in its ledger, so they are still counted and an undo still removes them.
     static func medicationReceipt(
         _ digest: String, plan: JournalRestorePlan, in store: MedicationStore
     ) throws -> MedicationRestoreSet? {
@@ -1132,8 +1133,9 @@ public enum JournalImporter {
             return stored != fileNames[dose.medicationID]
         }
         guard renamed else { return recorded }
-        try store.removeMedicationRestoreReceipt(digest)
-        return nil
+        let replanned = try plannedMedications(plan, in: store)
+        try store.replanMedicationRestoreReceipt(digest, planned: replanned)
+        return replanned
     }
 
     /// Writes the planned rows, medications first and then doses, each with its receipt entry in one save. A row the device

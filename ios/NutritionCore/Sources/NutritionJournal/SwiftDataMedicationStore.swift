@@ -369,6 +369,22 @@ public final class SwiftDataMedicationStore: MedicationStore, JournalErasing, @u
             doses: try payload.doses.map(Self.restoredDose))
     }
 
+    /// Replaces the rows still to write and keeps the written ledger, in one save.
+    public func replanMedicationRestoreReceipt(_ receipt: String, planned: MedicationRestoreSet) throws {
+        writeLock.lock()
+        defer { writeLock.unlock() }
+        let context = ModelContext(try openContainer())
+        guard let row = try Self.receiptRow(context, receipt) else {
+            throw JournalImportError.corrupt("the medication restore receipt is missing")
+        }
+        let payload = try Self.decodeReceipt(row.name)
+        row.name = try Self.encodeReceipt(ReceiptPayload(
+            done: false, medications: planned.medications.map(Self.receiptMedication),
+            doses: planned.doses.map(Self.receiptDose), writtenMedications: payload.writtenMedications,
+            writtenDoses: payload.writtenDoses))
+        try context.save()
+    }
+
     /// Removes the receipt. A receipt that is not stored is not an error.
     public func removeMedicationRestoreReceipt(_ receipt: String) throws {
         writeLock.lock()

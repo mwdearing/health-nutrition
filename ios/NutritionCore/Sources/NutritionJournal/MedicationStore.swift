@@ -47,6 +47,9 @@ public protocol MedicationStore: AnyObject, Sendable {
     func recordMedicationRestoreReceipt(_ receipt: String, planned: MedicationRestoreSet) throws
     /// The rows a restore recorded under this receipt and has not written yet, or nil when it recorded none.
     func medicationRestoreReceipt(_ receipt: String) throws -> MedicationRestoreSet?
+    /// Replaces the rows the receipt still has to write with `planned` and marks it not done, in one save. The rows it
+    /// lists as written stay, so an undo still removes what earlier runs wrote. Refused when no receipt is stored.
+    func replanMedicationRestoreReceipt(_ receipt: String, planned: MedicationRestoreSet) throws
     /// Forgets the receipt once nothing needs it. A receipt that is not there is not an error.
     func removeMedicationRestoreReceipt(_ receipt: String) throws
     /// Whether the restore's rows were all written, or nil when there is no receipt.
@@ -98,6 +101,9 @@ extension MedicationStore {
         throw JournalImportError.corrupt("this medication store keeps no restore receipt")
     }
     public func medicationRestoreReceipt(_ receipt: String) throws -> MedicationRestoreSet? { nil }
+    public func replanMedicationRestoreReceipt(_ receipt: String, planned: MedicationRestoreSet) throws {
+        throw JournalImportError.corrupt("this medication store keeps no restore receipt")
+    }
     public func removeMedicationRestoreReceipt(_ receipt: String) throws {}
     public func medicationRestoreReceiptDone(_ receipt: String) throws -> Bool? { nil }
     public func markMedicationRestoreReceiptDone(_ receipt: String) throws {
