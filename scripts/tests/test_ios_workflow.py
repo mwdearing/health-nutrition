@@ -177,8 +177,32 @@ def test_each_check_in_the_shared_job_has_its_own_deadline() -> None:
     assert sum(deadlines) < cast(int, job["timeout-minutes"])
 
 
+def _pytest_targets(run_text: str) -> set[str]:
+    """Arguments that follow a `pytest` token on a run line; comments and echoed text do not count."""
+    targets: set[str] = set()
+    for line in run_text.splitlines():
+        try:
+            tokens = shlex.split(line, comments=True)
+        except ValueError:
+            continue
+        if "pytest" in tokens:
+            for token in tokens[tokens.index("pytest") + 1 :]:
+                # A step with working-directory: catalog names the repo root as ../.
+                targets.add(token.removeprefix("../"))
+    return targets
+
+
+def test_pytest_targets_ignore_files_only_mentioned() -> None:
+    run = (
+        "echo scripts/tests/test_a.py\n"
+        "# python -m pytest scripts/tests/test_b.py\n"
+        "python -m pytest -q -p no:cacheprovider scripts/tests/test_c.py ../contracts/x/test_d.py\n"
+    )
+    assert _pytest_targets(run) == {"-q", "-p", "no:cacheprovider", "scripts/tests/test_c.py", "contracts/x/test_d.py"}
+
+
 def test_every_python_test_file_is_run_by_a_workflow() -> None:
-    # A test file no workflow names never runs in CI, so a change that breaks it would merge green.
+    # A test file no workflow runs never runs in CI, so a change that breaks it would merge green.
     repo = WORKFLOWS.parents[1]
     run_lines = "\n".join(
         str(step.get("run", ""))
@@ -186,6 +210,7 @@ def test_every_python_test_file_is_run_by_a_workflow() -> None:
         for job in cast("dict[str, dict[str, object]]", yaml.safe_load(workflow.read_text())["jobs"]).values()
         for step in cast("list[dict[str, object]]", job.get("steps", []))
     )
+    targets = _pytest_targets(run_lines)
     tests = sorted([*repo.glob("scripts/tests/test_*.py"), *repo.glob("contracts/**/test_*.py")])
-    orphans = [str(path.relative_to(repo)) for path in tests if path.name not in run_lines]
-    assert not orphans, f"python test files no workflow run: line names: {orphans}"
+    orphans = [rel for rel in (path.relative_to(repo).as_posix() for path in tests) if rel not in targets]
+    assert not orphans, f"python test files no workflow runs with pytest: {orphans}"
