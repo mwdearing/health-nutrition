@@ -18,12 +18,12 @@ final class AppStoreScreenshotUITests: XCTestCase {
         addTeardownBlock { self.app.terminate() }
     }
 
-    func testCaptureTheStoreScreens() throws {
-        let getStarted = app.buttons["Get started"]
-        if getStarted.waitForExistence(timeout: 5) { getStarted.tap() }
-        // Precondition: a fresh install on Today with nothing logged, so the shots show only the seeded entries.
-        XCTAssertTrue(
-            element("todayDate").waitForExistence(timeout: 30), "the Today screen did not appear")
+    // The steps run in name order on one install, so each builds on the data the one before it left. A step that
+    // misses fails only itself; the capture step still saves whatever the app holds.
+
+    func test1_SeedMeals() throws {
+        try startOnToday()
+        // Precondition: a fresh install with nothing logged, so the shots show only the seeded entries.
         XCTAssertFalse(
             app.staticTexts["Breakfast bowl"].exists, "the app already holds the demo entries; use a fresh simulator")
 
@@ -35,6 +35,68 @@ final class AppStoreScreenshotUITests: XCTestCase {
         XCTAssertTrue(cancel.waitForExistence(timeout: 10), "no Cancel on the Add screen")
         cancel.tap()
         try goToToday()
+    }
+
+    /// Sets daily goals through the guided setup: maintain weight, then about, body and activity answers.
+    func test2_SetGoals() throws {
+        try startOnToday()
+        let edit = app.buttons["Edit goals"]
+        var scrolls = 0
+        while !(edit.exists && edit.isHittable) && scrolls < 4 {
+            app.swipeUp()
+            scrolls += 1
+        }
+        XCTAssertTrue(edit.exists && edit.isHittable, "no Edit goals link on Today")
+        edit.tap()
+        let help = app.buttons["Help me set my goals"]
+        XCTAssertTrue(help.waitForExistence(timeout: 15), "no guided goal setup")
+        help.tap()
+
+        try tapChoice("Maintain my weight")
+        try next()
+        try tapChoice("Female")
+        try type("34", intoFieldStartingWith: "Age in years")
+        dismissKeyboard()
+        try next()
+        try type("5", intoFieldStartingWith: "Height in feet")
+        try type("9", intoFieldStartingWith: "Height in inches")
+        try type("158", intoFieldStartingWith: "Weight in pounds")
+        dismissKeyboard()
+        try next()
+        try tapChoice("Moderate exercise 3 to 5 days a week")
+        try next()
+        let save = app.buttons["Save goals"]
+        var saveScrolls = 0
+        while !(save.exists && save.isHittable) && saveScrolls < 4 {
+            app.swipeUp()
+            saveScrolls += 1
+        }
+        XCTAssertTrue(save.exists && save.isHittable, "no Save goals on the results step")
+        save.tap()
+        let done = app.buttons["Done"]
+        XCTAssertTrue(done.waitForExistence(timeout: 15), "Settings did not come back after saving the goals")
+        done.tap()
+        try goToToday()
+    }
+
+    /// Logs water with the quick button on Today.
+    func test3_LogWater() throws {
+        try startOnToday()
+        let water = app.buttons["Add 8 fluid ounces of water"]
+        var scrolls = 0
+        while !(water.exists && water.isHittable) && scrolls < 4 {
+            app.swipeUp()
+            scrolls += 1
+        }
+        XCTAssertTrue(water.exists && water.isHittable, "no quick water button on Today")
+        for _ in 0..<3 {
+            water.tap()
+            RunLoop.current.run(until: Date().addingTimeInterval(1))
+        }
+    }
+
+    func test9_CaptureTheStoreScreens() throws {
+        try startOnToday()
         let hideChecklist = app.buttons["Hide checklist"]
         if hideChecklist.waitForExistence(timeout: 3) { hideChecklist.tap() }
         capture("1-today")
@@ -65,6 +127,31 @@ final class AppStoreScreenshotUITests: XCTestCase {
         add.allElementsBoundByIndex.first(where: { $0.exists && $0.isHittable })?.tap()
         XCTAssertTrue(app.navigationBars["Add"].waitForExistence(timeout: 15), "the Add screen did not open")
         capture("5-add")
+    }
+
+    // MARK: - Steps shared by the tests
+
+    private func startOnToday() throws {
+        let getStarted = app.buttons["Get started"]
+        if getStarted.waitForExistence(timeout: 5) { getStarted.tap() }
+        XCTAssertTrue(element("todayDate").waitForExistence(timeout: 30), "the Today screen did not appear")
+    }
+
+    private func tapChoice(_ title: String) throws {
+        let choice = app.buttons[title]
+        var scrolls = 0
+        while !(choice.exists && choice.isHittable) && scrolls < 4 {
+            app.swipeUp()
+            scrolls += 1
+        }
+        XCTAssertTrue(choice.exists && choice.isHittable, "no choice named \(title)")
+        choice.tap()
+    }
+
+    private func next() throws {
+        let next = app.buttons["Next"]
+        XCTAssertTrue(pollUntil(timeout: 10, { next.exists && next.isHittable && next.isEnabled }), "Next is not available")
+        next.tap()
     }
 
     // MARK: - Seeding
