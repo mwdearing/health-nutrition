@@ -102,6 +102,9 @@ final class ProductSaveConfirmationUITests: XCTestCase {
     /// The Library row whose label contains the fixed product's name. Library rows are not always list cells, so
     /// the lookup falls back to any element containing the name.
     private func productRow(_ app: XCUIApplication) -> XCUIElement {
+        // Library opens on the Favorites segment, where a new product does not appear. Products lists it.
+        let products = app.buttons["Products"]
+        if products.exists { products.tap() }
         let named = NSPredicate(format: "label CONTAINS %@", productName)
         let cell = app.cells.containing(named).firstMatch
         if cell.exists { return cell }
