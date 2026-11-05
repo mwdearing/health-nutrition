@@ -99,15 +99,15 @@ public struct InsightsAverages: Equatable {
                             // An amount in a unit the journal's cannot be converted to is left out; the day reads at least.
                             isPartial = true
                         }
-                    } else if healthAmount == 0 && (day.isLogged || !complete) {
-                        // Health adds nothing and the journal either has entries that state nothing for this nutrient or Health's
-                        // read did not finish: the day stays unknown, as Today leaves it, never a zero minimum.
+                    } else if healthAmount == 0 {
+                        // The journal states nothing for this nutrient and Health adds nothing: the day stays unknown, as
+                        // Today leaves it, and is left out of the average rather than counted as a zero.
                         break
                     } else {
-                        // No entry in the journal is a complete nothing; entries that state nothing make Health's amount
-                        // a minimum.
                         value = .known(healthAmount, healthUnit)
-                        if day.isLogged { isPartial = true }
+                        // Entries that carry no value for the nutrient make Health's amount a minimum; with none, the
+                        // journal side is a complete nothing and Health's amount is the day.
+                        if day.totals.missingCount(for: nutrient) > 0 { isPartial = true }
                     }
                 }
                 if case .unknown = value { continue }

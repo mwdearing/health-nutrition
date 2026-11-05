@@ -37,13 +37,22 @@ final class InsightsAveragesTests: XCTestCase {
         XCTAssertEqual(result.lines.map(\.text), ["Protein: average 60 g a day over 1 logged day"])
     }
 
-    /// A day only Health knows counts, and a nutrient Health read with no samples is a known zero for it.
-    func testAHealthOnlyDayCountsAndAKnownZeroIsAverageIn() {
+    /// A day only Health knows counts for the nutrients Health states, and a nutrient it read with no samples adds
+    /// nothing: that day is left out of the nutrient's average, never counted as a zero.
+    func testAHealthOnlyDayWithAKnownZeroIsLeftOutOfThatNutrient() {
         let result = make([
             day("2023-11-15", protein: 60),
             healthDay("2023-11-14", values: ["energy": 500], readKeys: ["energy", "protein"]),
         ])
-        XCTAssertEqual(result.lines.map(\.text), ["Protein: average 30 g a day over 2 logged days"])
+        XCTAssertEqual(result.lines.map(\.text), ["Protein: average 60 g a day over 1 logged day"])
+    }
+
+    /// A logged day whose entries all lack a protein value keeps Health's amount a minimum; with none missing it is exact.
+    func testHealthIsExactWhenNoEntryIsMissingAValue() {
+        let result = make([
+            healthDay("2023-11-15", values: ["protein": 30], readKeys: ["protein"], journalProtein: nil, isLogged: true)
+        ])
+        XCTAssertEqual(result.lines.map(\.text), ["Protein: average 30 g a day over 1 logged day"])
     }
 
     func testAHealthOnlyDayWithAProteinAmountIsAveragedWithTheJournalDay() {
