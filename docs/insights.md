@@ -11,6 +11,9 @@ Reached from the **Trends** tab. It reads the Diary, and Apple Health where it i
   ending today, with how many days that was. A fully known day counts as it is. A partly logged day counts with
   the sum of its known entries, so when any such day is included the line reads "at least" (a minimum, #510).
   A day with nothing known for a nutrient is left out of that nutrient's count and is never counted as 0.
+  Where Apple Health is connected, each day's Health amounts are added to the Diary's as Today adds them: a
+  completed query is a known amount (a known zero with no samples), a query that did not run leaves the day a
+  minimum, and a day only Health knows about counts (water alone does not) (#1268).
   Absent when no day in the window has a known amount for any of them.
 - **When the Diary cannot be read** it says so instead of showing an empty week, and entries the Diary
   could not read are counted in a notice and not included.

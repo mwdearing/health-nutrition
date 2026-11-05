@@ -22,6 +22,55 @@ final class InsightsAveragesTests: XCTestCase {
         InsightsAverages.make(days: days, nutrients: ["protein"], now: now, zone: utc)
     }
 
+    private func healthDay(
+        _ key: String, values: [String: Decimal], readKeys: Set<String>, journalProtein: Decimal? = nil,
+        isLogged: Bool = false
+    ) -> InsightsAverages.Day {
+        let base = day(key, protein: journalProtein, isLogged: isLogged)
+        return InsightsAverages.Day(
+            key: key, totals: base.totals, isLogged: isLogged, outside: .read(values: values, readKeys: readKeys))
+    }
+
+    /// Health's amount is added to the journal's for the same day, as Today adds it (#1268).
+    func testHealthAmountsAreAddedToTheJournalsForTheSameDay() {
+        let result = make([healthDay("2023-11-15", values: ["protein": 20], readKeys: ["protein"], journalProtein: 40, isLogged: true)])
+        XCTAssertEqual(result.lines.map(\.text), ["Protein: average 60 g a day over 1 logged day"])
+    }
+
+    /// A day only Health knows counts, and a nutrient Health read with no samples is a known zero for it.
+    func testAHealthOnlyDayCountsAndAKnownZeroIsAverageIn() {
+        let result = make([
+            day("2023-11-15", protein: 60),
+            healthDay("2023-11-14", values: ["energy": 500], readKeys: ["energy", "protein"]),
+        ])
+        XCTAssertEqual(result.lines.map(\.text), ["Protein: average 30 g a day over 2 logged days"])
+    }
+
+    func testAHealthOnlyDayWithAProteinAmountIsAveragedWithTheJournalDay() {
+        let result = make([
+            day("2023-11-15", protein: 50),
+            healthDay("2023-11-14", values: ["protein": 30], readKeys: ["protein"]),
+        ])
+        XCTAssertEqual(result.lines.map(\.text), ["Protein: average 40 g a day over 2 logged days"])
+    }
+
+    /// A Health query that did not run leaves the day's figure a minimum, never a guessed total.
+    func testAnUnreadHealthNutrientMakesTheDayAMinimum() {
+        let result = make([
+            healthDay("2023-11-15", values: ["energy": 500], readKeys: ["energy"], journalProtein: 40, isLogged: true)
+        ])
+        XCTAssertEqual(result.lines.map(\.text), ["Protein: at least 40 g a day over 1 logged day"])
+    }
+
+    /// Water alone does not make a Health-only day a logged day.
+    func testAWaterOnlyHealthDayIsLeftOut() {
+        let result = make([
+            day("2023-11-15", protein: 60),
+            healthDay("2023-11-14", values: ["water": 500], readKeys: ["water", "protein"]),
+        ])
+        XCTAssertEqual(result.lines.map(\.text), ["Protein: average 60 g a day over 1 logged day"])
+    }
+
     func testAveragesOnlyTheKnownDaysInTheWindowAndSaysHowManyThereWere() {
         let result = make([
             day("2023-11-15", protein: 60), day("2023-11-14", protein: 40), day("2023-11-13", protein: nil),
