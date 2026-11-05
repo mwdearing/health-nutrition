@@ -45,9 +45,12 @@ public struct NutrientDayTally: Equatable, Sendable {
     /// (international units for vitamins A, D and E).
     public var missing = 0
 
-    public init(fromFood: Decimal = 0, fromSupplements: Decimal = 0, known: Int = 0, missing: Int = 0) {
+    public init(
+        fromFood: Decimal = 0, fromSupplements: Decimal = 0, fromHealth: Decimal = 0, known: Int = 0, missing: Int = 0
+    ) {
         self.fromFood = fromFood
         self.fromSupplements = fromSupplements
+        self.fromHealth = fromHealth
         self.known = known
         self.missing = missing
     }
