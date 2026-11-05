@@ -306,6 +306,9 @@ final class AppStoreScreenshotUITests: XCTestCase {
         try type(calories, intoFieldStartingWith: "Calories")
         try type(protein, intoFieldStartingWith: "Protein")
         try type(carbs, intoFieldStartingWith: "Carbs")
+        // Fat is a nice-to-have in the shots (Today shows it): when the field cannot be focused the entry is still
+        // logged without it.
+        try type(fat, intoFieldStartingWith: "Fat", required: false)
         try type(name, intoFieldStartingWith: "Name")
         if daysAgo > 0 { try chooseDay(daysAgo: daysAgo) }
 
@@ -320,7 +323,7 @@ final class AppStoreScreenshotUITests: XCTestCase {
             app.buttons["Amounts only"].waitForExistence(timeout: 20), "the Add screen did not come back after Log")
     }
 
-    private func type(_ text: String, intoFieldStartingWith prefix: String) throws {
+    private func type(_ text: String, intoFieldStartingWith prefix: String, required: Bool = true) throws {
         // Some fields carry only a placeholder (the product editor's), so the placeholder is matched too.
         let field = app.textFields.matching(NSPredicate(
             format: "label BEGINSWITH %@ OR identifier BEGINSWITH %@ OR placeholderValue BEGINSWITH %@", prefix, prefix, prefix))
@@ -340,7 +343,10 @@ final class AppStoreScreenshotUITests: XCTestCase {
             app.swipeUp()
             scrolls += 1
         }
-        if !field.waitForExistence(timeout: 10) { debugFail("no-field-\(prefix)", "no field named \(prefix)"); return }
+        if !field.waitForExistence(timeout: 10) {
+            if required { debugFail("no-field-\(prefix)", "no field named \(prefix)") }
+            return
+        }
         // A tap that lands while the sheet is still sliding up is lost, so it is repeated while no keyboard shows.
         var attempts = 0
         repeat {
@@ -348,6 +354,7 @@ final class AppStoreScreenshotUITests: XCTestCase {
             attempts += 1
         } while !pollUntil(timeout: 3, { self.app.keyboards.count > 0 }) && attempts < 4
         if !pollUntil(timeout: 10, { self.app.keyboards.count > 0 }) {
+            if !required { return }
             capture("debug-\(prefix)-no-focus")
             let tree = XCTAttachment(string: app.debugDescription)
             tree.lifetime = .keepAlways
