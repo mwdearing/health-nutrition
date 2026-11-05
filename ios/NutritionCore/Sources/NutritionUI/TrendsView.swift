@@ -24,7 +24,8 @@ public struct InsightsHost: View {
             },
             days: journal.sections.map { InsightsAverages.Day(
                     key: $0.id, totals: $0.totals, isLogged: JournalViewModel.hasFoodEntries($0.rows)) },
-            averageNutrients: Self.averagedNutrients, now: now(), zone: zone())
+            averageNutrients: Self.averagedNutrients, now: now(), zone: zone(),
+            healthIntakeDayKeys: journal.healthIntakeDayKeys)
     }
 
     /// The energy and the three macros: the figures the Today ring and columns show.
@@ -50,6 +51,8 @@ public struct InsightsHost: View {
             }
         }
         .onAppear { journal.load(now: now()) }
+        // Health knows days the Diary has no row for, so the week reads them too (#1267).
+        .task { await journal.loadRecentHealthTotals(days: InsightsWeek.length, now: now()) }
     }
 }
 

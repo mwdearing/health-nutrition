@@ -42,6 +42,26 @@ final class DiaryHealthTotalsTests: XCTestCase {
         return (model, key)
     }
 
+    /// Insights counts a day Health states intake for, even though the Diary has no row for it (#1267).
+    func testRecentHealthReadsMarkOnlyDaysWithAStatedIntake() async throws {
+        let (model, _) = try waterOnlyDay()
+        let zone = TimeZone(identifier: "UTC")!
+        let yesterday = JournalViewModel.dayKey(now.addingTimeInterval(-86_400), zone: zone)
+        let twoDaysAgo = JournalViewModel.dayKey(now.addingTimeInterval(-2 * 86_400), zone: zone)
+        model.healthDayReader = { start, _ in
+            if JournalViewModel.dayKey(start, zone: zone) == yesterday {
+                return HealthDayRead(.read(values: ["energy": 700], readKeys: ["energy"]))
+            }
+            if JournalViewModel.dayKey(start, zone: zone) == twoDaysAgo {
+                return HealthDayRead(.read(values: ["energy": 0, "water": 500], readKeys: ["energy", "water"]))
+            }
+            return HealthDayRead(.notConnected)
+        }
+        model.load(now: now)
+        await model.loadRecentHealthTotals(days: 7, now: now)
+        XCTAssertEqual(model.healthIntakeDayKeys, [yesterday], "water alone, a zero and not connected do not mark a day")
+    }
+
     /// Energy another app logged that day shows in the day header.
     func testTheDayHeaderEnergyIncludesHealthEnergyFromOtherApps() throws {
         let (model, key) = try waterOnlyDay()
