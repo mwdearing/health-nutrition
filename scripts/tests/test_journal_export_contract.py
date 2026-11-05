@@ -12,6 +12,7 @@ import json
 import re
 from pathlib import Path
 
+import jsonschema
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -30,8 +31,8 @@ def _versions() -> list[int]:
 
 
 def test_every_version_has_a_schema_and_an_example() -> None:
-    match = re.search(r"currentSchemaVersion\s*=\s*(\d+)", SOURCE.read_text())
-    assert match is not None
+    match = re.search(r"currentSchemaVersion\s*(?::\s*\w+)?\s*=\s*(\d+)", SOURCE.read_text())
+    assert match is not None, f"currentSchemaVersion not found in {SOURCE}"
     assert _versions() == list(range(1, int(match.group(1)) + 1))
     for version in _versions():
         assert (CANONICAL / f"example.v{version}.json").is_file(), f"example.v{version}.json is missing"
@@ -48,7 +49,6 @@ def test_bundled_copies_match_the_canonical_files() -> None:
 
 @pytest.mark.parametrize("version", _versions())
 def test_example_validates_against_its_schema(version: int) -> None:
-    jsonschema = pytest.importorskip("jsonschema")
     schema = json.loads((CANONICAL / f"v{version}.schema.json").read_text())
     example_path = CANONICAL / f"example.v{version}.json"
     assert example_path.is_file(), f"example.v{version}.json is missing"
