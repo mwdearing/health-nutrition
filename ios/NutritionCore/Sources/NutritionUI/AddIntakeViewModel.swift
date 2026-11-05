@@ -1077,7 +1077,13 @@ public final class AddIntakeViewModel: ObservableObject {
     /// mass or the values are not per 100 g; per-serving values are not scaled here.
     public var amountPreview: AmountPreview? {
         if let basis = lookupBasis ?? lookedUp?.basis {
-            return AmountPreview.make(nutrients: prefilledNutrients, basis: basis, amountText: amountText, unit: unit)
+            var exact: (amount: Decimal, unit: MeasureUnit)?
+            if let backing = prefillBacking, let typed = AmountParser.parseTyped(amountText),
+               backing.shownAmount == typed, backing.shownUnit == unit {
+                exact = (backing.storedAmount, backing.storedUnit)
+            }
+            return AmountPreview.make(
+                nutrients: prefilledNutrients, basis: basis, amountText: amountText, unit: unit, exact: exact)
         }
         guard let labelBasis = capturedLabelBasis else { return nil }
         return capturedPreview(labelBasis: labelBasis)

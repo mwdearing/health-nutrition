@@ -162,6 +162,23 @@ final class AddIntakeServingTests: XCTestCase {
         XCTAssertEqual(AmountPreview.rowText(Decimal(string: "12.3456789")!, unit: "g"), "12.3 g")
     }
 
+    func testTinyPreviewFiguresReadAsABoundNotZero() {
+        XCTAssertEqual(AmountPreview.rowText(Decimal(string: "0.4")!, unit: ""), "< 1")
+        XCTAssertEqual(AmountPreview.rowText(Decimal(string: "0.004")!, unit: "g"), "< 0.01 g")
+        XCTAssertEqual(AmountPreview.rowText(0, unit: "g"), "0 g")
+    }
+
+    /// A 1 g serving opens as "0.0353" oz; the preview still scales the exact gram, not the rounded ounces.
+    func testPreviewScalesTheExactServingNotTheRoundedField() throws {
+        let model = try makeModel()
+        model.applyLookedUp(picked(serving: ServingDefinition(quantity: 1, unit: .g)))
+        XCTAssertEqual(model.amountText, "0.0353")
+        XCTAssertEqual(model.amountPreview?.grams, Decimal(1))
+        XCTAssertEqual(model.amountPreview?.kcal, Decimal(2))
+        model.amountText = "0.0353"
+        XCTAssertNotEqual(model.amountPreview?.grams, Decimal(1), "a typed figure is scaled as typed")
+    }
+
     func testServingLabelRoundsAConvertedQuantity() {
         let quotient = Decimal(30) / Decimal(string: "28.349523125")!
         XCTAssertEqual(ServingDefinition(quantity: quotient, unit: .oz, text: nil).label, "1.06 oz")
