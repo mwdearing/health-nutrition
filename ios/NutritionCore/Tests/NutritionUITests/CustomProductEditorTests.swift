@@ -114,6 +114,7 @@ final class CustomProductEditorTests: XCTestCase {
         XCTAssertNotNil(store.commands.first?.publication)
         XCTAssertEqual(store.operations.count, 1)
         XCTAssertNil(shared.errorMessage)
+        XCTAssertFalse(shared.savedLocallyAfterSharePromise)
 
         let lost = CustomProductEditorViewModel(store: store, sharing: coordinator)
         lost.name = "Synthetic eligibility lost"
@@ -122,7 +123,14 @@ final class CustomProductEditorTests: XCTestCase {
         _ = try lost.save(now: Date(), shareAsShown: true)
         XCTAssertNil(store.commands.last?.publication)
         XCTAssertEqual(store.operations.count, 1, "no new upload")
-        XCTAssertEqual(lost.errorMessage, "Saved on this device only, because sharing is off.")
+        XCTAssertTrue(lost.savedLocallyAfterSharePromise)
+        XCTAssertNil(lost.errorMessage)
+
+        // A screen that never promised a share is not a fallback, even without eligibility.
+        let local = CustomProductEditorViewModel(store: store, sharing: coordinator)
+        local.name = "Synthetic local only"
+        _ = try local.save(now: Date(), shareAsShown: false)
+        XCTAssertFalse(local.savedLocallyAfterSharePromise)
     }
     @MainActor func testNewSaveReadsCurrentAccountAndRejectsObsoleteAdmissionOrStore() async throws {
         let store = ProductEditorStorePort(), service = ProductSearchServicePort()

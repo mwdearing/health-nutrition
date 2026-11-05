@@ -173,7 +173,7 @@ struct RootView: View {
                     LibraryProductEditorSheet(model: editor.model, sharing: services.library.productSharing) { product, openDetails in
                         services.library.load()
                         if openDetails { self.pendingLibraryDetails = product }
-                        self.saveNotice = SaveNotice(SaveLabels.productSaved)
+                        self.saveNotice = SaveNotice(SaveLabels.productSaved(afterSharePromiseLost: editor.model.savedLocallyAfterSharePromise))
                         self.libraryEditor = nil
                     }
                 }
@@ -570,7 +570,7 @@ struct RootView: View {
         case .productEditor(let editor):
             CustomProductEditorView(model: editor.model, sharing: services.library.productSharing) { product, openDetails in
                 services.library.load()
-                self.confirmInAddCover(SaveLabels.productSaved)
+                self.confirmInAddCover(SaveLabels.productSaved(afterSharePromiseLost: editor.model.savedLocallyAfterSharePromise))
                 // Save leaves the editor: it is the top of the Add path, so Save never stays on it.
                 if case .productEditor(let current) = self.addNavigation.path.last, current.model === editor.model {
                     self.addNavigation.path.removeLast()

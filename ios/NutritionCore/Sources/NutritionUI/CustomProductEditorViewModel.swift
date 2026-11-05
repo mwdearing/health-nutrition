@@ -156,6 +156,10 @@ public struct NutrientKeyChoice: Identifiable, Equatable {
         return (head + rows).joined(separator: "\u{1F}")
     }
     @Published public var errorMessage: String?
+    /// Set by a successful save when the screen had promised a share that eligibility no longer allowed, so the
+    /// product was saved on this device alone. The editor is dismissed on save, so the caller reads this to word
+    /// its confirmation; it is not shown inside the editor.
+    public private(set) var savedLocallyAfterSharePromise = false
     @Published public private(set) var revision: CustomProductRevision?
     private let store: any CustomProductStore
     private let sharing: ProductShareCoordinator?
@@ -213,7 +217,7 @@ public struct NutrientKeyChoice: Identifiable, Equatable {
     }
     /// `shareAsShown` is the scope the person saw on the button when they tapped it. Only a screen that said it
     /// shares can queue an upload, and only while eligibility still allows it; otherwise the product is saved on
-    /// this device alone, with a note when the screen had promised a share.
+    /// this device alone, and `savedLocallyAfterSharePromise` records when the screen had promised a share.
     @discardableResult public func save(now: Date, shareAsShown: Bool) throws -> CustomProductRevision {
         // Refused before validation: the unnamed row already shows its note.
         guard canSave else { throw CustomProductFieldError(field: "ingredient", code: .required) }
@@ -234,8 +238,9 @@ public struct NutrientKeyChoice: Identifiable, Equatable {
                 Task { await sharing?.runDueOperations(now: now) }
             }
             revision = saved
-            // The screen promised a share that is no longer allowed: say what happened instead.
-            errorMessage = promisedShare && publication == nil ? "Saved on this device only, because sharing is off." : nil
+            // The screen promised a share that is no longer allowed: the caller's confirmation says what happened.
+            savedLocallyAfterSharePromise = promisedShare && publication == nil
+            errorMessage = nil
             // What is on screen is now what was saved, so leaving does not ask to discard it.
             shownWith = fingerprint
             return saved
