@@ -68,15 +68,18 @@ public struct InsightsAverages: Equatable {
             var partialDays = 0
             var unit: MeasureUnit?
             for day in inWindow {
+                // A day with no food or drink entry contributes only Health's side: its water and supplement totals are not
+                // intake the average counts (#510).
+                let journal = day.isLogged ? day.totals : DailyTotals(totals: [:])
                 // A fully known day counts as it is. A partly logged day counts with the sum of its known entries,
                 // which is a minimum (#510). A day with nothing known for this nutrient is left out, never counted as
                 // 0.
                 var value: NutrientValue
                 var isPartial: Bool
-                if let total = day.totals.total(for: nutrient), case .known = total.value {
+                if let total = journal.total(for: nutrient), case .known = total.value {
                     value = total.value
                     isPartial = false
-                } else if let sum = day.totals.knownSum(for: nutrient) {
+                } else if let sum = journal.knownSum(for: nutrient) {
                     value = sum
                     isPartial = true
                 } else {
@@ -110,8 +113,8 @@ public struct InsightsAverages: Equatable {
                         // journal side is a complete nothing and Health's amount is the day.
                         // A total the journal could not form (incompatible units, say) has incomplete coverage though no
                         // entry is missing a value, so it counts the same.
-                        if day.totals.missingCount(for: nutrient) > 0
-                            || day.totals.total(for: nutrient)?.coverage.hasUnknown == true { isPartial = true }
+                        if journal.missingCount(for: nutrient) > 0
+                            || journal.total(for: nutrient)?.coverage.hasUnknown == true { isPartial = true }
                     }
                 }
                 guard case .known(let amount, let amountUnit) = value else { continue }

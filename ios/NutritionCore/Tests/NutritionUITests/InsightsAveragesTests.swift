@@ -125,6 +125,17 @@ final class InsightsAveragesTests: XCTestCase {
         XCTAssertEqual(result.lines.map(\.text), ["Protein: at least 30 g a day over 1 logged day"])
     }
 
+    /// A day with only water or supplements takes Health's side alone; its journal totals are not counted.
+    func testANonFoodJournalDayUsesOnlyHealthsSide() {
+        let total = NutrientTotal(
+            value: .known(10, .g),
+            coverage: Coverage(knownCount: 1, totalCount: 1, hasBelowReportingThreshold: false, hasUnknown: false))
+        let result = make([InsightsAverages.Day(
+            key: "2023-11-15", totals: DailyTotals(totals: ["protein": total]), isLogged: false,
+            outside: .read(values: ["energy": 500, "protein": 30], readKeys: ["energy", "protein"]))])
+        XCTAssertEqual(result.lines.map(\.text), ["Protein: average 30 g a day over 1 logged day"])
+    }
+
     /// An amount in another unit than Health's is not converted or added, as on Today: the journal's figure stands.
     func testAJournalAmountInAnotherUnitIsNotAddedToHealths() {
         let total = NutrientTotal(
