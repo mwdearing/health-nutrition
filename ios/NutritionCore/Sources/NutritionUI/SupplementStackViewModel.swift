@@ -282,7 +282,8 @@ public final class SupplementStackViewModel: ObservableObject {
     private func upperLimitRows(now: Date, intakes: [Intake]) -> (rows: [NutrientGapRow], hasGroup: Bool, failed: Bool) {
         guard let group = referencePreferences?.referenceGroup else { return ([], false, false) }
         do {
-            let day = try NutrientGapsViewModel.tallies(intakes: intakes, store: store, lookup: lookup, now: now)
+            let day = try NutrientGapsViewModel.tallies(
+                intakes: intakes, store: store, lookup: lookup, now: now, zoneID: zoneID())
             // Today's Apple Health totals count as they do on the vitamins and minerals Day span (#1292).
             let tallies = NutrientGapsViewModel.addingHealth(day.tallies, outside: healthToday())
             let rows = NutrientGapsViewModel.nutrients.map { nutrient in

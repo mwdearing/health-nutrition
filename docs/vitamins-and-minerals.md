@@ -30,8 +30,8 @@ there: the row reads "At least" and "Below the RDA so far".
 Each average is compared with the RDA or AI, so "Below the RDA" on the week means the daily average is
 below it. An upper limit is a daily limit, so it is checked day by day rather than against the average: a
 week is "Above the upper limit" when any logged day was certainly above it, and the row says on how many
-("Above the upper limit on 1 of 3 logged days."). Each entry's day is read in its own time zone, as on
-Today, and entries dated after today are left out.
+("Above the upper limit on 1 of 3 logged days."). Each entry's date is read in its own time zone and counted
+back from today's date in the current zone, as on Today, and entries dated after today are left out.
 
 ## Comparing with a group
 
@@ -49,7 +49,7 @@ Supplements, describing populations rather than the person, and not covering any
 ## How the day is added up
 
 Each of today's entries is summed on its own with `DailyTotalsBuilder`, so it contributes exactly what Today counts for it,
-and supplements are summed apart from food. The day is each entry's own local day, as on Today. An entry whose stored time
+and supplements are summed apart from food. The day is each entry's own-zone date, compared with today's date in the current zone, as on Today and the Diary. An entry whose stored time
 zone is not a valid one cannot be placed on a day: it is left out, and the screen says so ("1 entry has a time zone the
 app can't read and is left out, so these figures may be low.").
 

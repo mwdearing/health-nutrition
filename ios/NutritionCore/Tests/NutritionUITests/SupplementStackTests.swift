@@ -947,14 +947,14 @@ final class SupplementStackTests: XCTestCase {
 
     private func makeLimitModel(
         store: JournalStore, favorites: FavoritesStore, schedules: SupplementStackStoring,
-        group: ReferenceGroup?,
+        group: ReferenceGroup?, zone: String = "UTC",
         healthToday: @escaping () -> HealthIntakeTotals.Outside = { .notConnected }
     ) -> (SupplementStackViewModel, InMemoryDisplayPreferences) {
         let preferences = InMemoryDisplayPreferences()
         preferences.setReferenceGroup(group)
         let model = SupplementStackViewModel(
             store: store, favorites: favorites, schedules: schedules, lookup: SnapshotNutrientFacts(),
-            referencePreferences: preferences, timeZoneIdentifier: "UTC", healthToday: healthToday)
+            referencePreferences: preferences, timeZoneIdentifier: zone, healthToday: healthToday)
         return (model, preferences)
     }
 
@@ -1046,9 +1046,31 @@ final class SupplementStackTests: XCTestCase {
 
         XCTAssertEqual(model.limitRows.map(\.nutrient), ["zinc"])
         let gaps = NutrientGapsViewModel(
-            store: store, lookup: SnapshotNutrientFacts(), preferences: preferences, healthToday: { health })
+            store: store, lookup: SnapshotNutrientFacts(), preferences: preferences, healthToday: { health },
+            timeZoneIdentifier: "UTC")
         gaps.load(now: now)
         XCTAssertEqual(model.limitRows, gaps.rows.filter { $0.status == .aboveUpperLimit })
+    }
+
+    /// #1293: an entry logged in Tokyo, read after a flight to New York where it is still the same date, is counted
+    /// toward the limit, as Taken counts it and as Today and the Diary list it.
+    func testTheLimitCheckCountsTheEntriesUnderTodayInTheCurrentZone() throws {
+        let store = try makeStore()
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        let loggedInTokyo = Date(timeIntervalSince1970: 1_793_836_800)  // 2026-11-05 09:00 Tokyo
+        let nowInNewYork = Date(timeIntervalSince1970: 1_793_926_800)  // 2026-11-05 20:00 New York
+        let magnesium = labelled(
+            "s-magnesium-400", name: "Example magnesium", kind: .supplement, nutrients: ["magnesium": .known(400, .mg)])
+        try log(store, at: loggedInTokyo, zone: "Asia/Tokyo", amount: 100, unit: .g, product: magnesium)
+        try saveFavorite(favorites, snapshot: "s-magnesium-400")
+        try schedules.save(["fav-magnesium": .standard])
+        let (model, _) = makeLimitModel(
+            store: store, favorites: favorites, schedules: schedules, group: men31, zone: "America/New_York")
+        model.load(now: nowInNewYork)
+
+        XCTAssertEqual(model.rows.first?.loggedToday, 1, "Taken counts it")
+        XCTAssertEqual(model.limitRows.map(\.nutrient), ["magnesium"], "so does the limit check")
     }
 
     func testWithoutAGroupOrALabelThereIsNothingToMark() throws {

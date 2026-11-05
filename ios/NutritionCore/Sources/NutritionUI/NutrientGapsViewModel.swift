@@ -352,6 +352,9 @@ public final class NutrientGapsViewModel: ObservableObject {
     private let preferences: ReferenceGroupPreferences?
     /// Health's side of today, from the same read Today uses. Counted on the day span only; `.notConnected` adds nothing.
     private let healthToday: () -> HealthIntakeTotals.Outside
+    /// The zone "today" and the week are read in, asked on every load: the current zone, as Today and the Diary read it
+    /// (#1139, #1293), or the one given in tests.
+    private let zoneID: () -> String
     private var tallies: [String: NutrientDayTally] = [:]
     /// The week's tallies day by day, so a daily upper limit is checked against each day, not the average.
     private var dayTallies: [[String: NutrientDayTally]] = []
@@ -363,12 +366,14 @@ public final class NutrientGapsViewModel: ObservableObject {
 
     public init(
         store: JournalStore, lookup: NutrientFactsLookup = UnknownNutrientFacts(),
-        preferences: ReferenceGroupPreferences? = nil, healthToday: @escaping () -> HealthIntakeTotals.Outside = { .notConnected }
+        preferences: ReferenceGroupPreferences? = nil, healthToday: @escaping () -> HealthIntakeTotals.Outside = { .notConnected },
+        timeZoneIdentifier: String? = nil, timeZoneProvider: @escaping () -> String = { DiaryZone.identifier() }
     ) {
         self.store = store
         self.lookup = lookup
         self.preferences = preferences
         self.healthToday = healthToday
+        self.zoneID = IntakeRepeater.resolver(override: timeZoneIdentifier, provider: timeZoneProvider)
         self.referenceGroup = preferences?.referenceGroup
     }
 
@@ -407,7 +412,7 @@ public final class NutrientGapsViewModel: ObservableObject {
     public func load(now: Date) {
         referenceGroup = preferences?.referenceGroup
         do {
-            let read = try Self.tallies(store: store, lookup: lookup, now: now, days: span.dayCount
+            let read = try Self.tallies(store: store, lookup: lookup, now: now, days: span.dayCount, zoneID: zoneID())
             loggedDays = read.loggedDays
             let weekMerged = Self.weekDays(
                 byDay: read.byDay, dates: read.dates, loggedDates: read.loggedDates, health: healthWeek)
@@ -454,8 +459,9 @@ public final class NutrientGapsViewModel: ObservableObject {
     public func refreshWeekHealth(now: Date) async {
         guard span == .week, let reader = healthDayReader else { return }
         // Gregorian, as the journal's day keys are, so the same day has the same key whatever the device calendar.
+        // In the zone the week is read in, so Health's days are the same dates as the journal's.
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone.current
+        calendar.timeZone = TimeZone(identifier: zoneID()) ?? .current
         var result: [Int: HealthIntakeTotals.Outside] = [:]
         for offset in 0..<7 {
             guard !Task.isCancelled else { return }
@@ -603,7 +609,7 @@ public final class NutrientGapsViewModel: ObservableObject {
     /// Today's entries, one at a time, into a tally per nutrient, and how many entries were left out
     /// because their day cannot be told.
     ///
-    /// The day is each entry's own local day, as on Today, and an entry whose stored time zone is not a
+    /// The day is each entry's own-zone date, counted back from today's date in the current zone, as on Today, and an entry whose stored time zone is not a
     /// valid one is counted as skipped rather than silently treated as another day. Each entry is summed
     /// alone, so a food that does not state a nutrient marks only itself unknown. A water entry, or a
     /// supplement that does not declare a nutrient, says nothing about it and counts nowhere.
@@ -614,15 +620,17 @@ public final class NutrientGapsViewModel: ObservableObject {
     /// its amount even when another component of the same entry does not, and the entry is then both a
     /// known contribution and an unknown one.
     static func tallies(
-        store: JournalStore, lookup: NutrientFactsLookup, now: Date, days: Int = 1
+        store: JournalStore, lookup: NutrientFactsLookup, now: Date, days: Int = 1, zoneID: String = DiaryZone.identifier()
     ) throws -> (tallies: [String: NutrientDayTally], skipped: Int, loggedDays: Int, byDay: [[String: NutrientDayTally]], dates: [Int], loggedDates: Set<Int>) {
-        try tallies(intakes: try store.activeIntakes(), store: store, lookup: lookup, now: now, days: days)
+        try tallies(
+            intakes: try store.activeIntakes(), store: store, lookup: lookup, now: now, days: days, zoneID: zoneID)
     }
 
     /// The same, over intakes a caller has already read from `store`, so a screen that reads the journal
     /// for its own purposes (the supplement list) does not read it a second time to check upper limits.
     static func tallies(
-        intakes: [Intake], store: JournalStore, lookup: NutrientFactsLookup, now: Date, days: Int = 1
+        intakes: [Intake], store: JournalStore, lookup: NutrientFactsLookup, now: Date, days: Int = 1,
+        zoneID: String = DiaryZone.identifier()
     ) throws -> (tallies: [String: NutrientDayTally], skipped: Int, loggedDays: Int, byDay: [[String: NutrientDayTally]], dates: [Int], loggedDates: Set<Int>) {
         // Keyed by each entry's own local date, so after a change of time zone two entries on different
         // dates never share a day, even when each is the same number of days before its own today.
@@ -630,8 +638,10 @@ public final class NutrientGapsViewModel: ObservableObject {
         var skipped = 0
         var logged: Set<Int> = []
         let nutrients = Self.nutrients
+        // "Today" is today's date in the current zone, the Diary's today, as on Today (#1139, #1293).
+        let current = TimeZone(identifier: zoneID) ?? .current
         for intake in intakes where intake.lifecycle == .active {
-            guard let day = Self.localDay(now, intake) else {
+            guard let day = Self.localDay(now, intake, zone: current) else {
                 skipped += 1
                 continue
             }
@@ -703,25 +713,30 @@ public final class NutrientGapsViewModel: ObservableObject {
         return (tallies, skipped, logged.count, byDay, byDate.keys.sorted(), logged)
     }
 
-    /// How many local days before `now`'s day the entry's day is, both read in the entry's own time
-    /// zone as Today reads it: 0 for today, 1 for yesterday, negative for a later day. Nil when the
-    /// stored time zone is not a valid one.
-    static func daysBefore(_ now: Date, _ intake: Intake) -> Int? {
-        localDay(now, intake)?.offset
+    /// How many days before today's date in `zone` (the current zone, the Diary's) the entry's own-zone date is: 0 for
+    /// today, 1 for yesterday, negative for a later day. Nil when the stored time zone is not a valid one.
+    static func daysBefore(_ now: Date, _ intake: Intake, zone: TimeZone) -> Int? {
+        localDay(now, intake, zone: zone)?.offset
     }
 
-    /// The entry's day: how many days before `now`'s day it is (`daysBefore`), and its own local date as
-    /// a number that sorts by date, such as 20261014. Both are read in the entry's own time zone. Nil
-    /// when the stored time zone is not a valid one.
-    static func localDay(_ now: Date, _ intake: Intake) -> (offset: Int, date: Int)? {
-        guard let zone = TimeZone(identifier: intake.timeZoneIdentifier) else { return nil }
+    /// The entry's day: how many days before today's date in `zone` its date is (`daysBefore`), and its own date as a
+    /// number that sorts by date, such as 20261014. The date is read in the entry's own time zone and today's in
+    /// `zone`, as Today reads them (#1139), so after a change of zone the screens hold the same entries. Nil when the
+    /// stored time zone is not a valid one.
+    static func localDay(_ now: Date, _ intake: Intake, zone current: TimeZone) -> (offset: Int, date: Int)? {
+        guard let own = TimeZone(identifier: intake.timeZoneIdentifier) else { return nil }
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = zone
+        calendar.timeZone = own
         let parts = calendar.dateComponents([.year, .month, .day], from: intake.occurredAt)
-        guard let offset = calendar.dateComponents(
-                [.day], from: calendar.startOfDay(for: intake.occurredAt), to: calendar.startOfDay(for: now)
-            ).day,
-            let year = parts.year, let month = parts.month, let date = parts.day
+        calendar.timeZone = current
+        let today = calendar.dateComponents([.year, .month, .day], from: now)
+        // The two dates compared as calendar dates, in a zone with no daylight saving, so the gap is whole days.
+        var plain = Calendar(identifier: .gregorian)
+        plain.timeZone = TimeZone(secondsFromGMT: 0) ?? .current
+        guard let year = parts.year, let month = parts.month, let date = parts.day,
+            let entryDay = plain.date(from: DateComponents(year: year, month: month, day: date)),
+            let todayDay = plain.date(from: DateComponents(year: today.year, month: today.month, day: today.day)),
+            let offset = plain.dateComponents([.day], from: entryDay, to: todayDay).day
         else { return nil }
         return (offset, year * 10_000 + month * 100 + date)
     }

@@ -258,7 +258,7 @@ final class NutrientGapsTests: XCTestCase {
     func testATypedEntryKeepsTheComponentsItKnowsAndCountsTheRestAsUnknown() throws {
         let store = try makeStore()
         let intake = Intake(
-            id: UUID().uuidString.lowercased(), category: "food", occurredAt: noon)
+            id: UUID().uuidString.lowercased(), category: "food", occurredAt: noon, timeZoneIdentifier: "UTC")
         try store.create(
             intake, components: [
                 IntakeComponent(componentID: "egg", name: "Egg", amount: 50, unit: .g),
@@ -366,7 +366,7 @@ final class NutrientGapsTests: XCTestCase {
     func testAHandTypedSupplementCountsAsSupplementNotFood() throws {
         let store = try makeStore()
         let intake = Intake(
-            id: UUID().uuidString.lowercased(), category: "supplement", occurredAt: noon)
+            id: UUID().uuidString.lowercased(), category: "supplement", occurredAt: noon, timeZoneIdentifier: "UTC")
         try store.create(
             intake, components: [
                 IntakeComponent(componentID: "magnesium", name: "Magnesium", amount: 100, unit: .mg),
@@ -381,7 +381,7 @@ final class NutrientGapsTests: XCTestCase {
 
     func testAHandTypedVitaminDInInternationalUnitsIsRestatedToMcg() throws {
         let store = try makeStore()
-        let intake = Intake(id: UUID().uuidString.lowercased(), category: "food", occurredAt: noon)
+        let intake = Intake(id: UUID().uuidString.lowercased(), category: "food", occurredAt: noon, timeZoneIdentifier: "UTC")
         try store.create(
             intake, components: [
                 IntakeComponent(componentID: "d3drops", name: "Drops", amount: 400, unit: .iu),
@@ -396,7 +396,7 @@ final class NutrientGapsTests: XCTestCase {
 
     func testAnEntryWithTwoMissingComponentsCountsOnceAsMissing() throws {
         let store = try makeStore()
-        let intake = Intake(id: UUID().uuidString.lowercased(), category: "food", occurredAt: noon)
+        let intake = Intake(id: UUID().uuidString.lowercased(), category: "food", occurredAt: noon, timeZoneIdentifier: "UTC")
         try store.create(
             intake, components: [
                 IntakeComponent(componentID: "toast", name: "Toast", amount: 30, unit: .g),
@@ -423,7 +423,7 @@ final class NutrientGapsTests: XCTestCase {
 
     func testAKnownAmountAndABoundOfTheSameNutrientKeepTheKnownPartAndAddTheNote() throws {
         let store = try makeStore()
-        let intake = Intake(id: UUID().uuidString.lowercased(), category: "food", occurredAt: noon)
+        let intake = Intake(id: UUID().uuidString.lowercased(), category: "food", occurredAt: noon, timeZoneIdentifier: "UTC")
         try store.create(
             intake, components: [
                 IntakeComponent(componentID: "typedvitc", name: "Typed", amount: 30, unit: .g),
@@ -641,11 +641,11 @@ final class NutrientGapsTests: XCTestCase {
                 + "that it has none.")
     }
 
-    func testDaysBeforeCountsLocalDaysInTheEntrysOwnZone() {
-        let entry = Intake(id: "x", category: "food", occurredAt: noon - 6 * 86_400)
-        XCTAssertEqual(NutrientGapsViewModel.daysBefore(noon, entry), 6)
+    func testDaysBeforeCountsDaysFromTheEntrysOwnDateToTodaysDateInTheCurrentZone() {
+        let entry = Intake(id: "x", category: "food", occurredAt: noon - 6 * 86_400, timeZoneIdentifier: "UTC")
+        XCTAssertEqual(NutrientGapsViewModel.daysBefore(noon, entry, zone: TimeZone(identifier: "UTC")!), 6)
         let bad = Intake(id: "y", category: "food", occurredAt: noon, timeZoneIdentifier: "Not/AZone")
-        XCTAssertNil(NutrientGapsViewModel.daysBefore(noon, bad))
+        XCTAssertNil(NutrientGapsViewModel.daysBefore(noon, bad, zone: TimeZone(identifier: "UTC")!))
     }
 
     // MARK: #1291, #1293 and the source line
@@ -666,7 +666,7 @@ final class NutrientGapsTests: XCTestCase {
         try log(store, "Orange", at: noon, product: product("orange", kind: .food, nutrients: [
             "vitaminC": .known(100, .mg),
         ]))
-        let model = NutrientGapsViewModel(store: store, lookup: GapsSnapshotFacts())
+        let model = NutrientGapsViewModel(store: store, lookup: GapsSnapshotFacts(), timeZoneIdentifier: "UTC")
         model.healthDayReader = { [self] _, _ in healthRead(except: ["vitaminK"]) }
         model.chooseSpan(.week, now: noon)
         await model.refreshWeekHealth(now: noon)
@@ -688,7 +688,7 @@ final class NutrientGapsTests: XCTestCase {
         ]))
         try log(store, "Magnesium", at: noon - 86_400, category: "supplement",
             product: product("mag", kind: .supplement, nutrients: ["magnesium": .known(100, .mg)]))
-        let model = NutrientGapsViewModel(store: store, lookup: GapsSnapshotFacts())
+        let model = NutrientGapsViewModel(store: store, lookup: GapsSnapshotFacts(), timeZoneIdentifier: "UTC")
         model.healthDayReader = { [self] _, _ in healthRead() }
         model.chooseSpan(.week, now: noon)
         await model.refreshWeekHealth(now: noon)
@@ -707,6 +707,26 @@ final class NutrientGapsTests: XCTestCase {
         XCTAssertEqual(all.detailLines.first, "Food 30 mg, supplements 50 mg, Apple Health 40 mg")
         let alone = try row("vitaminC", NutrientDayTally(fromSupplements: 50, known: 1))
         XCTAssertEqual(alone.detailLines.first, "All from supplements")
+    }
+
+    /// #1293: logged 2026-11-05 09:00 in Tokyo, then the person flew to New York, where it is 2026-11-05 20:00. The
+    /// Diary's and Today's today is 2026-11-05 there, the entry's own date, so the Day span counts it. (The old rule
+    /// read "now" in Tokyo, where it is already 2026-11-06, and left it out.)
+    func testTheDaySpanCountsEntriesUnderTheDiarysTodayInTheCurrentZone() throws {
+        let loggedInTokyo = Date(timeIntervalSince1970: 1793836800)
+        let nowInNewYork = Date(timeIntervalSince1970: 1793926800)
+        let store = try makeStore()
+        try log(store, "Orange", at: loggedInTokyo, product: product("orange", kind: .food, nutrients: [
+            "vitaminC": .known(60, .mg),
+        ]), zone: "Asia/Tokyo")
+        let model = NutrientGapsViewModel(
+            store: store, lookup: GapsSnapshotFacts(), timeZoneIdentifier: "America/New_York")
+        model.load(now: nowInNewYork)
+        XCTAssertEqual(try XCTUnwrap(model.rows.first { $0.nutrient == "vitaminC" }).tally.fromFood, 60)
+        // Where the current zone is Tokyo itself, the same instant is already the next day and the entry is yesterday.
+        let tokyo = NutrientGapsViewModel(store: store, lookup: GapsSnapshotFacts(), timeZoneIdentifier: "Asia/Tokyo")
+        tokyo.load(now: nowInNewYork)
+        XCTAssertEqual(try XCTUnwrap(tokyo.rows.first { $0.nutrient == "vitaminC" }).tally.fromFood, 0)
     }
 
     func testClearingTheGroupShowsAmountsAloneAndForgetsTheChoice() throws {
