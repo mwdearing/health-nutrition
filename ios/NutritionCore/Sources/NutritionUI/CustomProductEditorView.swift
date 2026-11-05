@@ -15,7 +15,9 @@ public struct CustomProductEditorView: View {
         self.model = model; self.sharing = sharing; self.onSaved = onSaved
     }
     public var body: some View {
-        Form {
+        // Read once: the title, the line above it and the tap all use what this draw showed.
+        let shown = model.savesAndShares
+        return Form {
             Section {
                 Text("New products are queued to share when your current account has sharing on and this disclosure acknowledged. Imports and edits stay local until you review sharing.").font(.footnote)
             }
@@ -109,10 +111,10 @@ public struct CustomProductEditorView: View {
             }
             Section {
                 Toggle("Open intake details after saving", isOn: $openDetails)
-                Text(model.saveScopeMessage).font(.footnote)
-                Button(model.saveButtonTitle) {
+                Text(CustomProductEditorViewModel.saveScopeMessage(shares: shown)).font(.footnote)
+                Button(CustomProductEditorViewModel.saveButtonTitle(shares: shown)) {
                     do {
-                        let saved = try model.save(now: Date())
+                        let saved = try model.save(now: Date(), shareAsShown: shown)
                         onSaved(saved, openDetails)
                     } catch { }
                 }

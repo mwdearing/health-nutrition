@@ -18,7 +18,7 @@ final class CustomProductEditorTests: XCTestCase {
                 consentVersion: 2, serverGeneration: "3", localSessionEpoch: epoch, backendSupported: true))
             let model = CustomProductEditorViewModel(store: store, sharing: coordinator)
             model.name = "Synthetic automatic"; model.kind = kind
-            let saved = try model.save(now: Date())
+            let saved = try model.save(now: Date(), shareAsShown: true)
             let command = try XCTUnwrap(store.commands.first)
             let publication = try XCTUnwrap(command.publication)
             XCTAssertEqual(publication.ownerID, owner)
@@ -27,7 +27,7 @@ final class CustomProductEditorTests: XCTestCase {
             XCTAssertEqual(publication.content, saved.content)
             XCTAssertEqual(publication.clientRevisionID, saved.revisionID)
             XCTAssertEqual(store.operations.count, 1)
-            _ = try model.save(now: Date())
+            _ = try model.save(now: Date(), shareAsShown: true)
             XCTAssertNil(store.commands.last?.publication, "editing is explicit sharing, not new creation")
         }
     }
@@ -42,7 +42,7 @@ final class CustomProductEditorTests: XCTestCase {
         editor.name = "Synthetic automatic"
 
         store.failSaving = true
-        XCTAssertThrowsError(try editor.save(now: Date()))
+        XCTAssertThrowsError(try editor.save(now: Date(), shareAsShown: true))
         let failedSaveCalls = await service.publishCallCount()
         XCTAssertEqual(failedSaveCalls, 0, "failed save must not start delivery")
         XCTAssertTrue(store.operations.isEmpty)
@@ -50,7 +50,7 @@ final class CustomProductEditorTests: XCTestCase {
         let publishExpectation = expectation(description: "Eligible Save starts delivery")
         await service.expectPublish(publishExpectation)
         store.failSaving = false
-        _ = try editor.save(now: Date())
+        _ = try editor.save(now: Date(), shareAsShown: true)
         await fulfillment(of: [publishExpectation], timeout: 2)
         let successfulSaveCalls = await service.publishCallCount()
         XCTAssertEqual(successfulSaveCalls, 1, "successful eligible Save starts delivery without waiting for lifecycle or connectivity")
@@ -58,7 +58,7 @@ final class CustomProductEditorTests: XCTestCase {
         let localStore = ProductEditorStorePort()
         let localEditor = CustomProductEditorViewModel(store: localStore)
         localEditor.name = "Synthetic local"
-        _ = try localEditor.save(now: Date())
+        _ = try localEditor.save(now: Date(), shareAsShown: true)
         XCTAssertTrue(localStore.operations.isEmpty)
     }
     @MainActor func testSaveButtonAndScopeLineNameSharingOnlyWhenNewProductWillBeSent() async throws {
@@ -85,9 +85,44 @@ final class CustomProductEditorTests: XCTestCase {
         coordinator.updateAccountContext(.init(ownerID: UUID(), profileReady: true, sharingAllowed: true,
             consentVersion: 2, serverGeneration: "0", localSessionEpoch: UUID(), backendSupported: true))
         model.name = "Synthetic title"
-        _ = try model.save(now: Date())
+        _ = try model.save(now: Date(), shareAsShown: true)
         XCTAssertFalse(model.savesAndShares, "an edit never shares automatically")
         XCTAssertEqual(model.saveButtonTitle, "Save product on this device")
+    }
+    @MainActor func testSaveWithLocalOnlyScopeShownNeverQueuesAnUpload() async throws {
+        let store = ProductEditorStorePort()
+        let coordinator = ProductShareCoordinator(store: store, service: ProductSearchServicePort())
+        let model = CustomProductEditorViewModel(store: store, sharing: coordinator)
+        model.name = "Synthetic shown local"
+        // The screen was drawn local-only; sharing became eligible before the tap.
+        coordinator.updateAccountContext(.init(ownerID: UUID(), profileReady: true, sharingAllowed: true,
+            consentVersion: 2, serverGeneration: "0", localSessionEpoch: UUID(), backendSupported: true))
+        XCTAssertTrue(model.savesAndShares)
+        _ = try model.save(now: Date(), shareAsShown: false)
+        XCTAssertNil(store.commands.first?.publication)
+        XCTAssertTrue(store.operations.isEmpty)
+        XCTAssertNil(model.errorMessage)
+    }
+    @MainActor func testSaveWithShareScopeShownQueuesWhileEligibleAndSavesLocallyWithNoticeOtherwise() async throws {
+        let store = ProductEditorStorePort()
+        let coordinator = ProductShareCoordinator(store: store, service: ProductSearchServicePort())
+        coordinator.updateAccountContext(.init(ownerID: UUID(), profileReady: true, sharingAllowed: true,
+            consentVersion: 2, serverGeneration: "0", localSessionEpoch: UUID(), backendSupported: true))
+        let shared = CustomProductEditorViewModel(store: store, sharing: coordinator)
+        shared.name = "Synthetic shown share"
+        _ = try shared.save(now: Date(), shareAsShown: true)
+        XCTAssertNotNil(store.commands.first?.publication)
+        XCTAssertEqual(store.operations.count, 1)
+        XCTAssertNil(shared.errorMessage)
+
+        let lost = CustomProductEditorViewModel(store: store, sharing: coordinator)
+        lost.name = "Synthetic eligibility lost"
+        coordinator.updateAccountContext(.init(ownerID: UUID(), profileReady: true, sharingAllowed: true,
+            consentVersion: 0, serverGeneration: "0", localSessionEpoch: UUID(), backendSupported: true))
+        _ = try lost.save(now: Date(), shareAsShown: true)
+        XCTAssertNil(store.commands.last?.publication)
+        XCTAssertEqual(store.operations.count, 1, "no new upload")
+        XCTAssertEqual(lost.errorMessage, "Saved on this device only, because sharing is off.")
     }
     @MainActor func testNewSaveReadsCurrentAccountAndRejectsObsoleteAdmissionOrStore() async throws {
         let store = ProductEditorStorePort(), service = ProductSearchServicePort()
@@ -103,10 +138,10 @@ final class CustomProductEditorTests: XCTestCase {
         XCTAssertNil(try coordinator.newProductEligibility(using: ProductEditorStorePort()))
         coordinator.updateAccountContext(.init(ownerID: second, profileReady: true, sharingAllowed: true, consentVersion: 2, serverGeneration: "2", localSessionEpoch: UUID(), backendSupported: true))
         store.failSaving = true
-        XCTAssertThrowsError(try editor.save(now: Date()))
+        XCTAssertThrowsError(try editor.save(now: Date(), shareAsShown: true))
         XCTAssertNil(editor.revision); XCTAssertTrue(store.products.isEmpty); XCTAssertTrue(store.operations.isEmpty)
         store.failSaving = false
-        _ = try editor.save(now: Date())
+        _ = try editor.save(now: Date(), shareAsShown: true)
         XCTAssertEqual(store.operations.first?.ownerID, second)
         XCTAssertEqual(store.operations.first?.consentGeneration, "2")
     }
@@ -118,10 +153,10 @@ final class CustomProductEditorTests: XCTestCase {
             bound.updateAccountContext(.init(ownerID: owner, profileReady: missing != "profile", sharingAllowed: missing != "sharing", consentVersion: missing == "consent" ? 0 : 2, serverGeneration: "0", localSessionEpoch: epoch, backendSupported: true, freshPublicationSupported: missing != "bounded"))
             let editor = CustomProductEditorViewModel(store: store, sharing: bound)
             editor.name = "Synthetic local"
-            _ = try editor.save(now: Date())
+            _ = try editor.save(now: Date(), shareAsShown: true)
             XCTAssertTrue(store.operations.isEmpty)
             bound.updateAccountContext(.init(ownerID: owner, profileReady: true, sharingAllowed: true, consentVersion: 2, serverGeneration: "0", localSessionEpoch: epoch, backendSupported: true))
-            _ = try editor.save(now: Date())
+            _ = try editor.save(now: Date(), shareAsShown: true)
             XCTAssertTrue(store.operations.isEmpty)
         }
     }
@@ -137,9 +172,9 @@ final class CustomProductEditorTests: XCTestCase {
         let coordinator = ProductShareCoordinator(store: store, service: ProductSearchServicePort())
         coordinator.updateAccountContext(.init(ownerID: UUID(), profileReady: true, sharingAllowed: true, consentVersion: 2, serverGeneration: "0", localSessionEpoch: UUID(), backendSupported: true))
         let editor = CustomProductEditorViewModel(store: store, legacy: draft, sharing: coordinator)
-        XCTAssertThrowsError(try editor.save(now: Date()))
+        XCTAssertThrowsError(try editor.save(now: Date(), shareAsShown: true))
         editor.kind = .food; editor.basis = .per100g
-        let saved = try editor.save(now: Date())
+        let saved = try editor.save(now: Date(), shareAsShown: true)
         XCTAssertTrue(saved.content.facts.isEmpty); XCTAssertNil(saved.content.serving)
         XCTAssertNil(store.commands.first?.publication)
         XCTAssertEqual(template.components.first?.amount, 42)
@@ -158,7 +193,7 @@ final class CustomProductEditorTests: XCTestCase {
             let store = ProductEditorStorePort()
             let model = CustomProductEditorViewModel(store: store)
             model.name = "Synthetic product"; model.kind = kind
-            let saved = try model.save(now: Date(timeIntervalSince1970: 1))
+            let saved = try model.save(now: Date(timeIntervalSince1970: 1), shareAsShown: true)
             XCTAssertEqual(saved.content.kind, kind)
             XCTAssertNil(saved.content.barcode)
             XCTAssertTrue(saved.content.facts.isEmpty)
@@ -179,10 +214,10 @@ final class CustomProductEditorTests: XCTestCase {
             ProductFactInput(key: "fiber", displayName: "Fiber", state: .notApplicable),
             ProductFactInput(key: "sodium", displayName: "Sodium", state: .belowReportingThreshold, unit: .mg),
             ProductFactInput(key: "ingredient:activity", displayName: "Activity", state: .known, amount: "5", unit: .iu)]
-        XCTAssertThrowsError(try model.save(now: Date()))
+        XCTAssertThrowsError(try model.save(now: Date(), shareAsShown: true))
         XCTAssertTrue(store.commands.isEmpty)
         model.servingQuantity = "3"; model.servingUnit = .gummy
-        let saved = try model.save(now: Date())
+        let saved = try model.save(now: Date(), shareAsShown: true)
         XCTAssertEqual(saved.content.serving?.quantity, 3)
         XCTAssertEqual(saved.content.facts.map(\.value), [.known(0, .g), .unknown, .notApplicable, .belowReportingThreshold(.mg), .known(5, .iu)])
     }
@@ -191,11 +226,11 @@ final class CustomProductEditorTests: XCTestCase {
         let snapshot = ProductDefinition(snapshotID: "synthetic", productID: "synthetic", name: "Synthetic legacy", labelBasis: "per serving", catalogOrigin: "label", catalogVersion: "1", nutrients: ["protein": .known(2, .g)])
         let model = CustomProductEditorViewModel(store: store, legacy: try CustomProductMapping.legacyDraft(from: snapshot))
         XCTAssertNil(model.kind)
-        XCTAssertThrowsError(try model.save(now: Date()))
+        XCTAssertThrowsError(try model.save(now: Date(), shareAsShown: true))
         model.kind = .food
-        XCTAssertThrowsError(try model.save(now: Date()))
+        XCTAssertThrowsError(try model.save(now: Date(), shareAsShown: true))
         model.servingQuantity = "30"; model.servingUnit = .g
-        let result = try model.save(now: Date())
+        let result = try model.save(now: Date(), shareAsShown: true)
         XCTAssertEqual(result.content.serving?.text, "per serving")
         XCTAssertEqual(store.commands.count, 1)
         XCTAssertNil(store.commands.first?.publication)
@@ -206,7 +241,7 @@ final class CustomProductEditorTests: XCTestCase {
         store.products = [original]
         let model = CustomProductEditorViewModel(store: store, revision: original)
         model.name = "Synthetic edited"
-        let changed = try model.save(now: Date())
+        let changed = try model.save(now: Date(), shareAsShown: true)
         XCTAssertEqual(changed.localProductID, original.localProductID)
         XCTAssertNotEqual(changed.revisionID, original.revisionID)
         XCTAssertEqual(changed.source, original.source)
@@ -221,7 +256,7 @@ final class CustomProductEditorTests: XCTestCase {
             let store = ProductEditorStorePort(); store.products = [original]
             let model = CustomProductEditorViewModel(store: store, revision: original)
             if change == "barcode" { model.barcode = "0098765432100" } else { model.kind = .supplement }
-            XCTAssertThrowsError(try model.save(now: Date()), change)
+            XCTAssertThrowsError(try model.save(now: Date(), shareAsShown: true), change)
             XCTAssertTrue(store.commands.isEmpty, change)
         }
     }
@@ -231,7 +266,7 @@ final class CustomProductEditorTests: XCTestCase {
             let model = CustomProductEditorViewModel(store: store)
             model.name = "Synthetic"; model.kind = .food; model.basis = .per100g
             model.facts = [.init(key: "protein", displayName: "Protein", state: .known, amount: text, unit: .g)]
-            XCTAssertThrowsError(try model.save(now: Date()))
+            XCTAssertThrowsError(try model.save(now: Date(), shareAsShown: true))
             XCTAssertTrue(store.commands.isEmpty)
         }
     }
@@ -394,7 +429,7 @@ extension CustomProductEditorTests {
         XCTAssertEqual(LibraryProductPresentation(unknown).verificationText, "Verification not checked")
         let store = ProductEditorStorePort(); store.products = [verified]
         let editor = CustomProductEditorViewModel(store: store, revision: verified); editor.name = "Synthetic edited"
-        let edited = try editor.save(now: Date())
+        let edited = try editor.save(now: Date(), shareAsShown: true)
         XCTAssertEqual(edited.source, verified.source)
         XCTAssertNil(edited.importVerification)
         XCTAssertEqual(LibraryProductPresentation(edited).verificationText, "Verification not checked")
@@ -419,11 +454,11 @@ extension CustomProductEditorTests {
         editor.name = "Synthetic threshold"; editor.basis = .per100g
         editor.facts = [.init(key: "protein", displayName: "Protein", state: .belowReportingThreshold, unit: .g)]
         XCTAssertFalse(editor.missingFacts)
-        let saved = try editor.save(now: Date()); store.products = [saved]
+        let saved = try editor.save(now: Date(), shareAsShown: true); store.products = [saved]
         XCTAssertFalse(LibraryProductPresentation(saved).missingFacts)
         editor.facts = [.init(key: "protein", displayName: "Protein", state: .unknown)]
         XCTAssertTrue(editor.missingFacts)
-        XCTAssertTrue(LibraryProductPresentation(try editor.save(now: Date())).missingFacts)
+        XCTAssertTrue(LibraryProductPresentation(try editor.save(now: Date(), shareAsShown: true)).missingFacts)
     }
 }
 
@@ -486,10 +521,10 @@ extension CustomProductEditorTests {
         let editor = CustomProductEditorViewModel(store: store, sharing: coordinator)
         editor.name = "Synthetic atomic creation"
         store.failNextSaveForTesting = true
-        XCTAssertThrowsError(try editor.save(now: Date()))
+        XCTAssertThrowsError(try editor.save(now: Date(), shareAsShown: true))
         XCTAssertTrue(try store.customProducts().isEmpty); XCTAssertTrue(try store.productOperations(ownerID: owner).isEmpty)
         XCTAssertNil(try store.productAccountEpoch(ownerID: owner)); XCTAssertNil(editor.revision)
-        let saved = try editor.save(now: Date()); store.close()
+        let saved = try editor.save(now: Date(), shareAsShown: true); store.close()
         let reopened = try SwiftDataJournalStore(url: path)
         XCTAssertEqual(try reopened.customProducts(), [saved])
         let operation = try XCTUnwrap(try reopened.productOperations(ownerID: owner).first)
