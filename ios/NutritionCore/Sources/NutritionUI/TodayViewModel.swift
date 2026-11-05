@@ -119,7 +119,8 @@ public final class TodayViewModel: ObservableObject {
     /// Water components skipped because their unit is not a volume (never counted as zero).
     @Published public private(set) var waterSkippedCount: Int = 0
     /// True when an entry's water is in the day but cannot be counted: a distrusted entry (a negative logged,
-    /// stated or lookup value) that is a drink or carries a water share. The Diary marks that day's water unknown,
+    /// stated or lookup value) that is a drink or carries a water share, or a drink in a volume unit whose amount
+    /// cannot count (zero, negative, not a number). The Diary marks that day's water unknown,
     /// so Today shows the known part as "at least" and never adds the suspect amount (#1137).
     @Published public private(set) var waterHasUnknown: Bool = false
     /// Stored intakes left out of Today because their time zone identifier is not a valid time zone.
@@ -310,8 +311,8 @@ public final class TodayViewModel: ObservableObject {
                     (components, snapshot, intake.category, typed: current?.productSnapshotID == nil), lookup: lookup)
                 if intake.category == "water" {
                     waterEntries += 1
-                    // A distrusted drink's water is unknown, as in the Diary: none of it is added. A component that
-                    // could not count anyway is still reported as skipped.
+                    // A distrusted drink's water is unknown, as in the Diary: none of it is added. A component whose
+                    // unit is not a volume is reported as skipped; a volume whose amount cannot count is unknown.
                     if distrusted { unknownWater = true }
                     for component in components {
                         if component.unit.dimension == .volume,
