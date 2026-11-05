@@ -321,8 +321,16 @@ final class AppStoreScreenshotUITests: XCTestCase {
     }
 
     private func type(_ text: String, intoFieldStartingWith prefix: String) throws {
-        let field = app.textFields.matching(NSPredicate(format: "label BEGINSWITH %@ OR identifier BEGINSWITH %@", prefix, prefix))
+        // Some fields carry only a placeholder (the product editor's), so the placeholder is matched too.
+        let field = app.textFields.matching(NSPredicate(
+            format: "label BEGINSWITH %@ OR identifier BEGINSWITH %@ OR placeholderValue BEGINSWITH %@", prefix, prefix, prefix))
             .firstMatch
+        // A field above the fold is reached by scrolling back up first.
+        var upScrolls = 0
+        while !field.exists && upScrolls < 3 {
+            app.swipeDown()
+            upScrolls += 1
+        }
         // The keyboard and the Log bar cover the lower fields, so the keyboard goes down and the form scrolls
         // until the field sits clear of the bottom bar before it is tapped.
         dismissKeyboard()
