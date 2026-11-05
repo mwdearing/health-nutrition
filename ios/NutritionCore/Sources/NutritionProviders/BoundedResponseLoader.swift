@@ -106,9 +106,14 @@ final class BoundedResponseOperation: NSObject, URLSessionDataDelegate, @uncheck
         task: URLSessionTask,
         willPerformHTTPRedirection response: HTTPURLResponse,
         newRequest redirected: URLRequest,
-        completionHandler: @escaping BoundedRedirectHandler
+        completionHandler policyHandler: @escaping BoundedRedirectHandler
     ) {
-        let request = Self.strippingKeyOnCrossHostRedirect(redirected, from: task.originalRequest)
+        let original = task.originalRequest
+        let request = Self.strippingKeyOnCrossHostRedirect(redirected, from: original)
+        // A forwarded delegate may return its own request; the headers are dropped from that one too.
+        let completionHandler: BoundedRedirectHandler = { chosen in
+            policyHandler(chosen.map { Self.strippingKeyOnCrossHostRedirect($0, from: original) })
+        }
         guard forwardingDelegate != nil else {
             completionHandler(request)
             return

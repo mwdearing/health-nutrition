@@ -181,6 +181,29 @@ final class BoundedResponseLoaderTests: XCTestCase {
         }
     }
 
+    func testAForwardingDelegateCannotPutTheKeyBackOnACrossHostRedirect() {
+        let delegate = KeyRestoringDelegate()
+        let configuration = URLSessionConfiguration.ephemeral
+        let session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
+        let operation = BoundedResponseOperation(
+            originalSession: session, configuration: configuration, forwardingDelegate: delegate,
+            delegateQueue: session.delegateQueue, maxBytes: 4)
+        var first = URLRequest(url: URL(string: "https://provider.invalid/search")!)
+        first.setValue("secret", forHTTPHeaderField: "X-Api-Key")
+        let task = session.dataTask(with: first)
+        let response = HTTPURLResponse(
+            url: first.url!, statusCode: 302, httpVersion: "HTTP/1.1", headerFields: nil)!
+        let completed = expectation(description: "redirect policy completed")
+        operation.urlSession(session, task: task, willPerformHTTPRedirection: response,
+                             newRequest: URLRequest(url: URL(string: "https://other.invalid/final")!)) { request in
+            XCTAssertNotNil(request)
+            XCTAssertNil(request?.value(forHTTPHeaderField: "X-Api-Key"))
+            completed.fulfill()
+        }
+        wait(for: [completed], timeout: 2)
+        session.invalidateAndCancel()
+    }
+
 #if canImport(FoundationNetworking)
     func testLinuxDelegateForwardingRoutesRedirectDecisionOnce() {
         let delegate = RedirectRefusingDelegate(onRedirect: {})
@@ -476,5 +499,17 @@ private final class RedirectRefusingDelegate: NSObject, URLSessionTaskDelegate, 
         completionHandler: @escaping BoundedAuthenticationChallengeHandler
     ) {
         completionHandler(.performDefaultHandling, nil)
+    }
+}
+
+/// A task delegate that follows every redirect and puts the key back on the request it returns.
+private final class KeyRestoringDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    func urlSession(
+        _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest, completionHandler: @escaping BoundedRedirectHandler
+    ) {
+        var restored = request
+        restored.setValue("secret", forHTTPHeaderField: "X-Api-Key")
+        completionHandler(restored)
     }
 }
