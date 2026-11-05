@@ -384,7 +384,8 @@ public final class TodayViewModel: ObservableObject {
             dateSubtitle = Self.makeDateSubtitle(now, zoneIdentifier: TimeZone.current.identifier)
             waterTotalMilliliters = waterTotal + Self.outsideWaterMilliliters(outsideIntake)
             waterSkippedCount = skipped
-            waterHasUnknown = unknownWater
+            // Health connected but its water query failed: the day's water has a side that cannot be counted (#1294).
+            waterHasUnknown = unknownWater || Self.outsideWaterUnknown(outsideIntake)
             skippedIntakeCount = skippedIntakes
             // A goal store that cannot be read is not a person with no goals, so the failure is
             // carried out to the screen rather than swallowed into an empty goal list: a target the
@@ -682,6 +683,13 @@ public final class TodayViewModel: ObservableObject {
               let milliliters = try? Quantity(value: value, unit: unit).converted(to: .mL)
         else { return 0 }
         return milliliters.value
+    }
+
+    /// Health is connected and was read, but its water query did not complete, so the water other apps logged is
+    /// unknown rather than zero. Not connected, or a read that stated water, is not unknown.
+    static func outsideWaterUnknown(_ outside: HealthIntakeTotals.Outside) -> Bool {
+        guard case .read(_, let readKeys) = outside else { return false }
+        return !readKeys.contains(DailyTotalsBuilder.waterKey)
     }
 
     /// The water total in the unit the reader chose, as it is shown on screen.
