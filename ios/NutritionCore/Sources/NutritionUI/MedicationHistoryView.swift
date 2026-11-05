@@ -10,13 +10,19 @@ public struct MedicationHistoryView: View {
     /// The dose waiting for the delete confirmation; nil while none is waiting.
     @State private var pendingDelete: UUID?
 
+    private let reminders: MedicationReminderController?
     private let onClose: (Bool) -> Void
 
     /// - Parameters:
     ///   - model: the history this screen reads and changes.
+    ///   - reminders: the medication reminders; nil where the system does not schedule them, which hides the Reminder section.
     ///   - onClose: called when the screen goes away, with whether a dose was changed or deleted.
-    public init(model: MedicationHistoryViewModel, onClose: @escaping (Bool) -> Void) {
+    public init(
+        model: MedicationHistoryViewModel, reminders: MedicationReminderController? = nil,
+        onClose: @escaping (Bool) -> Void
+    ) {
         _model = StateObject(wrappedValue: model)
+        self.reminders = reminders
         self.onClose = onClose
     }
 
@@ -28,6 +34,9 @@ public struct MedicationHistoryView: View {
             if model.rows.isEmpty && model.errorMessage == nil {
                 Text("No dose logged yet")
                     .foregroundStyle(TokenColors.textSecondary)
+            }
+            if model.canRemind, let reminders {
+                MedicationReminderSection(medicationID: model.medicationID, reminders: reminders)
             }
             Section {
                 ForEach(model.rows) { row in
@@ -62,6 +71,47 @@ public struct MedicationHistoryView: View {
         Binding(
             get: { self.pendingDelete != nil },
             set: { if !$0 { self.pendingDelete = nil } })
+    }
+}
+
+/// The Reminder section: a switch for "Remind me on due days", the time while it is on, the controller's message,
+/// and a plain line on what is pending or why nothing is.
+private struct MedicationReminderSection: View {
+    let medicationID: UUID
+    @ObservedObject var reminders: MedicationReminderController
+
+    private static let defaultTime = ReminderTime(hour: 9, minute: 0)
+
+    var body: some View {
+        Section {
+            Toggle("Remind me on due days", isOn: Binding(
+                get: { self.reminders.time(for: self.medicationID) != nil },
+                set: { on in
+                    Task { await self.reminders.setReminder(on ? Self.defaultTime : nil, for: self.medicationID) }
+                }))
+            if let time = reminders.time(for: medicationID) {
+                DatePicker("Time", selection: Binding(
+                    get: { Self.date(for: time) },
+                    set: { picked in
+                        let parts = Calendar.current.dateComponents([.hour, .minute], from: picked)
+                        let chosen = ReminderTime(hour: parts.hour ?? 9, minute: parts.minute ?? 0)
+                        Task { await self.reminders.setReminder(chosen, for: self.medicationID) }
+                    }), displayedComponents: .hourAndMinute)
+            }
+            if let message = reminders.message {
+                InlineNotice(message, tone: .failed)
+            }
+        } header: {
+            Text("Reminder")
+        } footer: {
+            if let footer = reminders.footer(for: medicationID) {
+                Text(footer)
+            }
+        }
+    }
+
+    private static func date(for time: ReminderTime) -> Date {
+        Calendar.current.date(bySettingHour: time.hour, minute: time.minute, second: 0, of: Date()) ?? Date()
     }
 }
 

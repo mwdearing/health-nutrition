@@ -38,7 +38,7 @@ Erase removes all thirteen keys owned by `UserDefaultsDisplayPreferences` from t
 | Medication log switch (1) | `display.medicationLog.on` |
 | Macro split the gram goals follow (1) | `display.goals.macroSplit` |
 
-Removing the keys restores defaults; it does not write replacement values, with one exception: `display.goals.waterDefaultSeeded` is set to true again right after the erase, so the default water goal is not written back into the just-erased goal store. The reminder's pending notification is also removed. The disclosure will be shown again when the relevant account next signs in on this device.
+Removing the keys restores defaults; it does not write replacement values, with one exception: `display.goals.waterDefaultSeeded` is set to true again right after the erase, so the default water goal is not written back into the just-erased goal store. The reminder's pending notification is also removed. The custom and medication reminders are separate stores: their settings and pending or delivered notifications are removed by their own erasers, and the erase check names any still pending. The disclosure will be shown again when the relevant account next signs in on this device.
 
 ### Other local cleanup
 

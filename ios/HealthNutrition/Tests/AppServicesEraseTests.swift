@@ -147,11 +147,12 @@ final class AppServicesEraseTests: XCTestCase {
         ])
     }
 
-    /// A system scheduler that also supports custom reminders adds "custom reminders" to the erase, after the
-    /// daily reminders and before the journal, so a custom request is cleared too.
+    /// A system scheduler that also supports custom and medication reminders adds "custom reminders" and then
+    /// "medication reminders" to the erase, after the daily reminders and before the journal, so their requests are
+    /// cleared too.
     func testEraseOrderNamesIncludeCustomRemindersWithTheSystemScheduler() throws {
         XCTAssertEqual(eraseNamesFromBuilderInputs(withCustomReminders: true), [
-            "widget data", "saved meals", "supplements", "reminders", "custom reminders",
+            "widget data", "saved meals", "supplements", "reminders", "custom reminders", "medication reminders",
             "journal", "favorites", "recipes", "goals", "medications",
         ])
     }
@@ -161,6 +162,12 @@ final class AppServicesEraseTests: XCTestCase {
     func testTheCustomReminderDecisionTakesTheCustomSideOnlyWhereTheSchedulerSupportsIt() {
         XCTAssertNotNil(AppServices.customReminderScheduling(of: CustomCapableReminderScheduler()))
         XCTAssertNil(AppServices.customReminderScheduling(of: RecordingReminderScheduler()))
+    }
+
+    /// The medication-reminder decision, both sides, like the custom one.
+    func testTheMedicationReminderDecisionTakesItOnlyWhereTheSchedulerSupportsIt() {
+        XCTAssertNotNil(AppServices.medicationReminderScheduling(of: MedicationCapableReminderScheduler()))
+        XCTAssertNil(AppServices.medicationReminderScheduling(of: RecordingReminderScheduler()))
     }
 
     /// The erase order from eraseOrder, with stores in a temporary directory and fakes for the reminder centers.
@@ -181,6 +188,9 @@ final class AppServicesEraseTests: XCTestCase {
         if withCustomReminders {
             reminders.append(CustomReminderEraser(
                 store: UserDefaultsCustomReminderStore(), scheduler: CustomCapableReminderScheduler(),
+                erasures: ReminderErasures()))
+            reminders.append(MedicationReminderEraser(
+                store: InMemoryMedicationReminderStore(), scheduler: MedicationCapableReminderScheduler(),
                 erasures: ReminderErasures()))
         }
         let order = ConnectionsPrivacyViewModel.eraseOrder(ConnectionsPrivacyViewModel.EraseStores(
@@ -209,6 +219,9 @@ final class AppServicesEraseTests: XCTestCase {
         let custom = CustomReminderEraser(
             store: UserDefaultsCustomReminderStore(), scheduler: CustomCapableReminderScheduler(),
             erasures: ReminderErasures())
+        let medicationReminders = MedicationReminderEraser(
+            store: InMemoryMedicationReminderStore(), scheduler: MedicationCapableReminderScheduler(),
+            erasures: ReminderErasures())
         let journal = try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
         let favorites = try SwiftDataFavoritesStore(url: directory.appendingPathComponent("favorites.store"))
         let recipes = try SwiftDataRecipeStore(url: directory.appendingPathComponent("recipes.store"))
@@ -217,15 +230,16 @@ final class AppServicesEraseTests: XCTestCase {
 
         let stores = AppServices.eraseStores(
             widgets: widgets, savedMeals: savedMeals, supplements: supplements, dailyReminders: daily,
-            customReminders: custom, journal: journal, favorites: favorites, recipes: recipes, goals: goals,
+            customReminders: custom, medicationReminders: medicationReminders, journal: journal, favorites: favorites, recipes: recipes, goals: goals,
             medications: medications)
 
         XCTAssertTrue(stores.widgets === widgets)
         XCTAssertTrue(stores.savedMeals === savedMeals)
         XCTAssertTrue(stores.supplements === supplements)
-        XCTAssertEqual(stores.reminders.count, 2)
+        XCTAssertEqual(stores.reminders.count, 3)
         XCTAssertTrue(stores.reminders[0] === daily)
         XCTAssertTrue(stores.reminders[1] === custom)
+        XCTAssertTrue(stores.reminders[2] === medicationReminders)
         XCTAssertTrue(stores.journal === journal)
         XCTAssertTrue(stores.favorites === favorites)
         XCTAssertTrue(stores.recipes === recipes)
@@ -357,6 +371,17 @@ final class CustomCapableReminderScheduler: ReminderScheduling, CustomReminderSc
     func pendingDailyCount() async -> Int { 0 }
     func replaceAll(with reminders: [CustomReminder]) async throws {}
     func cancel(ids: [UUID]) {}
+}
+
+/// A daily scheduler that also takes medication reminders, as the system scheduler does.
+final class MedicationCapableReminderScheduler: ReminderScheduling, MedicationReminderScheduling, @unchecked Sendable {
+    func permission() async -> ReminderPermission { .notDetermined }
+    func requestPermission() async -> Bool { false }
+    func scheduleDaily(at time: ReminderTime) async throws {}
+    func cancelDaily() {}
+    func pendingDailyCount() async -> Int { 0 }
+    func replaceAll(with requests: [MedicationReminderRequest]) async throws {}
+    func cancelAll() {}
 }
 
 /// A reminder scheduler that records calls and answers from settable state, for the app's own wiring.

@@ -42,6 +42,9 @@ public enum ReminderReadback {
         var names: [String] = []
         if identifiers.contains(ReminderIdentifier.daily) { names.append("reminders") }
         if identifiers.contains(where: { $0.hasPrefix(customPrefix) }) { names.append("custom reminders") }
+        if identifiers.contains(where: { $0.hasPrefix(MedicationReminderPlan.identifierPrefix) }) {
+            names.append("medication reminders")
+        }
         return names
     }
 }
