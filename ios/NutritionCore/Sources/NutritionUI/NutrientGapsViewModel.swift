@@ -441,16 +441,24 @@ public final class NutrientGapsViewModel: ObservableObject {
     /// the screen rebuilds. A failed day read keeps its partial keys only, so an unread nutrient stays unknown.
     public func refreshWeekHealth(now: Date) async {
         guard span == .week, let reader = healthDayReader else { return }
-        var calendar = Calendar.current
+        // Gregorian, as the journal's day keys are, so the same day has the same key whatever the device calendar.
+        var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone.current
         var result: [Int: HealthIntakeTotals.Outside] = [:]
         for offset in 0..<7 {
-            guard let day = calendar.date(byAdding: .day, value: -offset, to: calendar.startOfDay(for: now)) else { continue }
+            guard !Task.isCancelled else { return }
+            guard let day = calendar.date(byAdding: .day, value: -offset, to: calendar.startOfDay(for: now)) else {
+                // A day whose date cannot be built is not dropped: the week keeps no Health for it, so nothing is claimed.
+                healthWeek = [:]
+                load(now: now)
+                return
+            }
             let end = offset == 0 ? now : (calendar.date(byAdding: .day, value: 1, to: day) ?? now)
             let read = await reader(day, end)
             // An incomplete day read is unknown for the whole day: its partial keys are not trusted (#1240).
             result[Self.localDateKey(day, calendar: calendar)] = read.complete ? read.outside : .read(values: [:], readKeys: [])
         }
+        guard !Task.isCancelled else { return }
         healthWeek = result
         load(now: now)
     }
@@ -471,14 +479,27 @@ public final class NutrientGapsViewModel: ObservableObject {
         for (index, date) in dates.enumerated() where index < byDay.count { byDate[date] = byDay[index] }
         var logged = loggedDates
         for (date, outside) in health {
+            let positive: Bool = {
+                guard case .read(let values, let readKeys) = outside else { return false }
+                return readKeys.contains(where: { (values[$0] ?? 0) > 0 })
+            }()
+            // A day Health answered empty, which the journal did not log, says nothing: it must not add keys that
+            // would count as stated days in the average. A failed or partial read still stays unknown.
+            guard positive || healthFailed(outside) || logged.contains(date) else { continue }
             byDate[date] = addingHealth(byDate[date] ?? [:], outside: outside)
-            if case .read(let values, let readKeys) = outside,
-               readKeys.contains(where: { (values[$0] ?? 0) > 0 }) {
-                logged.insert(date)
-            }
+            if positive { logged.insert(date) }
         }
         let ordered = byDate.keys.sorted().map { byDate[$0] ?? [:] }
         return (ordered, logged.count)
+    }
+
+    /// Whether Health could not answer some nutrient the app maps, so the day is not fully known.
+    static func healthFailed(_ outside: HealthIntakeTotals.Outside) -> Bool {
+        guard case .read(_, let readKeys) = outside else { return false }
+        return nutrients.contains { nutrient in
+            guard HealthKitWritePlanner.mapping(for: nutrient) != nil else { return false }
+            return !readKeys.contains(HealthKitWritePlanner.canonicalKey(for: nutrient))
+        }
     }
 
     /// The sum of the days' tallies, nutrient by nutrient.
