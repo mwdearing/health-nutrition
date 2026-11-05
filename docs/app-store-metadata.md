@@ -12,9 +12,9 @@ changes. Nothing here claims a score, advice or a medical effect, and the verb f
 | Subtitle | 28 | 30 |
 | Promotional text | 167 | 170 |
 | Keywords | 90 | 100 |
-| Description | 2547 | 4000 |
+| Description | 2647 | 4000 |
 | What's New | 324 | 4000 |
-| Review notes | 2239 | 4000 |
+| Review notes | 2290 | 4000 |
 
 Counts are Unicode characters as Python's `len` reports them, not counting the trailing newline. The keyword field counts the commas.
 
@@ -69,9 +69,9 @@ MORE
 - Erase all data in Settings removes the journal and other app data on this device. It does not remove samples already written to Apple Health or shared catalog submissions.
 
 PRIVATE BY DESIGN
-- Your journal is stored on this device. The app has no ads, no analytics and no tracking.
+- Your journal is stored on this device. The app has no ads and no analytics, and it does not track you across other apps or sites.
 - Lookups send only what you submit: the barcode (to the community catalog, when signed in) or the words you search for (to the food databases, and to the project's server when signed in).
-- An account is optional. Sign in with Apple or an emailed code only if you want to share product labels with the community catalog.
+- An account is optional. Sign in with Apple or an emailed code only if you want to share product labels with the community catalog, look up a barcode there or search shared products by name.
 
 Health Nutrition is a journal. It does not give scores, advice or medical guidance.
 
@@ -104,7 +104,7 @@ result in App Store Connect, since the questionnaire's wording changes.
 | Gambling, contests | None | None. |
 | Medical or treatment information | None | The app is a journal. It gives no medical information, no advice and no treatment guidance. |
 | Health or wellness topics | Yes, infrequent | It logs nutrition, water and supplements. It gives no scores or advice. |
-| Unrestricted web access | No | The app only calls its fixed lookup services. It has no browser. |
+| Unrestricted web access | No | The app only calls its fixed lookup services. It has no browser a person can use to visit pages. The emailed-code sign-in may show a human-check challenge from hCaptcha inside the app. |
 | User-generated content | Yes | A signed-in person can share a product label's facts, which other people can find after owner review. There is no chat, posting, profile or free-text social feature. |
 | Messaging or chat | No | None. |
 | Parental controls, age assurance | No | None. |
@@ -121,7 +121,7 @@ How to see the main flow: on Today, tap Add food, drink, or supplement, type a n
 
 Apple Health (HealthKit): off until the user taps Connect Apple Health in Settings. It is used only for nutrition logging: (1) it writes the nutrients and water of entries the user logs, and removes them again when the user edits or deletes an entry; (2) after the user connects, it reads the nutrient types it writes so Today's totals include nutrition other apps logged; (3) only if the user taps Show steps, activity and weight on Today, it reads steps, active energy and weight to show them there, and height to prefill goal setup (height is not saved). Nothing read from Health leaves the phone. No Health data is used for advertising, tracking or sold or shared with third parties.
 
-Camera: used only to scan a package barcode or read a Nutrition Facts or Supplement Facts label on the device. No image is stored or sent. A rare camera check can also appear inside the hCaptcha challenge for an emailed sign-in code.
+Camera: used only to scan a package barcode or read a Nutrition Facts or Supplement Facts label on the device. No image is stored or sent by the app. A rare camera check can also appear inside the hCaptcha challenge for an emailed sign-in code; that check runs in hCaptcha's own view.
 
 Notifications: optional reminders to log water or supplements, off until the user turns them on.
 
@@ -137,5 +137,5 @@ Privacy: the privacy manifest, the policy and the App Store privacy answers are 
 
 The copy stays inside the roadmap. It does not say the app diagnoses, treats, coaches or scores anything, and it
 does not claim that goals are healthy or recommended. The Medication log is off by default and a named-medication
-feature, so the copy does not mention it. The reference-values line in the description describes published
+feature, so the copy does not mention it. The reference-intakes line in the description describes published
 reference intakes shown beside the day's totals (`docs/reference-intakes.md`), not advice.
