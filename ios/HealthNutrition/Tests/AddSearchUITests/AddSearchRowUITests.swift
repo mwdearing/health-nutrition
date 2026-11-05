@@ -22,7 +22,9 @@ final class AddSearchRowUITests: XCTestCase {
         row.tap()
 
         let field = app.textFields["sharedProductSearchField"]
-        XCTAssertTrue(field.waitForExistence(timeout: 10), "product search did not open")
+        // A loaded CI simulator can take 15 s or more just to deliver the tap and settle, so the screen gets the same
+        // headroom as the hittable and focus waits below. A search screen that never opens still fails here.
+        XCTAssertTrue(field.waitForExistence(timeout: 30), "product search did not open")
         XCTAssertEqual(field.label, "Search foods", "the search field's label is not the agreed name")
         // The field takes focus after a short delay, and a busy simulator can take longer than a few seconds, so
         // wait for it to be hittable first, then allow a longer window for focus. A field that never takes focus
