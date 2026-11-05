@@ -84,17 +84,20 @@ final class AddIntakeServingTests: XCTestCase {
         XCTAssertEqual(energy?.cannotScale, false)
     }
 
+    /// The store accepts only a lowercase UUID as an intake id.
+    private static let intakeID = "00000000-0000-4000-8000-000000000001"
+
     /// Saves the model's current form and returns the one stored component, read back from the store.
     private func savedComponent(
         _ configure: (AddIntakeViewModel) -> Void, system: UnitSystem = .usCustomary
     ) throws -> IntakeComponent {
         let store = try makeStore()
         let model = AddIntakeViewModel(
-            store: store, now: now, timeZoneIdentifier: "UTC", makeID: { "intake" }, lookup: nil,
+            store: store, now: now, timeZoneIdentifier: "UTC", makeID: { Self.intakeID }, lookup: nil,
             preferences: InMemoryDisplayPreferences(unitSystem: system))
         configure(model)
         XCTAssertTrue(model.save(now: now))
-        return try XCTUnwrap(store.revisions(of: "intake").first?.components.first)
+        return try XCTUnwrap(store.revisions(of: Self.intakeID).first?.components.first)
     }
 
     func testAnOunceServingLeftAsOpenedIsStoredAsExactGrams() throws {
