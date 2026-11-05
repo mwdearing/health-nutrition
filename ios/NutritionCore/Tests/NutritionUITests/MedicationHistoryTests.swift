@@ -133,7 +133,7 @@ final class MedicationHistoryTests: XCTestCase {
 
         let saved = try XCTUnwrap(try store.doses(of: vial.id).first)
         XCTAssertEqual(saved.takenAt, instant("2026-04-10T09:30:00Z"))
-        XCTAssertEqual(saved.timeZoneIdentifier, "UTC")
+        XCTAssertEqual(saved.timeZoneIdentifier, TimeZone(identifier: "UTC")!.identifier, "the device's zone, as it names itself")
         XCTAssertNil(saved.note)
         XCTAssertEqual(history.rows.first?.timeText, "9:30 AM")
     }
