@@ -1085,7 +1085,7 @@ public enum JournalImporter {
     /// from later. A name the relay encoder refuses (host-local keys such as `localtime`, the `posix/` and
     /// `right/` copies of the database) is refused here too, so an entry never imports only to fail delivery.
     private static func checkTimeZone(_ identifier: String, of intakeID: String) throws {
-        guard !identifier.isEmpty, IntakeContextTimestamp.portableZone(identifier: identifier) != nil else {
+        guard !identifier.isEmpty, TimeZone(identifier: identifier) != nil else {
             throw JournalImportError.corrupt(
                 "\(intakeID) has the time zone \"\(identifier)\", which is not a time zone name this app can use")
         }
