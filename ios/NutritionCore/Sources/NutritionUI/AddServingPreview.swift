@@ -36,4 +36,13 @@ public struct AmountPreview: Equatable {
             carbohydrates: per(LookedUpProduct.carbohydrates, in: .g),
             fat: per(LookedUpProduct.fat, in: .g))
     }
+
+    /// One preview row's figure, rounded the way the "This adds" lines round it: whole calories, one fraction
+    /// digit of a gram. Nil is a value the source did not give, so it reads as unknown, never as zero.
+    static func rowText(_ value: Decimal?, unit: String) -> String {
+        guard let value else { return "Unknown" }
+        let shown = AmountDisplay.nutrient(value, unit: unit.isEmpty ? .kcal : .g).amount
+        let figure = DecimalFormatting.text(shown)
+        return unit.isEmpty ? figure : "\(figure) \(unit)"
+    }
 }

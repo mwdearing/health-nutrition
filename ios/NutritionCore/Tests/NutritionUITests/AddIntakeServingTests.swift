@@ -84,6 +84,89 @@ final class AddIntakeServingTests: XCTestCase {
         XCTAssertEqual(energy?.cannotScale, false)
     }
 
+    /// Saves the model's current form and returns the one stored component, read back from the store.
+    private func savedComponent(
+        _ configure: (AddIntakeViewModel) -> Void, system: UnitSystem = .usCustomary
+    ) throws -> IntakeComponent {
+        let store = try makeStore()
+        let model = AddIntakeViewModel(
+            store: store, now: now, timeZoneIdentifier: "UTC", makeID: { "intake" }, lookup: nil,
+            preferences: InMemoryDisplayPreferences(unitSystem: system))
+        configure(model)
+        XCTAssertTrue(model.save(now: now))
+        return try XCTUnwrap(store.revisions(of: "intake").first?.components.first)
+    }
+
+    func testAnOunceServingLeftAsOpenedIsStoredAsExactGrams() throws {
+        let component = try savedComponent { $0.applyLookedUp(picked(serving: ServingDefinition(quantity: 2, unit: .oz))) }
+        XCTAssertEqual(component.unit, .g)
+        XCTAssertEqual(component.amount, Decimal(string: "56.69904625")!)
+    }
+
+    func testAnOunceServingCountIsStoredAsExactGrams() throws {
+        let component = try savedComponent {
+            $0.applyLookedUp(picked(serving: ServingDefinition(quantity: 2, unit: .oz)))
+            $0.setServingCount("3")
+        }
+        XCTAssertEqual(component.unit, .g)
+        XCTAssertEqual(component.amount, Decimal(string: "170.09713875")!)
+    }
+
+    func testACommittedServingCountIsStoredAsGrams() throws {
+        let component = try savedComponent {
+            $0.applyLookedUp(picked(serving: ServingDefinition(quantity: 2, unit: .oz)))
+            $0.servingCount = "3."
+            $0.commitServingCount()
+        }
+        XCTAssertEqual(component.unit, .g)
+        XCTAssertEqual(component.amount, Decimal(string: "170.09713875")!)
+    }
+
+    /// A serving carried in grams, as the USDA search builds it, saves as exactly those grams under either system.
+    func testAGramServingIsStoredAsExactlyThoseGramsUnderBothSystems() throws {
+        for system in [UnitSystem.usCustomary, .metric] {
+            let one = try savedComponent(
+                { $0.applyLookedUp(picked(serving: ServingDefinition(quantity: 30, unit: .g))) }, system: system)
+            XCTAssertEqual(one.unit, .g)
+            XCTAssertEqual(one.amount, Decimal(30))
+            let two = try savedComponent({
+                $0.applyLookedUp(picked(serving: ServingDefinition(quantity: 30, unit: .g)))
+                $0.setServingCount("2")
+            }, system: system)
+            XCTAssertEqual(two.unit, .g)
+            XCTAssertEqual(two.amount, Decimal(60))
+        }
+    }
+
+    func testAGramServingOpensRoundedInOunces() throws {
+        let model = try makeModel()
+        let serving = ServingDefinition(quantity: Decimal(30), unit: .g)
+        model.applyLookedUp(picked(serving: serving))
+        XCTAssertEqual(model.amountText, "1.06")
+        XCTAssertEqual(model.unit, .oz)
+        model.setServingCount("2")
+        XCTAssertEqual(model.amountText, "2.12")
+    }
+
+    func testServingPreviewRowsAreRoundedLikeThisAdds() throws {
+        let model = try makeModel()
+        let product = LookedUpProduct(
+            barcode: "", name: "Rice cake", brand: nil, basis: .per100g,
+            nutrients: [LookedUpProduct.energyKcal: .known(Decimal(389), .kcal)],
+            attribution: nil, serving: ServingDefinition(quantity: 30, unit: .g), version: nil)
+        model.applyLookedUp(product)
+        let preview = try XCTUnwrap(model.amountPreview)
+        let calories = AmountPreview.rowText(preview.kcal, unit: "")
+        XCTAssertFalse(calories.contains("."), calories)
+        XCTAssertEqual(AmountPreview.rowText(nil, unit: "g"), "Unknown")
+        XCTAssertEqual(AmountPreview.rowText(Decimal(string: "12.3456789")!, unit: "g"), "12.3 g")
+    }
+
+    func testServingLabelRoundsAConvertedQuantity() {
+        let quotient = Decimal(30) / Decimal(string: "28.349523125")!
+        XCTAssertEqual(ServingDefinition(quantity: quotient, unit: .oz, text: nil).label, "1.06 oz")
+    }
+
     func testPerHundredGramPickOffersOnlyMassUnits() throws {
         let model = try makeModel()
         model.applyLookedUp(picked(serving: ServingDefinition(quantity: 2, unit: .oz)))

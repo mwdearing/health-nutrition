@@ -56,7 +56,7 @@ struct AddServingControls: View {
         HStack {
             Text(name)
             Spacer()
-            Text(value.map { unit.isEmpty ? DecimalFormatting.text($0) : "\(DecimalFormatting.text($0)) \(unit)" } ?? "Unknown")
+            Text(AmountPreview.rowText(value, unit: unit))
                 .foregroundStyle(TokenColors.textSecondary)
         }
         .accessibilityElement(children: .combine)

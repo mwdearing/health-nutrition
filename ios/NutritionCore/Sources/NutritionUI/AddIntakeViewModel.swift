@@ -962,16 +962,25 @@ public final class AddIntakeViewModel: ObservableObject {
             return
         }
         isPrefilling = true
-        amountText = DecimalFormatting.text(display.quantity)
+        amountText = DecimalFormatting.text(Self.shownServing(display.quantity))
         unit = display.unit
         isPrefilling = false
         servingCount = "1"
         // The opened amount is the serving, so emptying the Servings field later clears it.
         amountFromServings = true
-        // Saved as the exact serving the source gave, so the rounded figure shown never restates it.
+        // Saved as the exact serving the source gave, in metric, so the rounded figure shown never restates it.
         if let servingOption, let shown = AmountParser.parseTyped(amountText) {
-            prefillBacking = (shown, display.unit, servingOption.quantity ?? shown, servingOption.unit ?? display.unit)
+            let stored = Self.storedMetric(
+                amount: servingOption.quantity ?? shown, unit: servingOption.unit ?? display.unit)
+            prefillBacking = (shown, display.unit, stored.amount, stored.unit)
         }
+    }
+
+    /// A serving figure as the Amount field shows it: rounded the way a stored amount is read, so a converted
+    /// serving never opens as a 38-digit quotient. The exact figure stays in `prefillBacking`.
+    private static func shownServing(_ value: Decimal) -> Decimal {
+        let rounded = DisplayRounding.rounded(value, fractionDigits: AmountDisplay.fractionDigits(for: value))
+        return rounded > 0 || value <= 0 ? rounded : value
     }
 
     /// The serving in the person's mass unit: ounces under US units, grams under metric. The amount that
@@ -1006,12 +1015,13 @@ public final class AddIntakeViewModel: ObservableObject {
         // ("", "0", "0.", "0.0", "0,") is still being typed and leaves the amount alone; commitServingCount
         // settles it when the edit commits.
         guard let count = AmountParser.parseTyped(text, decimalSeparator: countDecimalSeparator) else { return }
-        amountText = DecimalFormatting.text(count * display.quantity)
+        amountText = DecimalFormatting.text(Self.shownServing(count * display.quantity))
         amountFromServings = true
         unit = display.unit
         if let servingOption, let quantity = servingOption.quantity, let servingUnit = servingOption.unit,
            let shown = AmountParser.parseTyped(amountText) {
-            prefillBacking = (shown, display.unit, count * quantity, servingUnit)
+            let stored = Self.storedMetric(amount: count * quantity, unit: servingUnit)
+            prefillBacking = (shown, display.unit, stored.amount, stored.unit)
         }
     }
 
@@ -1045,13 +1055,14 @@ public final class AddIntakeViewModel: ObservableObject {
               let display = servingInDisplayUnit else { return }
         isSettingServings = true
         defer { isSettingServings = false }
-        amountText = DecimalFormatting.text(count * display.quantity)
+        amountText = DecimalFormatting.text(Self.shownServing(count * display.quantity))
         amountFromServings = true
         unit = display.unit
         // The same exact-backing rule setServingCount applies, so a settled count saves the stored serving, not a rounded figure.
         if let servingOption, let quantity = servingOption.quantity, let servingUnit = servingOption.unit,
            let shown = AmountParser.parseTyped(amountText, decimalSeparator: countDecimalSeparator) {
-            prefillBacking = (shown, display.unit, count * quantity, servingUnit)
+            let stored = Self.storedMetric(amount: count * quantity, unit: servingUnit)
+            prefillBacking = (shown, display.unit, stored.amount, stored.unit)
         }
     }
 

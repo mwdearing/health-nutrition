@@ -69,8 +69,11 @@ public struct ServingDefinition: Sendable, Hashable {
         let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !trimmed.isEmpty { return trimmed }
         guard let quantity else { return "" }
-        guard let unit else { return "\(quantity)" }
-        return "\(quantity) \(unit.symbol)"
+        // Rounded like any shown amount: a converted serving can carry dozens of digits.
+        let shown = DecimalFormatting.text(
+            DisplayRounding.rounded(quantity, fractionDigits: AmountDisplay.fractionDigits(for: quantity)))
+        guard let unit else { return shown }
+        return "\(shown) \(unit.symbol)"
     }
 
     public var isEmpty: Bool { label.isEmpty }
