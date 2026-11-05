@@ -16,8 +16,8 @@ is nothing to declare and nothing to opt out of.
 
 ## Collected data
 
-`NSPrivacyCollectedDataTypes` currently declares four types. All four are
-linked to the user, not used for tracking, and used for app functionality:
+`NSPrivacyCollectedDataTypes` currently declares six types, all used for app functionality and none for
+tracking. All are declared linked to the user, the conservative answer even where one leg of a flow carries no account:
 
 | Manifest data type | Data the app handles |
 | --- | --- |
@@ -25,6 +25,8 @@ linked to the user, not used for tracking, and used for app functionality:
 | `NSPrivacyCollectedDataTypeUserID` | The community account identifier. |
 | `NSPrivacyCollectedDataTypeName` | The optional display name on the account profile. |
 | `NSPrivacyCollectedDataTypeOtherUserContent` | Product-label facts submitted to the community catalog while sharing is on: product name, brand, barcode, serving text and nutrient amounts. |
+| `NSPrivacyCollectedDataTypeSearchHistory` | Barcodes and Search foods words sent to the project's server with the signed-in account (community lookup and shared-product search), and the same words sent to USDA FoodData Central and Open Food Facts. Declared as linked because the project's server receives them with the signed-in account (the linkage applies to that leg only); USDA and Open Food Facts receive only the words, with no account. Barcodes are mapped here deliberately: a lookup is a query the person submits. |
+| `NSPrivacyCollectedDataTypeProductInteraction` | Declared as linked, the conservative answer: the captcha token travels in the same sign-in request as the email to the project's server, and the app does not verify here what that server keeps. hCaptcha itself receives no account ID or email. This covers the hCaptcha human check on email sign-in; the hCaptcha SDK (3.1.0, commit `caea076b`) ships its own manifest that declares exactly this type (not linked on its side, no tracking), app functionality; the app repeats it so the App Store Connect answers and the manifests agree. |
 
 The local journal is not uploaded as a journal. A barcode lookup sends the
 barcode to the community catalog only after the person asks for a lookup and is signed in; when the
@@ -32,6 +34,10 @@ catalog holds no product, the lookup reads as not found, even when label sharing
 [account behavior](accounts.md). A signed-out lookup does not call the
 authenticated community catalog, but Open Food Facts and an email sign-in
 challenge are separate requests to external services.
+
+Apple counts data sent off the device to the project's server or a partner service as collected, so the barcodes
+and search words above are declared as Search History. They are not sent to ad networks, brokers or analytics, and
+not used for tracking.
 
 A name search in Search foods sends only the words the person typed (2 to 80
 characters) to the Open Food Facts search service (`search.openfoodfacts.org`,
@@ -106,7 +112,7 @@ is not declared with a reason Apple publishes for it, when a declaration is
 malformed (an unknown category, an empty reasons array, a reason that is not a
 string), when a declared reason is not one Apple publishes (a typo such as an
 extra `BOGUS`, or a reason belonging to another category), or when
-`NSPrivacyTracking` is not false. It also fails when one of the four collected
+`NSPrivacyTracking` is not false. It also fails when one of the six required collected
 data types is missing, or is declared without linkage to the user, with
 tracking on, or without the app-functionality purpose.
 

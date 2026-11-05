@@ -71,10 +71,28 @@ public struct BodyActivityReadings: Equatable, Sendable {
 public protocol BodyActivityReading: AnyObject {
     /// Whether the person has been shown the read request on this device.
     var hasAskedForReadAccess: Bool { get }
+    /// Whether nutrient read access was asked for, by this card or by connecting Apple Health in Settings.
+    var hasAskedForNutrientReadAccess: Bool { get }
     /// Asks Health for read access to steps, active energy and weight.
     func requestReadAccess() async
     /// Today's steps and active energy, the latest weight, and every weigh-in of the last 28 days for the trend.
     func read(now: Date) async -> BodyActivityReadings
+    /// Only the outside intake, for a person who asked for nutrient access but not the card's request.
+    func readOutsideIntake(now: Date) async -> BodyActivityReadings
+}
+
+@MainActor
+extension BodyActivityReading {
+    public var hasAskedForNutrientReadAccess: Bool { hasAskedForReadAccess }
+    public func readOutsideIntake(now: Date) async -> BodyActivityReadings {
+        let full = await read(now: now)
+        var outside = BodyActivityReadings.empty
+        outside.outsideRead = full.outsideRead
+        outside.outsideNutrients = full.outsideNutrients
+        outside.outsideReadKeys = full.outsideReadKeys
+        outside.outsideReadFailed = full.outsideReadFailed
+        return outside
+    }
 }
 
 /// The activity and weight card on Today.
@@ -121,6 +139,11 @@ public final class BodyActivityViewModel: ObservableObject {
         hasAsked = reader.hasAskedForReadAccess
         guard hasAsked else {
             readings = .empty
+            // Connecting Apple Health in Settings already asked for the nutrient types: other apps' intake counts
+            // without the card's request, and nothing else from this read is kept.
+            if reader.hasAskedForNutrientReadAccess {
+                readings = await reader.readOutsideIntake(now: now)
+            }
             applyWeightPlan(now: now)
             onRead?(readings)
             return
@@ -385,6 +408,10 @@ public struct BodyActivityCard: View {
                 Task { await self.model.connect(now: self.now()) }
             }
             .disabled(model.isBusy)
+            // Connected in Settings: other apps' intake still counts, or says it could not be read.
+            if let outside = model.outsideText {
+                Text(outside).font(.footnote).foregroundStyle(TokenColors.textSecondary)
+            }
         } else if model.readings.isEmpty {
             Text(BodyActivityViewModel.emptyDetail)
                 .font(.footnote).foregroundStyle(TokenColors.textSecondary)
