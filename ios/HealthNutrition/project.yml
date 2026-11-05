@@ -302,8 +302,9 @@ schemes:
         HealthNutrition: all
         HealthNutritionStoreShotsUITests: [test]
     run:
-      config: Debug
+      config: Release
+    # Release, so the shots show the shipped app: the debug-only HealthKit tab is not built.
     test:
-      config: Debug
+      config: Release
       targets:
         - HealthNutritionStoreShotsUITests

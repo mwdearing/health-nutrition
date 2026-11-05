@@ -27,9 +27,9 @@ final class AppStoreScreenshotUITests: XCTestCase {
         XCTAssertFalse(
             app.staticTexts["Breakfast bowl"].exists, "the app already holds the demo entries; use a fresh simulator")
 
-        try log("Breakfast bowl", calories: "420", protein: "24", carbs: "52", fat: "12")
-        try log("Chicken and rice", calories: "610", protein: "46", carbs: "62", fat: "17")
-        try log("Greek yogurt and berries", calories: "190", protein: "17", carbs: "22", fat: "4")
+        try log("Breakfast bowl", meal: "Breakfast", calories: "420", protein: "24", carbs: "52", fat: "12")
+        try log("Chicken and rice", meal: "Lunch", calories: "610", protein: "46", carbs: "62", fat: "17")
+        try log("Greek yogurt and berries", meal: "Snack", calories: "190", protein: "17", carbs: "22", fat: "4")
 
         let cancel = app.buttons["Cancel"]
         XCTAssertTrue(cancel.waitForExistence(timeout: 10), "no Cancel on the Add screen")
@@ -40,8 +40,8 @@ final class AppStoreScreenshotUITests: XCTestCase {
         capture("1-today")
 
         tapTab("Diary")
-        let seeded = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Chicken and rice")).firstMatch
-        XCTAssertTrue(seeded.waitForExistence(timeout: 15), "the Diary lost a seeded entry")
+        let day = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "1,220")).firstMatch
+        XCTAssertTrue(day.waitForExistence(timeout: 15), "the Diary does not show the seeded day total")
         capture("2-diary")
 
         tapTab("Trends")
@@ -69,7 +69,7 @@ final class AppStoreScreenshotUITests: XCTestCase {
 
     /// Logs one entry through Add, "Amounts only". After a Log the Add screen stays open (its Recent list now holds
     /// the entry), so the next entry starts from there; the first one opens Add from Today.
-    private func log(_ name: String, calories: String, protein: String, carbs: String, fat: String) throws {
+    private func log(_ name: String, meal: String, calories: String, protein: String, carbs: String, fat: String) throws {
         if !app.buttons["Amounts only"].exists {
             let add = app.buttons.matching(NSPredicate(format: "label == %@", "Add food, drink, or supplement"))
             if !pollUntil(timeout: 30, { add.allElementsBoundByIndex.contains { $0.exists && $0.isHittable } }) {
@@ -87,6 +87,7 @@ final class AppStoreScreenshotUITests: XCTestCase {
         try type(protein, intoFieldStartingWith: "Protein")
         try type(carbs, intoFieldStartingWith: "Carbs")
         try type(name, intoFieldStartingWith: "Name")
+        chooseMeal(meal)
 
         let logButton = app.buttons["Log"]
         XCTAssertTrue(logButton.waitForExistence(timeout: 10), "no Log button")
@@ -121,6 +122,21 @@ final class AppStoreScreenshotUITests: XCTestCase {
             XCTFail("the \(prefix) field did not take focus (field frame \(field.frame))")
         }
         app.typeText(text)
+    }
+
+    /// Picks a meal from the Meal menu. Best effort: an entry with no meal lands under Other, which is still valid.
+    private func chooseMeal(_ meal: String) {
+        dismissKeyboard()
+        let menu = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Meal")).firstMatch
+        var scrolls = 0
+        while !(menu.exists && menu.isHittable) && scrolls < 4 {
+            app.swipeUp()
+            scrolls += 1
+        }
+        guard menu.exists, menu.isHittable else { return }
+        menu.tap()
+        let option = app.buttons[meal]
+        if option.waitForExistence(timeout: 5) { option.tap() }
     }
 
     private func dismissKeyboard() {
