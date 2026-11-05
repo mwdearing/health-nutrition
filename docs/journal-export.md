@@ -18,10 +18,10 @@ rejects dates Foundation would normalize, including the skipped cutover days. Th
 not change any schema's shape.
 
 The contract lives in the repository next to the code:
-- `contracts/journal-export/v6.schema.json` - JSON Schema, draft 2020-12, `additionalProperties: false` at the top level and on every object it defines. This is the version this build writes.
-- `contracts/journal-export/example.v6.json` - a small synthetic document that validates against it.
-- `contracts/journal-export/v5.schema.json` and `example.v5.json` - the version 5 contract, kept unchanged and still read.
-- `contracts/journal-export/v3.schema.json`, `v2.schema.json`, `v1.schema.json` and their examples - the version 3, 2 and 1 contracts, kept unchanged and still read.
+- `contracts/journal-export/v8.schema.json` - JSON Schema, draft 2020-12, `additionalProperties: false` at the top level and on every object it defines. This is the version this build writes (`JournalExport.currentSchemaVersion`).
+- `contracts/journal-export/example.v8.json` - a small synthetic document that validates against it.
+- `contracts/journal-export/v1.schema.json` to `v7.schema.json` and `example.v1.json` to `example.v7.json` - the earlier contracts, kept unchanged and still read.
+- `ios/NutritionCore/Tests/NutritionJournalExportTests/Contracts/` - copies of every schema and example, which the Swift export tests read. `scripts/tests/test_journal_export_contract.py` fails when a copy differs from its canonical file or a version has no schema or example, and `testBundledContractCopiesMatchTheCanonicalFiles` in `JournalExportTests.swift` checks the same in Swift.
 
 Version 2 is version 1 with one field: `provenance.kind`, which says whether a product is a `food`, a
 `drink` or a `supplement`. It is what a restore needs to know whether a snapshot joins the day's count of
@@ -54,7 +54,7 @@ the backup.
 `JournalExporter.decode(_:)` reads a document back and refuses any `schema_version` other than
 `currentSchemaVersion` with `JournalExportError.unsupportedSchemaVersion`, because a reader that does not
 know a newer version's semantics would otherwise hand back a document with fields it silently ignored.
-**Versions 1, 2, 3, 4, 5 and 6 are read**, so a backup taken before the kind, a revision's own time or saved meals
+**Versions 1 to 8 are read**, so a backup taken before the kind, a revision's own time or saved meals
 existed still restores; `decode(_:)` reads the version off the document and hands it to the matching
 `init(from:)`. New exports write version 6. Re-encoding a decoded older document preserves its version and omits
 the fields that version does not have (`kind` for version 1, a revision's time for versions 1 and 2, saved meals
@@ -235,7 +235,7 @@ erase replaces the journal.
 ## Fields
 | Field | Meaning |
 |---|---|
-| `schema_version` | Version of the schema this document follows. This build writes `6`; versions 1 to 5 are still read. |
+| `schema_version` | Version of the schema this document follows. This build writes `8`; versions 1 to 7 are still read. |
 | `exported_at` | When the export was made, ISO-8601 in UTC. |
 | `app_version` | Version of the app that wrote the file. |
 | `intakes` | Active intakes, sorted by id. Each one carries its time zone, category, meal, note, current revision number and every revision. |
@@ -281,8 +281,8 @@ already resolved is reused instead of being fetched again for every revision tha
 means requires a **new schema version** (a new `vN.schema.json`) and a new `currentSchemaVersion` in
 `JournalExport`. Readers of the older versions keep working, because a reader that does not know a field can
 ignore it and the old version keeps rejecting unknown fields through `additionalProperties: false`. This
-build **writes version 6 and reads versions 1, 2, 3, 4, 5 and 6**; `decode(_:)` refuses anything else by value
-rather than by shape, so a version 7 file is never half-understood.
+build **writes version 8 and reads versions 1 to 8**; `decode(_:)` refuses anything else by value
+rather than by shape, so a version 9 file is never half-understood.
 
 Adding the kind is what version 2 is, and it shows both halves of the rule. Reading version 1 is a decision
 in its own right: its documents carry no kind, and refusing them would take away the only backup a person
