@@ -12,9 +12,9 @@ changes. Nothing here claims a score, advice or a medical effect, and the verb f
 | Subtitle | 28 | 30 |
 | Promotional text | 167 | 170 |
 | Keywords | 90 | 100 |
-| Description | 2432 | 4000 |
+| Description | 2547 | 4000 |
 | What's New | 324 | 4000 |
-| Review notes | 2093 | 4000 |
+| Review notes | 2239 | 4000 |
 
 Counts are Unicode characters as Python's `len` reports them, not counting the trailing newline. The keyword field counts the commas.
 
@@ -51,7 +51,7 @@ SEE YOUR DAY
 - Today shows calories, protein, carbohydrate and fat, plus a bar for every other nutrient you track, against goals you set. Set the goals yourself, or answer a few questions for a starting estimate you can change any time.
 - The Diary lists every day by meal. Open any entry to fix the amount, time or day.
 - Trends shows the last 7 days and 30-day averages from your own Diary. A day you did not log is shown as empty, not as zero.
-- See vitamins and minerals for the day beside published reference amounts.
+- See vitamins and minerals for the day beside published reference intakes.
 - Use US or metric units.
 
 SUPPLEMENTS AND WATER
@@ -70,7 +70,7 @@ MORE
 
 PRIVATE BY DESIGN
 - Your journal is stored on this device. The app has no ads, no analytics and no tracking.
-- Barcode and name lookups send only the barcode or the words you submit.
+- Lookups send only what you submit: the barcode (to the community catalog, when signed in) or the words you search for (to the food databases, and to the project's server when signed in).
 - An account is optional. Sign in with Apple or an emailed code only if you want to share product labels with the community catalog.
 
 Health Nutrition is a journal. It does not give scores, advice or medical guidance.
@@ -113,11 +113,11 @@ result in App Store Connect, since the questionnaire's wording changes.
 ## Review notes
 
 ```text
-Sign-in: none is needed to review the main flow. The reviewer does not need an account or a password. An account is optional. Everything works signed out except two things: sharing product labels with the community catalog and looking up a barcode in that catalog, which need an account. Scanning a barcode still fills the barcode field without one. If you want to see it, Settings > Account offers Sign in with Apple, or an emailed one-time code (this may show an hCaptcha human check first). Delete account is in the same place.
+Sign-in: none is needed to review the main flow. The reviewer does not need an account or a password. An account is optional. Everything works signed out except three things, which need an account: sharing product labels with the community catalog, looking up a barcode in that catalog, and searching shared products by name. Scanning a barcode still fills the barcode field without one. If you want to see it, Settings > Account offers Sign in with Apple, or an emailed one-time code (this may show an hCaptcha human check first). Delete account is in the same place.
 
 First launch: a welcome screen appears once. Tap Get started. Nothing is requested at launch.
 
-How to see the main flow: on Today, tap Add food, drink, or supplement, type a name and an amount, and save; tap a quick-add water button; open the Diary tab to see the entry. Search foods sends the words you submit (two or more characters) to Open Food Facts, and to USDA FoodData Central in builds that carry its key.
+How to see the main flow: on Today, tap Add food, drink, or supplement, type a name and an amount, and save; tap a quick-add water button; open the Diary tab to see the entry. Search foods sends the words you submit (two or more characters) to Open Food Facts, and to USDA FoodData Central in builds that carry its key. When signed in, the same words also go to the project's server with the account, to search shared products.
 
 Apple Health (HealthKit): off until the user taps Connect Apple Health in Settings. It is used only for nutrition logging: (1) it writes the nutrients and water of entries the user logs, and removes them again when the user edits or deletes an entry; (2) after the user connects, it reads the nutrient types it writes so Today's totals include nutrition other apps logged; (3) only if the user taps Show steps, activity and weight on Today, it reads steps, active energy and weight to show them there, and height to prefill goal setup (height is not saved). Nothing read from Health leaves the phone. No Health data is used for advertising, tracking or sold or shared with third parties.
 
