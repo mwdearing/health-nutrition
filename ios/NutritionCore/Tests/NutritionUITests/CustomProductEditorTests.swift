@@ -8,6 +8,38 @@ import NutritionProviders
 @testable import NutritionJournal
 @testable import NutritionUI
 
+final class CustomProductEditorTypedAmountTests: XCTestCase {
+    func testCommaRegionReadsTypedCommaLikeTheRestOfTheApp() throws {
+        let expected = try XCTUnwrap(Decimal(string: "2.5", locale: Locale(identifier: "en_US_POSIX")))
+        XCTAssertEqual(try CustomProductEditorViewModel.decimal("2,5", field: "Protein", decimalSeparator: ","), expected)
+        XCTAssertEqual(try CustomProductEditorViewModel.decimal("2.5", field: "Protein", decimalSeparator: ","), expected)
+    }
+    func testPointRegionStillRefusesComma() {
+        XCTAssertThrowsError(try CustomProductEditorViewModel.decimal("2,5", field: "Protein", decimalSeparator: "."))
+        XCTAssertThrowsError(try CustomProductEditorViewModel.decimal("1.234,5", field: "Protein", decimalSeparator: ","))
+    }
+    func testEveryFieldProblemReadsAsASentenceWithoutCodeNames() {
+        let cases: [(String, CustomProductFieldError.Code)] = [
+            ("Protein", .invalidAmount), ("serving", .invalidAmount), ("serving.quantity", .invalidAmount),
+            ("facts[0].amount", .invalidAmount), ("serving", .servingRequired), ("barcode", .invalidBarcode),
+            ("Protein unit", .required), ("ingredient", .required), ("name", .required), ("brand", .tooLong),
+            ("facts", .tooManyFacts), ("facts[0].key", .duplicateKey), ("facts[0].key", .unsupportedKey),
+            ("facts[0].unit", .unsupportedDimension), ("name", .invalidText),
+        ]
+        for (field, code) in cases {
+            let text = CustomProductEditorViewModel.message(for: CustomProductFieldError(field: field, code: code))
+            XCTAssertFalse(text.contains(code.rawValue), text)
+            XCTAssertFalse(text.hasPrefix("Check "), text)
+            XCTAssertFalse(text.contains("["), text)
+            XCTAssertTrue(text.hasSuffix("."), text)
+        }
+        XCTAssertEqual(CustomProductEditorViewModel.message(for: CustomProductFieldError(field: "Protein", code: .invalidAmount)),
+                       "Enter the protein amount as a number, such as 2.5.")
+        XCTAssertEqual(CustomProductEditorViewModel.message(for: CustomProductFieldError(field: "serving", code: .invalidAmount)),
+                       "Enter a serving size greater than zero, such as 150 or 2.5.")
+    }
+}
+
 final class CustomProductEditorTests: XCTestCase {
     @MainActor func testEligibleNewCreationAtomicallyIncludesPublicationForEveryKind() async throws {
         for kind in ProductKind.allCases {
