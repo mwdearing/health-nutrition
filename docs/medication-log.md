@@ -2,7 +2,7 @@
 
 Status: the list, add, log and archive screens exist. Settings has the switch (off by default), and the
 Library shows a Medication log row once it is on. Dose days show on the weight chart while the log is on.
-Not yet: history editing, the Today tile and export.
+Not yet: history editing and export.
 
 The medication log keeps the medications a person names and the doses they type. The person
 names each medication and types every dose field. The log never suggests, checks or changes a
@@ -13,6 +13,8 @@ dose, and it holds no list of drugs, dose ranges, titration steps or advice.
 - **Settings switch.** Settings > Units and logging has a Medication log switch. It is off by default.
   Turning it off hides the log and keeps the data.
 - **Library row.** While the switch is on, the Library shows a Medication log row next to My supplements.
+- **Today.** While the switch is on, the Medications tile on Today shows each active medication's standing (see
+  [today-screen.md](today-screen.md)).
 - **List.** Each active medication shows its name, unit and schedule, then these lines:
   - "Last dose" with the amount, unit, day and time of the latest dose, or "No dose logged yet";
   - days since the last dose: "Today", "1 day since" or "N days since". A dose whose own day is after
@@ -111,6 +113,5 @@ the file is kept and the erase reports the failure.
 
 ## Not yet
 
-- History editing (a later slice).
-- The Today tile (a later slice).
+- History editing.
 - Export.
