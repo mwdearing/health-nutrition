@@ -25,6 +25,7 @@ concurrency:
 jobs:
   capture:
     runs-on: macos-latest
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -50,6 +51,7 @@ jobs:
         env:
           DEVICE: ${{ matrix.device }}
           FALLBACK: ${{ matrix.fallback }}
+          SIZE: ${{ matrix.size }}
         run: |
           xcrun simctl list devicetypes
           xcrun simctl list runtimes available
@@ -71,7 +73,7 @@ jobs:
             echo "No simulator type ($DEVICE or $FALLBACK) or iOS runtime on this runner." >&2
             exit 1
           fi
-          udid=$(xcrun simctl create "store-${{ matrix.size }}" "$type_id" "$runtime")
+          udid=$(xcrun simctl create "store-$SIZE" "$type_id" "$runtime")
           xcrun simctl boot "$udid"
           xcrun simctl bootstatus "$udid" -b
           xcrun simctl ui "$udid" appearance light
@@ -90,8 +92,26 @@ jobs:
             -resultBundlePath "$RUNNER_TEMP/store-shots.xcresult" test
           ls -l "$RUNNER_TEMP/store-screenshots"
           file "$RUNNER_TEMP"/store-screenshots/*.png
+      # The App Store sizes, so a wrong device fallback fails here and not at upload time.
+      - name: Check the screenshot sizes
+        env:
+          SIZE: ${{ matrix.size }}
+        run: |
+          case "$SIZE" in
+            6.9-inch) want="1320x2868" ;;
+            6.5-inch) want="1242x2688" ;;
+            *) echo "unknown size $SIZE" >&2; exit 1 ;;
+          esac
+          count=0
+          for f in "$RUNNER_TEMP"/store-screenshots/*.png; do
+            got=$(sips -g pixelWidth -g pixelHeight "$f" | awk '/pixelWidth/{w=$2} /pixelHeight/{h=$2} END{print w "x" h}')
+            if [ "$got" != "$want" ]; then echo "$f is $got, want $want" >&2; exit 1; fi
+            count=$((count + 1))
+          done
+          if [ "$count" -ne 5 ]; then echo "expected 5 screenshots, found $count" >&2; exit 1; fi
+      # Only a complete, size-checked set is published under the store name.
       - name: Upload the screenshots
-        if: always()
+        if: success()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: appstore-screenshots-${{ matrix.size }}

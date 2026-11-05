@@ -144,14 +144,15 @@ final class AppStoreScreenshotUITests: XCTestCase {
         app.typeText(text)
     }
 
-    /// Sets the meal on the Add screen's meal menu, which the next entry takes. Best effort: an entry with no meal
-    /// lands under Other, which is still valid, but the element tree is kept so a miss can be fixed.
+    /// Sets the meal on the Add screen's meal menu, which the next entry takes. A miss fails the test, because the
+    /// entry would land under Other and the store shot would show the wrong meal.
     private func chooseMealOnAddHome(_ meal: String, entry: String) {
         let menu = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@ OR label == %@", "meal", "None")).firstMatch
         guard menu.waitForExistence(timeout: 5), menu.isHittable else {
             try? app.debugDescription.write(
                 to: outputFile("debug-tree-no-meal-menu-\(entry)", ext: "txt"), atomically: true,
                 encoding: .utf8)
+            XCTFail("no meal menu on the Add screen for \(entry)")
             return
         }
         menu.tap()
@@ -162,6 +163,7 @@ final class AppStoreScreenshotUITests: XCTestCase {
             let chosen = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", meal)).firstMatch
             XCTAssertTrue(chosen.waitForExistence(timeout: 5), "the meal menu did not take \(meal)")
         } else {
+            XCTFail("no \(meal) option in the meal menu")
             capture("debug-meal-menu-\(entry)")
             try? app.debugDescription.write(
                 to: outputFile("debug-tree-meal-menu-\(entry)", ext: "txt"), atomically: true,
