@@ -884,6 +884,8 @@ public final class JournalViewModel: ObservableObject {
         hidden: Set<String>, unitSystem: UnitSystem, displayNames: [String: String] = [:],
         outsideByDay: [String: HealthIntakeTotals.Outside] = [:]
     ) -> JournalWeekSummary? {
+        // A journal with no day at all shows its empty state, not a week card, whatever Health holds.
+        guard !sections.isEmpty else { return nil }
         // The window is read by instant in the journal's zone: from the start of the day six days back to now.
         // An entry's own zone only decides which day section it sits in, so a trip across zones cannot move an
         // entry in or out of the week or make a section count twice.
@@ -904,8 +906,6 @@ public final class JournalViewModel: ObservableObject {
         let healthOnlyKeys = windowKeys.filter { key in
             outsideByDay[key]?.statesIntake == true && !week.contains { $0.id == key }
         }
-        // Not connected, a read with no samples and a failed read state nothing, so they leave the card as it was.
-        guard !sections.isEmpty || !healthOnlyKeys.isEmpty else { return nil }
         let logged = week.filter { hasFoodEntries($0.rows) || outsideByDay[$0.id]?.statesIntake == true }
         let days: [WeekDay] = logged.map { WeekDay(totals: $0.totals, outside: outsideByDay[$0.id] ?? .notConnected) }
             + healthOnlyKeys.map { WeekDay(totals: nil, outside: outsideByDay[$0] ?? .notConnected) }

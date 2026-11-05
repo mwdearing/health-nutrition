@@ -409,6 +409,32 @@ final class JournalWeekSummaryTests: XCTestCase {
         XCTAssertEqual(model.weekSummary?.headline, "Nothing logged this week.")
     }
 
+    /// A Health-only day whose query for the goal's nutrient failed cannot be totaled: it counts as logged, and is counted
+    /// in the parenthetical rather than averaged as zero.
+    func testAHealthOnlyDayWhoseNutrientQueryFailedCannotBeTotaled() throws {
+        let journal = try makeJournalStore()
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        try logProtein(journal, daysBack: 0, 13)
+
+        let model = makeModel(journal, goals: goals)
+        model.outsideIntakeByDay = [dayKey(1): .read(values: ["energy": 500], readKeys: ["energy"])]
+        model.load(now: weekNow)
+
+        XCTAssertEqual(model.weekSummary?.headline, "Logged 2 of 7 days")
+        XCTAssertEqual(
+            model.weekSummary?.goalLines, ["Protein: average 13 g a day against 60 g (1 day could not be totaled)"])
+    }
+
+    /// A journal with no day at all shows its empty state, not a week card, even when Health holds intake.
+    func testAnEmptyJournalHasNoWeekCardWhateverHealthHolds() throws {
+        let model = makeModel(try makeJournalStore())
+        model.outsideIntakeByDay = [dayKey(1): healthProtein(40)]
+        model.load(now: weekNow)
+
+        XCTAssertNil(model.weekSummary)
+    }
+
     /// The week card reads Health for all seven days, not only the days on screen, and rebuilds from it.
     func testTheWeekReadAsksHealthForSevenDaysAndRebuildsTheCard() async throws {
         let journal = try makeJournalStore()
