@@ -134,8 +134,13 @@ What a restore writes:
   with its amount, time zone, unit, site and note. The site and note are the person's own data and are exported,
   though the app never shows the site. The restore is add-only by id and never replaces a medication or dose the
   device holds. A file medication whose name the device already uses (ignoring case) is left out together with its
-  doses. A dose whose medication is not in the file, or that breaks a rule, refuses the whole file as `corrupt`
-  before anything is written. The receipt, resume and undo work as they do for goals. The log is exported whether
+  doses. Each dose keeps the unit it was logged in, so a dose logged before its medication's unit changed is
+  exported and restored in the old unit, also when the device's copy of the medication is in another unit. A dose
+  goes into the file only with its medication. A dose whose medication is not in the file, two medications with one
+  name (ignoring case), or a row that breaks a rule refuses the whole file as `corrupt` before anything is written.
+  The receipt, resume and undo work as they do for goals. An undo removes a restored medication only while it holds
+  no dose, checked and removed in one save, so a dose the person logs meanwhile stays. A row an undo removes goes
+  back on the receipt, so importing the same file again after a partial undo restores it. The log is exported whether
   or not the Medication log switch is on.
 
 Amounts are read as exact decimal text and stored as `Decimal`, never as a binary float. A component whose

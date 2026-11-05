@@ -55,7 +55,7 @@ public struct JournalImportSummary: Sendable, Equatable {
     public var goals: Int
     /// Medications written, for a medication whose identifier and name the device did not hold. A medication already there is not counted.
     public var medications: Int
-    /// Doses written, for a dose whose identifier the device did not hold and whose medication it holds with the same unit.
+    /// Doses written, for a dose whose identifier the device did not hold and whose medication it holds.
     public var medicationDoses: Int
 
     public init(intakes: Int, revisions: Int, tombstones: Int, favorites: Int, products: Int, savedMeals: Int = 0,
@@ -538,7 +538,7 @@ public enum JournalImporter {
                 var medicationsLeft = false
                 if let medicationsTarget {
                     if let written = try? medicationsTarget.medicationRestoreWritten(digest) {
-                        medicationsLeft = !undoMedications(written, in: medicationsTarget)
+                        medicationsLeft = !undoMedications(written, in: medicationsTarget, receipt: digest)
                     } else {
                         medicationsLeft = true
                     }
@@ -1018,18 +1018,25 @@ public enum JournalImporter {
     }
 
     /// The medication log a version 9 file carries, checked as a whole before anything is written. An id that is not a
-    /// UUID or is listed twice, an unknown unit, a medication or dose that breaks a rule the store keeps, a dose whose
-    /// medication is not in the file, or a dose in another unit than its medication refuses the whole file.
+    /// UUID or is listed twice, two medications with one name ignoring case, an unknown unit, a medication or dose that
+    /// breaks a rule the store keeps, or a dose whose medication is not in the file refuses the whole file. A dose keeps
+    /// its own unit: a dose logged before its medication's unit changed is in the old unit, and the app exports it so.
     private static func restoredMedications(
         _ items: [JournalExportMedication], doses: [JournalExportMedicationDose]
     ) throws -> (medications: [Medication], doses: [MedicationDose]) {
         var medicationIDs = Set<UUID>()
+        var medicationNames = Set<String>()
         var medications: [Medication] = []
         for item in items {
             guard let id = UUID(uuidString: item.id), medicationIDs.insert(id).inserted,
                   let unit = MedicationUnit(rawValue: item.unit)
             else {
                 throw JournalImportError.corrupt("the export lists a medication with an id that is not a UUID, twice, or a unit this build does not know")
+            }
+            // A device keeps one medication per name, so the app never writes two; a file that does would lose the
+            // second medication's doses without a word.
+            guard medicationNames.insert(item.name.lowercased()).inserted else {
+                throw JournalImportError.corrupt("the export lists two medications named \(item.name)")
             }
             let medication = Medication(
                 id: id, name: item.name, unit: unit, scheduleDays: item.scheduleDays, isArchived: item.isArchived)
@@ -1038,7 +1045,6 @@ public enum JournalImporter {
             }
             medications.append(medication)
         }
-        let unitByID = Dictionary(uniqueKeysWithValues: medications.map { ($0.id, $0.unit) })
         var doseIDs = Set<UUID>()
         var restoredDoses: [MedicationDose] = []
         for item in doses {
@@ -1047,11 +1053,11 @@ public enum JournalImporter {
             else {
                 throw JournalImportError.corrupt("the export lists a dose with an id that is not a UUID, or twice")
             }
-            guard let medicationUnit = unitByID[medicationID] else {
+            guard medicationIDs.contains(medicationID) else {
                 throw JournalImportError.corrupt("the dose \(item.id) names a medication that is not in the export")
             }
-            guard let unit = MedicationUnit(rawValue: item.unit), unit == medicationUnit else {
-                throw JournalImportError.corrupt("the dose \(item.id) is not in its medication's unit")
+            guard let unit = MedicationUnit(rawValue: item.unit) else {
+                throw JournalImportError.corrupt("the dose \(item.id) has a unit this build does not know")
             }
             guard DecimalText.isValidDecimalText(item.amount), let amount = DecimalText.decode(item.amount) else {
                 throw JournalImportError.corrupt("the dose \(item.id) has an amount this build cannot read")
@@ -1069,7 +1075,8 @@ public enum JournalImporter {
 
     /// The medications and doses a restore would add to this device: a file medication only when the device holds neither
     /// its identifier nor its name, and a dose only when the device holds no dose with its identifier and holds its
-    /// medication with the same unit, or the medication is one the restore adds. Read now, so a resume sees the device as it is.
+    /// medication, or the medication is one the restore adds. The dose keeps its own unit. Read now, so a resume sees the
+    /// device as it is.
     static func plannedMedications(_ plan: JournalRestorePlan, in store: MedicationStore) throws -> MedicationRestoreSet {
         let stored = try store.medications()
         let storedIDs = Set(stored.map(\.id))
@@ -1078,12 +1085,10 @@ public enum JournalImporter {
             !storedIDs.contains($0.id) && !storedNames.contains($0.name.lowercased())
         }
         let plannedIDs = Set(medications.map(\.id))
-        let storedUnits = Dictionary(stored.map { ($0.id, $0.unit) }, uniquingKeysWith: { first, _ in first })
         let storedDoseIDs = Set(try store.allDoses().map(\.id))
         let doses = plan.medicationDoses.filter { dose in
-            guard !storedDoseIDs.contains(dose.id) else { return false }
-            if plannedIDs.contains(dose.medicationID) { return true }
-            return storedUnits[dose.medicationID] == dose.unit
+            !storedDoseIDs.contains(dose.id)
+                && (plannedIDs.contains(dose.medicationID) || storedIDs.contains(dose.medicationID))
         }
         return MedicationRestoreSet(medications: medications, doses: doses)
     }
@@ -1100,30 +1105,19 @@ public enum JournalImporter {
     }
 
     /// Removes the rows a restore wrote, but only where the device still holds exactly the row it wrote. Doses go first, so a
-    /// medication is removed only once no dose of it is left. A row the person has changed, and a medication that still holds
-    /// a dose, are left alone, and make the undo unclean. Returns false when a row was left or a removal failed.
-    static func undoMedications(_ written: MedicationRestoreSet, in store: MedicationStore?) -> Bool {
+    /// medication is removed only once no dose of it is left. Each check and its removal happen in one store save, so a dose
+    /// the person logs during the undo is never removed. A row the person has changed, and a medication that still holds a
+    /// dose, are left alone and make the undo unclean. With a receipt, every row removed goes back to the receipt's rows
+    /// to write in the same save, so a retry of the same file restores it. Returns false when a row was left or a removal
+    /// failed.
+    static func undoMedications(_ written: MedicationRestoreSet, in store: MedicationStore?, receipt: String? = nil) -> Bool {
         guard let store else { return true }
         var clean = true
-        do {
-            let storedDoses = Dictionary(try store.allDoses().map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-            for planned in written.doses {
-                // A dose already gone needs nothing; one the person has since changed is theirs now and stays.
-                guard let current = storedDoses[planned.id] else { continue }
-                guard current == planned else { clean = false; continue }
-                do { try store.removeDose(id: planned.id) } catch { clean = false }
-            }
-            let remaining = try store.allDoses()
-            let storedMedications = Dictionary(try store.medications().map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-            for planned in written.medications {
-                guard let current = storedMedications[planned.id] else { continue }
-                guard current == planned else { clean = false; continue }
-                // A medication that still holds a dose is kept, so the undo is not clean.
-                guard !remaining.contains(where: { $0.medicationID == planned.id }) else { clean = false; continue }
-                do { try store.removeMedication(id: planned.id) } catch { clean = false }
-            }
-        } catch {
-            return false
+        for dose in written.doses {
+            do { if try !store.undoRestoredDose(dose, receipt: receipt) { clean = false } } catch { clean = false }
+        }
+        for medication in written.medications {
+            do { if try !store.undoRestoredMedication(medication, receipt: receipt) { clean = false } } catch { clean = false }
         }
         return clean
     }

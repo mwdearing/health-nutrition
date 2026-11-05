@@ -96,6 +96,21 @@ final class JournalExportMedicationsTests: XCTestCase {
         XCTAssertEqual(full["time_zone"] as? String, "America/Chicago")
     }
 
+    func testADoseLoggedBeforeAUnitChangeIsExportedInItsOwnUnit() throws {
+        let changed = Medication(id: vial.id, name: vial.name, unit: .mcg, scheduleDays: vial.scheduleDays)
+        let document = try export(InMemoryMedicationStore(medications: [changed], doses: [dose(2, vial, amount: 5)]))
+
+        XCTAssertEqual(document.medications.map(\.unit), ["mcg"])
+        XCTAssertEqual(document.medicationDoses.map(\.unit), ["mg"])
+    }
+
+    func testADoseGoesOutOnlyWithItsMedication() throws {
+        let document = try export(InMemoryMedicationStore(
+            medications: [vial], doses: [dose(2, vial, amount: 5), dose(3, pen, amount: 1000)]))
+
+        XCTAssertEqual(document.medicationDoses.map(\.medicationID), [vial.id.uuidString])
+    }
+
     func testAVersion9ExportRoundTripsThroughJSON() throws {
         let document = try export(store())
         XCTAssertEqual(try JournalExporter.decode(try JournalExporter.encode(document)), document)

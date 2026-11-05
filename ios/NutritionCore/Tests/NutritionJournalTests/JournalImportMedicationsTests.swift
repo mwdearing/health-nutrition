@@ -155,15 +155,16 @@ final class JournalImportMedicationsTests: XCTestCase {
         XCTAssertEqual(summary.medicationDoses, 0)
     }
 
-    func testADoseForADeviceMedicationWithAnotherUnitIsLeftOut() throws {
+    func testADoseForADeviceMedicationWithAnotherUnitIsAddedInItsOwnUnit() throws {
         let store = try medicationStore()
         let own = Medication(id: vial.id, name: "Example vial", unit: .mL)
         try store.saveMedication(own)
 
         let summary = try importFile(try medicationsExport([vial], [fileDoses[1]]), into: store)
 
-        XCTAssertEqual(try store.allDoses(), [])
-        XCTAssertEqual(summary.medicationDoses, 0)
+        XCTAssertEqual(try store.medications(), [own], "the device's medication is kept as it is")
+        XCTAssertEqual(try store.allDoses(), [fileDoses[1]], "the dose keeps the unit it was logged in")
+        XCTAssertEqual(summary.medicationDoses, 1)
     }
 
     // MARK: - Refusals
@@ -178,9 +179,29 @@ final class JournalImportMedicationsTests: XCTestCase {
         XCTAssertEqual(try store.allDoses(), [])
     }
 
-    func testADoseInAnotherUnitThanItsMedicationIsRefused() throws {
-        assertRefused(
-            try medicationsExport([vial], [dose(2, vial, amount: 5, unit: .mL)]), into: try medicationStore())
+    func testADoseLoggedBeforeAUnitChangeRestoresInItsOwnUnit() throws {
+        // The app keeps the old unit on doses logged before a medication's unit changed, and exports them so.
+        let changed = Medication(id: vial.id, name: vial.name, unit: .mcg, scheduleDays: vial.scheduleDays)
+        let before = dose(1, vial, amount: 2)
+        let after = dose(2, changed, amount: 500)
+        let store = try medicationStore()
+
+        let summary = try importFile(try medicationsExport([changed], [before, after]), into: store)
+
+        XCTAssertEqual(try store.medications(), [changed])
+        XCTAssertEqual(try store.allDoses().sorted { $0.id.uuidString < $1.id.uuidString }, [before, after])
+        XCTAssertEqual(try store.allDoses().first { $0.id == before.id }?.unit, .mg)
+        XCTAssertEqual(summary.medicationDoses, 2)
+    }
+
+    func testTwoMedicationsWithOneNameAreRefusedAndNothingIsWritten() throws {
+        let store = try medicationStore()
+        let twin = Medication(name: "example VIAL", unit: .mL)
+
+        assertRefused(try medicationsExport([vial, twin], [fileDoses[0]]), into: store)
+
+        XCTAssertEqual(try store.medications(), [])
+        XCTAssertEqual(try store.allDoses(), [])
     }
 
     func testAMedicationOrDoseThatBreaksARuleIsRefused() throws {
@@ -399,6 +420,42 @@ final class JournalImportMedicationsTests: XCTestCase {
         XCTAssertFalse(try base.medications().contains(pen), "the restored medication with no dose of the person's goes")
     }
 
+    func testARetryAfterAPartialRollbackRestoresWhatTheUndoRemoved() throws {
+        let base = try medicationStore()
+        let sameJournal = try journal()
+        let data = try fullExport()
+        let logged = MedicationDose(
+            medicationID: vial.id, takenAt: Date(timeIntervalSince1970: 1_776_900_000), timeZoneIdentifier: "UTC",
+            amount: 1, unit: .mg)
+        var writes = 0
+        let store = ScriptedMedicationStore(base: base) { _, base in
+            writes += 1
+            if writes == 3 { try base.saveDose(logged) }
+            if writes == 4 { throw JournalImportError.corrupt("stopped") }
+        }
+        XCTAssertThrowsError(try importFile(data, into: store, journal: sameJournal))
+        XCTAssertFalse(try base.medications().contains(pen), "the undo removed the restored pen")
+
+        _ = try importFile(data, into: base, journal: sameJournal)
+
+        XCTAssertEqual(try base.medications(), [pen, vial])
+        XCTAssertEqual(try doseIDs(base), Set(fileDoses.map(\.id)).union([logged.id]), "the retry restores what the undo removed")
+        XCTAssertNil(try base.medicationRestoreReceipt(JournalImporter.fileDigest(data)))
+    }
+
+    func testAnUndoNeverRemovesAMedicationThatHoldsADose() throws {
+        let store = try medicationStore()
+        try store.saveMedication(vial)
+        let own = dose(9, vial)
+        try store.saveDose(own)
+
+        XCTAssertFalse(try store.undoRestoredMedication(vial, receipt: nil))
+        XCTAssertTrue(try store.undoRestoredDose(dose(8, vial), receipt: nil), "a dose already gone counts as undone")
+
+        XCTAssertEqual(try store.medications(), [vial])
+        XCTAssertEqual(try store.allDoses(), [own])
+    }
+
     func testUndoRemovesOnlyTheRecordedRowsThatAreUnchanged() throws {
         let store = try medicationStore()
         for medication in [vial, pen, tablet] { try store.saveMedication(medication) }
@@ -452,5 +509,11 @@ private final class ScriptedMedicationStore: MedicationStore, @unchecked Sendabl
     }
     func medicationRestoreWritten(_ receipt: String) throws -> MedicationRestoreSet {
         try base.medicationRestoreWritten(receipt)
+    }
+    func undoRestoredDose(_ dose: MedicationDose, receipt: String?) throws -> Bool {
+        try base.undoRestoredDose(dose, receipt: receipt)
+    }
+    func undoRestoredMedication(_ medication: Medication, receipt: String?) throws -> Bool {
+        try base.undoRestoredMedication(medication, receipt: receipt)
     }
 }

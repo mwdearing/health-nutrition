@@ -237,7 +237,7 @@
               "mL",
               "units"
             ],
-            "description": "The unit the amount is counted in, the medication's unit."
+            "description": "The unit the amount is counted in: the unit the dose was logged in, which can differ from its medication's current unit."
           },
           "site": {
             "type": [

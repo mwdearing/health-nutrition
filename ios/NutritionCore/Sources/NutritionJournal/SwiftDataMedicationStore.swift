@@ -433,7 +433,8 @@ public final class SwiftDataMedicationStore: MedicationStore, JournalErasing, @u
     }
 
     /// Writes one restored dose and drops it from the receipt in one save. A dose is written only when no dose holds its
-    /// identifier and its medication is stored with the same unit as the dose.
+    /// identifier and its medication is stored. It keeps its own unit, which a dose logged before its medication's unit
+    /// changed does not share with the medication.
     public func writeRestoredDose(_ dose: MedicationDose, receipt: String) throws -> Bool {
         try dose.validate()
         writeLock.lock()
@@ -449,8 +450,7 @@ public final class SwiftDataMedicationStore: MedicationStore, JournalErasing, @u
             predicate: #Predicate<MedicationDoseRecord> { $0.id == key })).isEmpty
         let medication = try context.fetch(FetchDescriptor<MedicationRecord>(
             predicate: #Predicate<MedicationRecord> { $0.id == medicationKey })).first
-        let unitMatches = medication.map { $0.unitText == dose.unit.rawValue } ?? false
-        let written = !doseHeld && unitMatches
+        let written = !doseHeld && medication != nil
         if written {
             context.insert(MedicationDoseRecord(
                 id: key, medicationID: medicationKey, takenAt: dose.takenAt,
@@ -475,6 +475,60 @@ public final class SwiftDataMedicationStore: MedicationStore, JournalErasing, @u
         return MedicationRestoreSet(
             medications: try payload.writtenMedications.map(Self.restoredMedication),
             doses: try payload.writtenDoses.map(Self.restoredDose))
+    }
+
+    /// Removes the restored dose only while the store holds exactly that dose, and moves it back to the receipt's rows to
+    /// write, all in one save under writeLock, so no write lands between the check and the removal.
+    public func undoRestoredDose(_ dose: MedicationDose, receipt: String?) throws -> Bool {
+        writeLock.lock()
+        defer { writeLock.unlock() }
+        let context = ModelContext(try openContainer())
+        let key = dose.id.uuidString
+        if let row = try context.fetch(FetchDescriptor<MedicationDoseRecord>(
+            predicate: #Predicate<MedicationDoseRecord> { $0.id == key })).first {
+            // A dose the person has changed is theirs now: it stays, and the receipt still names it as written.
+            guard try Self.decode(row) == dose else { return false }
+            context.delete(row)
+        }
+        if let receipt, let receiptRow = try Self.receiptRow(context, receipt) {
+            let payload = try Self.decodeReceipt(receiptRow.name)
+            let pending = payload.doses.contains { $0.id == key } ? payload.doses : payload.doses + [Self.receiptDose(dose)]
+            receiptRow.name = try Self.encodeReceipt(ReceiptPayload(
+                done: false, medications: payload.medications, doses: pending,
+                writtenMedications: payload.writtenMedications,
+                writtenDoses: payload.writtenDoses.filter { $0.id != key }))
+        }
+        try context.save()
+        return true
+    }
+
+    /// Removes the restored medication only while it is stored unchanged and holds no dose, and moves it back to the
+    /// receipt's rows to write, all in one save under writeLock. `removeMedication` would remove its doses too, so it is
+    /// not used here: a dose the person logged after the check would go with it.
+    public func undoRestoredMedication(_ medication: Medication, receipt: String?) throws -> Bool {
+        writeLock.lock()
+        defer { writeLock.unlock() }
+        let context = ModelContext(try openContainer())
+        let key = medication.id.uuidString
+        if let row = try context.fetch(FetchDescriptor<MedicationRecord>(
+            predicate: #Predicate<MedicationRecord> { $0.id == key })).first {
+            guard try Self.decode(row) == medication else { return false }
+            let holdsDose = try !context.fetch(FetchDescriptor<MedicationDoseRecord>(
+                predicate: #Predicate<MedicationDoseRecord> { $0.medicationID == key })).isEmpty
+            guard !holdsDose else { return false }
+            context.delete(row)
+        }
+        if let receipt, let receiptRow = try Self.receiptRow(context, receipt) {
+            let payload = try Self.decodeReceipt(receiptRow.name)
+            let pending = payload.medications.contains { $0.id == key }
+                ? payload.medications : [Self.receiptMedication(medication)] + payload.medications
+            receiptRow.name = try Self.encodeReceipt(ReceiptPayload(
+                done: false, medications: pending, doses: payload.doses,
+                writtenMedications: payload.writtenMedications.filter { $0.id != key },
+                writtenDoses: payload.writtenDoses))
+        }
+        try context.save()
+        return true
     }
 
     /// Removes every medication and every dose. The rows are deleted one at a time in one save, and then the store file

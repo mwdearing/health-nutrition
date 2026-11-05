@@ -475,7 +475,8 @@ public struct JournalExportMedicationDose: Sendable, Hashable, Codable {
     public var timeZone: String
     /// The amount as exact decimal text, never grouped and never a binary float.
     public var amount: String
-    /// The unit symbol the amount is counted in: the medication's unit.
+    /// The unit symbol the amount is counted in: the unit the dose was logged in. A dose logged before its medication's
+    /// unit changed keeps the old unit.
     public var unit: String
     /// Where the dose was given, as the person typed it, or nil. Written as null, never left out.
     public var site: String?
@@ -939,13 +940,18 @@ public enum JournalExporter {
             JournalExportGoal(nutrient: $0.nutrient, target: DecimalText.encode($0.target), unit: $0.unit.symbol)
         }.sorted { $0.nutrient < $1.nutrient }
         // The whole medication log, archived medications and every dose. A store that cannot be read throws, so the
-        // export fails rather than writing a file that silently lacks the log.
+        // export fails rather than writing a file that silently lacks the log. The doses are read first and the
+        // medications second, and a dose goes out only with its medication: a medication removed between the two reads
+        // takes its doses with it in the store, so a file never names a medication it does not carry.
         var medicationList: [JournalExportMedication] = []
         var medicationDoseList: [JournalExportMedicationDose] = []
         if let medications {
-            medicationList = try medications.medications().map { JournalExportMedication(medication: $0) }
-                .sorted { $0.id < $1.id }
-            medicationDoseList = try medications.allDoses().map { JournalExportMedicationDose(dose: $0) }
+            let doses = try medications.allDoses()
+            let stored = try medications.medications()
+            let storedIDs = Set(stored.map(\.id))
+            medicationList = stored.map { JournalExportMedication(medication: $0) }.sorted { $0.id < $1.id }
+            medicationDoseList = doses.filter { storedIDs.contains($0.medicationID) }
+                .map { JournalExportMedicationDose(dose: $0) }
                 .sorted { $0.id < $1.id }
         }
         let snapshot: JournalSnapshot?
