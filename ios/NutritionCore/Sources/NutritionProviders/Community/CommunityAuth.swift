@@ -248,7 +248,9 @@ public actor CommunityAuth {
             return try acceptRefresh(
                 data, response, startedAt: startedAt, startedAtIntent: startedAtIntent, owner: owner
             )
-        case 400, 401, 403:
+        // A 403 is not a rejected refresh token: GoTrue answers 400 or 401 for that, and a proxy or WAF can answer
+        // 403 for a good token. It falls through to the generic error and keeps the stored session.
+        case 400, 401:
             let session: CommunitySession?
             do {
                 // Load the session even if an explicit auth attempt has started since this refresh.
