@@ -120,6 +120,9 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     public static let exportFailedMessage = "Could not export the journal."
     public static let importButtonTitle = "Import a journal export"
     public static let importFailedMessage = "Could not import that file."
+    /// Shown under the restore button: a restore keeps no record of deletions (Mike's decision of 2026-11-05).
+    public static let restoreAddsNotice =
+        "Medications and doses in the file that are not on this device are added, including ones deleted since the file was made."
     /// A restore that finished but could not clean up its flag. The rows are there; the person is told to retry.
     /// Wording approved by Mike on 2026-10-31 (#828).
     public static let cleanupIncompleteMessage = "Restored. Could not finish cleaning up; try again to be sure."

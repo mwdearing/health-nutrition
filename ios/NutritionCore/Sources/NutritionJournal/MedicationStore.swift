@@ -68,8 +68,8 @@ public protocol MedicationStore: AnyObject, Sendable {
     func medicationRestoreWritten(_ receipt: String) throws -> MedicationRestoreSet
     /// Undoes one dose a restore wrote: removes it only while the store holds exactly that dose, checked and removed in
     /// one save. In the same save the dose moves from the receipt's written rows back to its rows to write, so a retry
-    /// adds it again. A dose already gone counts as undone. Returns false, changing nothing, when the stored dose
-    /// differs. A nil receipt updates no receipt.
+    /// adds it again. A dose already gone counts as undone and is not queued again. Returns false, changing nothing,
+    /// when the stored dose differs. A nil receipt updates no receipt.
     func undoRestoredDose(_ dose: MedicationDose, receipt: String?) throws -> Bool
     /// Undoes one medication a restore wrote: removes it only while it is stored unchanged and holds no dose, checked and
     /// removed in one save, so a dose the person logs meanwhile is never removed with it. The receipt is updated in the

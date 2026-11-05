@@ -436,6 +436,48 @@ final class JournalImportMedicationsTests: XCTestCase {
         XCTAssertNil(try sameJournal.restoreInProgressDigest())
     }
 
+    /// A medication renamed on the device between two runs gets none of the file's doses on resume: the receipt that
+    /// still names them is dropped and the rows are planned again under the id and name rule.
+    func testAResumeWritesNoDoseOntoAMedicationRenamedSinceTheStop() throws {
+        let store = try medicationStore()
+        let data = try fullExport()
+        let digest = JournalImporter.fileDigest(data)
+        let journal = try journal()
+        try journal.markRestoreInProgress(fileDigest: digest)
+        try store.recordMedicationRestoreReceipt(digest, planned: MedicationRestoreSet(medications: [vial, pen], doses: fileDoses))
+        XCTAssertTrue(try store.writeRestoredMedication(vial, receipt: digest))
+        let renamed = Medication(id: vial.id, name: "Example other", unit: .mg, scheduleDays: 7)
+        try store.saveMedication(renamed)
+
+        let summary = try importFile(data, into: store, journal: journal)
+
+        XCTAssertEqual(try store.medications(), [renamed, pen], "ordered by name: the renamed vial comes first")
+        XCTAssertEqual(try store.doses(of: vial.id), [], "no dose lands on the renamed medication")
+        XCTAssertEqual(try doseIDs(store), [fileDoses[2].id])
+        XCTAssertEqual(summary.medications, 1)
+        XCTAssertEqual(summary.medicationDoses, 1)
+        XCTAssertNil(try store.medicationRestoreReceiptDone(digest))
+        XCTAssertNil(try journal.restoreInProgressDigest())
+    }
+
+    /// An undo of a row the person already deleted counts it as undone and does not queue it again, so a retry from the
+    /// same receipt does not bring it back.
+    func testAnUndoOfARowAlreadyGoneDoesNotQueueItAgain() throws {
+        let store = try medicationStore()
+        try store.recordMedicationRestoreReceipt("r", planned: MedicationRestoreSet(medications: [vial], doses: [fileDoses[1]]))
+        XCTAssertTrue(try store.writeRestoredMedication(vial, receipt: "r"))
+        XCTAssertTrue(try store.writeRestoredDose(fileDoses[1], receipt: "r"))
+        try store.markMedicationRestoreReceiptDone("r")
+        try store.removeMedication(id: vial.id)
+
+        XCTAssertTrue(try store.undoRestoredDose(fileDoses[1], receipt: "r"))
+        XCTAssertTrue(try store.undoRestoredMedication(vial, receipt: "r"))
+
+        XCTAssertEqual(try store.medicationRestoreReceipt("r"), MedicationRestoreSet(), "nothing deleted is queued again")
+        XCTAssertEqual(try store.medicationRestoreWritten("r"), MedicationRestoreSet(), "and nothing is left as written")
+        XCTAssertEqual(try store.medicationRestoreReceiptDone("r"), true)
+    }
+
     func testAWrittenRowLeavesTheReceiptAndJoinsItsLedger() throws {
         let store = try medicationStore()
         try store.recordMedicationRestoreReceipt("r", planned: MedicationRestoreSet(medications: [vial], doses: [fileDoses[1]]))

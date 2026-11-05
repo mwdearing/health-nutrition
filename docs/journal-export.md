@@ -133,7 +133,9 @@ What a restore writes:
 - **Medication log**, from version 9. The file carries every medication, archived ones included, and every dose,
   with its amount, time zone, unit, site and note. The site and note are the person's own data and are exported,
   though the app never shows the site. The restore is add-only by id and never replaces a medication or dose the
-  device holds. A file medication whose name the device already uses (ignoring case), or whose id the device holds
+  device holds. It adds every medication and dose in the file that is not on the device, including ones deleted
+  since the file was made: no deletion is recorded, so importing a file again brings back a row deleted after it was
+  made. The restore screen says so under its button. A file medication whose name the device already uses (ignoring case), or whose id the device holds
   under another name, is left out together with its doses, so a dose never lands on a medication of another name.
   Each dose keeps the unit it was logged in, so a dose logged before its medication's unit changed is
   exported and restored in the old unit, also when the device's copy of the medication is in another unit. A dose
@@ -143,8 +145,10 @@ What a restore writes:
   no dose, checked and removed in one save, so a dose the person logs meanwhile stays. A row an undo removes goes
   back on the receipt, so importing the same file again after a partial undo restores it. A receipt the build cannot
   read (a file damaged between two runs) does not stop the file: the next import removes it and plans the rows again
-  from the device, add-only by id and name, so a row the stopped run wrote is not written twice, though a row deleted
-  since that run can come back. An undo that cannot read the receipt keeps the flag, and that next import then
+  from the device, add-only by id and name, so a row the stopped run wrote is not written twice. A receipt that still
+  names a dose of a medication renamed on the device since the stop is replanned the same way, so a resume never
+  writes a dose onto a medication of another name. An undo of a row the person already deleted does not queue it
+  again on the receipt. An undo that cannot read the receipt keeps the flag, and that next import then
   finishes the restore. Erasing the medication log removes any receipt with the rows. The log is exported whether
   or not the Medication log switch is on.
 
