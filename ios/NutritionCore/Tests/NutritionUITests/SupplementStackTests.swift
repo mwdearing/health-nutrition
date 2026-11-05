@@ -1052,6 +1052,27 @@ final class SupplementStackTests: XCTestCase {
         XCTAssertEqual(model.limitRows, gaps.rows.filter { $0.status == .aboveUpperLimit })
     }
 
+    /// #1292: the Health totals arrive after the list first loads on a foreground, so a reload while it is on screen
+    /// must pick them up.
+    func testAReloadWhileShownPicksUpHealthTotalsThatArrivedLate() throws {
+        let store = try makeStore()
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        let zinc = labelled(
+            "s-zinc-30", name: "Example zinc", kind: .supplement, nutrients: ["zinc": .known(30, .mg)])
+        try log(store, name: "Example zinc", at: now.addingTimeInterval(-3_600), amount: 100, unit: .g, product: zinc)
+        try saveFavorite(favorites, snapshot: "s-zinc-30")
+        try schedules.save(["fav-magnesium": .standard])
+        var health: HealthIntakeTotals.Outside = .notConnected
+        let (model, _) = makeLimitModel(
+            store: store, favorites: favorites, schedules: schedules, group: men31, healthToday: { health })
+        model.appeared(UUID(), now: now)
+        XCTAssertEqual(model.limitRows, [])
+        health = .read(values: ["zinc": 15], readKeys: ["zinc"])
+        model.reloadIfShown(now: now)
+        XCTAssertEqual(model.limitRows.map(\.nutrient), ["zinc"])
+    }
+
     /// #1293: an entry logged in Tokyo, read after a flight to New York where it is still the same date, is counted
     /// toward the limit, as Taken counts it and as Today and the Diary list it.
     func testTheLimitCheckCountsTheEntriesUnderTodayInTheCurrentZone() throws {

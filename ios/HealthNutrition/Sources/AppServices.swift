@@ -281,13 +281,15 @@ final class AppServices {
         ]
         // Today counts the active energy toward the calorie goal when the person switched that on;
         // it reloads only when the figure changed, so a foreground does not load Today twice for nothing.
-        bodyActivity.onRead = { [today] readings in
+        bodyActivity.onRead = { [today, weak stack = self.supplementStack] readings in
             guard TodayViewModel.needsReload(
                 activeEnergyKcal: today.activeEnergyKcal, outsideIntake: today.outsideIntake, for: readings
             ) else { return }
             today.activeEnergyKcal = readings.activeEnergyKcal
             today.outsideIntake = readings.outsideIntake
             today.load(now: Date())
+            // The list's upper-limit check adds the same Health totals, so it reads again once they have arrived (#1292).
+            stack?.reloadIfShown(now: Date())
         }
         if let productSharing {
             let monitor = NWPathMonitor()
