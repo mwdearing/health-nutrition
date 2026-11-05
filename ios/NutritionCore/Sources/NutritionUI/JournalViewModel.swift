@@ -945,10 +945,12 @@ public final class JournalViewModel: ObservableObject {
             // query for this nutrient failed, cannot be totaled.
             return day.totals?.total(for: goal.nutrient)?.value
         }
-        // A day whose journal side states nothing for this nutrient and left nothing out (no entry at all, or only water
-        // or supplements that do not state it) is logged by Health's intake, and Health's query for this nutrient
+        // A day whose journal side states nothing for this nutrient and holds no value for it (no entry at all, or only
+        // water or supplements that do not state it; a value the totals could not add up is not "nothing") is logged by Health's intake, and Health's query for this nutrient
         // succeeded: no sample is a known zero, not an unknown.
-        if case .unknown = journalLine.amount, !journalLine.isPartial, journalLine.missingCount == 0 {
+        let journalStatedCount = day.totals?.total(for: goal.nutrient)?.coverage.totalCount ?? 0
+        if journalStatedCount == 0, case .unknown = journalLine.amount, !journalLine.isPartial,
+           journalLine.missingCount == 0 {
             guard let unit = HealthKitWritePlanner.mapping(for: goal.nutrient)?.unit else { return nil }
             return .known(values[canonical] ?? 0, unit)
         }
