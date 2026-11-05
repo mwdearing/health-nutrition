@@ -76,8 +76,13 @@ final class AppStoreScreenshotUITests: XCTestCase {
         }
         XCTAssertTrue(save.exists && save.isHittable, "no Save goals on the results step")
         save.tap()
+        // Saving closes the guided setup and leaves the Goals screen, one step inside Settings.
         let done = app.buttons["Done"]
-        XCTAssertTrue(done.waitForExistence(timeout: 15), "Settings did not come back after saving the goals")
+        if !done.waitForExistence(timeout: 5) {
+            let back = app.navigationBars.buttons.firstMatch
+            if back.waitForExistence(timeout: 10) { back.tap() }
+        }
+        if !done.waitForExistence(timeout: 15) { debugFail("after-goals-save", "Settings did not come back after saving the goals") }
         done.tap()
         try goToToday()
     }
@@ -153,11 +158,15 @@ final class AppStoreScreenshotUITests: XCTestCase {
         XCTAssertTrue(
             app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Insights")).firstMatch.waitForExistence(timeout: 15),
             "the Trends screen did not load")
-        capture("3-trends")
+        // Trends opens on a list of two reports; the shot is the Insights report, which holds the week's logging
+        // and the averages.
         let insights = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Insights")).firstMatch
         insights.tap()
-        RunLoop.current.run(until: Date().addingTimeInterval(2))
-        capture("3b-insights")
+        XCTAssertTrue(app.navigationBars.buttons.firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(
+            app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "days logged")).firstMatch.waitForExistence(timeout: 15),
+            "the Insights report did not load")
+        capture("3-trends")
         app.navigationBars.buttons.firstMatch.tap()
 
         try goToToday()
@@ -323,7 +332,7 @@ final class AppStoreScreenshotUITests: XCTestCase {
             app.swipeUp()
             scrolls += 1
         }
-        XCTAssertTrue(field.waitForExistence(timeout: 10), "no field named \(prefix)")
+        if !field.waitForExistence(timeout: 10) { debugFail("no-field-\(prefix)", "no field named \(prefix)"); return }
         // A tap that lands while the sheet is still sliding up is lost, so it is repeated while no keyboard shows.
         var attempts = 0
         repeat {
