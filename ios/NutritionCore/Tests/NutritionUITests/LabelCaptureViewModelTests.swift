@@ -857,29 +857,6 @@ final class LabelCaptureViewModelTests: XCTestCase {
             lookup: lookup
         )
     }
-}
-
-/// Holds a reply until the test answers it, so a test can look at the form while a request is in flight.
-private final class GatedBarcodeLookup: BarcodeProductLookup, @unchecked Sendable {
-    private let result: BarcodeLookupResult
-    private var continuation: CheckedContinuation<BarcodeLookupResult, Never>?
-    private(set) var requestedBarcodes: [String] = []
-
-    init(result: BarcodeLookupResult) {
-        self.result = result
-    }
-
-    func lookUp(barcode: String) async -> BarcodeLookupResult {
-        requestedBarcodes.append(barcode)
-        return await withCheckedContinuation { continuation in
-            self.continuation = continuation
-        }
-    }
-
-    func answer() {
-        continuation?.resume(returning: result)
-        continuation = nil
-    }
 
     // MARK: Extra rows and named rows
 
@@ -908,5 +885,28 @@ private final class GatedBarcodeLookup: BarcodeProductLookup, @unchecked Sendabl
 
         XCTAssertEqual(model.additionalRows.map(\.key), ["salt"])
         XCTAssertEqual(model.makeProduct()?.value(for: "salt"), .known(Decimal(string: "0.5")!, .g))
+    }
+}
+
+/// Holds a reply until the test answers it, so a test can look at the form while a request is in flight.
+private final class GatedBarcodeLookup: BarcodeProductLookup, @unchecked Sendable {
+    private let result: BarcodeLookupResult
+    private var continuation: CheckedContinuation<BarcodeLookupResult, Never>?
+    private(set) var requestedBarcodes: [String] = []
+
+    init(result: BarcodeLookupResult) {
+        self.result = result
+    }
+
+    func lookUp(barcode: String) async -> BarcodeLookupResult {
+        requestedBarcodes.append(barcode)
+        return await withCheckedContinuation { continuation in
+            self.continuation = continuation
+        }
+    }
+
+    func answer() {
+        continuation?.resume(returning: result)
+        continuation = nil
     }
 }
