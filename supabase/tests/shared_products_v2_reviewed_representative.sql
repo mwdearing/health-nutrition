@@ -1,7 +1,7 @@
 -- An owner-reviewed row outranks unreviewed groups as the publication's representative, whatever the support.
 -- Synthetic barcodes and accounts only; everything rolls back.
 begin;
-insert into auth.users(id) values ('49000000-0000-4000-8000-000000000001'),('49000000-0000-4000-8000-000000000002'),('49000000-0000-4000-8000-000000000003');
+insert into auth.users(id) values ('49000000-0000-4000-8000-000000000001'),('49000000-0000-4000-8000-000000000002'),('49000000-0000-4000-8000-000000000003'),('49000000-0000-4000-8000-000000000004'),('49000000-0000-4000-8000-000000000005'),('49000000-0000-4000-8000-000000000006');
 -- Case 1: an approved legacy label, then one account publishes a custom product on the same barcode.
 select catalog.owner_approve_label('4006381333931','per_100g',null,'Synthetic reviewed oats',null,'{"protein":13,"fat":7,"carbohydrates":60}','reviewed');
 set local role authenticated;
@@ -89,6 +89,53 @@ do $test$ declare p uuid; rev bigint; begin
  assert public.get_catalog_product_v2(p)#>>'{product,verification,source}'='owner_reviewed';
  assert public.get_catalog_product_v2(p)#>>'{product,support,distinct_accounts}'='1';
  assert (select normalized_name from catalog_v2.entries where product_id=p)=catalog_v2.search_name('Synthetic reviewed custom oats');
+end $test$;
+-- Case 3: the owner reviews the LATER revision of a 2-account equivalence group; the group still outranks a 3-account
+-- unreviewed group, because reviewed is a property of the whole group, not of its earliest revision.
+reset role;
+set local role authenticated;
+set local request.jwt.claim.sub='49000000-0000-4000-8000-000000000004';
+select public.acknowledge_catalog_consent_v2(2) \g /dev/null
+select public.submit_catalog_product_v2(jsonb_build_object('operation_id',gen_random_uuid(),'client_revision_id',gen_random_uuid(),
+ 'product_id',null,'expected_server_revision',null,'consent_version',2,'consent_generation','0',
+ 'product',jsonb_build_object('name','Synthetic crowd bars','brand',null,'barcode','9780132350884','kind','food',
+ 'basis','per_100_g','serving',null,'facts',jsonb_build_array(jsonb_build_object('key','protein','display_name','Protein','state','known','amount','3','unit','g'))))) #> '{publication}' as p3pub \gset
+select set_config('t.p3',(:'p3pub'::jsonb->>'product_id'),false) \g /dev/null
+set local request.jwt.claim.sub='49000000-0000-4000-8000-000000000005';
+select public.acknowledge_catalog_consent_v2(2) \g /dev/null
+select public.submit_catalog_product_v2(jsonb_build_object('operation_id',gen_random_uuid(),'client_revision_id',gen_random_uuid(),
+ 'product_id',current_setting('t.p3')::uuid,'expected_server_revision',null,'consent_version',2,'consent_generation','0',
+ 'product',jsonb_build_object('name','Synthetic crowd bars','brand',null,'barcode','9780132350884','kind','food',
+ 'basis','per_100_g','serving',null,'facts',jsonb_build_array(jsonb_build_object('key','protein','display_name','Protein','state','known','amount','3','unit','g'))))) #> '{publication}' as p3pub \gset
+set local request.jwt.claim.sub='49000000-0000-4000-8000-000000000006';
+select public.acknowledge_catalog_consent_v2(2) \g /dev/null
+select public.submit_catalog_product_v2(jsonb_build_object('operation_id',gen_random_uuid(),'client_revision_id',gen_random_uuid(),
+ 'product_id',current_setting('t.p3')::uuid,'expected_server_revision',null,'consent_version',2,'consent_generation','0',
+ 'product',jsonb_build_object('name','Synthetic crowd bars','brand',null,'barcode','9780132350884','kind','food',
+ 'basis','per_100_g','serving',null,'facts',jsonb_build_array(jsonb_build_object('key','protein','display_name','Protein','state','known','amount','3','unit','g'))))) #> '{publication}' as p3pub \gset
+set local request.jwt.claim.sub='49000000-0000-4000-8000-000000000001';
+select public.acknowledge_catalog_consent_v2(2) \g /dev/null
+select public.submit_catalog_product_v2(jsonb_build_object('operation_id',gen_random_uuid(),'client_revision_id',gen_random_uuid(),
+ 'product_id',current_setting('t.p3')::uuid,'expected_server_revision',null,'consent_version',2,'consent_generation','0',
+ 'product',jsonb_build_object('name','Synthetic group bars','brand',null,'barcode','9780132350884','kind','food',
+ 'basis','per_100_g','serving',null,'facts',jsonb_build_array(jsonb_build_object('key','protein','display_name','Protein','state','known','amount','4','unit','g'))))) #> '{publication}' as p3pub \gset
+set local request.jwt.claim.sub='49000000-0000-4000-8000-000000000002';
+select public.acknowledge_catalog_consent_v2(2) \g /dev/null
+select public.submit_catalog_product_v2(jsonb_build_object('operation_id',gen_random_uuid(),'client_revision_id',gen_random_uuid(),
+ 'product_id',current_setting('t.p3')::uuid,'expected_server_revision',null,'consent_version',2,'consent_generation','0',
+ 'product',jsonb_build_object('name','Synthetic group bars','brand',null,'barcode','9780132350884','kind','food',
+ 'basis','per_100_g','serving',null,'facts',jsonb_build_array(jsonb_build_object('key','protein','display_name','Protein','state','known','amount','4','unit','g'))))) #> '{publication}' as p3pub \gset
+reset role;
+do $test$ declare p uuid; rev bigint; first_rev bigint; begin
+ p:=current_setting('t.p3')::uuid;
+ assert public.get_catalog_product_v2(p)#>>'{product,product,name}'='Synthetic crowd bars' and public.get_catalog_product_v2(p)#>>'{product,support,distinct_accounts}'='3';
+ select min(revision),max(revision) into first_rev,rev from catalog_v2.revisions where product_id=p and content->>'name'='Synthetic group bars';
+ assert first_rev<rev, 'the group has two revisions';
+ perform catalog_v2.moderate(p,false,rev);
+ assert not exists(select 1 from catalog_v2.owner_reviews where revision=first_rev);
+ assert public.get_catalog_product_v2(p)#>>'{product,product,name}'='Synthetic group bars', 'a reviewed later revision makes the group the representative';
+ assert public.get_catalog_product_v2(p)#>>'{product,verification,source}'='owner_reviewed';
+ assert public.get_catalog_product_v2(p)#>>'{product,support,distinct_accounts}'='2';
 end $test$;
 rollback;
 select 'REVIEWED REPRESENTATIVE OK';
