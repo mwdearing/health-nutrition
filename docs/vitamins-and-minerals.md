@@ -87,8 +87,9 @@ is one public function, `NutrientGaps.exceededLimit(intake:total:supplementTotal
 Food magnesium above 350 mg is therefore never shown as over a limit, and the folate limit reads "upper limit 1000 mcg
 of folic acid" because it is not in DFE.
 
-Each row also says where the amount came from ("Food 60 mg, supplements 500 mg", or "All from supplements"), how many
-entries do not state it, and the reference figures ("RDA 90 mg, upper limit 2000 mg", or "AI 120 mcg, no upper limit
+Each row also says where the amount came from when it has more than one part, naming every part above zero ("Food 60 mg,
+supplements 500 mg", "Supplements 50 mg, Apple Health 40 mg"), or "All from supplements" when food and Apple Health are
+both zero. It also says how many entries do not state it, and the reference figures ("RDA 90 mg, upper limit 2000 mg", or "AI 120 mcg, no upper limit
 set"). The bar shows food and supplements side by side against the reference; past it, the bar is full and a mark shows
 where the reference sits. The row is read by VoiceOver as one sentence.
 
