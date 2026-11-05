@@ -283,7 +283,8 @@ public actor CommunityAuth {
         // A session-replacement request remains valid across failures to invalidate an older token,
         // but a later auth attempt, logout, or unknown storage state fences it.
         guard startedAtIntent == authenticationIntent else { throw CommunityError.signedOut }
-        let session = try save(data, response)
+        // The server has issued this session: it is stored even if the caller was cancelled meanwhile.
+        let session = try save(data, response, honoursCancel: false)
         localCredentialsRevoked = false
         return session
     }
@@ -302,8 +303,10 @@ public actor CommunityAuth {
         return try save(data, response, expectedUserID: owner)
     }
 
-    private func save(_ data: Data, _ response: HTTPURLResponse, expectedUserID: String? = nil) throws -> CommunitySession {
-        try Task.checkCancellation()
+    private func save(
+        _ data: Data, _ response: HTTPURLResponse, expectedUserID: String? = nil, honoursCancel: Bool = true
+    ) throws -> CommunitySession {
+        if honoursCancel { try Task.checkCancellation() }
         let reply = try CommunityAPI.decode(TokenReply.self, from: data, status: response.statusCode)
         let owner = AccountIdentity(reply.user.id)
         guard !deletedOwners.contains(owner) else { throw CommunityError.signedOut }

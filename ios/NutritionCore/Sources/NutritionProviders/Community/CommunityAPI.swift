@@ -41,10 +41,17 @@ struct CommunityAPI: Sendable {
         }
         do {
             try Task.checkCancellation()
-            let reply = try await transport.send(request)
-            // A reply that has arrived is kept when the caller says it must not be lost: for a sign-in the server
-            // has already issued the session and spent the code, so dropping the reply would strand the account.
-            if !keepsReplyOnCancel { try Task.checkCancellation() }
+            let reply: (Data, HTTPURLResponse)
+            if keepsReplyOnCancel {
+                // A sign-in reply must not be lost: once the server has issued the session and spent the code,
+                // dropping the reply would strand the account. The request runs in its own task, so a cancel of
+                // the caller does not abort it (it still ends at the request timeout) and the reply is kept.
+                let transport = self.transport
+                reply = try await Task { try await transport.send(request) }.value
+            } else {
+                reply = try await transport.send(request)
+                try Task.checkCancellation()
+            }
             guard reply.0.count <= BoundedResponseLimits.community else {
                 throw BoundedResponseError.responseTooLarge
             }

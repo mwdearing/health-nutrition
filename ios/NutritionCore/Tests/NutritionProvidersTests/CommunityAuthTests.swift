@@ -157,13 +157,15 @@ final class CommunityAuthTests: XCTestCase {
         XCTAssertNil(try store.load())
     }
 
-    func testAnEmailVerifyReplyThatArrivesAfterCancellationIsStillKept() async throws {
+    func testAnEmailVerifyCancelledWhileInFlightStillKeepsTheReply() async throws {
         let store = InMemoryCommunitySessionStore()
         let auth = CommunityAuth(
             config: try makeConfig(), transport: CancellingAfterReplyTransport(body: tokenBody), store: store,
             now: { testNow })
 
         let task = Task { try await auth.verifyEmailCode(email: "person@example.com", code: "123456") }
+        try await Task.sleep(nanoseconds: 50_000_000)
+        task.cancel()
         let session = try await task.value
 
         XCTAssertEqual(session.accessToken, "test-access-token")
@@ -213,13 +215,13 @@ final class CommunityAuthTests: XCTestCase {
     }
 }
 
-/// Cancels the calling task while the request is in flight, then still returns the server's reply.
+/// Answers after a short wait, and throws if its own task is cancelled meanwhile, as URLSession does.
 private final class CancellingAfterReplyTransport: CommunityTransport, @unchecked Sendable {
     private let body: String
     init(body: String) { self.body = body }
 
     func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
-        withUnsafeCurrentTask { $0?.cancel() }
+        try await Task.sleep(nanoseconds: 300_000_000)
         let http = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
         return (Data(body.utf8), http)
     }
