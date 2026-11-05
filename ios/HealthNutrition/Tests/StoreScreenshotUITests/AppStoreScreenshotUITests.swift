@@ -1,0 +1,142 @@
+import XCTest
+
+/// Captures the App Store screenshots from the real app: it logs a few entries through the Add screens, then
+/// saves a PNG of Today, Diary, Trends, Vitamins and minerals and Add, one file per screen, into the directory
+/// named by SCREENSHOT_DIR. It runs only from the appstore-screenshots workflow (its own scheme), never in the
+/// pull request gate, on a simulator set to light mode.
+final class AppStoreScreenshotUITests: XCTestCase {
+    private var app: XCUIApplication!
+    private var outputDirectory: URL!
+
+    override func setUpWithError() throws {
+        continueAfterFailure = false
+        let path = ProcessInfo.processInfo.environment["SCREENSHOT_DIR"] ?? NSTemporaryDirectory() + "store-screenshots"
+        outputDirectory = URL(fileURLWithPath: path, isDirectory: true)
+        try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
+        app = XCUIApplication()
+        app.launch()
+        addTeardownBlock { self.app.terminate() }
+    }
+
+    func testCaptureTheStoreScreens() throws {
+        let getStarted = app.buttons["Get started"]
+        if getStarted.waitForExistence(timeout: 5) { getStarted.tap() }
+        // Precondition: a fresh install on Today with nothing logged, so the shots show only the seeded entries.
+        XCTAssertTrue(
+            element("todayDate").waitForExistence(timeout: 30), "the Today screen did not appear")
+        XCTAssertFalse(
+            app.staticTexts["Breakfast bowl"].exists, "the app already holds the demo entries; use a fresh simulator")
+
+        try log("Breakfast bowl", calories: "420", protein: "24", carbs: "52", fat: "12")
+        try log("Chicken and rice", calories: "610", protein: "46", carbs: "62", fat: "17")
+        try log("Greek yogurt and berries", calories: "190", protein: "17", carbs: "22", fat: "4")
+
+        try goToToday()
+        capture("1-today")
+
+        tapTab("Diary")
+        XCTAssertTrue(app.staticTexts["Chicken and rice"].waitForExistence(timeout: 15), "the Diary lost a seeded entry")
+        capture("2-diary")
+
+        tapTab("Trends")
+        sleep(2)
+        capture("3-trends")
+
+        try goToToday()
+        let gaps = app.buttons["Vitamins and minerals"]
+        if !gaps.waitForExistence(timeout: 5) { app.swipeUp() }
+        XCTAssertTrue(gaps.waitForExistence(timeout: 10), "no Vitamins and minerals link on Today")
+        gaps.tap()
+        XCTAssertTrue(app.navigationBars["Vitamins and minerals"].waitForExistence(timeout: 15))
+        capture("4-nutrients")
+        app.navigationBars.buttons.firstMatch.tap()
+
+        try goToToday()
+        let add = app.buttons.matching(NSPredicate(format: "label == %@", "Add food, drink, or supplement"))
+        XCTAssertTrue(pollUntil(timeout: 30, { add.allElementsBoundByIndex.contains { $0.exists && $0.isHittable } }))
+        add.allElementsBoundByIndex.first(where: { $0.exists && $0.isHittable })?.tap()
+        XCTAssertTrue(app.navigationBars["Add"].waitForExistence(timeout: 15), "the Add screen did not open")
+        capture("5-add")
+    }
+
+    // MARK: - Seeding
+
+    /// Logs one entry through Add, "Amounts only", and returns to Today.
+    private func log(_ name: String, calories: String, protein: String, carbs: String, fat: String) throws {
+        let add = app.buttons.matching(NSPredicate(format: "label == %@", "Add food, drink, or supplement"))
+        XCTAssertTrue(
+            pollUntil(timeout: 30, { add.allElementsBoundByIndex.contains { $0.exists && $0.isHittable } }),
+            "no hittable Add button")
+        add.allElementsBoundByIndex.first(where: { $0.exists && $0.isHittable })?.tap()
+        let amountsOnly = app.buttons["Amounts only"]
+        XCTAssertTrue(amountsOnly.waitForExistence(timeout: 20), "no Amounts only action on Add")
+        amountsOnly.tap()
+        XCTAssertTrue(app.navigationBars["Amounts only"].waitForExistence(timeout: 15))
+
+        try type(calories, intoFieldStartingWith: "Calories")
+        try type(protein, intoFieldStartingWith: "Protein")
+        try type(carbs, intoFieldStartingWith: "Carbohydrates")
+        try type(fat, intoFieldStartingWith: "Fat")
+        try type(name, intoFieldStartingWith: "Name")
+
+        let logButton = app.buttons["Log"]
+        XCTAssertTrue(logButton.waitForExistence(timeout: 10), "no Log button")
+        dismissKeyboard()
+        XCTAssertTrue(logButton.isEnabled, "Log is disabled after the amounts were typed")
+        logButton.tap()
+        XCTAssertTrue(
+            pollUntil(timeout: 20, { !self.app.navigationBars["Amounts only"].exists }), "the sheet did not close after Log")
+    }
+
+    private func type(_ text: String, intoFieldStartingWith prefix: String) throws {
+        let field = app.textFields.matching(NSPredicate(format: "label BEGINSWITH %@ OR identifier BEGINSWITH %@", prefix, prefix))
+            .firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 10), "no field named \(prefix)")
+        if !field.isHittable { app.swipeUp() }
+        field.tap()
+        field.typeText(text)
+    }
+
+    private func dismissKeyboard() {
+        let done = app.buttons["Done"]
+        if done.exists { done.tap() } else if app.keyboards.count > 0 { app.navigationBars.firstMatch.tap() }
+    }
+
+    // MARK: - Navigation and capture
+
+    private func goToToday() throws {
+        tapTab("Today")
+        XCTAssertTrue(element("todayDate").waitForExistence(timeout: 15), "Today did not appear")
+    }
+
+    private func tapTab(_ name: String) {
+        let tab = app.tabBars.buttons[name]
+        XCTAssertTrue(tab.waitForExistence(timeout: 15), "no \(name) tab")
+        tab.tap()
+    }
+
+    private func capture(_ name: String) {
+        RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+        let screenshot = XCUIScreen.main.screenshot()
+        let attachment = XCTAttachment(screenshot: screenshot)
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        let url = outputDirectory.appendingPathComponent("\(name).png")
+        do { try screenshot.pngRepresentation.write(to: url) } catch { XCTFail("could not write \(url.path): \(error)") }
+    }
+
+    private func element(_ identifier: String) -> XCUIElement {
+        app.descendants(matching: .any).matching(identifier: identifier).firstMatch
+    }
+}
+
+/// Polls `condition` until it holds or `timeout` seconds pass; true when it held.
+private func pollUntil(timeout: TimeInterval, _ condition: () -> Bool) -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        if condition() { return true }
+        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+    }
+    return condition()
+}
