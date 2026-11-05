@@ -12,6 +12,10 @@ struct StoreFileOperations {
     /// Test hook: runs in an erase after the rows are deleted and before the file is replaced (#1156). The system
     /// operations do nothing here.
     var afterRowsDeleted: () -> Void = {}
+    /// Whether the store file at a URL is damaged, asked before an erase replaces a file without a checkpoint.
+    /// The system operations use SQLite's check (`SwiftDataMedicationStore.storeFileIsDamaged(at:)`); a test
+    /// replaces it to reach a damaged file whose open and row delete succeed.
+    var isDamaged: (URL) -> Bool = SwiftDataMedicationStore.storeFileIsDamaged
 
     static let system = StoreFileOperations(
         checkpoint: { try SwiftDataJournalStore.checkpointStoreFile(at: $0) },
