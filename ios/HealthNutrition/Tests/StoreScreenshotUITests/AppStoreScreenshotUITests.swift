@@ -91,20 +91,26 @@ final class AppStoreScreenshotUITests: XCTestCase {
     private func type(_ text: String, intoFieldStartingWith prefix: String) throws {
         let field = app.textFields.matching(NSPredicate(format: "label BEGINSWITH %@ OR identifier BEGINSWITH %@", prefix, prefix))
             .firstMatch
-        // The form is a lazy list: a field below the fold, or under the keyboard, is not in the tree until scrolled to.
+        // The keyboard and the Log bar cover the lower fields, so the keyboard goes down and the form scrolls
+        // until the field sits clear of the bottom bar before it is tapped.
+        dismissKeyboard()
+        let screenHeight = app.windows.firstMatch.frame.height
         var scrolls = 0
-        while !(field.exists && field.isHittable) && scrolls < 4 {
+        while !(field.exists && field.isHittable && field.frame.maxY < screenHeight * 0.75) && scrolls < 6 {
             app.swipeUp()
             scrolls += 1
         }
         XCTAssertTrue(field.waitForExistence(timeout: 10), "no field named \(prefix)")
         field.tap()
+        XCTAssertTrue(pollUntil(timeout: 10, { self.app.keyboards.count > 0 }), "the \(prefix) field did not take focus")
         app.typeText(text)
     }
 
     private func dismissKeyboard() {
+        guard app.keyboards.count > 0 else { return }
         let done = app.buttons["Done"]
-        if done.exists { done.tap() } else if app.keyboards.count > 0 { app.navigationBars.firstMatch.tap() }
+        if done.exists && done.isHittable { done.tap() } else { app.navigationBars.firstMatch.tap() }
+        _ = pollUntil(timeout: 5, { self.app.keyboards.count == 0 })
     }
 
     // MARK: - Navigation and capture
