@@ -48,6 +48,9 @@ final class AppStoreScreenshotUITests: XCTestCase {
         }
         XCTAssertTrue(edit.exists && edit.isHittable, "no Edit goals link on Today")
         edit.tap()
+        let goalsRow = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Daily goals")).firstMatch
+        if !goalsRow.waitForExistence(timeout: 15) { debugFail("settings-screen", "no Daily goals row in Settings") }
+        goalsRow.tap()
         let help = app.buttons["Help me set my goals"]
         if !help.waitForExistence(timeout: 15) { debugFail("goals-screen", "no guided goal setup") }
         help.tap()
@@ -106,6 +109,35 @@ final class AppStoreScreenshotUITests: XCTestCase {
         if cancel.waitForExistence(timeout: 10) { cancel.tap() }
     }
 
+    /// Makes a supplement product with vitamin and mineral facts through Create product. This step is being
+    /// built against the real screens: each step keeps a shot and the element tree when it cannot continue.
+    func test5_Supplement() throws {
+        try startOnToday()
+        try openAddHome()
+        let create = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Create product")).firstMatch
+        if !create.waitForExistence(timeout: 10) { debugFail("no-create-product", "no Create product on Add") }
+        var scrolls = 0
+        while !(create.exists && create.isHittable) && scrolls < 4 {
+            app.swipeUp()
+            scrolls += 1
+        }
+        create.tap()
+        XCTAssertTrue(app.navigationBars["Product editor"].waitForExistence(timeout: 15), "the product editor did not open")
+        try type("Daily multivitamin", intoFieldStartingWith: "Name")
+        dismissKeyboard()
+        try choose("Kind", option: "Supplement")
+        try choose("Facts are stated", option: "Per serving")
+        let addFact = app.buttons["Add fact"]
+        var factScrolls = 0
+        while !(addFact.exists && addFact.isHittable) && factScrolls < 6 {
+            app.swipeUp()
+            factScrolls += 1
+        }
+        XCTAssertTrue(addFact.exists, "no Add fact button")
+        addFact.tap()
+        debugFail("fact-row", "learning the fact row layout")
+    }
+
     func test9_CaptureTheStoreScreens() throws {
         try startOnToday()
         let hideChecklist = app.buttons["Hide checklist"]
@@ -122,6 +154,11 @@ final class AppStoreScreenshotUITests: XCTestCase {
             app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Insights")).firstMatch.waitForExistence(timeout: 15),
             "the Trends screen did not load")
         capture("3-trends")
+        let insights = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Insights")).firstMatch
+        insights.tap()
+        RunLoop.current.run(until: Date().addingTimeInterval(2))
+        capture("3b-insights")
+        app.navigationBars.buttons.firstMatch.tap()
 
         try goToToday()
         let gaps = app.buttons["Vitamins and minerals"]
@@ -179,6 +216,31 @@ final class AppStoreScreenshotUITests: XCTestCase {
         let getStarted = app.buttons["Get started"]
         if getStarted.waitForExistence(timeout: 5) { getStarted.tap() }
         XCTAssertTrue(element("todayDate").waitForExistence(timeout: 30), "the Today screen did not appear")
+    }
+
+    private func openAddHome() throws {
+        if app.buttons["Amounts only"].exists { return }
+        let add = app.buttons.matching(NSPredicate(format: "label == %@", "Add food, drink, or supplement"))
+        XCTAssertTrue(
+            pollUntil(timeout: 30, { add.allElementsBoundByIndex.contains { $0.exists && $0.isHittable } }),
+            "no hittable Add button")
+        add.allElementsBoundByIndex.first(where: { $0.exists && $0.isHittable })?.tap()
+        XCTAssertTrue(app.buttons["Amounts only"].waitForExistence(timeout: 20), "the Add screen did not open")
+    }
+
+    /// Picks `option` in the menu picker whose label starts with `title`.
+    private func choose(_ title: String, option: String) throws {
+        let menu = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", title)).firstMatch
+        var scrolls = 0
+        while !(menu.exists && menu.isHittable) && scrolls < 6 {
+            app.swipeUp()
+            scrolls += 1
+        }
+        if !(menu.exists && menu.isHittable) { debugFail("no-menu-\(title)", "no \(title) menu"); return }
+        menu.tap()
+        let choice = app.buttons[option]
+        if !choice.waitForExistence(timeout: 5) { debugFail("no-option-\(title)", "no \(option) in the \(title) menu"); return }
+        choice.tap()
     }
 
     private func tapChoice(_ title: String) throws {
