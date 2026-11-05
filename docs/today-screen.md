@@ -134,6 +134,17 @@ Below the water card, a **Supplements** tile shows how many supplement entries a
 supplements" when the list is empty) and opens the supplement list, where each supplement can be taken. It is hidden
 when the host passes no supplement list. Code: `SupplementsTodayTile`.
 
+## Medications tile
+
+Below the Supplements tile, a **Medications** tile shows while the Medication log switch is on. It is hidden while the
+switch is off, and when the host passes no Medication log. It has one line per active medication: the schedule
+standing, else the days since the last dose, else the last-dose line. It shows at most three lines, then "N more"
+(for example "2 more"). With no active medication it reads "Add a medication", and when the log cannot be read it reads
+"Could not read the medication log." A tap opens the Medication log. The injection site and the note are never shown.
+The tile reads the log again whenever the app returns to the foreground, so a day that changed in the background
+shows its own standing.
+Code: `MedicationsTodayTile`.
+
 ## Daily goals
 A **NutrientGoal** (`ios/NutritionCore/Sources/NutritionJournal/GoalStore.swift`) is a nutrient key, an exact
 `Decimal` target and a `MeasureUnit`. Goals are data rather than settings: they are stored, not `UserDefaults` or

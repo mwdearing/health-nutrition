@@ -33,6 +33,8 @@ public struct TodayView: View {
     private let supplementStack: SupplementStackViewModel?
     /// Called after a Taken or an Undo on the supplement list opened from the tile.
     private let onSupplementLogged: () -> Void
+    /// The Medication log. Nil hides the Medications tile.
+    private let medicationLog: MedicationLogViewModel?
 
     public init(
         model: TodayViewModel, now: @escaping () -> Date = { Date() }, onAddIntake: @escaping () -> Void,
@@ -40,7 +42,8 @@ public struct TodayView: View {
         onAddToMeal: ((MealLabel?) -> Void)? = nil,
         checklist: FirstDayChecklistModel? = nil, onOpenUnits: (() -> Void)? = nil,
         bodyActivity: BodyActivityViewModel? = nil, supplementStack: SupplementStackViewModel? = nil,
-        onSupplementLogged: @escaping () -> Void = {}
+        onSupplementLogged: @escaping () -> Void = {},
+        medicationLog: MedicationLogViewModel? = nil
     ) {
         self.model = model
         self.now = now
@@ -53,6 +56,7 @@ public struct TodayView: View {
         self.bodyActivity = bodyActivity
         self.supplementStack = supplementStack
         self.onSupplementLogged = onSupplementLogged
+        self.medicationLog = medicationLog
     }
 
     public var body: some View {
@@ -93,6 +97,7 @@ public struct TodayView: View {
                 if let supplementStack {
                     SupplementsTodayTile(model: supplementStack, now: now, onLogged: onSupplementLogged)
                 }
+                if let medicationLog { MedicationsTodayTile(model: medicationLog) }
                 if let bodyActivity {
                     BodyActivityCard(model: bodyActivity, now: now)
                 }
