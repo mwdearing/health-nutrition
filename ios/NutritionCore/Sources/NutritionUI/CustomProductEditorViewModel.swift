@@ -215,6 +215,8 @@ public struct NutrientKeyChoice: Identifiable, Equatable {
                 Task { await sharing?.runDueOperations(now: now) }
             }
             revision = saved; errorMessage = nil
+            // What is on screen is now what was saved, so leaving does not ask to discard it.
+            shownWith = fingerprint
             return saved
         } catch {
             errorMessage = Self.message(for: error); throw error

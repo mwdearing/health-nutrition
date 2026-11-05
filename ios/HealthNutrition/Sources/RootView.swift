@@ -553,6 +553,10 @@ struct RootView: View {
             CustomProductEditorView(model: editor.model, sharing: services.library.productSharing) { product, openDetails in
                 services.library.load()
                 self.confirmInAddCover(SaveLabels.productSaved)
+                // Save leaves the editor: it is the top of the Add path, so Save never stays on it.
+                if case .productEditor(let current) = self.addNavigation.path.last, current.model === editor.model {
+                    self.addNavigation.path.removeLast()
+                }
                 if openDetails { self.openProductDetails(product, home: home) }
             }
         case .productSearch:
