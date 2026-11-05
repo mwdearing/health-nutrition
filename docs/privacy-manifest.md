@@ -17,7 +17,7 @@ is nothing to declare and nothing to opt out of.
 ## Collected data
 
 `NSPrivacyCollectedDataTypes` currently declares six types, all used for app functionality and none for
-tracking. All are linked to the user:
+tracking. All are declared linked to the user, the conservative answer even where one leg of a flow carries no account:
 
 | Manifest data type | Data the app handles |
 | --- | --- |
@@ -25,7 +25,7 @@ tracking. All are linked to the user:
 | `NSPrivacyCollectedDataTypeUserID` | The community account identifier. |
 | `NSPrivacyCollectedDataTypeName` | The optional display name on the account profile. |
 | `NSPrivacyCollectedDataTypeOtherUserContent` | Product-label facts submitted to the community catalog while sharing is on: product name, brand, barcode, serving text and nutrient amounts. |
-| `NSPrivacyCollectedDataTypeSearchHistory` | Barcodes and Search foods words sent to the project's server with the signed-in account (community lookup and shared-product search), and the same words sent to USDA FoodData Central and Open Food Facts. Declared as linked, the conservative answer, because the project's server receives them with the signed-in account; USDA and Open Food Facts receive only the words, with no account. |
+| `NSPrivacyCollectedDataTypeSearchHistory` | Barcodes and Search foods words sent to the project's server with the signed-in account (community lookup and shared-product search), and the same words sent to USDA FoodData Central and Open Food Facts. Declared as linked because the project's server receives them with the signed-in account (the linkage applies to that leg only); USDA and Open Food Facts receive only the words, with no account. Barcodes are mapped here deliberately: a lookup is a query the person submits. |
 | `NSPrivacyCollectedDataTypeProductInteraction` | Declared as linked, the conservative answer: the captcha token travels in the same sign-in request as the email to the project's server, and the app does not verify here what that server keeps. hCaptcha itself receives no account ID or email. This covers the hCaptcha human check on email sign-in; the hCaptcha SDK (3.1.0, commit `caea076b`) ships its own manifest that declares exactly this type (not linked on its side, no tracking), app functionality; the app repeats it so the App Store Connect answers and the manifests agree. |
 
 The local journal is not uploaded as a journal. A barcode lookup sends the
