@@ -1,7 +1,7 @@
 # App Store Connect metadata
 
-Status: Draft for the first App Store release. Every claim below is checked against `README.md`, `PRIVACY.md`,
-`docs/` and `ios/HealthNutrition/project.yml` at the commit this file was merged. Re-check it when a feature
+Status: Draft for the first App Store release. Every claim below was checked against `README.md`, `PRIVACY.md`,
+`docs/` and `ios/HealthNutrition/project.yml` at the commit this PR branched from. Re-check it when a feature
 changes. Nothing here claims a score, advice or a medical effect, and the verb for adding an entry is "Log".
 
 ## Character counts
@@ -12,11 +12,11 @@ changes. Nothing here claims a score, advice or a medical effect, and the verb f
 | Subtitle | 28 | 30 |
 | Promotional text | 167 | 170 |
 | Keywords | 95 | 100 |
-| Description | 2267 | 4000 |
-| What's New | 325 | 4000 |
-| Review notes | 1936 | 4000 |
+| Description | 2266 | 4000 |
+| What's New | 324 | 4000 |
+| Review notes | 1993 | 4000 |
 
-Counts are Unicode characters as Python's `len` reports them. The keyword field counts the commas.
+Counts are Unicode characters as Python's `len` reports them, not counting the trailing newline. The keyword field counts the commas.
 
 ## Name and subtitle
 
@@ -24,7 +24,7 @@ Counts are Unicode characters as Python's `len` reports them. The keyword field 
 - Subtitle: `Log food, water, supplements`
 
 The app's display name on the Home Screen is `HealthNutrition` (`CFBundleDisplayName`). Apple requires an
-app name that no one else holds; if `Health Nutrition: Food Log` is taken, use `Health Nutrition Journal` (24) or `Health Nutrition Log` (21).
+app name that no one else holds; if `Health Nutrition: Food Log` is taken, use `Health Nutrition Journal` (24) or `Health Nutrition Log` (20).
 
 ## Promotional text
 
@@ -34,7 +34,7 @@ Log food, drinks, water and supplements in one private journal. Scan a barcode o
 
 `calorie,macro,nutrition,food diary,supplement,vitamin,mineral,hydration,barcode,protein,tracker`
 
-Words already in the name and subtitle (log, food, water, supplements) are not repeated, because Apple indexes them.
+Apple indexes the name and subtitle too, so the words `log`, `water` and `supplements` are left out here. `food` and `nutrition` stay only inside multi-word terms.
 
 ## Description
 
@@ -116,7 +116,7 @@ Sign-in: none is needed. The app is fully usable signed out, and the reviewer do
 
 First launch: a welcome screen appears once. Tap Get started. Nothing is requested at launch.
 
-How to see the main flow: on Today, tap Add food, drink, or supplement, type a name and an amount, and save; tap a quick-add water button; open the Diary tab to see the entry. Search foods sends the words you submit to USDA FoodData Central and Open Food Facts.
+How to see the main flow: on Today, tap Add food, drink, or supplement, type a name and an amount, and save; tap a quick-add water button; open the Diary tab to see the entry. Search foods sends the words you submit (two or more characters) to Open Food Facts, and to USDA FoodData Central in builds that carry its key.
 
 Apple Health (HealthKit): off until the user taps Connect Apple Health in Settings. It is used only for nutrition logging: (1) it writes the nutrients and water of entries the user logs, and removes them again when the user edits or deletes an entry; (2) after the user connects, it reads the nutrient types it writes so Today's totals include nutrition other apps logged; (3) only if the user taps Show steps, activity and weight on Today, it reads steps, active energy and weight to show them there, and height to prefill goal setup (height is not saved). Nothing read from Health leaves the phone. No Health data is used for advertising, tracking or sold or shared with third parties.
 
@@ -126,6 +126,11 @@ Notifications: optional reminders to log water or supplements, off until the use
 
 Privacy: the privacy manifest, the policy and the App Store privacy answers are in docs/privacy-manifest.md and PRIVACY.md.
 ```
+
+## Before you submit
+
+- The community catalog and sign-in text assumes the hosted shared service is live for the release build. README.md still says the repository does not show that. Confirm it, or remove the catalog and account lines from the description and review notes.
+- Confirm the name is free in App Store Connect.
 
 ## Claims boundary
 
