@@ -284,6 +284,8 @@ final class AppStoreScreenshotUITests: XCTestCase {
         let choice = app.buttons[option]
         // A long menu lists only the rows near the top until it is scrolled, so it is dragged up until the option
         // shows (a swipe on the app can miss the menu, so the drag starts inside it).
+        // The menu takes a moment to open, and a drag that starts before then would close it again.
+        _ = pollUntil(timeout: 4, { choice.exists && choice.isHittable })
         var menuScrolls = 0
         while !(choice.exists && choice.isHittable) && menuScrolls < 10 {
             let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.55))
