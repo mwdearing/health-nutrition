@@ -45,7 +45,9 @@ final class AppStoreScreenshotUITests: XCTestCase {
         capture("2-diary")
 
         tapTab("Trends")
-        sleep(2)
+        XCTAssertTrue(
+            app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Insights")).firstMatch.waitForExistence(timeout: 15),
+            "the Trends screen did not load")
         capture("3-trends")
 
         try goToToday()
@@ -151,6 +153,9 @@ final class AppStoreScreenshotUITests: XCTestCase {
         let option = app.buttons[meal]
         if option.waitForExistence(timeout: 5) {
             option.tap()
+            // The menu now names the chosen meal; a miss would put the entry under Other in the shots.
+            let chosen = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", meal)).firstMatch
+            XCTAssertTrue(chosen.waitForExistence(timeout: 5), "the meal menu did not take \(meal)")
         } else {
             capture("debug-meal-menu-\(entry)")
             try? app.debugDescription.write(
