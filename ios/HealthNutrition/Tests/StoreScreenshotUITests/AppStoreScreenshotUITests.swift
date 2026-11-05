@@ -99,7 +99,7 @@ final class AppStoreScreenshotUITests: XCTestCase {
         }
         XCTAssertTrue(field.waitForExistence(timeout: 10), "no field named \(prefix)")
         field.tap()
-        field.typeText(text)
+        app.typeText(text)
     }
 
     private func dismissKeyboard() {
