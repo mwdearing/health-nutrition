@@ -68,6 +68,8 @@ public struct InsightsWeek: Equatable {
         formatter.locale = locale
         formatter.timeZone = zone
         formatter.setLocalizedDateFormatFromTemplate("EEE")
+        // The Diary's yyyy-MM-dd keys as the same year-month-day numbers the entry counts use.
+        let healthDayNumbers = Set(healthIntakeDayKeys.compactMap { Int($0.replacingOccurrences(of: "-", with: "")) })
         var keyCounts: [Int: Int] = [:]
         for entry in entries where entry.occurredAt <= now {
             var own = Calendar(identifier: .gregorian)
@@ -79,9 +81,7 @@ public struct InsightsWeek: Equatable {
             guard let start = calendar.date(byAdding: .day, value: -offset, to: today) else { continue }
             let key = dayKey(calendar.dateComponents([.year, .month, .day], from: start))
             var day = Day(id: start, label: formatter.string(from: start), entryCount: keyCounts[key] ?? 0)
-            let parts = calendar.dateComponents([.year, .month, .day], from: start)
-            let isoKey = String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
-            day.hasHealthIntake = healthIntakeDayKeys.contains(isoKey)
+            day.hasHealthIntake = healthDayNumbers.contains(key)
             days.append(day)
         }
         return InsightsWeek(days: days)
