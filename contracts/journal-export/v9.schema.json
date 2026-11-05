@@ -162,8 +162,7 @@
           "name": {
             "type": "string",
             "minLength": 1,
-            "maxLength": 60,
-            "description": "The name the person gave the medication."
+            "description": "The name the person gave the medication: 1 to 60 characters, counted as the app counts characters (a letter with its accents, or an emoji, is one), so no code-point maxLength is stated; unique in the list, ignoring case."
           },
           "unit": {
             "type": "string",
@@ -244,16 +243,14 @@
               "string",
               "null"
             ],
-            "maxLength": 40,
-            "description": "Where the dose was given, as the person typed it, or null. The app never shows it."
+            "description": "Where the dose was given, as the person typed it, or null: at most 40 characters, counted as the app counts characters. The app never shows it."
           },
           "note": {
             "type": [
               "string",
               "null"
             ],
-            "maxLength": 200,
-            "description": "The person's note on the dose, or null."
+            "description": "The person's note on the dose, or null: at most 200 characters, counted as the app counts characters."
           }
         }
       }

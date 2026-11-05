@@ -443,6 +443,22 @@ final class JournalImportMedicationsTests: XCTestCase {
         XCTAssertNil(try base.medicationRestoreReceipt(JournalImporter.fileDigest(data)))
     }
 
+    func testALongLogIsRestoredInBatchesAndEveryDoseArrives() throws {
+        let store = try medicationStore()
+        let many = (0..<600).map { index in
+            MedicationDose(
+                medicationID: vial.id, takenAt: Date(timeIntervalSince1970: TimeInterval(1_700_000_000 + index * 3_600)),
+                timeZoneIdentifier: "UTC", amount: 2, unit: .mg)
+        }
+        let data = try medicationsExport([vial], many)
+
+        let summary = try importFile(data, into: store)
+
+        XCTAssertEqual(summary.medicationDoses, 600)
+        XCTAssertEqual(try doseIDs(store), Set(many.map(\.id)))
+        XCTAssertNil(try store.medicationRestoreReceipt(JournalImporter.fileDigest(data)))
+    }
+
     func testAnUndoNeverRemovesAMedicationThatHoldsADose() throws {
         let store = try medicationStore()
         try store.saveMedication(vial)

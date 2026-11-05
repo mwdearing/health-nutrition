@@ -1099,8 +1099,14 @@ public enum JournalImporter {
         for medication in recorded.medications {
             _ = try store.writeRestoredMedication(medication, receipt: receipt)
         }
-        for dose in recorded.doses {
-            _ = try store.writeRestoredDose(dose, receipt: receipt)
+        // Doses go in batches, each one save with its receipt entries, so the receipt is rewritten about twenty times
+        // however long the log is, and never fewer than 250 doses go in one save.
+        let batchSize = max(250, (recorded.doses.count + 19) / 20)
+        var start = 0
+        while start < recorded.doses.count {
+            let end = min(start + batchSize, recorded.doses.count)
+            _ = try store.writeRestoredDoses(Array(recorded.doses[start..<end]), receipt: receipt)
+            start = end
         }
     }
 

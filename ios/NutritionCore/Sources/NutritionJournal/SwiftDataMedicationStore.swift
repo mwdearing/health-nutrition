@@ -467,6 +467,43 @@ public final class SwiftDataMedicationStore: MedicationStore, JournalErasing, @u
         return written
     }
 
+    /// Writes a batch of restored doses and drops them from the receipt in one save. The receipt is decoded and encoded once
+    /// for the batch, so a restore of many doses rewrites it once per batch, not once per dose. Each dose is written only
+    /// under the rules `writeRestoredDose` keeps.
+    public func writeRestoredDoses(_ doses: [MedicationDose], receipt: String) throws -> Int {
+        for dose in doses { try dose.validate() }
+        writeLock.lock()
+        defer { writeLock.unlock() }
+        let context = ModelContext(try openContainer())
+        guard let receiptRow = try Self.receiptRow(context, receipt) else {
+            throw JournalImportError.corrupt("the medication restore receipt is missing")
+        }
+        let payload = try Self.decodeReceipt(receiptRow.name)
+        var heldDoseIDs = Set(try context.fetch(FetchDescriptor<MedicationDoseRecord>()).map(\.id))
+        let storedMedicationIDs = Set(
+            try context.fetch(FetchDescriptor<MedicationRecord>()).filter { !Self.isReceipt($0) }.map(\.id))
+        var batchIDs = Set<String>()
+        var written: [ReceiptDose] = []
+        for dose in doses {
+            let key = dose.id.uuidString
+            batchIDs.insert(key)
+            guard !heldDoseIDs.contains(key), storedMedicationIDs.contains(dose.medicationID.uuidString) else { continue }
+            heldDoseIDs.insert(key)
+            context.insert(MedicationDoseRecord(
+                id: key, medicationID: dose.medicationID.uuidString, takenAt: dose.takenAt,
+                timeZoneIdentifier: dose.timeZoneIdentifier, amountText: DecimalText.encode(dose.amount),
+                unitText: dose.unit.rawValue, site: dose.site, note: dose.note))
+            written.append(Self.receiptDose(dose))
+        }
+        receiptRow.name = try Self.encodeReceipt(ReceiptPayload(
+            done: payload.done, medications: payload.medications,
+            doses: payload.doses.filter { !batchIDs.contains($0.id) },
+            writtenMedications: payload.writtenMedications,
+            writtenDoses: payload.writtenDoses + written))
+        try context.save()
+        return written.count
+    }
+
     /// Every row the restore under this receipt wrote, from any run. Empty when no receipt is stored under this name.
     public func medicationRestoreWritten(_ receipt: String) throws -> MedicationRestoreSet {
         let context = ModelContext(try openContainer())

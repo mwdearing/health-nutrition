@@ -58,6 +58,9 @@ public protocol MedicationStore: AnyObject, Sendable {
     /// nothing, when a dose already holds the identifier or its medication is not stored. A dose keeps the unit it was
     /// logged in, which can differ from its medication's current unit. The dose leaves the receipt either way.
     func writeRestoredDose(_ dose: MedicationDose, receipt: String) throws -> Bool
+    /// Writes a batch of restored doses as `writeRestoredDose` does, all with their receipt entries in one save, so the
+    /// receipt is read and written once per batch rather than once per dose. Returns how many doses were written.
+    func writeRestoredDoses(_ doses: [MedicationDose], receipt: String) throws -> Int
     /// Every row the restore under this receipt wrote, from any run, so an undo removes exactly those.
     func medicationRestoreWritten(_ receipt: String) throws -> MedicationRestoreSet
     /// Undoes one dose a restore wrote: removes it only while the store holds exactly that dose, checked and removed in
@@ -104,6 +107,10 @@ extension MedicationStore {
         throw JournalImportError.corrupt("this medication store keeps no restore receipt")
     }
     public func medicationRestoreWritten(_ receipt: String) throws -> MedicationRestoreSet { MedicationRestoreSet() }
+    /// One dose at a time, for a store that keeps no batch write of its own.
+    public func writeRestoredDoses(_ doses: [MedicationDose], receipt: String) throws -> Int {
+        try doses.reduce(0) { count, dose in try writeRestoredDose(dose, receipt: receipt) ? count + 1 : count }
+    }
     public func undoRestoredDose(_ dose: MedicationDose, receipt: String?) throws -> Bool {
         throw JournalImportError.corrupt("this medication store keeps no restore receipt")
     }
