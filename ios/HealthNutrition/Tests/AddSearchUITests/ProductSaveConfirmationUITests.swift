@@ -30,7 +30,7 @@ final class ProductSaveConfirmationUITests: XCTestCase {
             guard openEditor(app) else { return }
             let brand = app.textFields["Brand (optional)"]
             guard brand.waitForExistence(timeout: 5) else { return }
-            brand.tap()
+            focus(brand)
             if let current = brand.value as? String, !current.isEmpty, current != "Brand (optional)" {
                 brand.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count))
             }
@@ -40,7 +40,8 @@ final class ProductSaveConfirmationUITests: XCTestCase {
             if save.isHittable { save.tap() }
         }
 
-        XCTAssertTrue(ensureProductExists(in: app), "the fixed test product could not be created or found")
+        XCTAssertTrue(ensureProductExists(in: app),
+                      "the fixed test product could not be created or found\n\(app.debugDescription)")
 
         XCTAssertTrue(openEditor(app), "the test product has no Edit and sharing review action")
 
@@ -49,7 +50,7 @@ final class ProductSaveConfirmationUITests: XCTestCase {
         if let current = brand.value as? String, current != "Brand (optional)" {
             brandBeforeEdit = current
         }
-        brand.tap()
+        focus(brand)
         brand.typeText(editedBrand)
         didEditBrand = true
 
@@ -92,10 +93,22 @@ final class ProductSaveConfirmationUITests: XCTestCase {
         return app.textFields["Name"].waitForExistence(timeout: 10)
     }
 
-    /// The Library row whose label contains the fixed product's name.
+    /// The Library row whose label contains the fixed product's name. Library rows are not always list cells, so
+    /// the lookup falls back to any element containing the name.
     private func productRow(_ app: XCUIApplication) -> XCUIElement {
-        app.cells.containing(NSPredicate(format: "label CONTAINS %@", productName)).firstMatch
+        let named = NSPredicate(format: "label CONTAINS %@", productName)
+        let cell = app.cells.containing(named).firstMatch
+        if cell.exists { return cell }
+        return app.otherElements.containing(named).firstMatch
     }
+}
+
+/// Taps a text field until it holds keyboard focus, as the existing UI tests do, because a single tap can land while
+/// the screen is still settling.
+private func focus(_ field: XCUIElement) {
+    func hasFocus() -> Bool { (field.value(forKey: "hasKeyboardFocus") as? Bool) == true }
+    field.tap()
+    if !hasFocus() { field.tap() }
 }
 
 /// Swipes up until the element can be tapped, for a list or form whose rows are built on demand.
