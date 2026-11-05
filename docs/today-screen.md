@@ -37,14 +37,18 @@ four rows in this order:
 2. **Set a daily goal**: done when at least one daily goal is stored. Tapping it opens the daily goals.
 3. **Choose units**: shows the current system under the title, "Metric" or "US". Tapping it marks the step done at
    once, then opens the units settings. The mark is stored, so it stays done even if the units are not changed.
-4. **Connect Apple Health**: a placeholder with a Later badge. It is disabled, announced as "Not available yet", and
-   never done in this build.
+4. **Connect Apple Health**: shown only where Health is available. Before Health has answered, tapping it asks for
+   access. Once Health has answered, the row shows Health's status as its detail ("Partly allowed" or "Turned off in
+   Health"), because iOS asks only once, and tapping it opens the Health app. It counts as done once Health has
+   answered with all or some nutrients allowed; it stays undone when Health is off for the app.
 
 Steps are read again when the app starts, when it returns to the foreground, when Settings closes, after an entry is
-added or edited, after an erase, and after the units step. The card disappears once the first three steps are all
+added or edited, after an erase, and after the units step. Today itself reloads, and reads Health again, when the
+day, the time zone or the clock changes while Today is open. When the entry sheet closes in any way, including a
+swipe down after Log again, the screens behind it reload. The card disappears once the first three steps are all
 done, and it returns only if one of them becomes undone again (for example, every entry is deleted). **Hide**
 removes the card at once and stores the choice, so it stays hidden on later launches until an erase clears it. The
-fourth step never ticks off, so it never keeps the card on screen.
+fourth step does not count toward hiding the card, so it never keeps the card on screen.
 
 ## Totals
 A **DailyTotals** (`ios/NutritionCore/Sources/NutritionUI/DailyTotals.swift`) is what one day adds up to, one entry
