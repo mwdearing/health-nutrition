@@ -75,8 +75,8 @@ public final class SupplementStackViewModel: ObservableObject {
     /// screen says a time may read "Not logged" when it was taken rather than showing a count it cannot back.
     @Published public private(set) var unreadableEntriesToday = 0
     /// Today's vitamins and minerals that are above an upper limit, as rows of the vitamins and minerals
-    /// screen. They are built the way that screen builds them (`NutrientGapsViewModel.tallies` and
-    /// `NutrientGapRow`), so the two screens never disagree. Empty without a reference group.
+    /// screen. They are built the way that screen builds them (`NutrientGapsViewModel.tallies`,
+    /// `addingHealth` and `NutrientGapRow`), so the two screens never disagree. Empty without a reference group.
     @Published public private(set) var limitRows: [NutrientGapRow] = []
     /// Whether a reference group is chosen, without which there is no limit to compare with.
     @Published public private(set) var hasReferenceGroup = false
@@ -94,6 +94,8 @@ public final class SupplementStackViewModel: ObservableObject {
     private let makeID: () -> String
     private let lookup: NutrientFactsLookup
     private let referencePreferences: ReferenceGroupPreferences?
+    /// Health's side of today, from the same read the vitamins and minerals screen adds on its Day span.
+    private let healthToday: () -> HealthIntakeTotals.Outside
 
     public init(
         store: JournalStore,
@@ -104,8 +106,10 @@ public final class SupplementStackViewModel: ObservableObject {
         preferences: DisplayPreferences = InMemoryDisplayPreferences(),
         timeZoneIdentifier: String? = nil,
         timeZoneProvider: @escaping () -> String = { TimeZone.current.identifier },
-        makeID: @escaping () -> String = { UUID().uuidString.lowercased() }
+        makeID: @escaping () -> String = { UUID().uuidString.lowercased() },
+        healthToday: @escaping () -> HealthIntakeTotals.Outside = { .notConnected }
     ) {
+        self.healthToday = healthToday
         self.store = store
         self.favorites = favorites
         self.schedules = schedules
@@ -279,10 +283,12 @@ public final class SupplementStackViewModel: ObservableObject {
         guard let group = referencePreferences?.referenceGroup else { return ([], false, false) }
         do {
             let day = try NutrientGapsViewModel.tallies(intakes: intakes, store: store, lookup: lookup, now: now)
+            // Today's Apple Health totals count as they do on the vitamins and minerals Day span (#1292).
+            let tallies = NutrientGapsViewModel.addingHealth(day.tallies, outside: healthToday())
             let rows = NutrientGapsViewModel.nutrients.map { nutrient in
                 NutrientGapRow(
                     nutrient: nutrient, label: NutrientNames.displayName(for: nutrient),
-                    unit: NutrientGapsViewModel.unit(for: nutrient), tally: day.tallies[nutrient] ?? NutrientDayTally(),
+                    unit: NutrientGapsViewModel.unit(for: nutrient), tally: tallies[nutrient] ?? NutrientDayTally(),
                     reference: ReferenceIntakes.intake(for: nutrient, group: group))
             }
             return (rows.filter { $0.status == .aboveUpperLimit }, true, false)

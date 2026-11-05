@@ -947,13 +947,14 @@ final class SupplementStackTests: XCTestCase {
 
     private func makeLimitModel(
         store: JournalStore, favorites: FavoritesStore, schedules: SupplementStackStoring,
-        group: ReferenceGroup?
+        group: ReferenceGroup?,
+        healthToday: @escaping () -> HealthIntakeTotals.Outside = { .notConnected }
     ) -> (SupplementStackViewModel, InMemoryDisplayPreferences) {
         let preferences = InMemoryDisplayPreferences()
         preferences.setReferenceGroup(group)
         let model = SupplementStackViewModel(
             store: store, favorites: favorites, schedules: schedules, lookup: SnapshotNutrientFacts(),
-            referencePreferences: preferences, timeZoneIdentifier: "UTC")
+            referencePreferences: preferences, timeZoneIdentifier: "UTC", healthToday: healthToday)
         return (model, preferences)
     }
 
@@ -1025,6 +1026,29 @@ final class SupplementStackTests: XCTestCase {
 
         XCTAssertEqual(model.limitRows.map(\.nutrient), ["vitaminC"])
         XCTAssertEqual(model.rows.first?.aboveUpperLimit, [NutrientNames.displayName(for: "vitaminC")])
+    }
+
+    /// #1292: today's Apple Health totals count toward an all-sources limit on the list as they do on the vitamins and
+    /// minerals Day span (men 31 to 50, zinc limit 40 mg: 30 mg supplement plus 15 mg from Health).
+    func testAnAllSourcesLimitCountsTodaysAppleHealthLikeTheVitaminsScreen() throws {
+        let store = try makeStore()
+        let favorites = try makeFavorites()
+        let schedules = try makeSchedules()
+        let zinc = labelled(
+            "s-zinc-30", name: "Example zinc", kind: .supplement, nutrients: ["zinc": .known(30, .mg)])
+        try log(store, name: "Example zinc", at: now.addingTimeInterval(-3_600), amount: 100, unit: .g, product: zinc)
+        try saveFavorite(favorites, snapshot: "s-zinc-30")
+        try schedules.save(["fav-magnesium": .standard])
+        let health: HealthIntakeTotals.Outside = .read(values: ["zinc": 15], readKeys: ["zinc"])
+        let (model, preferences) = makeLimitModel(
+            store: store, favorites: favorites, schedules: schedules, group: men31, healthToday: { health })
+        model.load(now: now)
+
+        XCTAssertEqual(model.limitRows.map(\.nutrient), ["zinc"])
+        let gaps = NutrientGapsViewModel(
+            store: store, lookup: SnapshotNutrientFacts(), preferences: preferences, healthToday: { health })
+        gaps.load(now: now)
+        XCTAssertEqual(model.limitRows, gaps.rows.filter { $0.status == .aboveUpperLimit })
     }
 
     func testWithoutAGroupOrALabelThereIsNothingToMark() throws {

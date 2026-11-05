@@ -128,8 +128,9 @@ final class AppServices {
         // Today's coverage reads the nutrient values each entry's product snapshot carries, so a
         // logged recipe or a looked-up product contributes what it states. An entry typed by hand has
         // no snapshot and stays unknown, never zero.
-        today = TodayViewModel(
+        let todayForLimits = TodayViewModel(
             store: journalStore, goals: goalStore, lookup: SnapshotNutrientFacts(), preferences: displayPreferences)
+        today = todayForLimits
         let journalModel = JournalViewModel(
             store: journalStore, goals: goalStore, lookup: SnapshotNutrientFacts(), preferences: displayPreferences)
         journal = journalModel
@@ -142,7 +143,9 @@ final class AppServices {
         supplementStack = SupplementStackViewModel(
             store: journalStore, favorites: favoritesStore, schedules: supplementSchedules,
             lookup: SnapshotNutrientFacts(), referencePreferences: displayPreferences,
-            preferences: displayPreferences)
+            preferences: displayPreferences,
+            // Today's Apple Health totals, as the vitamins and minerals Day span adds them (#1292).
+            healthToday: { [weak todayForLimits] in todayForLimits?.outsideIntake ?? .notConnected })
         goals = GoalsViewModel(store: goalStore, journal: journalStore, preferences: displayPreferences)
         medicationLog = MedicationLogViewModel(
             store: medicationStore, preferences: displayPreferences, eraser: medicationStore)
