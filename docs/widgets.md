@@ -8,7 +8,8 @@ some entries have no calories, Food reads "N+" (VoiceOver "at least N calories")
 Remaining reads "Up to N" ("up to N calories remaining"); the medium widget adds its note line. Burned never has a marker. The circular
 widget's ring is the share of the goal eaten and its centre is Food ("N+" on a partial day). The rectangular
 widgets (Lock Screen and Watch) show the calorie block only; the medium widget keeps protein, carbohydrate, fat and
-water beside it, and the Watch app lists them under it. With nothing logged it reads "Nothing logged today". Tapping it opens
+water beside it, and the Watch app lists them under it. With nothing logged it reads "Nothing logged today". A day with no entries but food or nutrient intake
+read from Apple Health (water alone does not count) counts as logged, as in the Diary, and shows its figures. Tapping it opens
 the app.
 
 - **What it reads.** Only a small summary file the app writes (`Shared/WidgetSnapshot.swift`): the day's
