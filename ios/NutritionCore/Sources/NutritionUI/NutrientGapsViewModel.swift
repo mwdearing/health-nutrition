@@ -111,7 +111,7 @@ public struct NutrientGapRow: Equatable, Identifiable {
             return .aboveUpperLimit
         }
         if tally.total >= reference.amount { return .reachedReference }
-        return tally.missing > 0 ? .belowReferenceSoFar : .belowReference
+        return tally.missing > 0 || tally.unknownHealth > 0 ? .belowReferenceSoFar : .belowReference
     }
 
     /// "120 mg", "At least 120 mg" where some entries do not state it, or a word where nothing is known.
@@ -121,7 +121,7 @@ public struct NutrientGapRow: Equatable, Identifiable {
         case .unknown: return "Unknown"
         default:
             let figure = Self.figure(tally.total, unit)
-            return tally.missing > 0 ? "At least \(figure)" : figure
+            return tally.missing > 0 || tally.unknownHealth > 0 ? "At least \(figure)" : figure
         }
     }
 
