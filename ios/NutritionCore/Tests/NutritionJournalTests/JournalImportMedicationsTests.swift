@@ -264,7 +264,9 @@ final class JournalImportMedicationsTests: XCTestCase {
 
     func testMedicationsInAFileWithoutAMedicationStoreAreRefused() throws {
         XCTAssertThrowsError(try importFile(try fullExport(), into: nil)) { error in
-            guard case JournalImportError.corrupt = error else { return XCTFail("expected corrupt, got \(error)") }
+            XCTAssertEqual(
+                error as? JournalImportError,
+                .corrupt("the export carries 2 medications and 3 doses and no medication store was given"))
         }
     }
 
@@ -275,14 +277,18 @@ final class JournalImportMedicationsTests: XCTestCase {
             root["medication_doses"] = list
         }
         XCTAssertThrowsError(try importFile(data, into: try medicationStore())) { error in
-            guard case JournalImportError.malformed = error else { return XCTFail("expected malformed, got \(error)") }
+            XCTAssertEqual(
+                error as? JournalImportError,
+                .malformed("$.medication_doses[0] has extra, which the version 9 schema does not define"))
         }
     }
 
     func testAVersion9FileMustStateBothLists() throws {
         let data = try mutated(try fullExport()) { root in root.removeValue(forKey: "medication_doses") }
         XCTAssertThrowsError(try importFile(data, into: try medicationStore())) { error in
-            guard case JournalImportError.malformed = error else { return XCTFail("expected malformed, got \(error)") }
+            XCTAssertEqual(
+                error as? JournalImportError,
+                .malformed("$ is missing medication_doses, which the version 9 schema requires"))
         }
     }
 
@@ -306,7 +312,9 @@ final class JournalImportMedicationsTests: XCTestCase {
             root["medication_doses"] = []
         }
         XCTAssertThrowsError(try importFile(data, into: try medicationStore())) { error in
-            guard case JournalImportError.malformed = error else { return XCTFail("expected malformed, got \(error)") }
+            XCTAssertEqual(
+                error as? JournalImportError,
+                .malformed("$ has medication_doses, which the version 8 schema does not define"))
         }
     }
 
@@ -382,9 +390,7 @@ final class JournalImportMedicationsTests: XCTestCase {
         try store.removeDose(id: fileDoses[2].id)
 
         XCTAssertThrowsError(try importFile(data, into: store, journal: journal)) { error in
-            guard case JournalImportError.alreadyRestored = error else {
-                return XCTFail("expected alreadyRestored, got \(error)")
-            }
+            XCTAssertEqual(error as? JournalImportError, .alreadyRestored)
         }
         XCTAssertFalse(try doseIDs(store).contains(fileDoses[2].id), "a dose the person deleted must not come back")
     }
@@ -430,7 +436,7 @@ final class JournalImportMedicationsTests: XCTestCase {
             }
         }
         XCTAssertThrowsError(try importFile(data, into: store, journal: sameJournal)) { error in
-            guard case JournalImportError.partialRestore = error else { return XCTFail("expected partialRestore, got \(error)") }
+            XCTAssertEqual(error as? JournalImportError, .partialRestore(retainedIntakes: 0, retainedTombstones: 0))
         }
         XCTAssertEqual(try sameJournal.restoreInProgressDigest(), digest, "rows of unknown origin keep the flag")
 
@@ -479,7 +485,9 @@ final class JournalImportMedicationsTests: XCTestCase {
         let renamed = Medication(id: vial.id, name: "Example other", unit: .mg, scheduleDays: 7)
         try base.saveMedication(renamed)
         let store = ScriptedMedicationStore(base: base) { _, _ in throw JournalImportError.corrupt("stopped") }
-        XCTAssertThrowsError(try importFile(data, into: store, journal: journal))
+        XCTAssertThrowsError(try importFile(data, into: store, journal: journal)) { error in
+            XCTAssertEqual(error as? JournalImportError, .corrupt("stopped"), "a resume has no undo of its own")
+        }
         XCTAssertEqual(
             try base.medicationRestoreReceipt(digest), MedicationRestoreSet(doses: fileDoses), "the stopped resume wrote nothing")
 
@@ -543,7 +551,8 @@ final class JournalImportMedicationsTests: XCTestCase {
         let third = dose(4, vial)
         try store.recordMedicationRestoreReceipt("r", planned: MedicationRestoreSet(doses: [fileDoses[0], fileDoses[1], third]))
 
-        XCTAssertFalse(try store.writeRestoredDose(fileDoses[0], medicationName: vial.name, receipt: "r"))
+        XCTAssertFalse(
+            try store.writeRestoredDose(fileDoses[0], medicationName: vial.name, receipt: "r"), "stored under another name")
         XCTAssertEqual(try store.writeRestoredDoses([fileDoses[1]], medicationNames: [vial.id: vial.name], receipt: "r"), 0)
         XCTAssertTrue(try store.writeRestoredDose(third, medicationName: "EXAMPLE OTHER", receipt: "r"), "the stored name")
 
@@ -572,7 +581,9 @@ final class JournalImportMedicationsTests: XCTestCase {
                 throw JournalImportError.corrupt("stopped")
             }
         }
-        XCTAssertThrowsError(try importFile(data, into: store, journal: sameJournal))
+        XCTAssertThrowsError(try importFile(data, into: store, journal: sameJournal)) { error in
+            XCTAssertEqual(error as? JournalImportError, .partialRestore(retainedIntakes: 0, retainedTombstones: 0))
+        }
         XCTAssertFalse(try base.medications().contains(pen), "the undo removed the restored pen")
 
         _ = try importFile(data, into: base, journal: sameJournal)
@@ -675,7 +686,9 @@ final class JournalImportMedicationsTests: XCTestCase {
             if writes == 4 { throw JournalImportError.corrupt("stopped") }
         }
 
-        XCTAssertThrowsError(try importFile(data, into: store))
+        XCTAssertThrowsError(try importFile(data, into: store)) { error in
+            XCTAssertEqual(error as? JournalImportError, .partialRestore(retainedIntakes: 0, retainedTombstones: 0))
+        }
 
         XCTAssertTrue(try doseIDs(base).contains(logged.id), "a dose the person logged is never removed by an undo")
         XCTAssertTrue(try base.medications().contains(vial), "a medication with the person's dose stays")
@@ -695,7 +708,9 @@ final class JournalImportMedicationsTests: XCTestCase {
             if writes == 3 { try base.saveDose(logged) }
             if writes == 4 { throw JournalImportError.corrupt("stopped") }
         }
-        XCTAssertThrowsError(try importFile(data, into: store, journal: sameJournal))
+        XCTAssertThrowsError(try importFile(data, into: store, journal: sameJournal)) { error in
+            XCTAssertEqual(error as? JournalImportError, .partialRestore(retainedIntakes: 0, retainedTombstones: 0))
+        }
         XCTAssertFalse(try base.medications().contains(pen), "the undo removed the restored pen")
 
         _ = try importFile(data, into: base, journal: sameJournal)
@@ -727,7 +742,7 @@ final class JournalImportMedicationsTests: XCTestCase {
         let own = dose(9, vial)
         try store.saveDose(own)
 
-        XCTAssertFalse(try store.undoRestoredMedication(vial, receipt: nil))
+        XCTAssertFalse(try store.undoRestoredMedication(vial, receipt: nil), "the vial holds the person's dose")
         XCTAssertTrue(try store.undoRestoredDose(dose(8, vial), receipt: nil), "a dose already gone counts as undone")
 
         XCTAssertEqual(try store.medications(), [vial])

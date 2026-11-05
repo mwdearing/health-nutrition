@@ -80,11 +80,17 @@ final class ConnectionsPrivacyMedicationsTests: XCTestCase {
 
     func testAMedicationStoreThatCannotBeReadFailsTheExport() throws {
         let (journal, _) = try stores()
+        final class Writes: @unchecked Sendable { var count = 0 }
+        let writes = Writes()
         let model = ConnectionsPrivacyViewModel(
             goals: InMemoryGoalStore(), store: journal, medications: InMemoryMedicationStore(failReads: true),
-            writer: { _, _, _ in })
+            writer: { _, _, _ in writes.count += 1 })
 
-        XCTAssertFalse(model.export(now: Date(timeIntervalSince1970: 1_777_000_000)))
+        XCTAssertFalse(model.export(now: Date(timeIntervalSince1970: 1_777_000_000)), "the export reports failure")
+        XCTAssertEqual(model.exportState, .failed)
+        XCTAssertEqual(model.errorMessage, ConnectionsPrivacyViewModel.exportFailedMessage)
+        XCTAssertNil(model.exportFileURL, "no file is offered")
+        XCTAssertEqual(writes.count, 0, "nothing is written without the medication log")
     }
 
     func testTheSuccessLineCountsMedicationsAndDoses() {

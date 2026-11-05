@@ -123,7 +123,11 @@ final class JournalExportMedicationsTests: XCTestCase {
     }
 
     func testAMedicationStoreThatCannotBeReadFailsTheExport() {
-        XCTAssertThrowsError(try export(InMemoryMedicationStore(failReads: true)))
+        XCTAssertThrowsError(try export(UnreadableMedicationStore())) { error in
+            XCTAssertEqual(
+                error as? UnreadableMedicationStore.ReadFailed, UnreadableMedicationStore.ReadFailed(),
+                "the medication store's own read error fails the export, not another failure: got \(error)")
+        }
     }
 
     func testAVersion8DocumentKeepsItsShapeWithoutTheMedicationLists() throws {
@@ -200,8 +204,8 @@ final class JournalExportMedicationsTests: XCTestCase {
     func testTheVersion9ExampleReadsAndEveryDoseNamesAMedicationInIt() throws {
         let document = try JournalExporter.decode(try contractFile("example.v9.json"))
         XCTAssertEqual(document.schemaVersion, 9)
-        XCTAssertFalse(document.medications.isEmpty)
-        XCTAssertFalse(document.medicationDoses.isEmpty)
+        XCTAssertFalse(document.medications.isEmpty, "the example carries medications")
+        XCTAssertFalse(document.medicationDoses.isEmpty, "the example carries doses")
         let ids = Set(document.medications.map(\.id))
         for dose in document.medicationDoses {
             XCTAssertTrue(ids.contains(dose.medicationID), dose.id)
@@ -209,4 +213,17 @@ final class JournalExportMedicationsTests: XCTestCase {
         let names = document.medications.map(\.name).joined(separator: " ")
         XCTAssertTrue(names.hasPrefix("Example"), "the example uses synthetic names only")
     }
+}
+
+/// A medication store whose every read throws its own error, so a test can tell that failure from any other.
+private final class UnreadableMedicationStore: MedicationStore, @unchecked Sendable {
+    struct ReadFailed: Error, Equatable {}
+
+    func medications() throws -> [Medication] { throw ReadFailed() }
+    func allDoses() throws -> [MedicationDose] { throw ReadFailed() }
+    func doses(of medicationID: UUID) throws -> [MedicationDose] { throw ReadFailed() }
+    func saveMedication(_ medication: Medication) throws {}
+    func removeMedication(id: UUID) throws {}
+    func saveDose(_ dose: MedicationDose) throws {}
+    func removeDose(id: UUID) throws {}
 }
