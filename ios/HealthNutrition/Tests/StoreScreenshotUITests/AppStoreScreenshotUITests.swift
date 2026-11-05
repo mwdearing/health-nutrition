@@ -132,10 +132,10 @@ final class AppStoreScreenshotUITests: XCTestCase {
         dismissKeyboard()
         try choose("Kind", option: "Supplement")
         try choose("Facts are stated", option: "Per serving")
+        // The first fact's menu opens tall, so its deep entry (Vitamin D) is reachable; later rows raise a keyboard that
+        // cuts the menu off, so they take entries near its top.
         try addFact(nutrient: "Vitamin D", amount: "20", unit: "mcg")
-        try addFact(nutrient: "Vitamin C", amount: "90", unit: "mg")
         try addFact(nutrient: "Calcium", amount: "200", unit: "mg")
-        try addFact(nutrient: "Magnesium", amount: "100", unit: "mg")
         let save = app.buttons["Save product on this device"]
         var saveScrolls = 0
         while !(save.exists && save.isHittable) && saveScrolls < 6 {
