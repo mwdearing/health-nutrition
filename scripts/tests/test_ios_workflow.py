@@ -175,3 +175,17 @@ def test_each_check_in_the_shared_job_has_its_own_deadline() -> None:
     ]
     assert all(minutes > 0 for minutes in deadlines), deadlines
     assert sum(deadlines) < cast(int, job["timeout-minutes"])
+
+
+def test_every_python_test_file_is_run_by_a_workflow() -> None:
+    # A test file no workflow names never runs in CI, so a change that breaks it would merge green.
+    repo = WORKFLOWS.parents[1]
+    run_lines = "\n".join(
+        str(step.get("run", ""))
+        for workflow in sorted(WORKFLOWS.glob("*.yml"))
+        for job in cast("dict[str, dict[str, object]]", yaml.safe_load(workflow.read_text())["jobs"]).values()
+        for step in cast("list[dict[str, object]]", job.get("steps", []))
+    )
+    tests = sorted([*repo.glob("scripts/tests/test_*.py"), *repo.glob("contracts/**/test_*.py")])
+    orphans = [str(path.relative_to(repo)) for path in tests if path.name not in run_lines]
+    assert not orphans, f"python test files no workflow run: line names: {orphans}"

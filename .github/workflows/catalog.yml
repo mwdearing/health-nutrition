@@ -75,6 +75,9 @@ jobs:
       - name: Test
         working-directory: catalog
         run: uv run --frozen python -m pytest -q tests ../scripts/tests/test_dependency_workflow_locks.py
+      - name: Test the shared-products schema contract
+        working-directory: catalog
+        run: uv run --frozen python -m pytest -q -p no:cacheprovider ../contracts/catalog-api/test_shared_products_v2_schema.py
 
   pytest-macos-frozen:
     runs-on: macos-latest
