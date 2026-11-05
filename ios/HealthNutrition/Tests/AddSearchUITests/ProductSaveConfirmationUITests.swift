@@ -72,16 +72,19 @@ final class ProductSaveConfirmationUITests: XCTestCase {
         let createProduct = app.buttons["Create product"]
         guard createProduct.waitForExistence(timeout: 10) else { return false }
         createProduct.tap()
+        captureDiagnostics(app, "after Create product tap")
 
         let nameField = app.textFields["Name"]
         guard nameField.waitForExistence(timeout: 10) else { return false }
         nameField.tap()
         nameField.typeText(productName)
+        captureDiagnostics(app, "after name typed")
         dismissKeyboard(app)
 
         let save = app.buttons["Save product on this device"]
         scrollUntilHittable(save, in: app)
-        guard save.isHittable else { return false }
+        captureDiagnostics(app, "before Save scroll")
+        guard save.isHittable else { captureDiagnostics(app, "Save not hittable"); return false }
         save.tap()
         return productRow(app).waitForExistence(timeout: 15)
     }
@@ -137,4 +140,14 @@ private func dismissKeyboard(_ app: XCUIApplication) {
         app.keyboards.buttons[label].tap()
         return
     }
+}
+
+/// Logs the element tree and keeps a screenshot of the run, so a failure shows what the runner had on screen.
+private func captureDiagnostics(_ app: XCUIApplication, _ label: String) {
+    print("DIAG [\(label)] sheets=\(app.sheets.count) tables=\(app.tables.count) collectionViews=\(app.collectionViews.count)")
+    print("DIAG [\(label)] \(app.debugDescription)")
+    let shot = XCTAttachment(screenshot: app.screenshot())
+    shot.name = "diag: \(label)"
+    shot.lifetime = .keepAlways
+    XCTContext.runActivity(named: "diag: \(label)") { $0.add(shot) }
 }
