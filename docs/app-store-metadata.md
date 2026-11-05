@@ -14,7 +14,7 @@ changes. Nothing here claims a score, advice or a medical effect, and the verb f
 | Keywords | 90 | 100 |
 | Description | 2647 | 4000 |
 | What's New | 324 | 4000 |
-| Review notes | 2318 | 4000 |
+| Review notes | 2996 | 4000 |
 
 Counts are Unicode characters as Python's `len` reports them, not counting the trailing newline. The keyword field counts the commas.
 
@@ -102,7 +102,7 @@ result in App Store Connect, since the questionnaire's wording changes.
 | Violence, sexual content, nudity, profanity, horror, mature themes | None | The app has none. |
 | Alcohol, tobacco or drug references | None | The app does not feature them. A person can type any name for a food or drink, but the app supplies no such content. |
 | Gambling, contests | None | None. |
-| Medical or treatment information | None | The app is a journal. It gives no medical information, no advice and no treatment guidance. |
+| Medical or treatment information | None | The app is a journal. It gives no medical information, no advice and no treatment guidance. The Medication log was weighed too: it is a personal record of what the person enters, and the app supplies no medical information, dose, range or advice for it. |
 | Health or wellness topics | Yes, infrequent | It logs nutrition, water and supplements. It gives no scores or advice. |
 | Unrestricted web access | No | The app only calls its fixed lookup services. It has no browser a person can use to visit pages. The emailed-code sign-in may show a human-check challenge from hCaptcha inside the app. |
 | User-generated content | Yes | A signed-in person can share a product label's facts, which other people can find after owner review. There is no chat, posting, profile or free-text social feature. |
@@ -123,6 +123,8 @@ Apple Health (HealthKit): off until the user taps Connect Apple Health in Settin
 
 Camera: used only to scan a package barcode or read a Nutrition Facts or Supplement Facts label on the device. No image is stored or sent by the app. A rare camera check can also appear inside the hCaptcha challenge for an emailed sign-in code; that check runs in hCaptcha's own view.
 
+Medication log: off until the person turns on the Medication log switch in Settings > Units and logging. While it is on, it keeps the medications the person names (each with a unit and an optional schedule in days) and the doses the person types (amount, time and an optional note). Each medication has a history with edit and delete. Today shows a tile for it, the weight chart marks the days that have a logged dose, and the journal export carries it, with an add-only restore. Erase all data removes it. It stays on this device: it is not written to Apple Health and not sent to any server. It does not give medical advice, suggest doses, grade adherence or send reminders.
+
 Notifications: optional reminders to log water or supplements, off until the user turns them on.
 
 Privacy: the privacy manifest, the policy and the App Store privacy answers are in docs/privacy-manifest.md and PRIVACY.md.
@@ -137,5 +139,5 @@ Privacy: the privacy manifest, the policy and the App Store privacy answers are 
 
 The copy stays inside the roadmap. It does not say the app diagnoses, treats, coaches or scores anything, and it
 does not claim that goals are healthy or advised for the person. The in-app vitamin choice labeled "Use recommended amounts" applies published reference intakes, not advice; the store copy says "starting estimate" and "reference intakes" and never "recommended". The Medication log is off by default and a named-medication
-feature, so the copy does not mention it. The reference-intakes line in the description describes published
+feature, so the store description leaves it out, and the review notes disclose it in full. The reference-intakes line in the description describes published
 reference intakes shown beside the day's totals (`docs/reference-intakes.md`), not advice.

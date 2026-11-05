@@ -34,6 +34,11 @@ dose, and it holds no list of drugs, dose ranges, titration steps or advice.
 
 The injection site is saved with the dose and is never shown in the list, trends or charts.
 
+## Notice
+
+The log states what it is: "This log keeps what you enter. It does not give medical advice or suggest doses." The text is one constant in the app and shows as a footnote on the
+Medication log screen, under the list, and beside the Settings switch.
+
 ## Rules
 
 - **Units.** A medication is measured in mg, mcg, mL or units. A dose uses the medication's current
