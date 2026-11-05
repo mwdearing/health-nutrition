@@ -127,7 +127,7 @@ async function handleUnguarded(request: Request, deps: Deps): Promise<Response> 
     if (!token) return json(200, { revoked: false, reason: "no_grant" });
     // A grant exists but the key is gone: refuse, so deletion cannot silently leave the grant connected.
     if (!configured(deps.config)) return json(503, { error: "not_configured" });
-    const reply = await appleForm(deps, deps.config, "/auth/revoke", {
+    const reply = await appleForm(deps, deps.config, "/auth/token", {
       token,
       token_type_hint: "refresh_token",
     });

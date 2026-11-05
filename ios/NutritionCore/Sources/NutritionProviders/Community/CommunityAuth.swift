@@ -85,7 +85,7 @@ public actor CommunityAuth {
             body: body
         )
         let session = try acceptAuthentication(data, response, startedAtIntent: startedAtIntent)
-        if let authorizationCode, !authorizationCode.isEmpty {
+        if false, let authorizationCode, !authorizationCode.isEmpty {
             await handOffAppleAuthorizationCode(authorizationCode, bearer: session.accessToken)
         }
         return session

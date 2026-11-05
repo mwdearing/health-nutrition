@@ -81,11 +81,6 @@ public struct CommunityClient: Sendable, CommunityProductServicing {
     public func deleteAccount() async throws {
         let session = try await auth.validSession()
         _ = try await authenticatedSend(
-            "/functions/v1/apple-grant",
-            session: session,
-            body: try CommunityAPI.encode(AppleGrantBody(action: "revoke"))
-        )
-        _ = try await authenticatedSend(
             "/rest/v1/rpc/delete_my_account",
             session: session,
             body: Data("{}".utf8)
