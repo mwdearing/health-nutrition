@@ -31,11 +31,17 @@ final class AppStoreScreenshotUITests: XCTestCase {
         try log("Chicken and rice", calories: "610", protein: "46", carbs: "62", fat: "17")
         try log("Greek yogurt and berries", calories: "190", protein: "17", carbs: "22", fat: "4")
 
+        let cancel = app.buttons["Cancel"]
+        XCTAssertTrue(cancel.waitForExistence(timeout: 10), "no Cancel on the Add screen")
+        cancel.tap()
         try goToToday()
+        let hideChecklist = app.buttons["Hide checklist"]
+        if hideChecklist.waitForExistence(timeout: 3) { hideChecklist.tap() }
         capture("1-today")
 
         tapTab("Diary")
-        XCTAssertTrue(app.staticTexts["Chicken and rice"].waitForExistence(timeout: 15), "the Diary lost a seeded entry")
+        let seeded = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Chicken and rice")).firstMatch
+        XCTAssertTrue(seeded.waitForExistence(timeout: 15), "the Diary lost a seeded entry")
         capture("2-diary")
 
         tapTab("Trends")
@@ -61,16 +67,17 @@ final class AppStoreScreenshotUITests: XCTestCase {
 
     // MARK: - Seeding
 
-    /// Logs one entry through Add, "Amounts only", and returns to Today.
+    /// Logs one entry through Add, "Amounts only". After a Log the Add screen stays open (its Recent list now holds
+    /// the entry), so the next entry starts from there; the first one opens Add from Today.
     private func log(_ name: String, calories: String, protein: String, carbs: String, fat: String) throws {
-        let add = app.buttons.matching(NSPredicate(format: "label == %@", "Add food, drink, or supplement"))
-        if !pollUntil(timeout: 30, { add.allElementsBoundByIndex.contains { $0.exists && $0.isHittable } }) {
-            capture("debug-no-add-before-\(name)")
-            try? app.debugDescription.write(
-                to: outputDirectory.appendingPathComponent("debug-tree-before-\(name).txt"), atomically: true, encoding: .utf8)
-            XCTFail("no hittable Add button")
+        if !app.buttons["Amounts only"].exists {
+            let add = app.buttons.matching(NSPredicate(format: "label == %@", "Add food, drink, or supplement"))
+            if !pollUntil(timeout: 30, { add.allElementsBoundByIndex.contains { $0.exists && $0.isHittable } }) {
+                capture("debug-no-add-before-\(name)")
+                XCTFail("no hittable Add button")
+            }
+            add.allElementsBoundByIndex.first(where: { $0.exists && $0.isHittable })?.tap()
         }
-        add.allElementsBoundByIndex.first(where: { $0.exists && $0.isHittable })?.tap()
         let amountsOnly = app.buttons["Amounts only"]
         XCTAssertTrue(amountsOnly.waitForExistence(timeout: 20), "no Amounts only action on Add")
         amountsOnly.tap()
@@ -88,7 +95,8 @@ final class AppStoreScreenshotUITests: XCTestCase {
         logButton.tap()
         XCTAssertTrue(
             pollUntil(timeout: 20, { !self.app.navigationBars["Amounts only"].exists }), "the sheet did not close after Log")
-        capture("debug-after-log-\(name)")
+        XCTAssertTrue(
+            app.buttons["Amounts only"].waitForExistence(timeout: 20), "the Add screen did not come back after Log")
     }
 
     private func type(_ text: String, intoFieldStartingWith prefix: String) throws {
