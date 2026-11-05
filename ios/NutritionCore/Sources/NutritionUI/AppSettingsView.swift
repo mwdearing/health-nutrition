@@ -98,6 +98,8 @@ private struct SettingsContent: View {
     @Environment(\.dismiss) private var dismiss
     @FocusState private var waterFocused: Bool
     @State private var showingGoals: Bool
+    @State private var showingPrivacy = false
+    @State private var showingLicenses = false
     @State private var isImporting = false
     @State private var isReadingImport = false
     @State private var importReadToken: JournalImportReadToken?
@@ -180,10 +182,12 @@ private struct SettingsContent: View {
                 }
             }
             Section("Privacy") {
-                NavigationLink {
-                    ConnectionsPrivacyView(model: connections, now: now)
-                } label: {
-                    Text(model.privacyStatement)
+                Button { self.showingPrivacy = true } label: {
+                    HStack {
+                        Text(model.privacyStatement).multilineTextAlignment(.leading)
+                        Spacer()
+                        Image(systemName: "chevron.right").accessibilityHidden(true)
+                    }
                 }
                 Link("Privacy policy", destination: URL(string: "https://github.com/mwdearing/health-nutrition/blob/main/PRIVACY.md")!)
             }
@@ -236,14 +240,12 @@ private struct SettingsContent: View {
                 if let onShowWelcome {
                     Button("Show welcome again") { onShowWelcome() }
                 }
-                NavigationLink("Licenses") {
-                    Form {
-                        Text(model.openFoodFactsAttribution)
-                        Link("Open Database License", destination: URL(string: "https://opendatacommons.org/licenses/odbl/1-0/")!)
-                        Text(model.usdaAttribution)
-                        Link("USDA FoodData Central", destination: URL(string: "https://fdc.nal.usda.gov/")!)
+                Button { self.showingLicenses = true } label: {
+                    HStack {
+                        Text("Licenses")
+                        Spacer()
+                        Image(systemName: "chevron.right").accessibilityHidden(true)
                     }
-                    .navigationTitle("Licenses")
                 }
             }
         }
@@ -263,6 +265,18 @@ private struct SettingsContent: View {
         }
         .navigationDestination(isPresented: $showingGoals) {
             if let goals = model.goals { GoalsView(model: goals) }
+        }
+        .navigationDestination(isPresented: $showingPrivacy) {
+            ConnectionsPrivacyView(model: connections, now: now)
+        }
+        .navigationDestination(isPresented: $showingLicenses) {
+            Form {
+                Text(model.openFoodFactsAttribution)
+                Link("Open Database License", destination: URL(string: "https://opendatacommons.org/licenses/odbl/1-0/")!)
+                Text(model.usdaAttribution)
+                Link("USDA FoodData Central", destination: URL(string: "https://fdc.nal.usda.gov/")!)
+            }
+            .navigationTitle("Licenses")
         }
         .accountPresentations(model.account)
         .onAppear { self.model.load() }
@@ -295,6 +309,10 @@ private struct SettingsContent: View {
             self.importPickedFile($0)
         }
         .onDisappear {
+            // A screen pushed over this form (Privacy, Licenses, Daily goals) also disappears it. That must not
+            // delete the export, cancel a read or wipe the import result; only leaving Settings does. A sheet
+            // dismissed from inside a pushed screen never reaches here, so the host clears on dismissal too.
+            guard !(self.showingGoals || self.showingPrivacy || self.showingLicenses) else { return }
             self.cancelFileImport()
             self.connections.clearExport()
             self.connections.clearImport()

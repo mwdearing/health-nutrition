@@ -1160,8 +1160,11 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
 
     /// Returns the screen's import state to empty, so a later attempt does not read as part of an earlier
     /// one.
+    ///
+    /// A restore that is still running keeps `isImporting`, so its progress stays and "Restore from an export" stays
+    /// off until the last one publishes (the same rule `canExport` follows).
     public func clearImport() {
-        isImporting = false
+        isImporting = activeImportCompletions > 0
         importState = .idle
         importSummary = nil
         importMessage = nil
