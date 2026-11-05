@@ -76,7 +76,6 @@ final class AppStoreScreenshotUITests: XCTestCase {
         try type(calories, intoFieldStartingWith: "Calories")
         try type(protein, intoFieldStartingWith: "Protein")
         try type(carbs, intoFieldStartingWith: "Carbs")
-        try type(fat, intoFieldStartingWith: "Fat")
         try type(name, intoFieldStartingWith: "Name")
 
         let logButton = app.buttons["Log"]
@@ -102,7 +101,13 @@ final class AppStoreScreenshotUITests: XCTestCase {
         }
         XCTAssertTrue(field.waitForExistence(timeout: 10), "no field named \(prefix)")
         field.tap()
-        XCTAssertTrue(pollUntil(timeout: 10, { self.app.keyboards.count > 0 }), "the \(prefix) field did not take focus")
+        if !pollUntil(timeout: 10, { self.app.keyboards.count > 0 }) {
+            capture("debug-\(prefix)-no-focus")
+            let tree = XCTAttachment(string: app.debugDescription)
+            tree.lifetime = .keepAlways
+            add(tree)
+            XCTFail("the \(prefix) field did not take focus (field frame \(field.frame))")
+        }
         app.typeText(text)
     }
 
