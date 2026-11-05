@@ -95,6 +95,17 @@ final class AppStoreScreenshotUITests: XCTestCase {
         }
     }
 
+    /// Logs a few entries on the days before, through the When date control, so Trends and the week have history.
+    func test4_History() throws {
+        try startOnToday()
+        try log("Oatmeal with banana", meal: "Breakfast", calories: "350", protein: "12", carbs: "62", fat: "7", daysAgo: 1)
+        try log("Turkey sandwich", meal: "Lunch", calories: "520", protein: "34", carbs: "48", fat: "16", daysAgo: 1)
+        try log("Salmon and vegetables", meal: "Dinner", calories: "640", protein: "42", carbs: "30", fat: "28", daysAgo: 2)
+        try log("Pasta and salad", meal: "Dinner", calories: "710", protein: "25", carbs: "96", fat: "22", daysAgo: 3)
+        let cancel = app.buttons["Cancel"]
+        if cancel.waitForExistence(timeout: 10) { cancel.tap() }
+    }
+
     func test9_CaptureTheStoreScreens() throws {
         try startOnToday()
         let hideChecklist = app.buttons["Hide checklist"]
@@ -131,6 +142,32 @@ final class AppStoreScreenshotUITests: XCTestCase {
 
     // MARK: - Steps shared by the tests
 
+    /// Sets the entry's day to `daysAgo` days back with the When date control: the date pill opens a calendar and
+    /// the day is picked by its name.
+    private func chooseDay(daysAgo: Int) throws {
+        dismissKeyboard()
+        let target = Calendar.current.date(byAdding: .day, value: -daysAgo, to: Date()) ?? Date()
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US")
+        formatter.dateFormat = "EEEE, MMMM d"
+        let dayName = formatter.string(from: target)
+        var scrolls = 0
+        let picker = app.datePickers.firstMatch
+        while !(picker.exists && picker.isHittable) && scrolls < 4 {
+            app.swipeUp()
+            scrolls += 1
+        }
+        guard picker.exists else { debugFail("no-when-picker", "no When date control"); return }
+        let dateButton = picker.buttons.firstMatch
+        guard dateButton.exists else { debugFail("no-when-button", "no date button in the When control"); return }
+        dateButton.tap()
+        let day = app.buttons[dayName]
+        if !day.waitForExistence(timeout: 5) { debugFail("no-day-\(daysAgo)", "no calendar day named \(dayName)"); return }
+        day.tap()
+        // A tap outside the calendar closes it.
+        app.tap()
+    }
+
     /// Keeps a shot and the element tree under debug/, then fails the step.
     private func debugFail(_ name: String, _ message: String) {
         capture("debug-\(name)")
@@ -165,7 +202,9 @@ final class AppStoreScreenshotUITests: XCTestCase {
 
     /// Logs one entry through Add, "Amounts only". After a Log the Add screen stays open (its Recent list now holds
     /// the entry), so the next entry starts from there; the first one opens Add from Today.
-    private func log(_ name: String, meal: String, calories: String, protein: String, carbs: String, fat: String) throws {
+    private func log(
+        _ name: String, meal: String, calories: String, protein: String, carbs: String, fat: String, daysAgo: Int = 0
+    ) throws {
         if !app.buttons["Amounts only"].exists {
             let add = app.buttons.matching(NSPredicate(format: "label == %@", "Add food, drink, or supplement"))
             if !pollUntil(timeout: 30, { add.allElementsBoundByIndex.contains { $0.exists && $0.isHittable } }) {
@@ -197,6 +236,7 @@ final class AppStoreScreenshotUITests: XCTestCase {
         try type(protein, intoFieldStartingWith: "Protein")
         try type(carbs, intoFieldStartingWith: "Carbs")
         try type(name, intoFieldStartingWith: "Name")
+        if daysAgo > 0 { try chooseDay(daysAgo: daysAgo) }
 
         let logButton = app.buttons["Log"]
         XCTAssertTrue(logButton.waitForExistence(timeout: 10), "no Log button")
