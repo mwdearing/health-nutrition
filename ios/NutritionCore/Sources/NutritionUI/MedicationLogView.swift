@@ -202,7 +202,7 @@ private struct LogDoseSheet: View {
                 Section(row.name) {
                     LabeledField("Amount in \(row.unitText)") { focus in
                         HStack {
-                            TextField(text: $amountText, prompt: Text("For example, 5")) { Text("Amount") }
+                            TextField(text: $amountText, prompt: Text("For example, 5")) { Text("Amount in \(row.unitText)") }
                                 .labelsHidden()
                                 .focused(focus)
                             #if os(iOS)
