@@ -46,6 +46,7 @@ struct RootView: View {
     @State private var selection: AppTab = .today
     @State private var addHome: AddHomeViewModel?
     @State private var libraryEditor: LibraryProductEditor?
+    @State private var pendingLibraryDetails: CustomProductRevision?
     @State private var productSearchModel: CommunityProductSearchViewModel?
     @State private var addIntakeModel: AddIntakeViewModel?
     @State private var confirmDiscardAdd = false
@@ -161,11 +162,17 @@ struct RootView: View {
                 .navigationTitle("Library")
                 .toolbar { settingsToolbar }
                 // Editing from the Library opens the editor on its own, not inside the Add flow, so Cancel and Save return here.
-                .sheet(item: $libraryEditor) { editor in
+                .sheet(item: $libraryEditor, onDismiss: {
+                    // Details open only once the editor sheet has gone, so the two presentations do not collide.
+                    if let product = self.pendingLibraryDetails {
+                        self.pendingLibraryDetails = nil
+                        self.startProductDetails(product)
+                    }
+                }) { editor in
                     LibraryProductEditorSheet(model: editor.model, sharing: services.library.productSharing) { product, openDetails in
                         services.library.load()
+                        if openDetails { self.pendingLibraryDetails = product }
                         self.libraryEditor = nil
-                        if openDetails { self.startProductDetails(product) }
                     }
                 }
             }
