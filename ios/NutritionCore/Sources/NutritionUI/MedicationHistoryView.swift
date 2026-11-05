@@ -100,6 +100,9 @@ private struct EditDoseSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var amountText: String
     @State private var takenAt: Date
+    /// The stored time the sheet opened with. The picker's range always includes it, so SwiftUI never clamps an
+    /// untouched time and an edit of the amount or note keeps the logged time and zone.
+    private let storedTakenAt: Date
     @State private var noteText: String
     @State private var errorText: String?
 
@@ -108,7 +111,9 @@ private struct EditDoseSheet: View {
         self.doseID = doseID
         let draft = model.draft(for: doseID)
         _amountText = State(initialValue: draft?.amountText ?? "")
-        _takenAt = State(initialValue: draft?.takenAt ?? Date())
+        let storedTakenAt = draft?.takenAt ?? Date()
+        self.storedTakenAt = storedTakenAt
+        _takenAt = State(initialValue: storedTakenAt)
         _noteText = State(initialValue: draft?.noteText ?? "")
     }
 
@@ -120,8 +125,9 @@ private struct EditDoseSheet: View {
                     #if os(iOS)
                         .keyboardType(.decimalPad)
                     #endif
-                    // A dose is logged once it has been taken, so the time stops at now.
-                    DatePicker("Time taken", selection: $takenAt, in: ...Date())
+                    // A dose is logged once it has been taken, so the time stops at now, or at the stored time when the
+                    // clock or zone moved since it was logged.
+                    DatePicker("Time taken", selection: $takenAt, in: ...max(Date(), storedTakenAt))
                     TextField("Note (optional)", text: $noteText)
                 }
                 if let errorText {
