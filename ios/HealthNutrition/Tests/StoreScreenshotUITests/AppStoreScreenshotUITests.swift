@@ -75,7 +75,7 @@ final class AppStoreScreenshotUITests: XCTestCase {
 
         try type(calories, intoFieldStartingWith: "Calories")
         try type(protein, intoFieldStartingWith: "Protein")
-        try type(carbs, intoFieldStartingWith: "Carbohydrates")
+        try type(carbs, intoFieldStartingWith: "Carbs")
         try type(fat, intoFieldStartingWith: "Fat")
         try type(name, intoFieldStartingWith: "Name")
 
