@@ -154,6 +154,19 @@ final class BoundedResponseLoaderTests: XCTestCase {
 #endif
     }
 
+    func testARedirectToAnotherHostDropsTheKeyHeaderAndASameHostRedirectKeepsIt() {
+        var original = URLRequest(url: URL(string: "https://provider.invalid/search")!)
+        original.setValue("secret", forHTTPHeaderField: "X-Api-Key")
+        var elsewhere = URLRequest(url: URL(string: "https://other.invalid/final")!)
+        elsewhere.setValue("secret", forHTTPHeaderField: "X-Api-Key")
+        var sameHost = URLRequest(url: URL(string: "https://PROVIDER.invalid/final")!)
+        sameHost.setValue("secret", forHTTPHeaderField: "X-Api-Key")
+        XCTAssertNil(BoundedResponseOperation.strippingKeyOnCrossHostRedirect(elsewhere, from: original)
+            .value(forHTTPHeaderField: "X-Api-Key"))
+        XCTAssertEqual(BoundedResponseOperation.strippingKeyOnCrossHostRedirect(sameHost, from: original)
+            .value(forHTTPHeaderField: "X-Api-Key"), "secret")
+    }
+
 #if canImport(FoundationNetworking)
     func testLinuxDelegateForwardingRoutesRedirectDecisionOnce() {
         let delegate = RedirectRefusingDelegate(onRedirect: {})
