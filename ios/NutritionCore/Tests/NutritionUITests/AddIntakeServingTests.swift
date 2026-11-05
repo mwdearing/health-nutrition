@@ -379,3 +379,37 @@ final class AddIntakeServingTests: XCTestCase {
         XCTAssertEqual(model.densityUnavailableNote, "No typical density is known for this food, so it is saved in mL.")
     }
 }
+
+/// The Brand field stays while the person clears it, and the small copy fixes around the Add form.
+@MainActor
+final class AddIntakeBrandFieldTests: XCTestCase {
+    private let now = Date(timeIntervalSince1970: 1_700_000_000)
+
+    private func makeModel() throws -> AddIntakeViewModel {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        return AddIntakeViewModel(
+            store: try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store")),
+            now: now, timeZoneIdentifier: "UTC", lookup: nil)
+    }
+
+    func testBrandFieldStaysWhileTheBrandIsCleared() throws {
+        let model = try makeModel()
+        XCTAssertFalse(model.showsBrandField, "a typed food has nowhere to keep a brand")
+        model.applyLookedUp(LookedUpProduct(
+            barcode: "", name: "Rice cake", brand: "Acme", basis: .per100g,
+            nutrients: [LookedUpProduct.energyKcal: .known(Decimal(200), .kcal)],
+            attribution: nil, serving: nil, version: nil))
+        XCTAssertEqual(model.brand, "Acme")
+        XCTAssertTrue(model.showsBrandField)
+        model.brand = ""
+        XCTAssertTrue(model.showsBrandField, "clearing the text must not remove the field being typed in")
+    }
+
+    func testAmountErrorNamesNoPoint() throws {
+        let model = try makeModel()
+        model.amountText = "abc"
+        XCTAssertEqual(model.amountError, "Enter an amount greater than zero, such as 150 or 2.5.")
+    }
+}

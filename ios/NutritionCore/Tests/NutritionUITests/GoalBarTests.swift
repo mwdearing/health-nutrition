@@ -202,3 +202,18 @@ final class GoalBarTests: XCTestCase {
         XCTAssertEqual(bar.reason, "Some entries can't be added up for fiber")
     }
 }
+
+final class SingularCountCopyTests: XCTestCase {
+    func testSkippedWaterNoteAgreesWithTheCount() {
+        XCTAssertEqual(
+            GoalBarModel.skippedWaterText(count: 1), "1 water entry has a unit that is not a volume and is not counted.")
+        XCTAssertEqual(
+            GoalBarModel.skippedWaterText(count: 3),
+            "3 water entries have a unit that is not a volume and are not counted.")
+    }
+
+    @MainActor func testExportedLineAgreesWithTheCount() {
+        XCTAssertEqual(ConnectionsPrivacyViewModel.exportedText(count: 1), "Exported 1 entry.")
+        XCTAssertEqual(ConnectionsPrivacyViewModel.exportedText(count: 2), "Exported 2 entries.")
+    }
+}

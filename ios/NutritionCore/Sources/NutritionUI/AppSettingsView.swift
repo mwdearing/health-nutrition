@@ -195,7 +195,7 @@ private struct SettingsContent: View {
                 .accessibilityHint("Writes a copy on this device. Nothing is sent until you share it.")
                 if let url = connections.exportFileURL {
                     ShareLink(ConnectionsPrivacyViewModel.shareButtonTitle, item: url)
-                    Text("Exported \(connections.entryCount) entries.").font(.footnote)
+                    Text(ConnectionsPrivacyViewModel.exportedText(count: connections.entryCount)).font(.footnote)
                 }
                 Button("Restore from an export") { self.isImporting = true }
                     .accessibilityHint("Restores an export only while this device's journal is empty.")

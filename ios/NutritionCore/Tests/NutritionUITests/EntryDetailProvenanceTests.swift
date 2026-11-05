@@ -86,6 +86,32 @@ final class EntryDetailProvenanceTests: XCTestCase {
         ])
     }
 
+    func testProvenanceRowsForACustomProductNameItAndLeaveOutTheRevisionId() {
+        let custom = ProductDefinition(
+            snapshotID: "provenance-custom", productID: "example-custom", name: "Example granola",
+            labelBasis: "per 100 g", catalogOrigin: "custom", catalogVersion: "3f2a9c1e-0000-4000-8000-000000000001")
+        XCTAssertEqual(EntryDetailViewModel.sourceDetails(for: custom), [
+            SourceDetailRow(label: "Input", value: "Custom product"),
+            SourceDetailRow(label: "Basis", value: "per 100 g"),
+        ])
+        XCTAssertEqual(EntryDetailViewModel.sourceLine(for: custom), "Custom product · values per 100 g")
+    }
+
+    func testProvenanceRowsForAFoodSearchPickAreNotCalledABarcodeLookup() {
+        for origin in ["usda-fdc", "open-food-facts"] {
+            let pick = ProductDefinition(
+                snapshotID: "provenance-search-\(origin)", productID: "search-example", name: "Example rice",
+                barcode: "", labelBasis: "per 100 g", catalogOrigin: origin, catalogVersion: "unknown")
+            XCTAssertEqual(EntryDetailViewModel.sourceDetails(for: pick), [
+                SourceDetailRow(label: "Input", value: "Food search"),
+                SourceDetailRow(label: "Basis", value: "per 100 g"),
+            ], origin)
+            XCTAssertEqual(EntryDetailViewModel.sourceLine(for: pick), "Food search · values per 100 g", origin)
+        }
+        XCTAssertEqual(
+            EntryDetailViewModel.sourceLine(for: barcodeProduct()), "Barcode lookup · values per 100 g")
+    }
+
     // MARK: Values come from the stored snapshot
 
     func testProvenanceRowsReadTheStoredSnapshot() throws {

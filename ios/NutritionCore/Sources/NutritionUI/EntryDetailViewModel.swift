@@ -466,7 +466,7 @@ public final class EntryDetailViewModel: ObservableObject {
                         componentID: item.componentID, name: item.name, amount: amount, unit: item.unit,
                         hydrationPercent: stored))
                 } else {
-                    errors[item.componentID] = "Enter an amount greater than zero, using digits and a point."
+                    errors[item.componentID] = AddIntakeViewModel.amountMessage
                 }
             }
             // A drink's water share is the one the edit screen shows, on its volume components only.
@@ -758,9 +758,20 @@ public final class EntryDetailViewModel: ObservableObject {
             return "Recipe · \(product.name)"
         case IntakeContextFactCatalog.quickAddOrigin:
             return "Quick add · amounts typed in"
+        case Self.customOrigin:
+            return "Custom product · values \(product.labelBasis)"
         default:
-            return "Barcode lookup · values \(product.labelBasis)"
+            return "\(Self.lookupInput(for: product)) · values \(product.labelBasis)"
         }
+    }
+
+    /// The origin a product made or imported in Create product is stored under (`CustomProductMapping.snapshot`).
+    static let customOrigin = "custom"
+
+    /// What the Input row calls a looked-up product: a food search pick (USDA, or Open Food Facts by name) has
+    /// no barcode, so it is not called a barcode lookup.
+    private static func lookupInput(for product: ProductDefinition) -> String {
+        (product.barcode ?? "").isEmpty ? "Food search" : "Barcode lookup"
     }
 
     /// The rows under "Where this came from", in order. Only what the snapshot stores is shown: a label
@@ -787,8 +798,14 @@ public final class EntryDetailViewModel: ObservableObject {
             }
         case IntakeContextFactCatalog.quickAddOrigin:
             rows.append(SourceDetailRow(label: "Input", value: "Quick add"))
+        case Self.customOrigin:
+            // The catalog version of a custom product is its revision id, which tells the reader nothing.
+            rows.append(SourceDetailRow(label: "Input", value: "Custom product"))
+            if !product.labelBasis.isEmpty {
+                rows.append(SourceDetailRow(label: "Basis", value: product.labelBasis))
+            }
         default:
-            rows.append(SourceDetailRow(label: "Input", value: "Barcode lookup"))
+            rows.append(SourceDetailRow(label: "Input", value: lookupInput(for: product)))
             if let barcode = product.barcode, !barcode.isEmpty {
                 rows.append(SourceDetailRow(label: "Barcode", value: barcode))
             }

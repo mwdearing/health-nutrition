@@ -132,13 +132,20 @@ public struct GoalBarModel: Equatable, Identifiable {
         MissingValueWording.inSentence(label)
     }
 
+    /// The note for water entries logged in a unit that is not a volume, agreeing with the count.
+    public static func skippedWaterText(count: Int) -> String {
+        count == 1
+            ? "1 water entry has a unit that is not a volume and is not counted."
+            : "\(count) water entries have a unit that is not a volume and are not counted."
+    }
+
     private static func reasonText(
         line: NutrientProgressLine, missingCount: Int, skippedWaterCount: Int
     ) -> String {
         let name = inSentence(line.label)
         if line.nutrient == DailyTotalsBuilder.waterKey {
             if skippedWaterCount > 0 {
-                return "\(skippedWaterCount) water entries have a unit that is not a volume and are not counted."
+                return GoalBarModel.skippedWaterText(count: skippedWaterCount)
             }
             return MissingValueWording.fallback(name: name)
         }

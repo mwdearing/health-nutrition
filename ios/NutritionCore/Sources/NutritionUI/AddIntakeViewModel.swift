@@ -138,6 +138,13 @@ public final class AddIntakeViewModel: ObservableObject {
     public nonisolated let formID = UUID()
     @Published public private(set) var customProduct: CustomProductRevision?
     public var isCustomProduct: Bool { customProduct != nil }
+
+    /// Whether the Brand field is offered: a looked-up, captured, stored or custom product keeps a brand, a
+    /// typed food has nowhere to keep one. It reads the product, never the field's own text, so clearing the
+    /// brand to retype it does not remove the field.
+    public var showsBrandField: Bool {
+        lookedUp != nil || labelValues != nil || storedProduct != nil || customProduct != nil
+    }
     @Published public var name: String = "" {
         didSet { editedFields.insert(.name) }
     }
@@ -420,7 +427,7 @@ public final class AddIntakeViewModel: ObservableObject {
 
     /// The sentence beside Save when a tap of it was refused, because the fields it names carry their errors.
     public static let fixFieldsMessage = "Fix the fields marked above."
-    private static let amountMessage = "Enter an amount greater than zero, using digits and a point."
+    static let amountMessage = "Enter an amount greater than zero, such as 150 or 2.5."
 
     /// Why the name will not save, whether or not its field shows that yet.
     public var nameError: String? { typedName.isEmpty ? "Enter a name." : nil }

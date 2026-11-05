@@ -204,7 +204,7 @@ public struct TodayView: View {
                     }
                     if model.waterSkippedCount > 0 {
                         InlineNotice(
-                            "\(model.waterSkippedCount) water entries have a unit that is not a volume and are not counted.",
+                            GoalBarModel.skippedWaterText(count: model.waterSkippedCount),
                             tone: .waiting)
                     }
                 }

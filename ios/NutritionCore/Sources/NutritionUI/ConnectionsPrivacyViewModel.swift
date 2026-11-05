@@ -281,7 +281,11 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// What the quick-water field refuses, in the words a person can act on. It names no unit, because
     /// the field's own label says which one the amount is read in.
     public static let quickWaterInvalidMessage =
-        "Enter a water amount above zero, using digits and a point."
+        "Enter a water amount above zero, such as 250 or 2.5."
+    /// The line under the share button once an export is written, agreeing with the count.
+    public static func exportedText(count: Int) -> String {
+        count == 1 ? "Exported 1 entry." : "Exported \(count) entries."
+    }
     public static let quickWaterTitle = "Quick-add water amount"
     public static let unitsSectionTitle = "Units"
     public static let unitSystemTitle = "Show amounts in"
