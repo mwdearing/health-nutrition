@@ -99,9 +99,9 @@ public struct InsightsAverages: Equatable {
                             // An amount in a unit the journal's cannot be converted to is left out; the day reads at least.
                             isPartial = true
                         }
-                    } else if day.isLogged && healthAmount == 0 {
-                        // The journal has entries that state nothing for this nutrient and Health adds nothing: the day
-                        // stays unknown, as Today leaves it, rather than becoming a known zero.
+                    } else if healthAmount == 0 && (day.isLogged || !complete) {
+                        // Health adds nothing and the journal either has entries that state nothing for this nutrient or Health's
+                        // read did not finish: the day stays unknown, as Today leaves it, never a zero minimum.
                         break
                     } else {
                         // No entry in the journal is a complete nothing; entries that state nothing make Health's amount

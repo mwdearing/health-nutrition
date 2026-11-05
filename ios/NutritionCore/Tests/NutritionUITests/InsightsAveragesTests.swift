@@ -72,6 +72,16 @@ final class InsightsAveragesTests: XCTestCase {
         XCTAssertEqual(result.lines.map(\.text), ["Protein: average 60 g a day over 1 logged day"])
     }
 
+    /// A query that did not finish and found nothing leaves the day unknown, never a zero minimum.
+    func testAnUnfinishedHealthZeroLeavesTheDayOut() {
+        let result = make([
+            day("2023-11-15", protein: 60),
+            healthDay("2023-11-14", values: ["energy": 500, "protein": 0], readKeys: ["energy"]),
+            healthDay("2023-11-13", values: ["energy": 500, "protein": 0], readKeys: ["energy"], journalProtein: nil, isLogged: true),
+        ])
+        XCTAssertEqual(result.lines.map(\.text), ["Protein: average 60 g a day over 1 logged day"])
+    }
+
     /// A query that did not finish keeps the subtotal it converted, and the day reads as at least.
     func testAnUnfinishedHealthQueryKeepsItsSubtotalAsAMinimum() {
         let result = make([
