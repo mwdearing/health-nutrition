@@ -110,6 +110,19 @@ public final class MedicationLogViewModel: ObservableObject {
         load()
     }
 
+    /// Forgets the Undo offer after a dose was edited or deleted in the history, because the dose the offer names may
+    /// have changed or gone, then reads the log again.
+    public func historyChanged() {
+        lastLoggedDoseID = nil
+        undoText = nil
+        load()
+    }
+
+    /// A history view model for one medication, reading the same store with this view model's clock and zone.
+    public func historyModel(for medicationID: UUID) -> MedicationHistoryViewModel {
+        MedicationHistoryViewModel(store: store, medicationID: medicationID, now: now, timeZone: timeZone)
+    }
+
     /// Reads the medications and doses and rebuilds the rows. A store read that fails leaves no rows, sets the message
     /// and offers the clear when an eraser is present. A read that works withdraws the offer. Only a failed store read
     /// offers the clear: a day that cannot be worked out leaves no rows and the message, without the offer.
@@ -365,7 +378,7 @@ public final class MedicationLogViewModel: ObservableObject {
     }
 
     /// The message for a dose that is not saved, from the domain rule or the store's refusal.
-    private static func doseMessage(for error: Error) -> String {
+    static func doseMessage(for error: Error) -> String {
         switch error {
         case MedicationError.amountNotPositive:
             return "Enter an amount above 0."

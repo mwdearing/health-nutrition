@@ -2,7 +2,7 @@
 
 Status: the list, add, log and archive screens exist. Settings has the switch (off by default), and the
 Library shows a Medication log row once it is on. Dose days show on the weight chart while the log is on.
-Not yet: history editing and export.
+Not yet: export.
 
 The medication log keeps the medications a person names and the doses they type. The person
 names each medication and types every dose field. The log never suggests, checks or changes a
@@ -33,6 +33,11 @@ dose, and it holds no list of drugs, dose ranges, titration steps or advice.
 - **Amounts.** Amounts read as stored, with a comma between thousands: "1,000 mg", "2.5 mg".
 - **Archive.** Swiping a row archives it, and swiping an archived row unarchives it. Archiving keeps the
   medication's doses and schedule.
+- **History.** Each medication, archived ones too, has a history: its doses newest first, each read in
+  the zone it was logged in, with its amount and note. The site is never shown, and an edit keeps the
+  site as it was stored. A dose can be edited (amount, time or note; a changed time takes the device's
+  zone) or deleted after a confirmation. A time left within the same minute keeps the logged time and
+  zone. Back on the list, a changed history withdraws Undo.
 
 The injection site is saved with the dose and is never shown in the list, trends or charts.
 
@@ -118,5 +123,4 @@ the file is kept and the erase reports the failure.
 
 ## Not yet
 
-- History editing.
 - Export.
