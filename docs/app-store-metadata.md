@@ -130,7 +130,7 @@ Privacy: the privacy manifest, the policy and the App Store privacy answers are 
 
 ## Before you submit
 
-- Community catalog and sign-in: README.md says the repository alone does not show a hosted shared service, so confirm outside the repository that it is live for the release build. If it is not, drop every catalog and account statement: the description's account and barcode-lookup lines, the age-rating answer for user-generated content (then No), and the review notes' sign-in, Delete account and shared-search lines.
+- Community catalog and sign-in: README.md says the repository alone does not show a hosted shared service, so confirm outside the repository that it is live for the release build. If it is not, search this file for "account", "sign in", "sign-in", "catalog", "shared" and "hCaptcha" and drop or rewrite every statement that matches, including the age-rating answer for user-generated content (then No).
 - Confirm the name is free in App Store Connect.
 
 ## Claims boundary
