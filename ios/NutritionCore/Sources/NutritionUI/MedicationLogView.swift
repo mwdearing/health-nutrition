@@ -12,8 +12,8 @@ public struct MedicationLogView: View {
     @State private var isConfirmingClear = false
     /// The row whose Log a dose sheet is open; nil while no sheet is open.
     @State private var loggingRow: MedicationRow?
-    /// The row whose dose history is pushed; nil while none is open.
-    @State private var historyRow: MedicationRow?
+    /// The identifier of the medication whose history is pushed; nil while none is open.
+    @State private var historyMedicationID: UUID?
 
     /// - Parameter model: the medication log this screen reads and changes.
     public init(model: MedicationLogViewModel) {
@@ -41,7 +41,7 @@ public struct MedicationLogView: View {
                             Button("Archive") { self.model.setArchived(row.id, archived: true) }
                         }
                         .swipeActions(edge: .leading) {
-                            Button("History") { self.historyRow = row }
+                            Button("History") { self.historyMedicationID = row.id }
                         }
                 }
             }
@@ -53,7 +53,7 @@ public struct MedicationLogView: View {
                                 Button("Unarchive") { self.model.setArchived(row.id, archived: false) }
                             }
                             .swipeActions(edge: .leading) {
-                                Button("History") { self.historyRow = row }
+                                Button("History") { self.historyMedicationID = row.id }
                             }
                     }
                 }
@@ -92,9 +92,9 @@ public struct MedicationLogView: View {
         .sheet(item: $loggingRow) { row in
             LogDoseSheet(model: model, row: row)
         }
-        .navigationDestination(item: $historyRow) { row in
+        .navigationDestination(item: $historyMedicationID) { medicationID in
             MedicationHistoryView(
-                model: model.historyModel(for: row.id),
+                model: model.historyModel(for: medicationID),
                 onClose: { changed in if changed { self.model.historyChanged() } })
         }
     }

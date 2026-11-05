@@ -63,12 +63,7 @@ public final class MedicationHistoryViewModel: ObservableObject {
     /// Reads the medication and its doses and rebuilds the rows. A read that fails leaves no rows and sets the message.
     /// An archived medication shows its history too.
     public func load() {
-        let medications: [Medication]
-        let doses: [MedicationDose]
-        do {
-            medications = try store.medications()
-            doses = try store.doses(of: medicationID)
-        } catch {
+        guard let medications = try? store.medications(), let doses = try? store.doses(of: medicationID) else {
             rows = []
             errorMessage = "Could not read the medication log."
             return
