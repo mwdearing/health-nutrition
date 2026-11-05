@@ -82,7 +82,9 @@ do $test$ declare p uuid; rev bigint; begin
  p:=current_setting('t.p2')::uuid;
  assert public.get_catalog_product_v2(p)#>>'{product,product,name}'='Synthetic crowd oats', 'unreviewed support still orders unreviewed groups';
  select revision into rev from catalog_v2.revisions where product_id=p and content->>'name'='Synthetic reviewed custom oats';
+ -- moderate's third argument records the owner review (inserts catalog_v2.owner_reviews) and refreshes the entry.
  perform catalog_v2.moderate(p,false,rev);
+ assert exists(select 1 from catalog_v2.owner_reviews where revision=rev), 'owner review row recorded';
  assert public.get_catalog_product_v2(p)#>>'{product,product,name}'='Synthetic reviewed custom oats';
  assert public.get_catalog_product_v2(p)#>>'{product,verification,source}'='owner_reviewed';
  assert public.get_catalog_product_v2(p)#>>'{product,support,distinct_accounts}'='1';

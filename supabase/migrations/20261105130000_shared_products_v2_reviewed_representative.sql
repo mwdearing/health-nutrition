@@ -30,12 +30,17 @@ $$;
 
 -- Stored search entries copy the representative's name. Rebuild those whose displayed representative is not the
 -- reviewed row that public_rows now ranks first, so the reviewed name becomes searchable again.
-do $refresh$ declare p uuid; begin
- for p in select e.product_id from catalog_v2.entries e
+-- Like backfill_legacy, freeze the affected set first, take the complete identity advisory-lock set in one
+-- globally ordered call, then the product row locks, and only then refresh. Per-product refreshes would take
+-- identity keys in product order, which can deadlock with erase_account_labels. Refresh re-takes held locks.
+do $refresh$ declare ids uuid[]; codes text[]; p uuid; begin
+ select array_agg(e.product_id order by e.product_id) into ids from catalog_v2.entries e
   where e.publication#>>'{verification,status}' is distinct from 'verified'
-   and exists(select 1 from catalog_v2.public_rows(e.product_id) r where r.reviewed)
-  order by e.product_id loop
-  perform catalog_v2.refresh(p);
- end loop;
+   and exists(select 1 from catalog_v2.public_rows(e.product_id) r where r.reviewed);
+ if ids is null then return; end if;
+ select array_agg(distinct b.barcode) into codes from catalog_v2.barcode_bindings b where b.product_id=any(ids);
+ perform catalog_v2.lock_identities(coalesce(codes,'{}'));
+ perform catalog_v2.lock_products(ids);
+ foreach p in array ids loop perform catalog_v2.refresh(p); end loop;
 end $refresh$;
 commit;
