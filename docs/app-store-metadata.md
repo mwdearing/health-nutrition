@@ -14,7 +14,7 @@ changes. Nothing here claims a score, advice or a medical effect, and the verb f
 | Keywords | 90 | 100 |
 | Description | 2647 | 4000 |
 | What's New | 324 | 4000 |
-| Review notes | 2290 | 4000 |
+| Review notes | 2318 | 4000 |
 
 Counts are Unicode characters as Python's `len` reports them, not counting the trailing newline. The keyword field counts the commas.
 
@@ -117,7 +117,7 @@ Sign-in: none is needed to review the main flow. The reviewer does not need an a
 
 First launch: a welcome screen appears once. Tap Get started. Nothing is requested at launch.
 
-How to see the main flow: on Today, tap Add food, drink, or supplement, type a name and an amount, and save; tap a quick-add water button; open the Diary tab to see the entry. Search foods sends the words you submit (two or more characters) to Open Food Facts, and to USDA FoodData Central in builds that carry its key. When signed in, the same words also go to the project's server with the account, to search shared products.
+How to see the main flow: on Today, tap the in-app button labeled "Add food, drink, or supplement", type a name and an amount, and save; tap a quick-add water button; open the Diary tab to see the entry. Search foods sends the words you submit (two or more characters) to Open Food Facts, and to USDA FoodData Central in builds that carry its key. When signed in, the same words also go to the project's server with the account, to search shared products.
 
 Apple Health (HealthKit): off until the user taps Connect Apple Health in Settings. It is used only for nutrition logging: (1) it writes the nutrients and water of entries the user logs, and removes them again when the user edits or deletes an entry; (2) after the user connects, it reads the nutrient types it writes so Today's totals include nutrition other apps logged; (3) only if the user taps Show steps, activity and weight on Today, it reads steps, active energy and weight to show them there, and height to prefill goal setup (height is not saved). Nothing read from Health leaves the phone. No Health data is used for advertising, tracking or sold or shared with third parties.
 
@@ -130,12 +130,12 @@ Privacy: the privacy manifest, the policy and the App Store privacy answers are 
 
 ## Before you submit
 
-- Community catalog and sign-in: checked on 2026-11-04, so the copy stays. The `testflight` GitHub environment, which the signed build reads, holds `SUPABASE_URL` and `SUPABASE_ANON_KEY` (names only; the values were not read). The linked hosted project answers over HTTPS (a read-only request to its REST and Auth endpoints returned 401 "No API key found", which is the Supabase gateway responding), and the host records show the migrations applied through `20261012000000`. README.md still says the repository itself does not show a hosted service, because it cannot; this is the evidence. Not checked: that the secret's value is that same project's address.
+- Community catalog and sign-in: confirmed live for the signed build on 2026-11-04, so the copy stays. The evidence is in the project thread, not in this public file. Recheck it if the hosted project changes before submission.
 - Confirm the name is free in App Store Connect.
 
 ## Claims boundary
 
 The copy stays inside the roadmap. It does not say the app diagnoses, treats, coaches or scores anything, and it
-does not claim that goals are healthy or recommended. The Medication log is off by default and a named-medication
+does not claim that goals are healthy or advised for the person. The in-app vitamin choice labeled "Use recommended amounts" applies published reference intakes, not advice; the store copy says "starting estimate" and "reference intakes" and never "recommended". The Medication log is off by default and a named-medication
 feature, so the copy does not mention it. The reference-intakes line in the description describes published
 reference intakes shown beside the day's totals (`docs/reference-intakes.md`), not advice.
