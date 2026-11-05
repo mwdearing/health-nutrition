@@ -14,10 +14,18 @@ struct HealthNutritionApp: App {
     @State private var startup: AppStartup
     /// Keeps the Today widgets' summary current. Held for the app's lifetime.
     private static let widgetSnapshots = WidgetSnapshotPublisher()
+    /// Opens the services once per process. SwiftUI may run `init` (and so the `State` initial value) more than
+    /// once, and only the first `State` value is kept; this makes every later run reuse the opened services
+    /// instead of opening the stores and wiring the watch and widget hooks again.
+    private static let launch = OpenOnce(open: HealthNutritionApp.wireServices)
 
-    /// Opens the stores and wires the services that depend on them. Run at launch, and again by Try again after
-    /// a failed launch, so a transient failure (a busy or locked file) does not need a force-quit.
+    /// Opens the services, or returns the ones already open. Run at launch, and again by Try again after a failed
+    /// launch, so a transient failure (a busy or locked file) does not need a force-quit.
     private static func openServices() throws -> AppServices {
+        try launch.open()
+    }
+
+    private static func wireServices() throws -> AppServices {
         let made = try AppServices.make(reminderScheduler: SystemReminderScheduler())
         AppServicesRegistry.register(made)
         widgetSnapshots.start(today: made.today, isErasing: { made.connections.isErasing })
@@ -39,6 +47,25 @@ struct HealthNutritionApp: App {
         WindowGroup {
             LaunchView(startup: startup)
         }
+    }
+}
+
+/// Runs `make` until it succeeds, then returns that result for every later call. A failure is not remembered, so
+/// a later call tries again.
+@MainActor
+final class OpenOnce {
+    private let make: () throws -> AppServices
+    private var opened: AppServices?
+
+    init(open make: @escaping () throws -> AppServices) {
+        self.make = make
+    }
+
+    func open() throws -> AppServices {
+        if let opened { return opened }
+        let made = try make()
+        opened = made
+        return made
     }
 }
 

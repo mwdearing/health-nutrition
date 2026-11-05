@@ -39,4 +39,24 @@ final class AppStartupTests: XCTestCase {
         startup.attempt()
         XCTAssertEqual(attempts, 2, "a started app is not opened again")
     }
+
+    func testOpeningTwiceRunsTheWiringOnceAndAFailureIsRetried() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HealthNutritionTests", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        var calls = 0
+        let launch = OpenOnce(open: {
+            calls += 1
+            if calls == 1 { throw AppServices.StoreStartupError.journal(CocoaError(.fileLocking)) }
+            return try AppServices.make(directory: directory, reminderScheduler: RecordingReminderScheduler())
+        })
+        XCTAssertThrowsError(try launch.open())
+        let first = try launch.open()
+        // A second App init (SwiftUI may run it again) builds a second AppStartup over the same OpenOnce.
+        let second = AppStartup(open: launch.open)
+        XCTAssertTrue(second.services === first)
+        XCTAssertEqual(calls, 2, "a started app is not opened again")
+    }
 }
