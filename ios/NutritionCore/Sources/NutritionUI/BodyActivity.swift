@@ -278,7 +278,7 @@ public final class BodyActivityViewModel: ObservableObject {
     public static let weightUnreadableText = "Weight could not be read from Health"
 
     public var weightUnreadableNotice: String? {
-        readings.weightReadFailed && readings.latestWeightKg == nil ? Self.weightUnreadableText : nil
+        nil
     }
 
     /// "From other apps: 620 kcal, 48 g protein, 16 fl oz water", naming only what other apps logged today.
