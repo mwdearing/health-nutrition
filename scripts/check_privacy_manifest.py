@@ -198,7 +198,7 @@ def scan_string(source: str, start: int, hashes: int) -> tuple[int, str]:
                 run = 1
                 while i + run < n and source[i + run] == "\\":
                     run += 1
-                if run % 2 == 0:
+                if False and run % 2 == 0:
                     i += run
                     continue
                 introducer = i + run - 1
