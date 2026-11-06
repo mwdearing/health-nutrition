@@ -238,6 +238,9 @@ struct RootView: View {
         // Settings from the gear on any tab, in its own navigation stack so the goals and the privacy
         // screen push inside it.
         .sheet(isPresented: $showingSettings, onDismiss: {
+            // The form clears these when it disappears, but not when the sheet closes from a pushed screen.
+            self.connections.clearExport()
+            self.connections.clearImport()
             self.reload()
             if self.welcomeAfterSettings {
                 self.welcomeAfterSettings = false
