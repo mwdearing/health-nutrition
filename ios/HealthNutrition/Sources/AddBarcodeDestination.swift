@@ -48,7 +48,7 @@ struct AddBarcodeDestination: View {
                 .padding(DesignSpacing.m)
             }
         }
-        .background(TokenColors.background)
+        .background(TokenColors.page)
         .navigationTitle("Scan barcode")
         .task(id: hasScanned) {
             guard self.hasScanned, self.model.lookupState == .idle, let code = self.scannedCode else { return }

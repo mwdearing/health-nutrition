@@ -46,6 +46,7 @@ public struct AddLibraryPicker: View {
                             }
                         }
                         .foregroundStyle(TokenColors.textPrimary)
+                        .listRowBackground(TokenColors.card)
                     }
                     if let message = recipes.errorMessage { InlineNotice(message, tone: .failed) }
                     if let message = recipes.skippedMessage { InlineNotice(message, tone: .waiting) }
@@ -56,7 +57,7 @@ public struct AddLibraryPicker: View {
                     sectionTitle: segment == "Favorites" ? "Favorites" : segment == "Products" ? "Products" : "Recents", onProduct: onProduct)
             }
         }
-        .background(TokenColors.background)
+        .background(TokenColors.page)
         .navigationTitle("Library")
         .onAppear { self.recipes.load() }
     }

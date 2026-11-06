@@ -53,7 +53,8 @@ public struct AddHomeView: View {
                             Spacer()
                         }
                         .padding(DesignSpacing.m)
-                        .background(TokenColors.surface, in: RoundedRectangle(cornerRadius: DesignRadius.control, style: .continuous))
+                        .frame(minHeight: 44)
+                        .background(TokenColors.card, in: RoundedRectangle(cornerRadius: DesignRadius.card, style: .continuous))
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(Self.searchRowTitle)
@@ -77,29 +78,13 @@ public struct AddHomeView: View {
                 if model.recents.isEmpty {
                     Text(model.emptyRecentsText).foregroundStyle(TokenColors.textSecondary)
                 }
-                ForEach(model.recents) { recent in
-                    Card {
-                        HStack {
-                            // A tap on the row opens its details; the Add control beside it logs once, with Undo (#503).
-                            Button {
-                                onOpen?(recent.template)
-                            } label: {
-                                VStack(alignment: .leading) {
-                                    Text(recent.template.displayName).font(.headline)
-                                    Text(model.recentSubtitle(of: recent.template))
-                                        .font(.subheadline).foregroundStyle(TokenColors.textSecondary)
-                                }
+                if !model.recents.isEmpty {
+                    ContentCard {
+                        VStack(spacing: 0) {
+                            ForEach(Array(model.recents.enumerated()), id: \.element.id) { index, recent in
+                                if index > 0 { Divider() }
+                                recentRow(recent)
                             }
-                            .buttonStyle(.borderless)
-                            .accessibilityLabel("Opens \(recent.template.displayName), \(model.recentSubtitle(of: recent.template))")
-                            .accessibilityHint("Opens details without adding an entry")
-                            Spacer()
-                            QuietCapsule("Add") {
-                                if self.model.quickAdd(recent) != nil { self.onChanged() }
-                            }
-                            .accessibilityLabel("Log \(recent.template.displayName)")
-                            .accessibilityValue(model.recentSubtitle(of: recent.template))
-                            .accessibilityHint("Logs once. You can undo for 10 seconds.")
                         }
                     }
                 }
@@ -126,7 +111,7 @@ public struct AddHomeView: View {
             }
             .padding(DesignSpacing.m)
         }
-        .background(TokenColors.background)
+        .background(TokenColors.page)
         .navigationTitle("Add")
         .sheet(item: $quickAdd) { form in
             QuickAddSheet(
@@ -188,12 +173,13 @@ public struct AddHomeView: View {
     private func quickActionButton(_ action: QuickAction) -> some View {
         Button(action: action.action) {
             VStack(spacing: DesignSpacing.xs) {
-                Image(systemName: action.icon).font(.title3)
+                IconWell(systemName: action.icon)
                 Text(action.title).font(.subheadline).multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, minHeight: 44)
             .padding(DesignSpacing.s)
-            .background(TokenColors.surface, in: RoundedRectangle(cornerRadius: DesignRadius.control, style: .continuous))
+            .background(TokenColors.card, in: RoundedRectangle(cornerRadius: DesignRadius.tile, style: .continuous))
             .foregroundStyle(TokenColors.textPrimary)
             // Dimmed while unavailable, so the state reads without the reason line.
             .opacity(action.available ? 1 : 0.4)
@@ -204,10 +190,45 @@ public struct AddHomeView: View {
         .accessibilityHint(action.available ? action.help : action.explanation)
     }
 
+    /// One Recent row: a tap opens its details; the mint capsule logs once, with Undo (#503).
+    private func recentRow(_ recent: RecentItem) -> some View {
+        HStack(spacing: DesignSpacing.s) {
+            Button {
+                onOpen?(recent.template)
+            } label: {
+                VStack(alignment: .leading) {
+                    Text(recent.template.displayName).font(.headline)
+                    Text(model.recentSubtitle(of: recent.template))
+                        .font(.subheadline).foregroundStyle(TokenColors.textSecondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(minHeight: 44)
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Opens \(recent.template.displayName), \(model.recentSubtitle(of: recent.template))")
+            .accessibilityHint("Opens details without adding an entry")
+            Button {
+                if self.model.quickAdd(recent) != nil { self.onChanged() }
+            } label: {
+                Text("Add")
+                    .font(.headline)
+                    .foregroundStyle(TokenColors.accentInk)
+                    .padding(.horizontal, DesignSpacing.m)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .background(TokenColors.mint, in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Log \(recent.template.displayName)")
+            .accessibilityValue(model.recentSubtitle(of: recent.template))
+            .accessibilityHint("Logs once. You can undo for 10 seconds.")
+        }
+        .padding(.vertical, DesignSpacing.xs)
+    }
+
     /// A full-width row for the actions that need a line of help, such as From Library.
     private func plainRow(_ title: String, help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Card {
+            ContentCard {
                 VStack(alignment: .leading, spacing: DesignSpacing.s) {
                     Text(title).font(.headline).foregroundStyle(TokenColors.textPrimary)
                     Text(help).font(.subheadline).foregroundStyle(TokenColors.textSecondary)

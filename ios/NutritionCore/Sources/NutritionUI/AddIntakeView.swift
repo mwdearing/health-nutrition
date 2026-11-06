@@ -30,7 +30,7 @@ public struct AddIntakeView: View {
 
     public var body: some View {
         Form {
-            Card {
+            Section {
                 VStack(alignment: .leading, spacing: DesignSpacing.m) {
                     LabeledField(
                         "Name", error: model.visibleNameError, onFocusEnd: { model.fieldDidEnd(.name) },
@@ -128,8 +128,7 @@ public struct AddIntakeView: View {
                     }
                 }
             }
-            .listRowInsets(EdgeInsets())
-            .listRowBackground(TokenColors.background)
+            .listRowBackground(TokenColors.card)
 
             Section {
                 LabeledField(
@@ -235,7 +234,7 @@ public struct AddIntakeView: View {
             }
         }
         .scrollContentBackground(.hidden)
-        .background(TokenColors.background)
+        .background(TokenColors.page)
         .navigationTitle("Log entry")
         // Typed input is not lost to a Back tap or a swipe: a form with input asks first.
         .navigationBarBackButtonHidden(model.hasTypedInput)
