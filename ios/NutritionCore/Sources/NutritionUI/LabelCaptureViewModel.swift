@@ -1035,7 +1035,7 @@ public final class LabelCaptureViewModel: ObservableObject {
     /// Whether the screen shows the serving's Correct control: whenever the serving can be corrected and
     /// no edit is already open. It does not depend on the parser's flag, because a serving read cleanly,
     /// confirmed or typed in is as easy to get wrong as a flagged one and scales every value.
-    public var offersServingCorrection: Bool { servingCanBeCorrected && !isEditingServing }
+    public var offersServingCorrection: Bool { servingCanBeCorrected && !isEditingServing && servingNeedsReview }
 
     /// Takes one serving as the user stated it.
     ///
