@@ -776,7 +776,7 @@ public final class EntryDetailViewModel: ObservableObject {
     /// the snapshot does not record which, so the row names the source and does not claim how it was found.
     private static func lookupInput(for product: ProductDefinition) -> String {
         if (product.barcode ?? "").isEmpty { return "Food search" }
-        return product.catalogOrigin == openFoodFactsOrigin ? "Open Food Facts" : "Barcode lookup"
+        return "Barcode lookup"
     }
 
     /// The rows under "Where this came from", in order. Only what the snapshot stores is shown: a label
