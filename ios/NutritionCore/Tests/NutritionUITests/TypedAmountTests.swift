@@ -27,7 +27,7 @@ final class TypedAmountTests: XCTestCase {
         XCTAssertTrue(AmountParser.isRefusedThousandsSeparator("1,000", decimalSeparator: ","))
         XCTAssertFalse(AmountParser.isRefusedThousandsSeparator("1,000", decimalSeparator: "."), "a point region refuses it as before")
         XCTAssertFalse(AmountParser.isRefusedThousandsSeparator("2,5", decimalSeparator: ","))
-        XCTAssertEqual(AmountParser.thousandsSeparatorMessage, "Type the amount without a thousands separator.")
+        XCTAssertEqual(AmountParser.thousandsSeparatorMessage, "Type the amount without a thousands separator, or use a point for a decimal.")
     }
 
     func testACommaIsRefusedWhereTheRegionUsesAPoint() {

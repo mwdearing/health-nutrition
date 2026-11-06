@@ -56,7 +56,7 @@ public enum AmountParser {
     }
 
     /// The plain sentence for an amount typed with a comma that could be a thousands separator.
-    public static let thousandsSeparatorMessage = "Type the amount without a thousands separator."
+    public static let thousandsSeparatorMessage = "Type the amount without a thousands separator, or use a point for a decimal."
 
     /// Whether `text` is one comma between a whole part that does not start with zero and exactly three digits, such
     /// as "1,000" or "12,500". In a region that writes a decimal comma that could be a thousands separator, and
