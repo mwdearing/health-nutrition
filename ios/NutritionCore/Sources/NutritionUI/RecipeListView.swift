@@ -62,7 +62,6 @@ public struct RecipeListView: View {
             }
             .listRowBackground(TokenColors.card)
         }
-        .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
         .background(TokenColors.page)
         .navigationTitle("Recipes")

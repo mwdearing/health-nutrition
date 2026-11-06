@@ -133,7 +133,6 @@ public struct CommunityProductSearchView: View {
             }
             .listRowBackground(TokenColors.card)
         }
-        .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
         .background(TokenColors.page)
         .sheet(isPresented: Binding(get: { model.inspectedProduct != nil }, set: { if !$0 { model.closeInspection() } })) {

@@ -80,7 +80,6 @@ public struct LibraryView: View {
             }
             .listRowBackground(TokenColors.card)
         }
-        .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
         .background(TokenColors.page)
         .navigationTitle("Library")

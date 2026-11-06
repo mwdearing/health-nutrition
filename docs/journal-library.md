@@ -47,7 +47,7 @@ goals switched off under **Show on Today** left out too (the same choice as the 
 
 ### Library look
 
-The Library, supplements, medication log, recipe and product screens sit on the page colour. Lists stay lists, with card-coloured rows in the inset grouped style, and forms use the same page colour. The segmented control and the "Search on this device" field are unchanged. The navigation rows (supplements, medication log) show their symbol in a small icon well. Labels, identifiers and swipe actions are unchanged.
+The Library, supplements, medication log, recipe and product screens sit on the page colour. Lists stay lists, with card-coloured rows, and forms use the same page colour. The segmented control and the "Search on this device" field are unchanged. The navigation rows (supplements, medication log) show their symbol in a small icon well. Labels, identifiers and swipe actions are unchanged.
 
 ## Repeat semantics
 Repeat makes one `create` call for a NEW intake: new lowercase UUID, `occurredAt` is now, the current time zone, the same category and meal, the same components (names, amounts, units) and the same product snapshot if there was one. The original entry is not touched. The entry screen's "Log again" button makes this call; on success the screen closes. The Library's trailing Add makes the same call and stays on the Library, with Undo on offer.

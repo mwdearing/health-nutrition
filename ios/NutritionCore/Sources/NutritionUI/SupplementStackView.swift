@@ -75,7 +75,6 @@ public struct SupplementStackView: View {
             }
             .listRowBackground(TokenColors.card)
         }
-        .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
         .background(TokenColors.page)
         .navigationTitle("My supplements")

@@ -79,7 +79,6 @@ public struct MedicationLogView: View {
             }
             .listRowBackground(TokenColors.card)
         }
-        .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
         .background(TokenColors.page)
         .navigationTitle("Medication log")
