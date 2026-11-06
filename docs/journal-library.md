@@ -1,7 +1,7 @@
 # Journal, entry detail and Library
 
 ## Screens
-- **Journal** lists active entries by local day, in the time zone of each entry's own time. Days are newest first, and entries are newest first within a day. Deleted entries are hidden.
+- **Diary** lists active entries by local day, in the time zone of each entry's own time. Days are newest first, and entries are newest first within a day. Deleted entries are hidden.
   - **The day header** is a content card at the top of each day. It shows the day title, the day's energy as a figure such as "1240 kcal" when the day's total is known (an unknown total shows nothing, never 0), and up to three goal bars: one for each stored goal, in the order the goals were stored, with water left out and
 goals switched off under **Show on Today** left out too (the same choice as the Today card; see
 `docs/today-screen.md`). A goal whose nutrient has no amount that day still gets a bar, and its text is one of two states. "Can't total yet" when the day has logged food or drink whose amount for that nutrient is unknown. "Nothing logged yet" when the day has no food or drink entry, where water and supplements do not count. The day's summary line is still computed by the model but is no longer drawn.
