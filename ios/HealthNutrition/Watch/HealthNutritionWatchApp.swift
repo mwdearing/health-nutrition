@@ -130,7 +130,7 @@ struct WatchTodayView: View {
                 Text(
                     "P \(WidgetFigure.number(snapshot?.proteinGrams, partial: snapshot?.isPartial("protein") == true)) · C \(WidgetFigure.number(snapshot?.carbohydrateGrams, partial: snapshot?.isPartial("carbohydrate") == true)) · F \(WidgetFigure.number(snapshot?.fatGrams, partial: snapshot?.isPartial("fat") == true)) g"
                 ).font(.footnote).privacySensitive()
-                Text("\(WidgetFigure.water(snapshot?.waterMilliliters, usUnits: snapshot?.usUnits)) water").font(.footnote).privacySensitive()
+                Text("\(WidgetFigure.water(snapshot?.waterMilliliters, usUnits: snapshot?.usUnits, partial: snapshot?.isPartial("water") == true)) water").font(.footnote).privacySensitive()
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
