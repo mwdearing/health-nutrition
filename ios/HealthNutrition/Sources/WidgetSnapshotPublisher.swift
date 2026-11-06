@@ -112,8 +112,10 @@ final class WidgetSnapshotPublisher {
         let carbohydrate = total("carbohydrate", in: .g)
         let fat = total("fat", in: .g)
         let calories = Self.calorieFigures(today.calorieRemaining)
+        // Apple Health intake makes a day with intake, the Diary's rule, so no widget says "Nothing logged" over it.
+        let hasEntries = !today.rows.isEmpty || today.outsideIntake.statesIntake
         return WidgetSnapshot(
-            generatedAt: now, hasEntries: !today.rows.isEmpty, energyKcal: energy,
+            generatedAt: now, hasEntries: hasEntries, energyKcal: energy,
             energyGoalKcal: energyGoal, proteinGrams: protein,
             carbohydrateGrams: carbohydrate, fatGrams: fat,
             waterMilliliters: NSDecimalNumber(decimal: today.waterTotalMilliliters).doubleValue,
