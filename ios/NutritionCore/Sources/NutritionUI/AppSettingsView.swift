@@ -200,6 +200,8 @@ private struct SettingsContent: View {
                 Button("Restore from an export") { self.isImporting = true }
                     .accessibilityHint("Restores an export only while this device's journal is empty.")
                     .disabled(isReadingImport || connections.isImporting || connections.isErasing)
+                Text(ConnectionsPrivacyViewModel.restoreAddsNotice).font(.footnote)
+                    .foregroundStyle(TokenColors.textSecondary)
                 if isReadingImport || connections.isImporting {
                     ProgressView(isReadingImport ? "Reading export…" : "Restoring export…")
                 }
