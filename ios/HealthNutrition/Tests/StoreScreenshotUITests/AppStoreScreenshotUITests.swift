@@ -254,10 +254,18 @@ final class AppStoreScreenshotUITests: XCTestCase {
         }
         if !day.waitForExistence(timeout: 5) { debugFail("no-day-\(daysAgo)", "no calendar day named \(dayName)"); return }
         day.tap()
-        // A tap outside the calendar closes it; the form is touched again only once the calendar is gone, because a
-        // tap that lands while it closes is swallowed.
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.02)).tap()
-        _ = pollUntil(timeout: 10, { !day.exists })
+        // Picking a day usually closes the calendar. If it is still open, the date button closes it, then a tap outside;
+        // the form is touched again only once the calendar is gone, because a tap that lands while it closes is
+        // swallowed.
+        _ = pollUntil(timeout: 4, { !day.exists })
+        if day.exists, dateButton.exists, dateButton.isHittable {
+            dateButton.tap()
+            _ = pollUntil(timeout: 4, { !day.exists })
+        }
+        if day.exists {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.02)).tap()
+            _ = pollUntil(timeout: 5, { !day.exists })
+        }
         RunLoop.current.run(until: Date().addingTimeInterval(1))
     }
 
@@ -428,7 +436,9 @@ final class AppStoreScreenshotUITests: XCTestCase {
         // once the keyboard is gone, the form has held still for a moment, and the button can be hit.
         _ = pollUntil(timeout: 5, { self.app.keyboards.count == 0 })
         RunLoop.current.run(until: Date().addingTimeInterval(1.5))
-        XCTAssertTrue(pollUntil(timeout: 10, { logButton.exists && logButton.isHittable }), "Log cannot be tapped")
+        if !pollUntil(timeout: 10, { logButton.exists && logButton.isHittable }) {
+            debugFail("log-not-tappable-\(name)", "Log cannot be tapped")
+        }
         XCTAssertTrue(logButton.isEnabled, "Log is disabled after the amounts were typed")
         logButton.tap()
         if !pollUntil(timeout: 20, { !self.app.navigationBars["Amounts only"].exists }) {
