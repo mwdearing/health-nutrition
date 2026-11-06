@@ -1019,6 +1019,34 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         XCTAssertEqual(journal.restoredPlans.count, 1)
     }
 
+    /// Leaving the Settings form (or a screen pushed over it) clears the import result. A restore still writing keeps
+    /// its progress and keeps the restore and export actions off until it publishes.
+    func testClearImportKeepsAnInFlightRestoreVisibleAndBlocking() async throws {
+        let gate = DeliveryRunGate()
+        let model = gatedModel(ImportStubStore(), gate: gate)
+        await gate.enter()
+        model.importJournal(data: try export())
+        XCTAssertTrue(model.isImporting)
+        model.clearImport()
+        XCTAssertTrue(model.isImporting, "the restore is still running")
+        XCTAssertFalse(model.canExport)
+        await gate.leave()
+        await waitForImportToSettle(model)
+        XCTAssertEqual(model.importState, .imported)
+        XCTAssertFalse(model.isImporting)
+        XCTAssertTrue(model.canExport)
+    }
+
+    func testClearImportClearsAFinishedResult() async throws {
+        let model = ConnectionsPrivacyViewModel(
+            goals: InMemoryGoalStore(), store: ImportStubStore(), favorites: ImportStubFavorites())
+        await importAndSettle(model, data: try export())
+        model.clearImport()
+        XCTAssertFalse(model.isImporting)
+        XCTAssertEqual(model.importState, .idle)
+        XCTAssertNil(model.importMessage)
+    }
+
     /// A pass still running after the wait leaves the journal untouched, and the screen says why.
     func testARestoreGivesUpWithNothingImportedWhenAHealthPassIsStillRunning() async throws {
         let gate = DeliveryRunGate()

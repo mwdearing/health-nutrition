@@ -120,6 +120,9 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     public static let exportFailedMessage = "Could not export the journal."
     public static let importButtonTitle = "Import a journal export"
     public static let importFailedMessage = "Could not import that file."
+    /// Shown under the restore button: a restore keeps no record of deletions (Mike's decision of 2026-11-05).
+    public static let restoreAddsNotice =
+        "Medications and doses in the file that are not on this device are added, including ones deleted since the file was made."
     /// A restore that finished but could not clean up its flag. The rows are there; the person is told to retry.
     /// Wording approved by Mike on 2026-10-31 (#828).
     public static let cleanupIncompleteMessage = "Restored. Could not finish cleaning up; try again to be sure."
@@ -295,6 +298,9 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     private let favorites: FavoritesStore?
     /// Where an export reads saved meals and an import writes them; nil leaves them out of both.
     private let savedMeals: JournalSavedMealsStore?
+    /// Where an export reads the medication log (medications and doses) and an import restores it, add-only; nil
+    /// leaves it out of both.
+    private let medications: MedicationStore?
     /// Where an export reads goals and an import writes them. Required, so no caller can leave them out silently.
     private let goals: GoalStore
     private let appVersion: String
@@ -367,6 +373,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     public init(
         goals: GoalStore,
         store: JournalStore, favorites: FavoritesStore? = nil, savedMeals: JournalSavedMealsStore? = nil,
+        medications: MedicationStore? = nil,
         appVersion: String = ConnectionsPrivacyViewModel.defaultAppVersion,
         writer: @escaping ConnectionsPrivacyExportWriter = ConnectionsPrivacyViewModel.writeExport,
         erasers: [JournalErasing] = [],
@@ -387,6 +394,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         self.store = store
         self.favorites = favorites
         self.savedMeals = savedMeals
+        self.medications = medications
         self.goals = goals
         self.appVersion = appVersion
         self.writer = writer
@@ -594,8 +602,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         exportRevision += 1
         do {
             let document = try JournalExporter.makeExport(
-                store: store, favorites: favorites, savedMeals: savedMeals, goals: goals, appVersion: appVersion,
-                exportedAt: now)
+                store: store, favorites: favorites, savedMeals: savedMeals, goals: goals, medications: medications,
+                appVersion: appVersion, exportedAt: now)
             let data = try JournalExporter.encode(document)
             let name = JournalExporter.fileName(exportedAt: now)
             let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
@@ -925,6 +933,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         let store = store
         let favorites = favorites
         let savedMeals = savedMeals
+        let medications = medications
         // Counted first, then read: this import's token is the number *after* its own increment, which is
         // what `apply` compares against. Reading before incrementing hands out the previous import's number,
         // so every outcome looks stale and none is ever published.
@@ -957,7 +966,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             do {
                 outcome = .imported(
                     try JournalImporter.importExport(
-                        data, into: store, favorites: favorites, savedMeals: savedMeals, goals: goals))
+                        data, into: store, favorites: favorites, savedMeals: savedMeals, goals: goals,
+                        medications: medications))
             } catch let error as JournalImportError {
                 outcome = .failed(.refused(error))
             } catch {
@@ -1133,10 +1143,14 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         let savedMeals = summary.savedMeals == 0 ? ""
             : summary.savedMeals == 1 ? ", 1 saved meal" : ", \(count(summary.savedMeals)) saved meals"
         let goals = summary.goals == 0 ? "" : summary.goals == 1 ? ", 1 goal" : ", \(count(summary.goals)) goals"
+        let medications = summary.medications == 0 ? ""
+            : summary.medications == 1 ? ", 1 medication" : ", \(count(summary.medications)) medications"
+        let doses = summary.medicationDoses == 0 ? ""
+            : summary.medicationDoses == 1 ? ", 1 dose" : ", \(count(summary.medicationDoses)) doses"
         let kept = summary.keptOutOfLibrary == 0 ? ""
             : summary.keptOutOfLibrary == 1 ? ", 1 entry kept out of Library > Products"
             : ", \(count(summary.keptOutOfLibrary)) entries kept out of Library > Products"
-        return "Imported \(entries)\(deleted)\(favorites)\(savedMeals)\(goals)\(kept)."
+        return "Imported \(entries)\(deleted)\(favorites)\(savedMeals)\(goals)\(medications)\(doses)\(kept)."
     }
 
     public static func importFailureText(for error: JournalImportError) -> String {
@@ -1164,8 +1178,11 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
 
     /// Returns the screen's import state to empty, so a later attempt does not read as part of an earlier
     /// one.
+    ///
+    /// A restore that is still running keeps `isImporting`, so its progress stays and "Restore from an export" stays
+    /// off until the last one publishes (the same rule `canExport` follows).
     public func clearImport() {
-        isImporting = false
+        isImporting = activeImportCompletions > 0
         importState = .idle
         importSummary = nil
         importMessage = nil

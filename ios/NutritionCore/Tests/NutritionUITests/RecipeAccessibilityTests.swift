@@ -34,4 +34,23 @@ final class RecipeAccessibilityTests: XCTestCase {
         model.delete(id: "recipe-1")
         XCTAssertTrue(model.items.isEmpty)
     }
+
+    func testAFailedReloadClearsTheRowsAndTheSkippedNote() throws {
+        let store = try SwiftDataRecipeStore(url: try uiTempURL(self, "recipes.store"))
+        try store.saveNewVersion(uiSampleVersion())
+        let model = RecipeListViewModel(store: store)
+        model.load()
+        XCTAssertEqual(model.items.count, 1)
+        store.close()
+        model.load()
+        XCTAssertEqual(model.errorMessage, "Could not read the recipes.")
+        XCTAssertTrue(model.items.isEmpty, "rows from the earlier load are not kept under the error")
+        XCTAssertNil(model.skippedMessage)
+    }
+
+    func testIngredientCountIsSingularForOne() {
+        XCTAssertEqual(RecipeListViewModel.ingredientCountText(1), "1 ingredient")
+        XCTAssertEqual(RecipeListViewModel.ingredientCountText(2), "2 ingredients")
+        XCTAssertEqual(RecipeListViewModel.ingredientCountText(0), "0 ingredients")
+    }
 }

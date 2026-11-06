@@ -44,6 +44,10 @@ public struct MedicationLogView: View {
                             Button("History") { self.historyMedicationID = row.id }
                         }
                 }
+            } footer: {
+                Text(MedicationLogViewModel.notice)
+                    .font(.footnote)
+                    .foregroundStyle(TokenColors.textSecondary)
             }
             if !model.archivedRows.isEmpty {
                 Section("Archived") {
@@ -141,16 +145,26 @@ private struct AddMedicationSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("Name", text: $name)
+                    LabeledField("Name", spokenTitle: true) { focus in
+                        TextField(text: $name, prompt: Text("For example, Vitamin D")) { Text("Name") }
+                            .labelsHidden()
+                            .focused(focus)
+                    }
                     Picker("Unit", selection: $unit) {
                         ForEach(MedicationUnit.allCases, id: \.self) { option in
                             Text(option.rawValue).tag(option)
                         }
                     }
-                    TextField("Every how many days", text: $scheduleText)
-                    #if os(iOS)
-                        .keyboardType(.numberPad)
-                    #endif
+                    LabeledField("Every how many days", spokenTitle: true) { focus in
+                        TextField(text: $scheduleText, prompt: Text("For example, 7")) {
+                            Text("Every how many days")
+                        }
+                        .labelsHidden()
+                        .focused(focus)
+                        #if os(iOS)
+                            .keyboardType(.numberPad)
+                        #endif
+                    }
                 }
                 if let errorText {
                     InlineNotice(errorText, tone: .failed)
@@ -192,19 +206,35 @@ private struct LogDoseSheet: View {
         NavigationStack {
             Form {
                 Section(row.name) {
-                    HStack {
-                        TextField("Amount", text: $amountText)
-                        #if os(iOS)
-                            .keyboardType(.decimalPad)
-                        #endif
-                        Text(row.unitText).foregroundStyle(TokenColors.textSecondary)
+                    LabeledField("Amount in \(row.unitText)") { focus in
+                        HStack {
+                            TextField(text: $amountText, prompt: Text("For example, 5")) { Text("Amount in \(row.unitText)") }
+                                .labelsHidden()
+                                .focused(focus)
+                            #if os(iOS)
+                                .keyboardType(.decimalPad)
+                            #endif
+                            Text(row.unitText).foregroundStyle(TokenColors.textSecondary)
+                        }
                     }
                     // A dose is logged once it has been taken, so the time stops at now.
                     DatePicker("Time taken", selection: $takenAt, in: ...Date())
                 }
                 Section {
-                    TextField("Injection site (optional)", text: $siteText)
-                    TextField("Note (optional)", text: $noteText)
+                    LabeledField("Injection site (optional)", spokenTitle: true) { focus in
+                        TextField(text: $siteText, prompt: Text("For example, left thigh")) {
+                            Text("Injection site (optional)")
+                        }
+                        .labelsHidden()
+                        .focused(focus)
+                    }
+                    LabeledField("Note (optional)", spokenTitle: true) { focus in
+                        TextField(text: $noteText, prompt: Text("For example, after breakfast")) {
+                            Text("Note (optional)")
+                        }
+                        .labelsHidden()
+                        .focused(focus)
+                    }
                 }
                 if let errorText {
                     InlineNotice(errorText, tone: .failed)

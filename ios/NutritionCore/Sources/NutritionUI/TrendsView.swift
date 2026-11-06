@@ -16,14 +16,31 @@ public struct InsightsHost: View {
         self.zone = zone
     }
 
+    /// The Diary's days with what Health states for each, plus the days only Health knows (no Diary row, so no
+    /// section), which carry no journal totals (#1268).
+    private var averageDays: [InsightsAverages.Day] {
+        let outside = journal.outsideIntakeByDay
+        var days = journal.sections.map {
+            InsightsAverages.Day(
+                key: $0.id, totals: $0.totals, isLogged: JournalViewModel.hasFoodEntries($0.rows),
+                outside: outside[$0.id] ?? .notConnected)
+        }
+        let known = Set(journal.sections.map(\.id))
+        for (key, read) in outside where !known.contains(key) {
+            days.append(InsightsAverages.Day(key: key, totals: DailyTotals(totals: [:]), isLogged: false, outside: read))
+        }
+        return days
+    }
+
     private var state: InsightsLoadState {
         InsightsLoadState.resolve(
             errorMessage: journal.errorMessage, loadCount: journal.loadCount, skippedCount: journal.skippedCount,
             entries: journal.sections.flatMap(\.rows).map {
-                InsightsWeek.Entry(occurredAt: $0.occurredAt, timeZoneIdentifier: $0.timeZoneIdentifier)
+                InsightsWeek.Entry(
+                    occurredAt: $0.occurredAt, timeZoneIdentifier: $0.timeZoneIdentifier,
+                    countsAsLogged: JournalViewModel.hasFoodEntries([$0]))
             },
-            days: journal.sections.map { InsightsAverages.Day(
-                    key: $0.id, totals: $0.totals, isLogged: JournalViewModel.hasFoodEntries($0.rows)) },
+            days: averageDays,
             averageNutrients: Self.averagedNutrients, now: now(), zone: zone(),
             healthIntakeDayKeys: journal.healthIntakeDayKeys)
     }
@@ -52,7 +69,7 @@ public struct InsightsHost: View {
         }
         .onAppear { journal.load(now: now()) }
         // Health knows days the Diary has no row for, so the week reads them too (#1267).
-        .task { await journal.loadRecentHealthTotals(days: InsightsWeek.length, now: now()) }
+        .task { await journal.loadRecentHealthTotals(days: InsightsAverages.windowDays, now: now()) }
     }
 }
 
