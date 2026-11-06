@@ -13,9 +13,13 @@ public struct AmountPreview: Equatable {
     static let gramsPerOunce = Decimal(string: "28.349523125")!
 
     static func make(
-        nutrients: [String: NutrientValue], basis: BarcodeLookupBasis?, amountText: String, unit: MeasureUnit
+        nutrients: [String: NutrientValue], basis: BarcodeLookupBasis?, amountText: String, unit: MeasureUnit,
+        exact: (amount: Decimal, unit: MeasureUnit)? = nil
     ) -> AmountPreview? {
-        guard basis == .per100g, let amount = AmountParser.parseTyped(amountText) else { return nil }
+        guard basis == .per100g, var amount = AmountParser.parseTyped(amountText) else { return nil }
+        // An amount opened from a serving shows a rounded figure; the preview scales the exact serving, as save does.
+        var unit = unit
+        if let exact { (amount, unit) = exact }
         let grams: Decimal
         // Any mass the menu offers converts exactly through the shared quantity conversion; a volume does not.
         guard unit.dimension == .mass,
@@ -35,5 +39,16 @@ public struct AmountPreview: Equatable {
             protein: per(LookedUpProduct.protein, in: .g),
             carbohydrates: per(LookedUpProduct.carbohydrates, in: .g),
             fat: per(LookedUpProduct.fat, in: .g))
+    }
+
+    /// One preview row's figure, rounded the way the "This adds" lines round it: whole calories, one fraction
+    /// digit of a gram. Nil is a value the source did not give, so it reads as unknown, never as zero.
+    static func rowText(_ value: Decimal?, unit: String) -> String {
+        guard let value else { return "Unknown" }
+        let display = AmountDisplay.nutrient(value, unit: unit.isEmpty ? .kcal : .g)
+        // A real amount too small for the digits is shown as a bound, never as zero.
+        let figure = display.isBelowSmallest
+            ? "< \(DecimalFormatting.text(display.smallestAmount))" : DecimalFormatting.text(display.amount)
+        return unit.isEmpty ? figure : "\(figure) \(unit)"
     }
 }

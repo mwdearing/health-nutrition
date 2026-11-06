@@ -83,6 +83,13 @@ public final class RecipeDetailViewModel: ObservableObject {
         }
     }
 
+    /// The confirmation after a portion is logged. The figure is the parsed portion, not the text as typed,
+    /// and "serving" is singular for exactly one.
+    static func loggedText(portion: Decimal, unitText: String, title: String) -> String {
+        let unit = portion == 1 && unitText == "servings" ? "serving" : unitText
+        return "Logged \(DecimalFormatting.text(portion)) \(unit) of \(title)."
+    }
+
     /// Writes one intake for the portion. Unknown nutrients are left out, never written as zero.
     @discardableResult
     public func logPortion(now: Date) -> Bool {
@@ -94,7 +101,7 @@ public final class RecipeDetailViewModel: ObservableObject {
             try RecipeLogger.logPortion(
                 store: journal, version: version, portion: portion, now: now, id: makeID(),
                 timeZoneIdentifier: timeZoneIdentifier, meal: nil)
-            logMessage = "Logged \(portionText) \(portionUnitText) of \(version.title)."
+            logMessage = Self.loggedText(portion: portion, unitText: portionUnitText, title: version.title)
             errorMessage = nil
             return true
         } catch RecipeError.nothingToLog {

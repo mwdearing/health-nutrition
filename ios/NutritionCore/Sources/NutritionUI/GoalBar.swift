@@ -132,6 +132,13 @@ public struct GoalBarModel: Equatable, Identifiable {
         MissingValueWording.inSentence(label)
     }
 
+    /// The note for water entries logged in a unit that is not a volume, agreeing with the count.
+    public static func skippedWaterText(count: Int) -> String {
+        count == 1
+            ? "1 water entry has a unit that is not a volume and is not counted."
+            : "\(count) water entries have a unit that is not a volume and are not counted."
+    }
+
     private static func reasonText(
         line: NutrientProgressLine, missingCount: Int, skippedWaterCount: Int
     ) -> String {
@@ -139,7 +146,7 @@ public struct GoalBarModel: Equatable, Identifiable {
         if line.nutrient == DailyTotalsBuilder.waterKey {
             // A short Health side is not the person's entries (#1294). When entries are skipped too, both are said.
             if skippedWaterCount > 0 {
-                let skipped = "\(skippedWaterCount) water entries have a unit that is not a volume and are not counted."
+                let skipped = GoalBarModel.skippedWaterText(count: skippedWaterCount)
                 return line.healthGap ? "\(skipped) \(MissingValueWording.healthGapNote(name: name))." : skipped
             }
             if line.healthGap { return MissingValueWording.healthGapNote(name: name) }

@@ -84,6 +84,120 @@ final class AddIntakeServingTests: XCTestCase {
         XCTAssertEqual(energy?.cannotScale, false)
     }
 
+    /// The store accepts only a lowercase UUID as an intake id.
+    private static let intakeID = "00000000-0000-4000-8000-000000000001"
+
+    /// Saves the model's current form and returns the one stored component, read back from the store.
+    private func savedComponent(
+        _ configure: (AddIntakeViewModel) -> Void, system: UnitSystem = .usCustomary
+    ) throws -> IntakeComponent {
+        let store = try makeStore()
+        let model = AddIntakeViewModel(
+            store: store, now: now, timeZoneIdentifier: "UTC", makeID: { Self.intakeID }, lookup: nil,
+            preferences: InMemoryDisplayPreferences(unitSystem: system))
+        configure(model)
+        XCTAssertTrue(model.save(now: now))
+        return try XCTUnwrap(store.revisions(of: Self.intakeID).first?.components.first)
+    }
+
+    func testAnOunceServingLeftAsOpenedIsStoredAsExactGrams() throws {
+        let component = try savedComponent { $0.applyLookedUp(picked(serving: ServingDefinition(quantity: 2, unit: .oz))) }
+        XCTAssertEqual(component.unit, .g)
+        XCTAssertEqual(component.amount, Decimal(string: "56.69904625")!)
+    }
+
+    func testAnOunceServingCountIsStoredAsExactGrams() throws {
+        let component = try savedComponent {
+            $0.applyLookedUp(picked(serving: ServingDefinition(quantity: 2, unit: .oz)))
+            $0.setServingCount("3")
+        }
+        XCTAssertEqual(component.unit, .g)
+        XCTAssertEqual(component.amount, Decimal(string: "170.09713875")!)
+    }
+
+    func testACommittedServingCountIsStoredAsGrams() throws {
+        let component = try savedComponent {
+            $0.applyLookedUp(picked(serving: ServingDefinition(quantity: 2, unit: .oz)))
+            $0.setServingCount("3.")
+            $0.commitServingCount()
+        }
+        XCTAssertEqual(component.unit, .g)
+        XCTAssertEqual(component.amount, Decimal(string: "170.09713875")!)
+    }
+
+    /// A serving carried in grams, as the USDA search builds it, saves as exactly those grams under either system.
+    func testAGramServingIsStoredAsExactlyThoseGramsUnderBothSystems() throws {
+        for system in [UnitSystem.usCustomary, .metric] {
+            let one = try savedComponent(
+                { $0.applyLookedUp(picked(serving: ServingDefinition(quantity: 30, unit: .g))) }, system: system)
+            XCTAssertEqual(one.unit, .g)
+            XCTAssertEqual(one.amount, Decimal(30))
+            let two = try savedComponent({
+                $0.applyLookedUp(picked(serving: ServingDefinition(quantity: 30, unit: .g)))
+                $0.setServingCount("2")
+            }, system: system)
+            XCTAssertEqual(two.unit, .g)
+            XCTAssertEqual(two.amount, Decimal(60))
+        }
+    }
+
+    func testAGramServingOpensRoundedInOunces() throws {
+        let model = try makeModel()
+        let serving = ServingDefinition(quantity: Decimal(30), unit: .g)
+        model.applyLookedUp(picked(serving: serving))
+        XCTAssertEqual(model.amountText, "1.06")
+        XCTAssertEqual(model.unit, .oz)
+        model.setServingCount("2")
+        XCTAssertEqual(model.amountText, "2.12")
+    }
+
+    func testServingPreviewRowsAreRoundedLikeThisAdds() throws {
+        let model = try makeModel()
+        let product = LookedUpProduct(
+            barcode: "", name: "Rice cake", brand: nil, basis: .per100g,
+            nutrients: [LookedUpProduct.energyKcal: .known(Decimal(389), .kcal)],
+            attribution: nil, serving: ServingDefinition(quantity: 30, unit: .g), version: nil)
+        model.applyLookedUp(product)
+        let preview = try XCTUnwrap(model.amountPreview)
+        let calories = AmountPreview.rowText(preview.kcal, unit: "")
+        XCTAssertFalse(calories.contains("."), calories)
+        XCTAssertEqual(AmountPreview.rowText(nil, unit: "g"), "Unknown")
+        XCTAssertEqual(AmountPreview.rowText(Decimal(string: "12.3456789")!, unit: "g"), "12.3 g")
+    }
+
+    func testTinyPreviewFiguresReadAsABoundNotZero() {
+        XCTAssertEqual(AmountPreview.rowText(Decimal(string: "0.4")!, unit: ""), "< 1")
+        XCTAssertEqual(AmountPreview.rowText(Decimal(string: "0.004")!, unit: "g"), "< 0.01 g")
+        XCTAssertEqual(AmountPreview.rowText(0, unit: "g"), "0 g")
+    }
+
+    /// A 1 g serving opens as "0.0353" oz; the preview still scales the exact gram, not the rounded ounces.
+    func testPreviewScalesTheExactServingNotTheRoundedField() throws {
+        let model = try makeModel()
+        model.applyLookedUp(picked(serving: ServingDefinition(quantity: 1, unit: .g)))
+        XCTAssertEqual(model.amountText, "0.0353")
+        XCTAssertEqual(model.amountPreview?.grams, Decimal(1))
+        XCTAssertEqual(model.amountPreview?.kcal, Decimal(2))
+        model.amountText = "0.0353"
+        XCTAssertNotEqual(model.amountPreview?.grams, Decimal(1), "a typed figure is scaled as typed")
+    }
+
+    func testServingLabelRoundsAConvertedQuantityOnlyOnScreen() {
+        let quotient = Decimal(30) / Decimal(string: "28.349523125")!
+        let serving = ServingDefinition(quantity: quotient, unit: .oz, text: nil)
+        XCTAssertEqual(serving.shownLabel, "1.06 oz")
+        XCTAssertEqual(serving.label, "\(quotient) oz", "the stored label keeps the exact quantity")
+    }
+
+    /// The stored label basis names the exact serving, so one serving scales to exactly the stated values.
+    func testPerServingLabelBasisKeepsTheExactServing() {
+        let product = LookedUpProduct(
+            barcode: "", name: "Rice cake", brand: nil, basis: .perServing,
+            nutrients: [LookedUpProduct.energyKcal: .known(Decimal(80), .kcal)],
+            attribution: nil, serving: ServingDefinition(quantity: Decimal(string: "10.25")!, unit: .g), version: nil)
+        XCTAssertEqual(product.labelBasis, "per serving (10.25 g)")
+    }
+
     func testPerHundredGramPickOffersOnlyMassUnits() throws {
         let model = try makeModel()
         model.applyLookedUp(picked(serving: ServingDefinition(quantity: 2, unit: .oz)))
@@ -294,5 +408,39 @@ final class AddIntakeServingTests: XCTestCase {
         await model.loadListedPortions()
         // Once they have come back empty, the note says what is true for this food.
         XCTAssertEqual(model.densityUnavailableNote, "No typical density is known for this food, so it is saved in mL.")
+    }
+}
+
+/// The Brand field stays while the person clears it, and the small copy fixes around the Add form.
+@MainActor
+final class AddIntakeBrandFieldTests: XCTestCase {
+    private let now = Date(timeIntervalSince1970: 1_700_000_000)
+
+    private func makeModel() throws -> AddIntakeViewModel {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        return AddIntakeViewModel(
+            store: try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store")),
+            now: now, timeZoneIdentifier: "UTC", lookup: nil)
+    }
+
+    func testBrandFieldStaysWhileTheBrandIsCleared() throws {
+        let model = try makeModel()
+        XCTAssertFalse(model.showsBrandField, "a typed food has nowhere to keep a brand")
+        model.applyLookedUp(LookedUpProduct(
+            barcode: "", name: "Rice cake", brand: "Acme", basis: .per100g,
+            nutrients: [LookedUpProduct.energyKcal: .known(Decimal(200), .kcal)],
+            attribution: nil, serving: nil, version: nil))
+        XCTAssertEqual(model.brand, "Acme")
+        XCTAssertTrue(model.showsBrandField)
+        model.brand = ""
+        XCTAssertTrue(model.showsBrandField, "clearing the text must not remove the field being typed in")
+    }
+
+    func testAmountErrorNamesNoPoint() throws {
+        let model = try makeModel()
+        model.amountText = "abc"
+        XCTAssertEqual(model.amountError, "Enter an amount greater than zero, such as 150 or 2.5.")
     }
 }
