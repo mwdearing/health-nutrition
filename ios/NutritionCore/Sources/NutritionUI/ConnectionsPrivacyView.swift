@@ -18,7 +18,7 @@ public struct ConnectionsPrivacyView: View {
             }
         }
         .scrollContentBackground(.hidden)
-        .background(TokenColors.background)
+        .background(TokenColors.page)
         .navigationTitle("Privacy")
     }
 }

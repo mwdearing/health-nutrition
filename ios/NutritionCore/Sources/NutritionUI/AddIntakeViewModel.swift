@@ -32,7 +32,8 @@ public enum AmountParser {
     /// The decimal pad offers the separator of the device's region, so where that is a comma a typed
     /// "2,5" means two and a half. It is read as such only there, and only when it is the one separator
     /// in the text: "1,000" typed where the separator is a point is refused as before rather than read
-    /// as one, and "1.234,5" is refused everywhere. A point is accepted in every region. Stored text is
+    /// as one, "1,000" typed where it is a comma is refused as a possible thousands separator (see
+    /// `looksLikeThousandsSeparator`), and "1.234,5" is refused everywhere. A point is accepted in every region. Stored text is
     /// never read through this; it goes through `parse`, which stays independent of the region.
     public static func parseTyped(
         _ text: String, decimalSeparator: String? = Locale.current.decimalSeparator
@@ -48,9 +49,32 @@ public enum AmountParser {
     ) -> String {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         guard decimalSeparator == ",", !trimmed.contains("."),
-            trimmed.filter({ $0 == "," }).count == 1
+            trimmed.filter({ $0 == "," }).count == 1,
+            !looksLikeThousandsSeparator(trimmed)
         else { return trimmed }
         return trimmed.replacingOccurrences(of: ",", with: ".")
+    }
+
+    /// The plain sentence for an amount typed with a comma that could be a thousands separator.
+    public static let thousandsSeparatorMessage = "Type the amount without a thousands separator, or use a point for a decimal."
+
+    /// Whether `text` is one comma between a whole part that does not start with zero and exactly three digits, such
+    /// as "1,000" or "12,500". In a region that writes a decimal comma that could be a thousands separator, and
+    /// reading it as a decimal would save a thousandth of what the person meant. "2,5", "2,50" and "0,125" stay
+    /// decimals: a thousands group never starts with zero, and fewer or more than three digits are not a group.
+    public static func looksLikeThousandsSeparator(_ text: String) -> Bool {
+        let parts = text.trimmingCharacters(in: .whitespaces).split(separator: ",", omittingEmptySubsequences: false)
+        guard parts.count == 2, let whole = parts.first, let fraction = parts.last else { return false }
+        return !whole.isEmpty && whole.first != "0" && whole.count <= 3
+            && whole.allSatisfy { $0.isASCII && $0.isNumber }
+            && fraction.count == 3 && fraction.allSatisfy { $0.isASCII && $0.isNumber }
+    }
+
+    /// Whether `text` is refused for being a thousands-style comma in a comma region, so the field can say why.
+    public static func isRefusedThousandsSeparator(
+        _ text: String, decimalSeparator: String? = Locale.current.decimalSeparator
+    ) -> Bool {
+        decimalSeparator == "," && looksLikeThousandsSeparator(text)
     }
 }
 
@@ -434,7 +458,9 @@ public final class AddIntakeViewModel: ObservableObject {
 
     /// Why the amount will not save, whether or not its field shows that yet.
     public var amountError: String? {
-        AmountParser.parseTyped(amountText) == nil ? Self.amountMessage : nil
+        guard AmountParser.parseTyped(amountText) == nil else { return nil }
+        return AmountParser.isRefusedThousandsSeparator(amountText)
+            ? AmountParser.thousandsSeparatorMessage : Self.amountMessage
     }
 
     /// The name's error as its field shows it: after a Save attempt, or once the name was edited and left.
