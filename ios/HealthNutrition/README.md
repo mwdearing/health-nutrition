@@ -27,7 +27,7 @@ contain neither debug surface.
 
 ## What the target contains
 
-- `project.yml`: the XcodeGen spec for the `HealthNutrition` app (iOS 18, Swift 5 language mode).
+- `project.yml`: the XcodeGen spec for the `HealthNutrition` app (iOS 26, Swift 5 language mode).
 - `HealthNutrition.entitlements`: the HealthKit capability and Sign in with Apple. No signing team id,
   certificate or profile is ever committed here.
 - `Support/Info.plist`: the two keys the account settings read, `SUPABASE_URL` and `SUPABASE_ANON_KEY`.

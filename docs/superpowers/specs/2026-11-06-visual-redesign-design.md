@@ -98,8 +98,8 @@ Contrast, measured with the WCAG 2.x formula (the unit tests add these pairs):
 | macroCarbs dark on hero (light / dark) | 9.85 / 5.38 |
 | macroFat dark on hero (light / dark) | 8.00 / 4.37 |
 | macroProtein, macroCarbs, macroFat light on card #FFFFFF | 6.19 / 5.02 / 5.17 |
-| textPrimary on page (light) | 15.90 |
-| textSecondary on page (light) | 4.69 |
+| textPrimary on page (light), #111827 light / #F0F6FC dark | 15.90 |
+| textSecondary on page (light), #6C6C70 light / #AEAEB2 dark | 4.69 |
 | accent on page (light) | 5.54 |
 
 The three macro colours are close in lightness, so every bar carries its label and value; colour is never the only

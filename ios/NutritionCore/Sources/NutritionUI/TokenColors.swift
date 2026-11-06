@@ -27,6 +27,15 @@ public enum TokenColors {
     public static var failedInk: Color { color(named: "RelayFailedInk") }
     public static var track: Color { color(named: "track") }
     public static var accentTint: Color { color(named: "accentTint") }
+    public static var page: Color { color(named: "page") }
+    public static var card: Color { color(named: "card") }
+    public static var hero: Color { color(named: "hero") }
+    public static var heroText: Color { color(named: "heroText") }
+    public static var heroSecondaryText: Color { color(named: "heroSecondaryText") }
+    public static var heroTrack: Color { color(named: "heroTrack") }
+    public static var macroProtein: Color { color(named: "macroProtein") }
+    public static var macroCarbs: Color { color(named: "macroCarbs") }
+    public static var macroFat: Color { color(named: "macroFat") }
 
     private static func color(named name: String) -> Color {
         guard let token = NutritionTokens.token(named: name) else {
