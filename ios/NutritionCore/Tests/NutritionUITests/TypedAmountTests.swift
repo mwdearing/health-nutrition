@@ -13,6 +13,23 @@ final class TypedAmountTests: XCTestCase {
         XCTAssertEqual(AmountParser.parseTyped("250", decimalSeparator: ","), Decimal(250))
     }
 
+    /// A comma region's "1,000" could be a thousands separator, and reading it as 1.0 would save a thousandth of the
+    /// amount with no warning, so it is refused. Real decimals, including three decimals after a zero, still read.
+    func testAThousandsStyleCommaIsRefusedInACommaRegion() {
+        XCTAssertNil(AmountParser.parseTyped("1,000", decimalSeparator: ","))
+        XCTAssertNil(AmountParser.parseTyped("12,500", decimalSeparator: ","))
+        XCTAssertNil(AmountParser.parseTyped("999,999", decimalSeparator: ","))
+        XCTAssertEqual(AmountParser.parseTyped("2,50", decimalSeparator: ","), Decimal(string: "2.5"))
+        XCTAssertEqual(AmountParser.parseTyped("2,5", decimalSeparator: ","), Decimal(string: "2.5"))
+        XCTAssertEqual(AmountParser.parseTyped("0,125", decimalSeparator: ","), Decimal(string: "0.125"))
+        XCTAssertEqual(AmountParser.parseTyped("1,5000", decimalSeparator: ","), Decimal(string: "1.5"))
+        XCTAssertEqual(AmountParser.normalizedTyped("1,000", decimalSeparator: ","), "1,000", "left as typed so it is refused")
+        XCTAssertTrue(AmountParser.isRefusedThousandsSeparator("1,000", decimalSeparator: ","))
+        XCTAssertFalse(AmountParser.isRefusedThousandsSeparator("1,000", decimalSeparator: "."), "a point region refuses it as before")
+        XCTAssertFalse(AmountParser.isRefusedThousandsSeparator("2,5", decimalSeparator: ","))
+        XCTAssertEqual(AmountParser.thousandsSeparatorMessage, "Type the amount without a thousands separator, or use a point for a decimal.")
+    }
+
     func testACommaIsRefusedWhereTheRegionUsesAPoint() {
         XCTAssertNil(AmountParser.parseTyped("2,5", decimalSeparator: "."))
         XCTAssertNil(AmountParser.parseTyped("1,000", decimalSeparator: "."))
