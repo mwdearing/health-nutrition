@@ -49,8 +49,7 @@ public enum AmountParser {
     ) -> String {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         guard decimalSeparator == ",", !trimmed.contains("."),
-            trimmed.filter({ $0 == "," }).count == 1,
-            !looksLikeThousandsSeparator(trimmed)
+            trimmed.filter({ $0 == "," }).count == 1
         else { return trimmed }
         return trimmed.replacingOccurrences(of: ",", with: ".")
     }
