@@ -64,7 +64,7 @@ def test_scanner_and_ios_jobs_have_bounded_deadlines() -> None:
     assert ios["privacy-manifest"]["timeout-minutes"] == 10
     for name in ("release-build", "unsigned-ipa"):
         assert ios[name]["timeout-minutes"] == 30
-    assert ios["swift-and-app-tests"]["timeout-minutes"] == 55
+    assert ios["swift-and-app-tests"]["timeout-minutes"] == 65
 
 
 def test_attribution_scanner_tests_run_in_the_unprivileged_swift_workflow() -> None:
