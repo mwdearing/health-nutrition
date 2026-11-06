@@ -1829,4 +1829,46 @@ final class NutritionFactsParserTests: XCTestCase {
         // A fullwidth amount is the printed value in another width, so the row reads as 2 g: never zero, never a guessed unit.
         XCTAssertEqual(value(.fat, panel), .known(2, .g))
     }
+
+    // MARK: Sub-rows and spelling variants of the named rows
+
+    func testFatSubRowsAreNotTheTotalFat() throws {
+        let panel = parse([
+            "Nutrition Facts", "Total Fat 8g 10%", "Saturated Fat 1g 5%", "Trans Fat 0g",
+            "Polyunsaturated Fat 2g", "Monounsaturated Fat 4g",
+        ])
+
+        XCTAssertEqual(try amount(.fat, panel), dec("8"))
+        XCTAssertNil(reviewReasons(.fat, panel))
+    }
+
+    func testFatSubRowAloneDoesNotStandInForTotalFat() throws {
+        let panel = parse(["Nutrition Facts", "Polyunsaturated Fat 2g"])
+
+        XCTAssertEqual(value(.fat, panel), .unknown)
+        let lone = parse(["Nutrition Facts", "Monounsaturated Fat 4g"])
+        XCTAssertEqual(value(.fat, lone), .unknown)
+    }
+
+    func testFiberSubRowsAreNotTheDietaryFiber() throws {
+        let panel = parse(["Nutrition Facts", "Dietary Fiber 4g", "Soluble Fiber 1g", "Insoluble Fiber 3g"])
+
+        XCTAssertEqual(try amount(.fiber, panel), dec("4"))
+        XCTAssertNil(reviewReasons(.fiber, panel))
+        XCTAssertEqual(value(.fiber, parse(["Nutrition Facts", "Soluble Fiber 1g"])), .unknown)
+        XCTAssertEqual(value(.fiber, parse(["Nutrition Facts", "Insoluble Fiber 3g"])), .unknown)
+    }
+
+    func testPluralCarbohydratesAndSingularTotalSugarReadAsNamedRows() throws {
+        let panel = parse([
+            "Nutrition Facts", "Serving size 1 bar (40g)", "Calories 150",
+            "Total Carbohydrates 22g", "Total Sugar 9g", "Protein 10g",
+        ])
+
+        XCTAssertEqual(try amount(.carbohydrates, panel), dec("22"))
+        XCTAssertEqual(try amount(.sugars, panel), dec("9"))
+        XCTAssertTrue(panel.additionalNutrients.isEmpty)
+        let bare = parse(["Nutrition Facts", "Carbohydrates 22g"])
+        XCTAssertEqual(try amount(.carbohydrates, bare), dec("22"))
+    }
 }

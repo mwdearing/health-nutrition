@@ -127,6 +127,15 @@ jobs:
           path: ${{ runner.temp }}/store-screenshots/debug/*
           if-no-files-found: ignore
           retention-days: 7
+      # Whatever the capture step saved when a step missed, named so it is never taken for the store set.
+      - name: Upload the partial screenshots
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: partial-not-for-store-${{ matrix.size }}
+          path: ${{ runner.temp }}/store-screenshots/*.png
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Upload the test results
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

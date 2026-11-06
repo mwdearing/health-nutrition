@@ -26,6 +26,25 @@ final class InsightsWeekTests: XCTestCase {
         XCTAssertEqual(week.entriesText, "4 entries")
     }
 
+    func testAWaterOrSupplementOnlyDayIsNotLoggedButItsEntriesStillCount() {
+        let day: TimeInterval = 86_400
+        let week = InsightsWeek.make(
+            entries: [
+                InsightsWeek.Entry(occurredAt: now, timeZoneIdentifier: "UTC", countsAsLogged: false),
+                InsightsWeek.Entry(occurredAt: now - day, timeZoneIdentifier: "UTC", countsAsLogged: false),
+                InsightsWeek.Entry(occurredAt: now - day, timeZoneIdentifier: "UTC"),
+            ], now: now, zone: utc, locale: locale)
+        XCTAssertEqual(week.loggedDays, 1, "only yesterday has a food or drink entry")
+        XCTAssertEqual(week.headline, "1 of 7 days logged")
+        XCTAssertEqual(week.emptyDays, 6)
+        XCTAssertEqual(week.entryCount, 3, "every entry is still counted")
+        let waterOnly = InsightsWeek.make(
+            entries: [InsightsWeek.Entry(occurredAt: now, timeZoneIdentifier: "UTC", countsAsLogged: false)],
+            now: now, zone: utc, locale: locale)
+        XCTAssertEqual(waterOnly.loggedDays, 0)
+        XCTAssertFalse(waterOnly.hasAnyEntry)
+    }
+
     func testADayAppleHealthStatesIntakeForCountsAsLoggedWithoutAnEntry() {
         let week = InsightsWeek.make(
             entries: [InsightsWeek.Entry(occurredAt: now, timeZoneIdentifier: "UTC")], now: now, zone: utc, locale: locale,
