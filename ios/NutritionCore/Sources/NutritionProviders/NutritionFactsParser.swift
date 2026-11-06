@@ -1042,7 +1042,7 @@ public enum NutritionFactsParser {
                 // whole-word occurrence still matches.
                 var search = lower.startIndex
                 while let found = lower.range(of: alias, range: search..<lower.endIndex) {
-                    if isWholeWord(found, in: lower), !isSubRowOfAnotherNutrient(found, for: row, in: lower) {
+                    if isWholeWord(found, in: lower) {
                         let start = lower.distance(from: lower.startIndex, to: found.lowerBound)
                         let length = alias.count
                         if let current = best {
