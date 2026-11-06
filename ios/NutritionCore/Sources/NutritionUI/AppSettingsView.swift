@@ -55,6 +55,8 @@ private struct MedicationLogSwitchRow: View {
         ))
         Text("Turning it off hides the log and keeps the data.")
             .font(.footnote).foregroundStyle(TokenColors.textSecondary)
+        Text(MedicationLogViewModel.notice)
+            .font(.footnote).foregroundStyle(TokenColors.textSecondary)
     }
 }
 

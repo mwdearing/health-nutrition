@@ -39,6 +39,9 @@ public struct MedicationRow: Equatable, Identifiable {
 /// A dose's site is saved with the dose but is never read back here, so it is never shown.
 @MainActor
 public final class MedicationLogViewModel: ObservableObject {
+    /// The notice shown on the Medication log screen and under its Settings switch.
+    public static let notice = "This log keeps what you enter. It does not give medical advice or suggest doses."
+
     private let store: MedicationStore
     private let preferences: DisplayPreferences
     private let now: () -> Date

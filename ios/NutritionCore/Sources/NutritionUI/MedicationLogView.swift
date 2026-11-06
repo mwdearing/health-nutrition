@@ -44,6 +44,10 @@ public struct MedicationLogView: View {
                             Button("History") { self.historyMedicationID = row.id }
                         }
                 }
+            } footer: {
+                Text(MedicationLogViewModel.notice)
+                    .font(.footnote)
+                    .foregroundStyle(TokenColors.textSecondary)
             }
             if !model.archivedRows.isEmpty {
                 Section("Archived") {
