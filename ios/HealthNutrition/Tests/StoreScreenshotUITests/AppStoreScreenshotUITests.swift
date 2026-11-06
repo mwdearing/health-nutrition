@@ -424,6 +424,11 @@ final class AppStoreScreenshotUITests: XCTestCase {
         let logButton = app.buttons["Log"]
         XCTAssertTrue(logButton.waitForExistence(timeout: 10), "no Log button")
         dismissKeyboard()
+        // A tap that lands while the keyboard or a popover is still animating away is swallowed, so Log is tapped only
+        // once the keyboard is gone, the form has held still for a moment, and the button can be hit.
+        _ = pollUntil(timeout: 5, { self.app.keyboards.count == 0 })
+        RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+        XCTAssertTrue(pollUntil(timeout: 10, { logButton.exists && logButton.isHittable }), "Log cannot be tapped")
         XCTAssertTrue(logButton.isEnabled, "Log is disabled after the amounts were typed")
         logButton.tap()
         if !pollUntil(timeout: 20, { !self.app.navigationBars["Amounts only"].exists }) {
