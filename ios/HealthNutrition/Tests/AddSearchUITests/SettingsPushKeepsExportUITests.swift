@@ -49,6 +49,7 @@ final class SettingsPushKeepsExportUITests: XCTestCase {
         let back = bar.buttons.matching(NSPredicate(format: "label != %@", "Done")).element(boundBy: 0)
         XCTAssertTrue(back.waitForExistence(timeout: 10), "no back button on \(title)")
         back.tap()
+        XCTAssertTrue(bar.waitForNonExistence(timeout: 10), "\(title) is still showing after going back\n\(app.debugDescription)")
     }
 
     /// A form builds the rows near the screen, so a row off screen is scrolled into view: `down` reveals rows below the
@@ -74,7 +75,7 @@ final class SettingsPushKeepsExportUITests: XCTestCase {
 
         let share = shareButton(in: app)
         scroll(to: share, in: app, down: true)
-        XCTAssertTrue(share.waitForExistence(timeout: 10),
+        XCTAssertTrue(share.waitForExistence(timeout: 10) && share.isHittable,
                       "the export was deleted when Daily goals was pushed\n\(app.debugDescription)")
     }
 
@@ -91,7 +92,7 @@ final class SettingsPushKeepsExportUITests: XCTestCase {
 
         let share = shareButton(in: app)
         scroll(to: share, in: app, down: true)
-        XCTAssertTrue(share.waitForExistence(timeout: 10),
+        XCTAssertTrue(share.waitForExistence(timeout: 10) && share.isHittable,
                       "the export was deleted when Privacy was pushed\n\(app.debugDescription)")
     }
 }
