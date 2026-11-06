@@ -22,6 +22,12 @@ public struct NourishTodayHeader: View {
     /// The bar Today already publishes for a nutrient. Reading it, not the raw progress line, keeps a goal
     /// switched off on the Goals screen hidden, and its fraction already accounts for a goal stored in a
     /// different unit from the day's total.
+    /// The missing-value note, shown only on a partly known day. A whole day's unknown keeps its own figure and no note.
+    private func partialNote(_ key: String) -> String? {
+        guard model.progress.first(where: { $0.nutrient == key })?.isPartial == true else { return nil }
+        return bar(key)?.reason
+    }
+
     private func bar(_ key: String) -> GoalBarModel? {
         model.goalBars.first { $0.id == key }
     }
@@ -65,7 +71,13 @@ public struct NourishTodayHeader: View {
 
     /// The caption under the remaining figure: over the goal it says so, and the figure beside it is how far over.
     static func remainingCaption(_ calories: CalorieRemaining) -> String {
-        (calories.remaining ?? 0) < 0 ? "Calories over goal" : "Calories remaining"
+        isOverGoal(calories) ? "Calories over goal" : "Calories remaining"
+    }
+
+    /// Over the goal only when the rounded figure is above zero: a shortfall under half a calorie reads as zero remaining.
+    static func isOverGoal(_ calories: CalorieRemaining) -> Bool {
+        guard let remaining = calories.remaining, remaining < 0 else { return false }
+        return BodyActivityViewModel.whole(-remaining) != BodyActivityViewModel.whole(0)
     }
 
     /// The one spoken line for the summary: remaining (or how far over), or why there is no total, then food and
@@ -75,9 +87,9 @@ public struct NourishTodayHeader: View {
     ) -> String {
         let lead: String?
         if let remaining = calories.remaining {
-            lead = remaining < 0
+            lead = isOverGoal(calories)
                 ? "\(BodyActivityViewModel.whole(-remaining)) calories over goal"
-                : "\(BodyActivityViewModel.whole(remaining)) calories remaining"
+                : "\(BodyActivityViewModel.whole(max(remaining, 0))) calories remaining"
         } else if calories.food == nil {
             lead = uncountedEntries > 0 ? "Calories can't total yet" : "Nothing logged yet"
         } else {
@@ -110,7 +122,7 @@ public struct NourishTodayHeader: View {
     static func summaryFigures(_ calories: CalorieRemaining) -> SummaryFigures {
         let remaining: String?
         if let value = calories.remaining {
-            remaining = BodyActivityViewModel.whole(value < 0 ? -value : value)
+            remaining = BodyActivityViewModel.whole(isOverGoal(calories) ? -value : max(value, 0))
         } else if calories.goal != nil {
             remaining = "—"
         } else {
@@ -139,7 +151,7 @@ public struct NourishTodayHeader: View {
                 spoken: spoken,
                 prompt: Self.goalPrompt(calories, goalKnownAbsent: model.calorieGoalKnownAbsent),
                 macros: Self.macroKeys.compactMap { key in
-                    bar(key).map { MacroEntry(key: key, bar: $0) }
+                    bar(key).map { MacroEntry(key: key, bar: $0, note: partialNote(key)) }
                 },
                 onEditGoals: onEditGoals)
             if !otherBars.isEmpty {
@@ -164,6 +176,7 @@ public struct NourishTodayHeader: View {
 private struct MacroEntry: Identifiable {
     let key: String
     let bar: GoalBarModel
+    let note: String?
     var id: String { key }
 }
 
@@ -270,10 +283,18 @@ private struct TodayHero: View {
             : AnyLayout(HStackLayout(alignment: .top, spacing: DesignSpacing.m))
         return layout {
             ForEach(macros) { macro in
-                MacroBar(
-                    model: macro.bar, color: Self.macroColors[macro.key] ?? TokenColors.mint, onHero: true
-                )
+                VStack(alignment: .leading, spacing: DesignSpacing.xs) {
+                    MacroBar(
+                        model: macro.bar, color: Self.macroColors[macro.key] ?? TokenColors.mint, onHero: true
+                    )
+                    if let note = macro.note {
+                        Text(note).font(.caption2).foregroundStyle(TokenColors.heroSecondaryText)
+                    }
+                }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(
+                    [macro.bar.accessibilityText, macro.note].compactMap { $0 }.joined(separator: ", "))
                 .accessibilityIdentifier("macroColumn-\(macro.bar.label)")
             }
         }
