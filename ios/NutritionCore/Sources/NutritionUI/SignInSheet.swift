@@ -82,7 +82,7 @@ public struct SignInSheet: View {
                 }
             }
             .scrollContentBackground(.hidden)
-            .background(TokenColors.background)
+            .background(TokenColors.page)
             .tint(TokenColors.accent)
             // A sign-in that is completing must finish with the sheet still up, so its result is never lost.
             .interactiveDismissDisabled(model.isBusy)
