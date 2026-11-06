@@ -220,4 +220,39 @@ final class WordingPassTests: XCTestCase {
             RecipeEditorViewModel.message(for: .duplicateIngredientID("oat-flour")),
             "Two ingredients are the same entry. Remove one and add it again.")
     }
+
+    // MARK: Label review buttons
+
+    /// WCAG 2.5.3 (Label in Name): Voice Control matches what the user says against the spoken name, so
+    /// the visible title has to be part of it.
+    func testLabelReviewButtonNamesContainTheirVisibleTitles() {
+        let pairs: [LabelReviewButton] = [
+            LabelReviewButton.confirmServing,
+            LabelReviewButton.useServing(missing: true),
+            LabelReviewButton.useServing(missing: false),
+            LabelReviewButton.cancelServingCorrection,
+            LabelReviewButton.cancelCorrection(rowName: "Sodium"),
+            LabelReviewButton.keepPhoto(frameIndex: 2, valueText: "12 g", rowName: "Protein"),
+            LabelReviewButton.keepReading(valueText: "12 g", rowName: "Protein", frameIndex: 2),
+        ]
+        for pair in pairs {
+            XCTAssertTrue(
+                pair.spoken.localizedCaseInsensitiveContains(pair.title),
+                "\"\(pair.spoken)\" does not contain \"\(pair.title)\"")
+        }
+        XCTAssertEqual(LabelReviewButton.cancelCorrection(rowName: "Sodium").title, "Cancel")
+        XCTAssertEqual(LabelReviewButton.keepPhoto(frameIndex: 2, valueText: "12 g", rowName: "Protein").title, "Keep photo 2")
+    }
+
+    /// The serving question is shown once. The field below it does not repeat it, because the section
+    /// above already does, whether the serving is missing or flagged.
+    func testServingEntryDoesNotRepeatTheServingQuestion() throws {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Sources/NutritionUI/LabelCaptureView.swift")
+        let source = try String(contentsOf: url, encoding: .utf8)
+        let start = try XCTUnwrap(source.range(of: "private var servingEntry"))
+        let end = try XCTUnwrap(source.range(of: "/// One nutrient", range: start.upperBound..<source.endIndex))
+        XCTAssertFalse(source[start.lowerBound..<end.lowerBound].contains("servingPrompt"))
+    }
 }

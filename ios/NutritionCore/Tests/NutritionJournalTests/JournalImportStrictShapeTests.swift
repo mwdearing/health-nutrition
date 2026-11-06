@@ -84,6 +84,11 @@ final class JournalImportStrictShapeTests: XCTestCase {
         var root = original
         root["schema_version"] = version
         if version < 8 { root.removeValue(forKey: "goals") }
+        // The medication log is a version 9 field, so an earlier document has no such keys.
+        if version < 9 {
+            root.removeValue(forKey: "medications")
+            root.removeValue(forKey: "medication_doses")
+        }
         // Saved meals are a version 4 field, so an earlier document has no such key.
         if version < 4 { root.removeValue(forKey: "saved_meals") }
         if version < 3 {
