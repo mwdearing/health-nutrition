@@ -1,5 +1,17 @@
 import SwiftUI
 
+private struct HeroBaseColorSchemeKey: EnvironmentKey {
+    static let defaultValue: ColorScheme? = nil
+}
+
+extension EnvironmentValues {
+    /// The real appearance outside a `HeroCard`, whose content is forced dark. Nil outside a hero.
+    var heroBaseColorScheme: ColorScheme? {
+        get { self[HeroBaseColorSchemeKey.self] }
+        set { self[HeroBaseColorSchemeKey.self] = newValue }
+    }
+}
+
 /// The deep teal card at the top of a screen.
 ///
 /// Its content is drawn with the dark appearance in both modes, so macro fills and controls keep their dark values
@@ -8,6 +20,7 @@ import SwiftUI
 public struct HeroCard<Content: View>: View {
     private let cornerRadius: CGFloat
     private let content: Content
+    @Environment(\.colorScheme) private var colorScheme
 
     public init(cornerRadius: CGFloat = DesignRadius.card, @ViewBuilder content: () -> Content) {
         self.cornerRadius = cornerRadius
@@ -17,6 +30,7 @@ public struct HeroCard<Content: View>: View {
     public var body: some View {
         content
             .foregroundStyle(TokenColors.heroText)
+            .environment(\.heroBaseColorScheme, colorScheme)
             .environment(\.colorScheme, .dark)
             .padding(DesignSpacing.cardPadding)
             .frame(maxWidth: .infinity, alignment: .leading)

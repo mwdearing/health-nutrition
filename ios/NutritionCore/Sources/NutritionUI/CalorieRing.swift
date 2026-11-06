@@ -60,6 +60,8 @@ public struct CalorieRing<Center: View>: View {
     private let center: Center
     @ScaledMetric(relativeTo: .largeTitle) private var scale: CGFloat = 1
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.heroBaseColorScheme) private var heroBase
+    @Environment(\.colorScheme) private var colorScheme
 
     public init(model: CalorieRingModel, onHero: Bool, @ViewBuilder center: () -> Center) {
         self.model = model
@@ -86,6 +88,8 @@ public struct CalorieRing<Center: View>: View {
         ZStack {
             Circle()
                 .stroke(onHero ? TokenColors.heroTrack : TokenColors.track, lineWidth: lineWidth)
+                // On the hero the track resolves in the real appearance; fills keep the forced-dark values.
+                .environment(\.colorScheme, onHero ? (heroBase ?? colorScheme) : colorScheme)
             if let fraction = model.fraction {
                 Circle()
                     .trim(from: 0, to: GoalBar.drawingWidth(of: fraction, in: 1))

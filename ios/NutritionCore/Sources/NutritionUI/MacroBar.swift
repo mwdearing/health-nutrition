@@ -5,10 +5,14 @@ import SwiftUI
 public struct MacroBar: View {
     private let model: GoalBarModel
     private let color: Color
+    private let onHero: Bool
+    @Environment(\.heroBaseColorScheme) private var heroBase
+    @Environment(\.colorScheme) private var colorScheme
 
-    public init(model: GoalBarModel, color: Color) {
+    public init(model: GoalBarModel, color: Color, onHero: Bool = false) {
         self.model = model
         self.color = color
+        self.onHero = onHero
     }
 
     private var fillsBar: Bool {
@@ -19,14 +23,15 @@ public struct MacroBar: View {
         VStack(alignment: .leading, spacing: DesignSpacing.xs) {
             Text(model.label)
                 .font(.caption)
-                .foregroundStyle(TokenColors.textSecondary)
+                .foregroundStyle(onHero ? TokenColors.heroSecondaryText : TokenColors.textSecondary)
             Text(model.valueText)
                 .font(.subheadline.weight(.semibold))
                 .monospacedDigit()
-                .foregroundStyle(TokenColors.textPrimary)
+                .foregroundStyle(onHero ? TokenColors.heroText : TokenColors.textPrimary)
             GeometryReader { proxy in
                 ZStack(alignment: .leading) {
-                    Capsule().fill(TokenColors.track)
+                    Capsule().fill(onHero ? TokenColors.heroTrack : TokenColors.track)
+                        .environment(\.colorScheme, onHero ? (heroBase ?? colorScheme) : colorScheme)
                     if fillsBar, let fraction = model.fraction {
                         Capsule()
                             .fill(color)
@@ -62,9 +67,9 @@ private func previewModel(_ label: String, _ text: String, _ fraction: Decimal) 
 #Preview("Macros, dark") {
     HeroCard {
         HStack(spacing: DesignSpacing.m) {
-            MacroBar(model: previewModel("Protein", "62 g of 90 g", 0.69), color: TokenColors.macroProtein)
-            MacroBar(model: previewModel("Carbs", "140 g of 250 g", 0.56), color: TokenColors.macroCarbs)
-            MacroBar(model: previewModel("Fat", "40 g of 70 g", 0.57), color: TokenColors.macroFat)
+            MacroBar(model: previewModel("Protein", "62 g of 90 g", 0.69), color: TokenColors.macroProtein, onHero: true)
+            MacroBar(model: previewModel("Carbs", "140 g of 250 g", 0.56), color: TokenColors.macroCarbs, onHero: true)
+            MacroBar(model: previewModel("Fat", "40 g of 70 g", 0.57), color: TokenColors.macroFat, onHero: true)
         }
     }
     .padding()
