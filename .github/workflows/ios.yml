@@ -128,6 +128,8 @@ jobs:
       # The signed-upload workflow is manual-only and reviewer-gated; these tests pin that shape.
       - name: Test the signed-upload workflow guardrails
         run: python -m pytest -q -p no:cacheprovider scripts/tests/test_signed_beta_workflow.py scripts/tests/test_signed_beta_archive_check.py scripts/tests/test_beta_schedule.py
+      - name: Check the Library redesign guard
+        run: python -m pytest -q -p no:cacheprovider scripts/tests/test_library_redesign.py
       - name: Test the project declarations
         run: python -m pytest -q -p no:cacheprovider scripts/tests/test_project_declarations.py
       - name: Check the Trends redesign guard
