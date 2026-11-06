@@ -4,6 +4,7 @@ Recent changes to the Health Nutrition iOS app. The newest entry is first. This 
 
 ## Unreleased
 
+- **#1304**: a weight-gain plan starts from the floored maintenance figure (1500 kcal male, 1200 otherwise) and adds its surplus, so a gain target is always above maintain for the same answers. Closes #1298.
 - **#1305**: withdrawing a shared product contribution that is already withdrawn returns `revision_conflict` with `current_state` "withdrawn" and writes nothing; only an exact replay returns the original receipt. Closes #1281.
 - **#1329**: Insights no longer counts a water-only or supplement-only day as logged. The Medications tile shows the last-dose line. Recipe rows say "1 ingredient", and a failed recipe read clears stale rows. Closes #1295, #1296, #1314.
 - **#1325**: the label review serving size can be corrected whether or not the parser flagged it. Review buttons are spoken with their on-screen titles first. Closes #1312.
@@ -37,7 +38,6 @@ From the security, bug and usability review of 2026-11-05. Each line moves under
 - **#1308**: CI runs four Python test suites that no workflow ran before. The medication add, dose and edit fields have labels. Closes #1301.
 - **#1307**: label scan no longer reads Polyunsaturated, Monounsaturated or Unsaturated Fat, or Soluble or Insoluble Fiber, as the total row. "Total Carbohydrates", "Carbohydrates" and "Total Sugar" are recognised. An extra row cannot overwrite a nutrient the person already answered. Closes #1283.
 - **#1306**: the privacy manifest check scans each embedded bundle (app, widget extension, Watch app, Watch widget extension) against its own `PrivacyInfo.xcprivacy`, and an escaped backslash no longer hides the rest of a line. Closes #1302.
-- **#1304**: a weight-gain plan starts from the floored maintenance figure (1500 kcal male, 1200 otherwise) and adds its surplus, so a gain target is always above maintain for the same answers. Closes #1298.
 
 ## Versions
 
