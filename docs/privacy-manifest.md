@@ -58,11 +58,12 @@ offered.
 The HealthRelay destination is unavailable in this version. After the person
 connects Apple Health in Settings and allows it, nutrients from
 real logged food and water entries are written to HealthKit on the device. That
-is not data collection: nothing leaves the phone. The app reads back the
+is not data collection: nothing is uploaded. The app reads back the
 samples it wrote itself, to replace or remove them after an edit or delete, and,
 only after the person asks on Today, their steps, active energy, weight and height (height only fills goal setup and is not saved). When the person connects Apple Health, the app also asks to read the nutrient types it
 writes. Once the totals use that access, they will include nutrition other apps logged.
-Those readings will stay on the phone and will not be sent anywhere.
+Those readings will be used only to show the totals on the device, on Home Screen widgets and on a paired Apple Watch,
+and will never be uploaded.
 A debug build's
 HealthKit screen can also write separate test samples.
 Erasing local journal rows does not remove HealthKit samples already written.
@@ -90,8 +91,8 @@ where a real timestamp is what matters.
 ## The widget extension
 
 The Today widget extension ships its own `ios/HealthNutrition/Widgets/PrivacyInfo.xcprivacy`. It declares no collected
-data types and no required-reason APIs, and `NSPrivacyTracking` is `false`. The summary the widget shows never
-leaves the device, so there is nothing to declare; the app's manifest declares nothing for it either. The extension
+data types and no required-reason APIs, and `NSPrivacyTracking` is `false`. The summary the widget shows is not
+uploaded, so there is nothing to declare; the app's manifest declares nothing for it either. The extension
 reads one small summary file from the App Group container and has no network access, no preferences and no clock
 measurement. The summary file is left out of device backups and is cleared on erase (see [Widgets](widgets.md)).
 
