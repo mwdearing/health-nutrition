@@ -602,7 +602,8 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
 
     /// Wraps the real store. Its first `activeIntakes()` returns what the worker would have read before an Undo, and
     /// then runs that Undo, so the Undo lands between the worker's intake read and its hold check (#1309).
-    private final class UndoAfterFirstIntakeRead: JournalStore, JournalDeleteHold, @unchecked Sendable {
+    private final class UndoAfterFirstIntakeRead:
+        JournalDeliverySuspension, JournalDeleteHold, HealthKitWrittenLedger, @unchecked Sendable {
         let real: SwiftDataJournalStore
         private let lock = NSLock()
         private var undone = false
@@ -705,6 +706,39 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         func deliveryState(intakeID: String) throws -> IntakeDeliveryState {
             try real.deliveryState(intakeID: intakeID)
         }
+
+        func acknowledge(operationID: String, at date: Date) throws {
+            try real.acknowledge(operationID: operationID, at: date)
+        }
+
+        func recordFailure(operationID: String, retryAt: Date?, needsAttention: Bool) throws {
+            try real.recordFailure(operationID: operationID, retryAt: retryAt, needsAttention: needsAttention)
+        }
+
+        func recordFailure(operationID: String, retryAt: Date?, needsAttention: Bool, reason: String?) throws {
+            try real.recordFailure(
+                operationID: operationID, retryAt: retryAt, needsAttention: needsAttention, reason: reason)
+        }
+
+        func suspendedOperationIDs() throws -> Set<String> {
+            try real.suspendedOperationIDs()
+        }
+
+        func suspensionReason(operationID: String) throws -> String? {
+            try real.suspensionReason(operationID: operationID)
+        }
+
+        func rearmDelivery(operationID: String) throws {
+            try real.rearmDelivery(operationID: operationID)
+        }
+
+        func writtenHealthKitKeys(intakeID: String) throws -> Set<String>? {
+            try real.writtenHealthKitKeys(intakeID: intakeID)
+        }
+
+        func setWrittenHealthKitKeys(intakeID: String, keys: Set<String>) throws {
+            try real.setWrittenHealthKitKeys(intakeID: intakeID, keys: keys)
+        }
     }
 
     /// #1309: an Undo that lands between the worker's intake read and its hold check must not ack the upsert as
@@ -734,7 +768,9 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
             },
             "an Undo mid-pass must not supersede the upsert, got \(first)")
 
-        let second = await worker.runOnce(now: Date())
+        // The first pass saw the intake come back and scheduled a retry; the next pass runs once it is due.
+        let retryAfter = TimeInterval(HealthKitDeliveryWorker.backoffSeconds(afterAttempt: 1) + 1)
+        let second = await worker.runOnce(now: Date().addingTimeInterval(retryAfter))
         XCTAssertEqual(second, [.delivered(operationID: upsertID, samples: 1)])
         XCTAssertEqual(writer.saveCalls, 1)
     }
