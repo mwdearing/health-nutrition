@@ -31,7 +31,7 @@ public struct InsightsAverages: Equatable {
         }
 
         /// A food or drink entry in the journal, or intake Health states for the day.
-        var counts: Bool { isLogged || outside.statesIntake }
+        var counts: Bool { isLogged }
     }
 
     public struct Line: Equatable, Identifiable {
