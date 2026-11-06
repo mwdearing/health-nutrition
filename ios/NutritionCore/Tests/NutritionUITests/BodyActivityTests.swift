@@ -99,7 +99,7 @@ final class BodyActivityTests: XCTestCase {
         XCTAssertEqual(reader.requests, 1)
         XCTAssertFalse(model.showsConnect)
         XCTAssertEqual(model.stepsText, "8,214 steps")
-        XCTAssertEqual(model.activeEnergyText, "413 Calories active")
+        XCTAssertEqual(model.activeEnergyText, "413 calories active")
     }
 
     func testOutsideTotalsNameWhatOtherAppsLoggedInTheRightUnits() async {

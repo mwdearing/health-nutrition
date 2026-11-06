@@ -267,7 +267,7 @@ public final class BodyActivityViewModel: ObservableObject {
     }
 
     public var activeEnergyText: String? {
-        readings.activeEnergyKcal.map { "\(Self.whole($0)) Calories active" }
+        readings.activeEnergyKcal.map { "\(Self.whole($0)) calories active" }
     }
 
     public var weightText: String? {
@@ -295,7 +295,7 @@ public final class BodyActivityViewModel: ObservableObject {
         func completed(_ key: String) -> Decimal? {
             readings.outsideReadKeys.contains(key) ? readings.outsideNutrients[key] : nil
         }
-        if let energy = completed("energy") { parts.append("\(Self.whole(energy)) Calories") }
+        if let energy = completed("energy") { parts.append("\(Self.whole(energy)) calories") }
         if let protein = completed("protein") { parts.append("\(Self.whole(protein)) g protein") }
         if let water = completed("water") {
             if unitSystem() == .usCustomary {
