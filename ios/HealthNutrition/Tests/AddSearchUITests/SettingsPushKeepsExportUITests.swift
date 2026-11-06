@@ -20,7 +20,9 @@ final class SettingsPushKeepsExportUITests: XCTestCase {
         // Edit goals may open Settings with Daily goals already pushed. The form is the screen whose navigation bar is
         // titled Settings, so when it is not showing the person goes back to it.
         let settings = app.navigationBars["Settings"]
-        if !settings.waitForExistence(timeout: 15) { goBack(from: "Daily goals", in: app) }
+        _ = settings.waitForExistence(timeout: 15)
+        // While Daily goals is pushed over the form, its bar is on screen; the form's bar may still be in the tree.
+        if app.navigationBars["Daily goals"].waitForExistence(timeout: 3) { goBack(from: "Daily goals", in: app) }
         XCTAssertTrue(settings.waitForExistence(timeout: 10), "the Settings form is not showing\n\(app.debugDescription)")
 
         let export = app.buttons["Export journal"]
