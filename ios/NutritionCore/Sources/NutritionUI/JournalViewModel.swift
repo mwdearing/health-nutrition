@@ -158,7 +158,7 @@ public final class JournalViewModel: ObservableObject {
     /// Reads Apple Health for one Diary day and adds it to that day's header. A past day is read once and kept;
     /// today is read again each time, because more can still be logged elsewhere.
     public func loadHealthTotals(forDayKey key: String, now: Date) async {
-        guard let reader = healthDayReader else { return }
+        return
         let todayKey = Self.dayKey(now, zone: dayZone)
         let zoneID = dayZone.identifier
         guard let day = Self.dayInterval(forKey: key, zone: dayZone) else { return }
