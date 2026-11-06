@@ -52,13 +52,21 @@ public enum AmountParser {
         else { return trimmed }
         // A comma then exactly three digits may be a thousands separator. Leave the comma in place so
         // `parse` refuses the text instead of reading it as a decimal.
-        if let comma = trimmed.firstIndex(of: ","),
-            !trimmed.hasPrefix("0"),
-            trimmed[trimmed.index(after: comma)...].count == 3,
-            trimmed[trimmed.index(after: comma)...].allSatisfy({ $0.isASCII && $0.isNumber }) {
-            return trimmed
-        }
+        if isThousandsForm(trimmed, decimalSeparator: decimalSeparator) { return trimmed }
         return trimmed.replacingOccurrences(of: ",", with: ".")
+    }
+
+    /// Whether typed text is a comma then exactly three digits in a comma region, the form a thousands
+    /// separator makes ("1,000"). A leading zero ("0,125") is a decimal, not a thousands group.
+    public static func isThousandsForm(
+        _ text: String, decimalSeparator: String? = Locale.current.decimalSeparator
+    ) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        guard decimalSeparator == ",", !trimmed.contains("."), !trimmed.hasPrefix("0"),
+            trimmed.filter({ $0 == "," }).count == 1, let comma = trimmed.firstIndex(of: ",")
+        else { return false }
+        let after = trimmed[trimmed.index(after: comma)...]
+        return after.count == 3 && after.allSatisfy { $0.isASCII && $0.isNumber }
     }
 }
 
@@ -436,13 +444,16 @@ public final class AddIntakeViewModel: ObservableObject {
     /// The sentence beside Save when a tap of it was refused, because the fields it names carry their errors.
     public static let fixFieldsMessage = "Fix the fields marked above."
     static let amountMessage = "Enter an amount greater than zero, such as 150 or 2.5."
+    /// Shown when a typed amount is a comma then three digits, which may be a thousands separator.
+    public static let thousandsMessage = "Type the amount without a thousands separator."
 
     /// Why the name will not save, whether or not its field shows that yet.
     public var nameError: String? { typedName.isEmpty ? "Enter a name." : nil }
 
     /// Why the amount will not save, whether or not its field shows that yet.
     public var amountError: String? {
-        AmountParser.parseTyped(amountText) == nil ? Self.amountMessage : nil
+        guard AmountParser.parseTyped(amountText) == nil else { return nil }
+        return AmountParser.isThousandsForm(amountText) ? Self.thousandsMessage : Self.amountMessage
     }
 
     /// The name's error as its field shows it: after a Save attempt, or once the name was edited and left.

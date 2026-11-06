@@ -23,6 +23,16 @@ final class TypedAmountTests: XCTestCase {
         XCTAssertEqual(AmountParser.parseTyped("0,125", decimalSeparator: ","), Decimal(string: "0.125"))
     }
 
+    func testAThousandsRefusalSaysSoInThePlainSentence() {
+        // Copy is pinned as a literal (approved wording, #1362).
+        XCTAssertEqual(AddIntakeViewModel.thousandsMessage, "Type the amount without a thousands separator.")
+        XCTAssertTrue(AmountParser.isThousandsForm("1,000", decimalSeparator: ","))
+        XCTAssertTrue(AmountParser.isThousandsForm("2,500", decimalSeparator: ","))
+        XCTAssertFalse(AmountParser.isThousandsForm("0,125", decimalSeparator: ","))
+        XCTAssertFalse(AmountParser.isThousandsForm("2,50", decimalSeparator: ","))
+        XCTAssertFalse(AmountParser.isThousandsForm("1,000", decimalSeparator: "."))
+    }
+
     func testACommaIsRefusedWhereTheRegionUsesAPoint() {
         XCTAssertNil(AmountParser.parseTyped("2,5", decimalSeparator: "."))
         XCTAssertNil(AmountParser.parseTyped("1,000", decimalSeparator: "."))
