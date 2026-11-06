@@ -1,6 +1,6 @@
 # Visual redesign: branded hero
 
-Status: proposed, waiting for owner approval of this document. Nothing here is built. The owner chose the direction (B, "branded
+Status: approved by the owner on 2026-11-06, including the colour roles and the five proposed tokens named under Colour. Nothing here is built yet. The owner chose the direction (B, "branded
 hero") from a set of mock-ups on 2026-11-06; this document turns that choice into something a builder can plan from.
 Choices marked **owner decision** wait for an answer. Choices marked *builder's call* were made by the author and can
 be changed during planning without asking.
