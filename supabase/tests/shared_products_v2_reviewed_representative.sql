@@ -165,7 +165,9 @@ end $test$;
 -- The migration's one-time refresh: an entry whose stored search name predates the reviewed ranking is rebuilt.
 -- The block below is the migration's own, run here against seeded data because the migration itself runs on an
 -- empty database in this suite and returns at its first guard.
-update catalog_v2.entries set normalized_name='stale search name' where product_id=current_setting('t.p4')::uuid;
+-- Before this migration the stored entry showed an unverified representative; restore that stored shape.
+update catalog_v2.entries set normalized_name='stale search name', publication=jsonb_set(publication,'{verification,status}','"unverified"')
+ where product_id=current_setting('t.p4')::uuid;
 do $refresh$ declare ids uuid[]; codes text[]; p uuid; begin
  select array_agg(e.product_id order by e.product_id) into ids from catalog_v2.entries e
   where e.publication#>>'{verification,status}' is distinct from 'verified'
