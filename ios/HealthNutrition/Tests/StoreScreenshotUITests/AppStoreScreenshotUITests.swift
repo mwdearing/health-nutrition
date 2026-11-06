@@ -175,6 +175,9 @@ final class AppStoreScreenshotUITests: XCTestCase {
         row.tap()
         // The entry form for the supplement shows what it adds; that is the Log supplement shot.
         if !app.navigationBars["Log entry"].waitForExistence(timeout: 15) { debugFail("no-log-form", "the entry form did not open"); return }
+        // One serving is taken, so the form shows the amount and what it adds; Log needs an amount.
+        try type("1", intoFieldStartingWith: "Amount")
+        dismissKeyboard()
         RunLoop.current.run(until: Date().addingTimeInterval(1))
         capture("5-log-supplement")
         let logButton = app.buttons["Log"]
