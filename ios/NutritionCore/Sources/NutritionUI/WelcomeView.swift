@@ -24,7 +24,16 @@ public struct WelcomeView: View {
                         .font(.body)
                         .foregroundStyle(TokenColors.textSecondary)
                 }
-                point("Scan a label or barcode, or type it in", symbol: "barcode.viewfinder")
+                HeroCard {
+                    HStack(alignment: .firstTextBaseline, spacing: DesignSpacing.m) {
+                        Image(systemName: "barcode.viewfinder")
+                            .foregroundStyle(TokenColors.heroText)
+                            .accessibilityHidden(true)
+                        Text("Scan a label or barcode, or type it in")
+                            .font(.headline)
+                            .foregroundStyle(TokenColors.heroText)
+                    }
+                }
                 point("Your journal stays on this device", symbol: "iphone")
                 point("No scores, no advice", symbol: "hand.raised")
                 PrimaryCapsule("Get started", action: onStart)
@@ -39,12 +48,12 @@ public struct WelcomeView: View {
             }
             .padding(DesignSpacing.l)
         }
-        .background(TokenColors.background)
+        .background(TokenColors.page)
     }
 
     /// One statement with a decorative symbol that carries no meaning of its own.
     private func point(_ text: String, symbol: String) -> some View {
-        Card {
+        ContentCard {
             HStack(alignment: .firstTextBaseline, spacing: DesignSpacing.m) {
                 Image(systemName: symbol)
                     .foregroundStyle(TokenColors.accent)
