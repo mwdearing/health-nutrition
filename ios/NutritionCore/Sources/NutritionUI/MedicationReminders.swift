@@ -86,9 +86,12 @@ public enum MedicationReminderPlan {
 public protocol MedicationReminderScheduling: AnyObject, Sendable {
     /// Makes the pending medication requests exactly `requests`; removes any other one. Throws when the system refuses.
     func replaceAll(with requests: [MedicationReminderRequest]) async throws
-    /// Removes every pending and delivered request under `MedicationReminderPlan.identifierPrefix`, and has done so
-    /// when it returns, so an erase can finish before its readback runs.
+    /// Starts removing every medication request without waiting for the system. Used where the caller cannot wait;
+    /// `removeAll()` is the call that confirms.
     func cancelAll()
+    /// Removes every pending and delivered request under `MedicationReminderPlan.identifierPrefix`, waits for the
+    /// system, and returns whether none is left, so a caller never reports a removal that did not finish.
+    func removeAll() async -> Bool
     /// Removes the pending and delivered requests of these medications, synchronously, so an erase has finished
     /// removing them when it returns. The default removes every medication request.
     func cancel(medicationIDs: [UUID])
@@ -96,6 +99,10 @@ public protocol MedicationReminderScheduling: AnyObject, Sendable {
 
 extension MedicationReminderScheduling {
     public func cancel(medicationIDs: [UUID]) { cancelAll() }
+    public func removeAll() async -> Bool {
+        cancelAll()
+        return true
+    }
 }
 
 /// Where the medication reminder settings are kept.
@@ -144,6 +151,8 @@ public final class InMemoryMedicationReminderStore: MedicationReminderStoring {
 /// Drives the per-medication reminders and keeps the system's pending requests equal to the plan.
 @MainActor
 public final class MedicationReminderController: ObservableObject {
+    public static let unreadableMessage =
+        "The medication log could not be read, so reminders are paused until it can be."
     public static let refusedMessage =
         "The reminders could not be set. Check the notification settings for this app and try again."
 
@@ -186,6 +195,8 @@ public final class MedicationReminderController: ObservableObject {
     /// asks for permission only when it is not yet decided.
     public func setReminder(_ time: ReminderTime?, for medicationID: UUID) async {
         var list = store.settings.filter { $0.medicationID != medicationID }
+        // Switching off also removes a notification that was already delivered.
+        if time == nil { scheduler.cancel(medicationIDs: [medicationID]) }
         if let time { list.append(MedicationReminderSetting(medicationID: medicationID, time: time)) }
         commit(list)
         await apply(askForPermission: time != nil)
@@ -270,10 +281,13 @@ public final class MedicationReminderController: ObservableObject {
             list = try medications.medications()
             doses = try medications.allDoses()
         } catch {
-            // The log cannot be read: nothing can be said to be due, so nothing stays pending. The settings stay.
-            scheduler.cancelAll()
+            // The log cannot be read: nothing can be said to be due, so nothing stays pending. The settings stay and
+            // the person is told.
+            _ = await scheduler.removeAll()
+            message = Self.unreadableMessage
             return
         }
+        if message == Self.unreadableMessage { message = nil }
         let stored = Set(list.map(\.id))
         let kept = store.settings.filter { stored.contains($0.medicationID) }
         if kept.count != store.settings.count { commit(kept, keepingMessage: true) }
@@ -287,6 +301,11 @@ public final class MedicationReminderController: ObservableObject {
             let granted = await permissions.requestPermission()
             guard erased == erasures.count else { return }
             permission = granted ? .allowed : .denied
+        }
+        if permission == .notDetermined {
+            // Not decided yet and not asking: keep the settings and the message as they are, hold nothing pending.
+            try? await scheduler.replaceAll(with: [])
+            return
         }
         guard permission == .allowed else {
             switchAllOff(message: ReminderController.withdrawnMessage)
@@ -304,7 +323,7 @@ public final class MedicationReminderController: ObservableObject {
             }
             return
         }
-        if erased != erasures.count { scheduler.cancelAll() }
+        if erased != erasures.count { _ = await scheduler.removeAll() }
     }
 
     private func commit(_ list: [MedicationReminderSetting], keepingMessage: Bool) {
@@ -334,12 +353,26 @@ public final class MedicationReminderEraser: JournalErasing, @unchecked Sendable
 
     public var erasureName: String { "medication reminders" }
 
+    private let lock = NSLock()
+    private var removal: Task<Bool, Never>?
+
+    /// Clears the settings and removes the known requests at once, then starts the sweep of every request under the
+    /// prefix, pending and delivered. `finishRemoval()` waits for the sweep.
     public func eraseAll() {
         erasures.record()
         let ids = store.settings.map(\.medicationID)
         store.clear()
         scheduler.cancel(medicationIDs: ids)
-        // Settings that could not be read leave no ids, so every request under the prefix goes too.
         scheduler.cancelAll()
+        let scheduler = self.scheduler
+        let task = Task { await scheduler.removeAll() }
+        lock.withLock { removal = task }
+    }
+
+    /// Waits for the sweep the last erase started. False when the system could not confirm that nothing is left, so
+    /// the erase readback does not report success it did not see.
+    public func finishRemoval() async -> Bool {
+        guard let task = lock.withLock({ removal }) else { return true }
+        return await task.value
     }
 }

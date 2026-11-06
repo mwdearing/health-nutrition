@@ -401,6 +401,23 @@ final class CountingMedicationScheduler: ReminderScheduling, MedicationReminderS
     func pendingDailyCount() async -> Int { 0 }
     func replaceAll(with requests: [MedicationReminderRequest]) async throws { lock.withLock { _replaces += 1 } }
     func cancelAll() { lock.withLock { _cancelAlls += 1 } }
+    /// Identifiers the system still holds as delivered; the sweep removes those under the prefix after a delay.
+    var delivered: Set<String> {
+        get { lock.withLock { _delivered } }
+        set { lock.withLock { _delivered = newValue } }
+    }
+    private var _delivered: Set<String> = []
+    var sweepFinished: Bool { lock.withLock { _sweepFinished } }
+    private var _sweepFinished = false
+    var sweepResult = true
+    func removeAll() async -> Bool {
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        lock.withLock {
+            _delivered = _delivered.filter { !$0.hasPrefix(MedicationReminderPlan.identifierPrefix) }
+            _sweepFinished = true
+        }
+        return sweepResult
+    }
     func cancel(medicationIDs: [UUID]) { lock.withLock { _cancelled += medicationIDs } }
 }
 
@@ -451,6 +468,32 @@ final class MedicationReminderFollowUpTests: XCTestCase {
         XCTAssertNil(defaults.data(forKey: UserDefaultsMedicationReminderStore.key))
     }
 
+    /// The erase's sweep removes every delivered request under the prefix, also one for a medication whose reminder
+    /// was switched off earlier, and the readback waits for it.
+    func testTheEraseSweepIsAwaitedAndRemovesDeliveredRequestsUnderThePrefix() async {
+        let scheduler = CountingMedicationScheduler()
+        scheduler.delivered = [MedicationReminderPlan.identifierPrefix + UUID().uuidString, "custom-reminder-keep"]
+        let eraser = MedicationReminderEraser(
+            store: InMemoryMedicationReminderStore(), scheduler: scheduler, erasures: ReminderErasures())
+        eraser.eraseAll()
+        XCTAssertFalse(scheduler.sweepFinished, "the sweep is still running when the erase returns")
+        let confirmed = await eraser.finishRemoval()
+        XCTAssertTrue(confirmed)
+        XCTAssertTrue(scheduler.sweepFinished, "finishRemoval waits for the sweep")
+        XCTAssertEqual(scheduler.delivered, ["custom-reminder-keep"])
+    }
+
+    /// A sweep the system cannot confirm is reported, so the readback does not claim success.
+    func testAnUnconfirmedSweepIsReported() async {
+        let scheduler = CountingMedicationScheduler()
+        scheduler.sweepResult = false
+        let eraser = MedicationReminderEraser(
+            store: InMemoryMedicationReminderStore(), scheduler: scheduler, erasures: ReminderErasures())
+        eraser.eraseAll()
+        let confirmed = await eraser.finishRemoval()
+        XCTAssertFalse(confirmed)
+    }
+
     private func controller(
         _ scheduler: CountingMedicationScheduler, store: MedicationStore, medication: Medication
     ) throws -> (MedicationReminderController, InMemoryMedicationReminderStore) {
@@ -499,6 +542,7 @@ final class MedicationReminderFollowUpTests: XCTestCase {
         await controller.sync()
         XCTAssertEqual(reminderStore.settings.count, 1)
         XCTAssertNotNil(controller.message)
+        XCTAssertTrue(scheduler.sweepFinished, "the pending requests are removed and awaited")
     }
 
     /// A history whose medication has gone stops offering a reminder.

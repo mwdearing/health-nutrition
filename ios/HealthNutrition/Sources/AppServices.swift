@@ -170,6 +170,7 @@ final class AppServices {
             medicationReminderEraser = MedicationReminderEraser(
                 store: store, scheduler: scheduling, erasures: reminderErasures)
         }
+        let medicationSweep = medicationReminderEraser
         // The order the stores are erased in, and so the order their failures are listed in. The widget eraser runs
         // first so no publish announced before the erase can land after it. The reminder readback is not in this
         // list: it runs after the stores.
@@ -210,7 +211,14 @@ final class AppServices {
                 guard let account else { return }
                 try await account.discardLocalSession()
             },
-            remindersStillPending: { await ReminderReadback.namesStillPending(in: SystemPendingReminderCenter()) },
+            remindersStillPending: {
+                // The medication sweep finishes first, so the readback never runs ahead of the removal; a sweep
+                // the system could not confirm is named as still there.
+                let confirmed = await medicationSweep?.finishRemoval() ?? true
+                var names = await ReminderReadback.namesStillPending(in: SystemPendingReminderCenter())
+                if !confirmed, !names.contains("medication reminders") { names.append("medication reminders") }
+                return names
+            },
             deliveryGate: healthKitDeliveryGate)
         let openFoodFacts = OpenFoodFactsProductLookup(
             client: OpenFoodFactsClient(appVersion: Self.appVersion))

@@ -36,35 +36,22 @@ extension SystemReminderScheduler: MedicationReminderScheduling {
         center.removeDeliveredNotifications(withIdentifiers: identifiers)
     }
 
-    /// Removes every pending and delivered request under the prefix and waits for it. The center answers on its own
-    /// queue, so waiting here never blocks the answer; the wait is bounded.
+    /// Starts the sweep without waiting; `removeAll()` is the call that confirms.
     func cancelAll() {
+        Task { _ = await removeAll() }
+    }
+
+    /// Removes every pending and delivered request under the prefix, then reads both lists again and returns whether
+    /// none is left.
+    func removeAll() async -> Bool {
         let center = UNUserNotificationCenter.current()
         let prefix = MedicationReminderPlan.identifierPrefix
-        let found = IdentifierBox()
-        let pending = DispatchSemaphore(value: 0)
-        center.getPendingNotificationRequests { requests in
-            found.set(pending: requests.map(\.identifier).filter { $0.hasPrefix(prefix) })
-            pending.signal()
-        }
-        let delivered = DispatchSemaphore(value: 0)
-        center.getDeliveredNotifications { notifications in
-            found.set(delivered: notifications.map(\.request.identifier).filter { $0.hasPrefix(prefix) })
-            delivered.signal()
-        }
-        _ = pending.wait(timeout: .now() + 2)
-        _ = delivered.wait(timeout: .now() + 2)
-        let (pendingIDs, deliveredIDs) = found.values()
-        center.removePendingNotificationRequests(withIdentifiers: pendingIDs)
-        center.removeDeliveredNotifications(withIdentifiers: deliveredIDs)
+        let pending = await center.pendingNotificationRequests().map(\.identifier).filter { $0.hasPrefix(prefix) }
+        center.removePendingNotificationRequests(withIdentifiers: pending)
+        let delivered = await center.deliveredNotifications().map(\.request.identifier).filter { $0.hasPrefix(prefix) }
+        center.removeDeliveredNotifications(withIdentifiers: delivered)
+        let pendingLeft = await center.pendingNotificationRequests().contains { $0.identifier.hasPrefix(prefix) }
+        let deliveredLeft = await center.deliveredNotifications().contains { $0.request.identifier.hasPrefix(prefix) }
+        return !pendingLeft && !deliveredLeft
     }
-}
-
-private final class IdentifierBox: @unchecked Sendable {
-    private let lock = NSLock()
-    private var pending: [String] = []
-    private var delivered: [String] = []
-    func set(pending ids: [String]) { lock.withLock { pending = ids } }
-    func set(delivered ids: [String]) { lock.withLock { delivered = ids } }
-    func values() -> ([String], [String]) { lock.withLock { (pending, delivered) } }
 }

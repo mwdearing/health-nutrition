@@ -35,8 +35,9 @@ can have its own reminder; see the Reminders section of [the medication log](med
 - At most 20 are pending at once, soonest first, so the daily reminder and the custom ones keep room under
   the system's limit.
 - Settings are stored as JSON under `display.reminders.medication` and are not exported.
-- A sync at launch, on return to the app and after each change to the log never asks for permission.
-- Erase all data clears the settings and every pending or delivered request.
+- A sync at launch, on return to the app and after each change to the log never asks for permission. While notifications are undecided it keeps the settings; it switches them off only when they are denied.
+- Switching one off removes its pending and delivered request.
+- Erase all data clears the settings and sweeps every pending or delivered request under the prefix, awaited before the erase check.
 - Code: `MedicationReminders.swift`, `MedicationHistoryView.swift`, `SystemMedicationReminderScheduler.swift` (app).
 
 ## Where the code is

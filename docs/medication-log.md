@@ -86,13 +86,16 @@ a time of day (09:00 until the person changes it) while the switch is on.
   The notification does not name the medication or a dose, and gives no advice.
 - **The footer** under the switch says what is pending, or why nothing is.
 - **Permission.** Switching a reminder on asks for notification permission only when it has not been
-  decided. Opening the app never asks. If notifications are turned off for the app, every medication
-  reminder switches off and says so.
+  decided. Opening the app never asks, and while the choice is undecided it leaves the settings alone. If
+  notifications are turned off for the app, every medication reminder switches off and says so.
+- **Unreadable log.** If the medication log cannot be read, nothing stays pending, the settings are kept and the
+  screen says reminders are paused until it can be read.
 - **At most 20** medication reminders are pending at once, soonest first.
-- **Switching off removes it.** Switching a reminder off removes its pending notification; switching the log
-  off removes them all and keeps the settings.
-- **Erase all data removes them**: the settings and every pending or delivered medication reminder. The
-  erase check names "medication reminders" if one is still pending.
+- **Switching off removes it.** Switching a reminder off removes its pending and its already delivered
+  notification; switching the log off removes the pending ones and keeps the settings.
+- **Erase all data removes them**: the settings and every pending or delivered request with the
+  `medication-reminder-` prefix, whether or not its medication still has a setting. The erase waits for the
+  removal before its check, and names "medication reminders" if one is still there or the removal could not be confirmed.
 - Stored on this device only (`display.reminders.medication`). Not exported.
 
 ## Store

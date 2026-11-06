@@ -75,6 +75,7 @@ public final class MedicationHistoryViewModel: ObservableObject {
         }
         guard let medication = medications.first(where: { $0.id == medicationID }) else {
             rows = []
+            canRemind = false
             errorMessage = "This medication is no longer in the list."
             return
         }
