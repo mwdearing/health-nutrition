@@ -8,7 +8,9 @@ import SwiftUI
 public struct WeightTrendChart: View {
     private let points: [WeightChartPoint]
     private let markers: [DoseDayMarker]
-    @ScaledMetric(relativeTo: .body) private var chartHeight: CGFloat = 120
+    @ScaledMetric(relativeTo: .body) private var scaledChartHeight: CGFloat = 120
+
+    private var chartHeight: CGFloat { min(scaledChartHeight, 120 * 1.6) }
 
     /// Creates the chart from the window's daily averages and the dose-day markers.
     public init(points: [WeightChartPoint], markers: [DoseDayMarker]) {

@@ -9,7 +9,9 @@ public struct InsightsView: View {
     private let week: InsightsWeek
     private let skippedCount: Int
     private let averages: InsightsAverages
-    @ScaledMetric(relativeTo: .body) private var chartHeight: CGFloat = 120
+    @ScaledMetric(relativeTo: .body) private var scaledChartHeight: CGFloat = 120
+
+    private var chartHeight: CGFloat { min(scaledChartHeight, 120 * 1.6) }
 
     public init(
         week: InsightsWeek, skippedCount: Int = 0, averages: InsightsAverages = InsightsAverages(lines: [])
@@ -94,13 +96,15 @@ public struct InsightsView: View {
         .chartXAxis {
             AxisMarks(values: week.days.map(\.id)) { value in
                 AxisValueLabel {
-                    if let date = value.as(Date.self), let day = week.days.first(where: { $0.id == date }) {
+                    if let date = value.as(Date.self), let day = week.days.first(where: { WeightTrendChart.axisCalendar.isDate($0.id, inSameDayAs: date) }) {
                         Text(day.label).font(.caption2)
                     }
                 }
             }
         }
         .chartYAxis(.hidden)
+        .environment(\.calendar, WeightTrendChart.axisCalendar)
+        .environment(\.timeZone, WeightTrendChart.axisCalendar.timeZone)
         .frame(height: chartHeight)
         .accessibilityLabel(week.days.map { "\($0.label), \(Self.entriesText($0.entryCount))" }.joined(separator: ". "))
     }
