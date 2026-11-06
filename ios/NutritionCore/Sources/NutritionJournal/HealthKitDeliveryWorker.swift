@@ -464,8 +464,14 @@ private func deliver(_ operation: OutboxOperation, now: Date) async -> HealthKit
             // entry back with nothing ever written for it. The row stays; once the window closes the delete
             // is offered and settles this upsert, and an Undo makes the intake active so it is written.
             do {
-                if let until = try (store as? any JournalDeleteHold)?.deleteHoldEnd(intakeID: operation.intakeID) {
+                switch try (store as? any JournalDeleteHold)?.deliveryState(intakeID: operation.intakeID) {
+                case .held(let until)?:
                     return .notDue(operationID: operation.operationID, nextAttemptAt: until)
+                case .active?:
+                    // The intake came back between the two reads: read it again on the next pass.
+                    return transient(operation, now: now, reason: "the intake changed while it was read")
+                case .gone?, nil:
+                    break
                 }
             } catch {
                 return transient(operation, now: now, reason: "the intake could not be read")

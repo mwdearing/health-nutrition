@@ -645,8 +645,13 @@ public struct RelayDeliveryWorker: Sendable {
     /// upsert now would be final, and Undo would bring the entry back with nothing sent for it.
     private func supersededOrHeld(intakeID: String) -> RelayEncoding {
         do {
-            if let until = try (store as? any JournalDeleteHold)?.deleteHoldEnd(intakeID: intakeID) {
+            switch try (store as? any JournalDeleteHold)?.deliveryState(intakeID: intakeID) {
+            case .held(let until)?:
                 return .heldForUndo(until: until)
+            case .active?:
+                return .unreadable(reason: "the intake changed while it was read")
+            case .gone?, nil:
+                break
             }
         } catch {
             return .unreadable(reason: "the intake could not be read")

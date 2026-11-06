@@ -529,6 +529,18 @@ public protocol JournalDeleteHold: AnyObject, Sendable {
     /// being held. An upsert for an intake with a held delete is not superseded yet: Undo brings the intake back,
     /// and an acknowledged upsert is never delivered.
     func deleteHoldEnd(intakeID: String) throws -> Date?
+    /// The intake's delivery state, read in one step so an Undo cannot land between two reads (#1309).
+    func deliveryState(intakeID: String) throws -> IntakeDeliveryState
+}
+
+/// What a delivery pass sees for an intake: active, hidden by a delete still in its Undo window, or gone (#1309).
+public enum IntakeDeliveryState: Equatable, Sendable {
+    /// The intake is active, so its upsert is written.
+    case active
+    /// The intake is hidden by an unacknowledged delete that is still inside its Undo window, which ends at `until`.
+    case held(until: Date)
+    /// The intake has no active entry and no held delete.
+    case gone
 }
 
 /// How long a delete can still be taken back. A delete reaches Apple Health and the relay only after it.

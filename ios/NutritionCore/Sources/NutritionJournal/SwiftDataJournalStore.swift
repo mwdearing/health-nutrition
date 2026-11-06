@@ -2528,6 +2528,29 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalDele
             .filter { $0 > now }.max()
     }
 
+    /// The intake's delivery state under writeLock, so the active check and the hold check see the same store and an
+    /// Undo cannot land between them (#1309).
+    public func deliveryState(intakeID: String) throws -> IntakeDeliveryState {
+        let container = try openContainer()
+        writeLock.lock()
+        defer { writeLock.unlock() }
+        if try Self.readActiveIntakes(container: container).contains(where: { $0.id == intakeID }) {
+            return .active
+        }
+        let context = ModelContext(container)
+        let now = Date()
+        let deleteKind = OutboxKind.delete.rawValue
+        let rows = try context.fetch(FetchDescriptor<OutboxRecord>(
+            predicate: #Predicate<OutboxRecord> {
+                $0.intakeID == intakeID && $0.kindRaw == deleteKind && $0.acknowledgedAt == nil
+            }))
+        if let until = rows.compactMap({ $0.deletedAt?.addingTimeInterval(JournalUndo.deleteWindow) })
+            .filter({ $0 > now }).max() {
+            return .held(until: until)
+        }
+        return .gone
+    }
+
     /// Operations not yet acknowledged, oldest revision first, upsert before delete within a revision.
     public func pendingOutbox() throws -> [OutboxOperation] {
         let context = ModelContext(try openContainer())
