@@ -59,6 +59,10 @@ final class MedicationStoreDamagedRowEraseTests: XCTestCase {
 
         var database: OpaquePointer?
         XCTAssertEqual(sqlite3_open_v2(url.path, &database, SQLITE_OPEN_READWRITE, nil), SQLITE_OK)
+        // `close()` drops the store's container, but SwiftData finishes closing its own connection to the file a moment
+        // later, and a write in that moment gets SQLITE_BUSY (5). This connection waits for that lock to clear, as the
+        // store's own checks do, so the write below is judged on what it does, not on how soon the file was free.
+        XCTAssertEqual(sqlite3_busy_timeout(database, 10_000), SQLITE_OK)
         XCTAssertEqual(sqlite3_exec(database, "UPDATE ZMEDICATIONRECORD SET ZNAME = NULL", nil, nil, nil), SQLITE_OK)
         XCTAssertEqual(sqlite3_changes(database), 1, "the row written outside the app has no name")
         sqlite3_close(database)
