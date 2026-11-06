@@ -66,7 +66,6 @@ struct USDAProductNameSearch: ProductNameSearching {
     static let attributionText = "Source: USDA FoodData Central, public domain."
     static let attributionURL = "https://fdc.nal.usda.gov/"
     static let catalogOrigin = "usda-fdc"
-    static let gramsPerOunce = Decimal(string: "28.349523125")!
 
     private let client: USDAFoodDataClient
 
@@ -97,9 +96,9 @@ struct USDAProductNameSearch: ProductNameSearching {
             basis: .per100g,
             nutrients: food.nutrientsPer100g,
             attribution: ProductAttribution(source: catalogOrigin, text: attributionText, url: attributionURL),
-            // The default serving is imperial: grams are converted to ounces for display and the amount stays
-            // per 100 g internally.
-            serving: food.servingGrams.map { ServingDefinition(quantity: $0 / Self.gramsPerOunce, unit: .oz, text: food.servingText) }
+            // The serving is carried in grams, exactly as USDA states it. The Add form converts it to ounces for a
+            // US reader and stores the grams, so no inexact ounce quotient is ever stored.
+            serving: food.servingGrams.map { ServingDefinition(quantity: $0, unit: .g, text: food.servingText) }
                 ?? food.servingText.map { ServingDefinition(quantity: nil, unit: nil, text: $0) },
             version: nil,
             sourceID: String(food.fdcId))

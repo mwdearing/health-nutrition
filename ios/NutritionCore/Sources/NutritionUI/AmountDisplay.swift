@@ -38,7 +38,8 @@ public struct DisplayAmount: Equatable {
     /// read as "less than" rather than rounded to a zero.
     public let isBelowSmallest: Bool
     private let groupsWholeAmount: Bool
-    private let smallestAmount: Decimal
+    /// The smallest figure the shown unit can carry; a below-smallest amount reads as "less than" this.
+    public let smallestAmount: Decimal
 
     public init(
         amount: Decimal, unit: MeasureUnit, isBelowSmallest: Bool = false,
