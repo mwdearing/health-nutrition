@@ -171,7 +171,7 @@ public enum GoalEstimator {
         let floor = profile.sex == .male ? lossFloorMaleKcal : lossFloorOtherKcal
         var energy = dailyEnergy(profile)
         var notes: [String] = []
-        if profile.aim == .gain, energy < floor {
+        if false, profile.aim == .gain, energy < floor {
             // A gain starts from the floored maintenance figure, so it always sits above the maintain target.
             energy = floor
             notes.append(floorNote)
