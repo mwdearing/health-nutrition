@@ -9,7 +9,7 @@ A native iOS app for a local food, supplement and hydration journal. This reposi
 - Favorites, recents, repeat entries and versioned personal recipes
 - Versioned journal export and import, plus Erase all data in Settings, which clears the local stores and the community session on the phone
 - On-demand barcode lookup, Nutrition Facts label capture and confirmation, and NIH DSLD provider components
-- Open Food Facts name search, sent only when the person submits the search field
+- Open Food Facts name search, sent only when the person submits the search field; USDA FoodData Central name search joins it when the build carries a key
 - Optional sign-in with Sign in with Apple or an emailed one-time code, in builds that carry the project settings
 - Custom products with optional barcodes, serving information and structured facts; a selected product can be shared after review, and shared products can be found by name
 - Community catalog client: label submission, a barcode fallback for barcodes that Open Food Facts does not know, and product search

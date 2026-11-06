@@ -70,7 +70,8 @@ private struct AppleHealthRows: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: DesignSpacing.xs) {
-            HStack {
+            HStack(spacing: DesignSpacing.m) {
+                IconWell(systemName: "heart.text.square", size: .small)
                 Text(AppleHealthConnectionViewModel.title)
                 Spacer()
                 Text(model.statusText).foregroundStyle(TokenColors.textSecondary)
@@ -133,24 +134,30 @@ private struct SettingsContent: View {
             Section {
                 if model.goals != nil {
                     Button { self.showingGoals = true } label: {
-                        HStack {
-                            Text("Daily goals")
+                        HStack(spacing: DesignSpacing.m) {
+                            Text("Daily goals").foregroundStyle(TokenColors.heroText)
                             Spacer()
-                            Text(model.goalsSetText).foregroundStyle(TokenColors.textSecondary)
-                            Image(systemName: "chevron.right").accessibilityHidden(true)
+                            Text(model.goalsSetText).foregroundStyle(TokenColors.heroSecondaryText)
+                            Image(systemName: "chevron.right").foregroundStyle(TokenColors.heroSecondaryText)
+                                .accessibilityHidden(true)
                         }
+                        .frame(minHeight: 44)
                     }
+                    .listRowBackground(TokenColors.hero)
                 }
             }
             if let account = model.account {
                 AccountSectionView(model: account)
             }
             Section("Units and logging") {
-                Picker("Units", selection: $model.unitSystem) {
-                    Text("Metric").tag(UnitSystem.metric)
-                    Text("US").tag(UnitSystem.usCustomary)
+                HStack(spacing: DesignSpacing.m) {
+                    IconWell(systemName: "ruler", size: .small)
+                    Picker("Units", selection: $model.unitSystem) {
+                        Text("Metric").tag(UnitSystem.metric)
+                        Text("US").tag(UnitSystem.usCustomary)
+                    }
+                    .pickerStyle(.segmented)
                 }
-                .pickerStyle(.segmented)
                 LabeledField("Quick water amount", focus: $waterFocused) { focus in
                     HStack {
                         TextField(text: $model.quickWaterText, prompt: Text("For example, 250")) {
@@ -185,7 +192,8 @@ private struct SettingsContent: View {
             }
             Section("Privacy") {
                 Button { self.showingPrivacy = true } label: {
-                    HStack {
+                    HStack(spacing: DesignSpacing.m) {
+                        IconWell(systemName: "lock", size: .small)
                         Text(model.privacyStatement).multilineTextAlignment(.leading)
                         Spacer()
                         Image(systemName: "chevron.right").accessibilityHidden(true)
@@ -194,8 +202,13 @@ private struct SettingsContent: View {
                 Link("Privacy policy", destination: URL(string: "https://github.com/mwdearing/health-nutrition/blob/main/PRIVACY.md")!)
             }
             Section {
-                Button(ConnectionsPrivacyViewModel.exportButtonTitle) {
+                Button {
                     self.connections.export(now: self.now())
+                } label: {
+                    HStack(spacing: DesignSpacing.m) {
+                        IconWell(systemName: "square.and.arrow.up", size: .small)
+                        Text(ConnectionsPrivacyViewModel.exportButtonTitle)
+                    }
                 }
                 .disabled(!connections.canExport)
                 .accessibilityHint("Writes a copy on this device. Nothing is sent until you share it.")
@@ -240,12 +253,16 @@ private struct SettingsContent: View {
                 Text(ConnectionsPrivacyViewModel.eraseFooterMessage).font(.footnote)
             }
             Section("About") {
-                HStack { Text("Version"); Spacer(); Text(model.versionText) }
+                HStack(spacing: DesignSpacing.m) {
+                    IconWell(systemName: "info.circle", size: .small)
+                    Text("Version"); Spacer(); Text(model.versionText)
+                }
                 if let onShowWelcome {
                     Button("Show welcome again") { onShowWelcome() }
                 }
                 Button { self.showingLicenses = true } label: {
-                    HStack {
+                    HStack(spacing: DesignSpacing.m) {
+                        IconWell(systemName: "doc.text", size: .small)
                         Text("Licenses")
                         Spacer()
                         Image(systemName: "chevron.right").accessibilityHidden(true)
@@ -257,7 +274,7 @@ private struct SettingsContent: View {
         .foregroundStyle(TokenColors.textPrimary)
         .tint(TokenColors.accent)
         .scrollContentBackground(.hidden)
-        .background(TokenColors.background)
+        .background(TokenColors.page)
         .navigationTitle("Settings")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.large)
@@ -280,6 +297,8 @@ private struct SettingsContent: View {
                 Text(model.usdaAttribution)
                 Link("USDA FoodData Central", destination: URL(string: "https://fdc.nal.usda.gov/")!)
             }
+            .scrollContentBackground(.hidden)
+            .background(TokenColors.page)
             .navigationTitle("Licenses")
         }
         .accountPresentations(model.account)

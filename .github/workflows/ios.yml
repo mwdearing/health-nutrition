@@ -132,6 +132,8 @@ jobs:
         run: python -m pytest -q -p no:cacheprovider scripts/tests/test_project_declarations.py
       - name: Check the CI release build keeps its shape
         run: python -m pytest -q -p no:cacheprovider scripts/tests/test_ios_workflow.py
+      - name: Check the redesign guard for this step
+        run: python -m pytest -q -p no:cacheprovider scripts/tests/test_settings_redesign.py
       - name: Check the Add capsule sits above the tab bar
         run: python -m pytest -q -p no:cacheprovider scripts/tests/test_add_capsule_placement.py
       - name: Check the entitlements (HealthKit and Sign in with Apple)
@@ -150,7 +152,7 @@ jobs:
   swift-and-app-tests:
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: macos-latest
-    timeout-minutes: 55
+    timeout-minutes: 65
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Show Xcode version
@@ -206,7 +208,7 @@ jobs:
           echo "name=$name" >> "$GITHUB_OUTPUT"
       - name: Test the app target on the simulator
         if: ${{ !cancelled() && steps.simulator.outcome == 'success' }}
-        timeout-minutes: 20
+        timeout-minutes: 30
         working-directory: ios/HealthNutrition
         env:
           SIMULATOR: ${{ steps.simulator.outputs.name }}

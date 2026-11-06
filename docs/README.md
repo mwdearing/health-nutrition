@@ -4,6 +4,7 @@ Public architecture decisions and design notes for this project live here.
 
 - [Python support and CI matrix](python-ci.md)
 - [Open Food Facts data source determination](providers/open-food-facts.md)
+- [USDA FoodData Central: name search source](providers/usda-fdc.md)
 - [NIH DSLD label import](providers/dsld.md)
 - [Journal store: revisions, projections and outbox](journal-store.md)
 - [Today screen, quick water and Add intake](today-screen.md)
