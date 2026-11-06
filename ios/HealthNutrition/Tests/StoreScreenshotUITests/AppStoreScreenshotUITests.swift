@@ -161,8 +161,22 @@ final class AppStoreScreenshotUITests: XCTestCase {
             libScrolls += 1
         }
         fromLibrary.tap()
-        RunLoop.current.run(until: Date().addingTimeInterval(2))
-        debugFail("library-picker", "learning the Library picker")
+        let products = app.buttons["Products"]
+        if !products.waitForExistence(timeout: 10) { debugFail("no-products-tab", "no Products tab in the Library"); return }
+        products.tap()
+        let row = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Opens Daily multivitamin")).firstMatch
+        if !row.waitForExistence(timeout: 10) { debugFail("no-product-row", "the saved product is not in the Library"); return }
+        row.tap()
+        // The entry form for the supplement shows what it adds; that is the Log supplement shot.
+        if !app.navigationBars["Log entry"].waitForExistence(timeout: 15) { debugFail("no-log-form", "the entry form did not open"); return }
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        capture("5-log-supplement")
+        let logButton = app.buttons["Log"]
+        if !(logButton.waitForExistence(timeout: 10) && logButton.isHittable) { debugFail("no-log-button", "no Log button"); return }
+        logButton.tap()
+        // The Add screen stays open after a Log; leave it for Today.
+        let cancel = app.buttons["Cancel"]
+        if cancel.waitForExistence(timeout: 15) { cancel.tap() }
     }
 
     func test9_CaptureTheStoreScreens() throws {
@@ -200,12 +214,6 @@ final class AppStoreScreenshotUITests: XCTestCase {
         capture("4-nutrients")
         app.navigationBars.buttons.firstMatch.tap()
 
-        try goToToday()
-        let add = app.buttons.matching(NSPredicate(format: "label == %@", "Add food, drink, or supplement"))
-        XCTAssertTrue(pollUntil(timeout: 30, { add.allElementsBoundByIndex.contains { $0.exists && $0.isHittable } }))
-        add.allElementsBoundByIndex.first(where: { $0.exists && $0.isHittable })?.tap()
-        XCTAssertTrue(app.navigationBars["Add"].waitForExistence(timeout: 15), "the Add screen did not open")
-        capture("5-add")
     }
 
     // MARK: - Steps shared by the tests
