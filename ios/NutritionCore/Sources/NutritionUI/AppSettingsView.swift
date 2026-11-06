@@ -319,7 +319,6 @@ private struct SettingsContent: View {
             // A screen pushed over this form (Privacy, Licenses, Daily goals) also disappears it. That must not
             // delete the export or wipe a finished import result; only leaving Settings does. A sheet dismissed
             // from inside a pushed screen never reaches here, so the host clears on dismissal too.
-            guard !(self.showingGoals || self.showingPrivacy || self.showingLicenses) else { return }
             self.cancelFileImport()
             self.connections.clearExport()
             self.connections.clearImport()
