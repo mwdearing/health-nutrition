@@ -394,7 +394,13 @@ public final class JournalViewModel: ObservableObject {
                     skipped += 1
                     continue
                 }
-                let snapshot = Self.snapshot(of: current, in: &snapshots, using: store)
+                let snapshot: ProductDefinition?
+                do {
+                    snapshot = try Self.snapshot(of: current, in: &snapshots, using: store)
+                } catch {
+                    skipped += 1
+                    continue
+                }
                 let rowKind = ProductKindResolution.kind(
                     snapshotID: current.productSnapshotID, snapshotKind: { _ in snapshot?.kind }, category: intake.category)
                 let row = JournalRow(
@@ -488,6 +494,17 @@ public final class JournalViewModel: ObservableObject {
             errorMessage = "Could not read the journal."
         }
     }
+
+    /// The empty state's wording. Beside a week card that counts days from Apple Health, "Your journal is empty" would
+    /// contradict the card, so the title and message say the journal has no entries of its own.
+    public static let emptyTitle = "Your journal is empty"
+    public static let emptyMessage = "Everything you log is listed here by day."
+    public static let emptyWithHealthWeekTitle = "No entries in this journal yet"
+    public static let emptyWithHealthWeekMessage =
+        "The week above counts days from Apple Health. Everything you log here is listed by day."
+
+    public var emptyStateTitle: String { weekSummary == nil ? Self.emptyTitle : Self.emptyWithHealthWeekTitle }
+    public var emptyStateMessage: String { weekSummary == nil ? Self.emptyMessage : Self.emptyWithHealthWeekMessage }
 
     /// True when nothing is listed after a successful load: no day and no skipped entry.
     public var isEmpty: Bool {
@@ -803,14 +820,15 @@ public final class JournalViewModel: ObservableObject {
         return parts.isEmpty ? "No totals for this day." : parts.joined(separator: ", ")
     }
 
-    /// The product snapshot a revision points at, read at most once per snapshot id. A snapshot that
-    /// cannot be read is nil, which the row reads as the food an entry without a product always was.
+    /// The product snapshot a revision points at, read at most once per snapshot id. A revision with no snapshot
+    /// id is nil, the food an entry without a product always was. A snapshot that cannot be read throws, so its
+    /// entry is skipped rather than shown as a food it may not be (#775).
     private static func snapshot(
         of revision: IntakeRevision?, in cache: inout [String: ProductDefinition?], using store: any JournalStore
-    ) -> ProductDefinition? {
+    ) throws -> ProductDefinition? {
         guard let id = revision?.productSnapshotID else { return nil }
         if let cached = cache[id] { return cached }
-        let found = try? store.product(snapshotID: id)
+        let found = try store.product(snapshotID: id)
         cache[id] = found
         return found
     }
@@ -888,8 +906,6 @@ public final class JournalViewModel: ObservableObject {
         hidden: Set<String>, unitSystem: UnitSystem, displayNames: [String: String] = [:],
         outsideByDay: [String: HealthIntakeTotals.Outside] = [:]
     ) -> JournalWeekSummary? {
-        // A journal with no day at all shows its empty state, not a week card, whatever Health holds.
-        guard !sections.isEmpty else { return nil }
         // The window is read by instant in the journal's zone: from the start of the day six days back to now.
         // An entry's own zone only decides which day section it sits in, so a trip across zones cannot move an
         // entry in or out of the week or make a section count twice.
@@ -912,6 +928,9 @@ public final class JournalViewModel: ObservableObject {
         let healthOnlyKeys = windowKeys.filter { key in
             outsideByDay[key]?.statesIntake == true && !week.contains { $0.id == key }
         }
+        // A journal with no day at all has a week card only when Health states intake for a day in the window;
+        // otherwise it shows its empty state alone.
+        guard !sections.isEmpty || !healthOnlyKeys.isEmpty else { return nil }
         let logged = week.filter { hasFoodEntries($0.rows) || outsideByDay[$0.id]?.statesIntake == true }
         let days: [WeekDay] = logged.map { WeekDay(totals: $0.totals, outside: outsideByDay[$0.id] ?? .notConnected) }
             + healthOnlyKeys.map { WeekDay(totals: nil, outside: outsideByDay[$0] ?? .notConnected) }

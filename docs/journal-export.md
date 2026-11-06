@@ -18,10 +18,10 @@ rejects dates Foundation would normalize, including the skipped cutover days. Th
 not change any schema's shape.
 
 The contract lives in the repository next to the code:
-- `contracts/journal-export/v6.schema.json` - JSON Schema, draft 2020-12, `additionalProperties: false` at the top level and on every object it defines. This is the version this build writes.
-- `contracts/journal-export/example.v6.json` - a small synthetic document that validates against it.
-- `contracts/journal-export/v5.schema.json` and `example.v5.json` - the version 5 contract, kept unchanged and still read.
-- `contracts/journal-export/v3.schema.json`, `v2.schema.json`, `v1.schema.json` and their examples - the version 3, 2 and 1 contracts, kept unchanged and still read.
+- `contracts/journal-export/v9.schema.json` - JSON Schema, draft 2020-12, `additionalProperties: false` at the top level and on every object it defines, `schema_version` const 9. This is the version this build writes (`JournalExport.currentSchemaVersion`).
+- `contracts/journal-export/example.v9.json` - a small synthetic version 9 document that validates against it.
+- `contracts/journal-export/v1.schema.json` to `v8.schema.json` and `example.v1.json` to `example.v8.json` - the earlier contracts, kept unchanged and still read.
+- `ios/NutritionCore/Tests/NutritionJournalExportTests/Contracts/` - copies of every schema and example, which the Swift export tests read. `scripts/tests/test_journal_export_contract.py` fails when a copy differs from its canonical file or a version has no schema or example, and `testBundledContractCopiesMatchTheCanonicalFiles` in `JournalExportTests.swift` checks the same in Swift.
 
 Version 2 is version 1 with one field: `provenance.kind`, which says whether a product is a `food`, a
 `drink` or a `supplement`. It is what a restore needs to know whether a snapshot joins the day's count of
@@ -39,12 +39,17 @@ logged together, with its `meal` (a meal name, or `null`) and its `items`, each 
 `meal` is `null`. A version 1, 2 or 3 file that carries `saved_meals` is `malformed`. A build that reads at most
 version 3 refuses a version 4 backup by its version, so saved meals are never restored without being noticed.
 
+Version 9 is version 8 plus two required root lists, `medications` and `medication_doses`, which carry the
+medication log (see Medication log below). Each medication and dose is an object with its own key set, written in
+full: nullable keys are written as `null`, never left out. A version 8 or older file that carries either list is
+`malformed`. Version 9 keeps version 8's `$defs` unchanged; its item shapes are inlined in the schema.
+
 Those files are the canonical ones. SwiftPM can only bundle resources that live inside a target, so copies
 sit in `ios/NutritionCore/Tests/NutritionJournalExportTests/Contracts/`; a test compares the two locations
 byte for byte, so a contract change without a fresh copy fails the build instead of passing against a stale
 contract.
 
-The document is built by `JournalExporter.makeExport(store:favorites:savedMeals:appVersion:exportedAt:)` and written
+The document is built by `JournalExporter.makeExport(store:favorites:savedMeals:goals:medications:appVersion:exportedAt:)` and written
 by `JournalExporter.encode(_:)`. The app version string is injected; the module has no build information of
 its own. The build reads the journal in one pass through `JournalSnapshotSource.readJournalSnapshot()`, which
 holds the store's write lock while it fetches active intakes, their revisions and the tombstones. Without
@@ -54,9 +59,9 @@ the backup.
 `JournalExporter.decode(_:)` reads a document back and refuses any `schema_version` other than
 `currentSchemaVersion` with `JournalExportError.unsupportedSchemaVersion`, because a reader that does not
 know a newer version's semantics would otherwise hand back a document with fields it silently ignored.
-**Versions 1, 2, 3, 4, 5 and 6 are read**, so a backup taken before the kind, a revision's own time or saved meals
-existed still restores; `decode(_:)` reads the version off the document and hands it to the matching
-`init(from:)`. New exports write version 6. Re-encoding a decoded older document preserves its version and omits
+**Versions 1 to 9 are read**, so a backup taken before the kind, a revision's own time, saved meals, goals or the
+medication log existed still restores; `decode(_:)` reads the version off the document and hands it to the matching
+`init(from:)`. New exports write version 9. Re-encoding a decoded older document preserves its version and omits
 the fields that version does not have (`kind` for version 1, a revision's time for versions 1 and 2, saved meals
 for versions 1 to 3), so the strict importer still accepts it.
 
@@ -123,6 +128,33 @@ What a restore writes:
   read is `corrupt`. If a later restore step fails, the undo removes only the goals this restore wrote that
   still hold the value it set. A goal that was changed since the restore, cannot be read, or cannot be removed is left behind,
   and the restore is then reported as partial rather than undone. The weight plan is not in the file.
+- **Medication log**, from version 9. The file carries every medication, archived ones included, and every dose,
+  with its amount, time zone, unit, site and note. The site and note are the person's own data and are exported,
+  though the app never shows the site. The restore is add-only by id and never replaces a medication or dose the
+  device holds. It adds every medication and dose in the file that is not on the device, including ones deleted
+  since the file was made: no deletion is recorded, so importing a file again brings back a row deleted after it was
+  made. The restore screen says so under its button. A file medication whose name the device already uses (ignoring case), or whose id the device holds
+  under another name, is left out together with its doses, so a dose never lands on a medication of another name.
+  Each dose keeps the unit it was logged in, so a dose logged before its medication's unit changed is
+  exported and restored in the old unit, also when the device's copy of the medication is in another unit. A dose
+  goes into the file only with its medication. A dose whose medication is not in the file, two medications with one
+  name (ignoring case), or a row that breaks a rule refuses the whole file as `corrupt` before anything is written.
+  The receipt, resume and undo work as they do for goals. The receipt lists the rows still to write and a ledger of
+  every row the restore wrote, from any run; a row stays on the ledger until an undo removes it or finds it gone.
+  A resume writes only the rows still listed, so a row a stopped run wrote and the person then deleted is not written
+  again by that receipt. A dose is written only while its medication is stored under the name the file gives it,
+  checked in the save that writes the dose, so a medication renamed on the device, between two runs or during one,
+  gets none of the file's doses. An undo removes only rows on the ledger that are still stored exactly as written: a
+  restored medication only while it holds no dose, checked and removed in one save, so a dose the person logs
+  meanwhile stays. A row an undo removes goes back on the receipt, so importing the same file again after a partial
+  undo restores it; a row the person had already deleted is not put back. A receipt left marked done by a finished
+  restore whose cleanup failed is removed by the next fresh import of the file, which plans from the device.
+  A receipt the build cannot read (a file damaged between two runs) does not stop the file: the next import removes
+  it and plans the rows again from the device, add-only by id and name. Its ledger is lost with it, which the app
+  cannot avoid: the rows earlier runs wrote are no longer counted or removed by an undo, and a row the person deleted
+  since those runs can come back. An undo that cannot read the receipt keeps the flag, and the next import then
+  finishes the restore that way. Erasing the medication log removes any receipt with the rows. The log is exported
+  whether or not the Medication log switch is on.
 
 Amounts are read as exact decimal text and stored as `Decimal`, never as a binary float. A component whose
 `value_state` is `unknown` is **refused** with `corrupt`: the journal keeps a missing amount as a
@@ -235,7 +267,7 @@ erase replaces the journal.
 ## Fields
 | Field | Meaning |
 |---|---|
-| `schema_version` | Version of the schema this document follows. This build writes `6`; versions 1 to 5 are still read. |
+| `schema_version` | Version of the schema this document follows. This build writes `8`; versions 1 to 7 are still read. |
 | `exported_at` | When the export was made, ISO-8601 in UTC. |
 | `app_version` | Version of the app that wrote the file. |
 | `intakes` | Active intakes, sorted by id. Each one carries its time zone, category, meal, note, current revision number and every revision. |
@@ -281,8 +313,8 @@ already resolved is reused instead of being fetched again for every revision tha
 means requires a **new schema version** (a new `vN.schema.json`) and a new `currentSchemaVersion` in
 `JournalExport`. Readers of the older versions keep working, because a reader that does not know a field can
 ignore it and the old version keeps rejecting unknown fields through `additionalProperties: false`. This
-build **writes version 6 and reads versions 1, 2, 3, 4, 5 and 6**; `decode(_:)` refuses anything else by value
-rather than by shape, so a version 7 file is never half-understood.
+build **writes version 8 and reads versions 1 to 8**; `decode(_:)` refuses anything else by value
+rather than by shape, so a version 9 file is never half-understood.
 
 Adding the kind is what version 2 is, and it shows both halves of the rule. Reading version 1 is a decision
 in its own right: its documents carry no kind, and refusing them would take away the only backup a person
@@ -304,7 +336,7 @@ refuses by its version, before reading anything, with a message that says the fi
 - Data leaves the app only through the system share sheet or a file exporter the person opens, and only
   because they asked. Nothing is shared on a timer or in the background.
 - Deleting the app deletes its store; the temporary export file is removed from disk when the export is
-  cleared, when the screen is left (`onDisappear` calls `clearExport()`), when an export attempt fails, and
+  cleared, when Settings is left (not when Privacy, Licenses or Daily goals is opened over it; the form and the sheet's dismissal call `clearExport()`), when an export attempt fails, and
   when a new export replaces it in another second. At most one copy of the journal is ever left in the
   temporary directory.
 - Apple Health and HealthRelay appear under **Settings > Connections** as disabled rows with

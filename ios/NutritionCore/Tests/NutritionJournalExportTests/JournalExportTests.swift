@@ -144,8 +144,8 @@ final class JournalExportTests: XCTestCase {
 
     private func contractFile(_ name: String, _ fileExtension: String) throws -> Data {
         // The committed contracts are copied into this target's resources as `Contracts/example.v1.json`,
-        // `Contracts/v1.schema.json` and their version 2 and 3 counterparts, so the Swift shapes and the JSON
-        // Schema cannot drift apart.
+        // `Contracts/v1.schema.json` and the counterparts for every later version, so the Swift shapes and the
+        // JSON Schema cannot drift apart.
         let url = try XCTUnwrap(
             Bundle.module.url(forResource: name, withExtension: fileExtension, subdirectory: "Contracts"),
             "missing contract resource \(name).\(fileExtension)")
@@ -1309,16 +1309,21 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
 
     /// The contract files in `contracts/journal-export` are the canonical ones; the copies bundled as test
     /// resources must be byte-for-byte identical, or the Swift tests would be checking a stale contract.
+    /// The file list comes from the canonical directory, so a new version is guarded without being added here.
     func testBundledContractCopiesMatchTheCanonicalFiles() throws {
-        for name in [
-            "example.v1.json", "v1.schema.json", "example.v2.json", "v2.schema.json", "example.v3.json",
-            "v3.schema.json", "example.v4.json", "v4.schema.json", "example.v5.json", "v5.schema.json",
-            "example.v6.json", "v6.schema.json",
-        ] {
+        let canonicalDirectory = try XCTUnwrap(
+            canonicalContractURL("v1.schema.json")?.deletingLastPathComponent(),
+            "contracts/journal-export is not next to this source tree")
+        let names = try FileManager.default.contentsOfDirectory(atPath: canonicalDirectory.path)
+            .filter { $0.range(of: #"^(v\d+\.schema|example\.v\d+)\.json$"#, options: .regularExpression) != nil }
+            .sorted()
+        for version in 1...JournalExport.currentSchemaVersion {
+            XCTAssertTrue(names.contains("v\(version).schema.json"), "v\(version).schema.json is missing")
+            XCTAssertTrue(names.contains("example.v\(version).json"), "example.v\(version).json is missing")
+        }
+        for name in names {
             let bundled = try contractFileResource(name)
-            let canonical = try XCTUnwrap(
-                canonicalContractURL(name), "the canonical contract \(name) is missing from contracts/journal-export")
-            let canonicalData = try Data(contentsOf: canonical)
+            let canonicalData = try Data(contentsOf: canonicalDirectory.appendingPathComponent(name))
             XCTAssertEqual(
                 bundled, canonicalData,
                 "\(name) has drifted from contracts/journal-export; copy the canonical file over "
@@ -1365,7 +1370,7 @@ func testEncoderOutputIsDeterministicForTheSameData() throws {
         XCTAssertEqual(drinkJSON["hydration_percent"] as? String, "90")
         XCTAssertTrue(foodJSON.keys.contains("hydration_percent"))
         XCTAssertTrue(foodJSON["hydration_percent"] is NSNull)
-        XCTAssertEqual(JournalExport.currentSchemaVersion, 8)
+        XCTAssertEqual(JournalExport.currentSchemaVersion, 9)
     }
 
     /// A favorite's share is written on its component in the version 7 export, and a favorite saved before
