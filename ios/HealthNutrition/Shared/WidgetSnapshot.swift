@@ -132,7 +132,8 @@ enum WidgetFigure {
             let ounces = milliliters / millilitersPerUSFluidOunce
             // A sip is still water: under half an ounce it reads "<1" rather than a rounded 0.
             if ounces > 0, ounces < 0.5 { return "<1" + plus + " fl oz" }
-            guard let text = wholeNumber(ounces) else { return "—" }
+            // A total too large to show keeps its unit, as before.
+            guard let text = wholeNumber(ounces) else { return "— fl oz" }
             return text + plus + " fl oz"
         }
         // A missing value keeps its unit ("— mL"), as before, and never a marker.
