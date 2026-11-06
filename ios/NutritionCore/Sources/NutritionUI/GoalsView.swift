@@ -60,7 +60,7 @@ public struct GoalsView: View {
             }
         }
         .scrollContentBackground(.hidden)
-        .background(TokenColors.background)
+        .background(TokenColors.page)
         .navigationTitle("Daily goals")
         .onAppear { self.model.load() }
         .saveConfirmation(saveNotice)

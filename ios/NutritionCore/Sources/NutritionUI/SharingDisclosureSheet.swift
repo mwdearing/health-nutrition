@@ -49,7 +49,7 @@ public struct SharingDisclosureSheet: View {
                 }
             }
             .scrollContentBackground(.hidden)
-            .background(TokenColors.background)
+            .background(TokenColors.page)
             .tint(TokenColors.accent)
             // A swipe down closes the sheet without acknowledging anything: only Continue counts as reading it,
             // and nothing is shared until then. The sheet sits on Settings, so it must never trap the person
