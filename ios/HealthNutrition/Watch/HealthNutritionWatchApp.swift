@@ -111,6 +111,10 @@ final class WatchSummaryModel: NSObject, ObservableObject, WCSessionDelegate {
 
 struct WatchTodayView: View {
     let snapshot: WidgetSnapshot?
+    @Environment(\.redactionReasons) private var redactionReasons
+    @ScaledMetric(relativeTo: .body) private var ringSize: CGFloat = 76
+
+    private var hidesFigures: Bool { redactionReasons.contains(.privacy) }
 
 
     var body: some View {
@@ -140,25 +144,31 @@ struct WatchTodayView: View {
         }
     }
 
-    /// The remaining figure inside a ring; the food and burned lines follow, and one spoken label covers them all.
+    /// The remaining figure inside a ring with a caption saying what it is ("left" with a goal, "eaten" without);
+    /// the food and burned lines follow, and one spoken label covers them all.
     private func ring(for snapshot: WidgetSnapshot?) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Gauge(value: snapshot?.energyFraction ?? 0) {
+        let caption = snapshot?.remainingDisplay == nil ? "eaten" : "left"
+        return VStack(alignment: .leading, spacing: 4) {
+            Gauge(value: hidesFigures ? 0 : (snapshot?.energyFraction ?? 0)) {
                 Text("Calories")
             } currentValueLabel: {
-                Text(snapshot?.remainingDisplay ?? snapshot?.foodText ?? "—")
-                    .minimumScaleFactor(0.5)
-                    .lineLimit(1)
+                VStack(spacing: 0) {
+                    Text(snapshot?.remainingDisplay ?? snapshot?.foodText ?? "—")
+                        .minimumScaleFactor(0.5)
+                        .lineLimit(1)
+                    Text(caption).font(.caption2).foregroundStyle(.secondary)
+                }
             }
             .gaugeStyle(.accessoryCircularCapacity)
             .tint(Color("RelayMint"))
-            .scaleEffect(1.3)
-            .frame(maxWidth: .infinity, minHeight: 64)
+            .frame(width: ringSize, height: ringSize)
+            .frame(maxWidth: .infinity)
             .privacySensitive()
             WidgetFoodBurned(snapshot: snapshot, vertical: true)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(snapshot?.calorieSpoken ?? "Calories unknown")
+        .accessibilityLabel(hidesFigures ? "Today's calories, hidden while locked"
+            : (snapshot?.calorieSpoken ?? "Calories unknown") + ", " + caption)
     }
 
     /// A coloured dot (a fill, never text) beside the macro's name and grams in the primary text colour.
@@ -170,6 +180,6 @@ struct WatchTodayView: View {
         }
         .privacySensitive()
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(name) \(figure)")
+        .accessibilityLabel(hidesFigures ? "\(name), hidden" : "\(name) \(figure)")
     }
 }

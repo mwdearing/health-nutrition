@@ -44,6 +44,10 @@ struct TodayWidgetView: View {
     /// widget then states nothing about the day rather than claiming nothing was logged.
     /// On a locked device the figures are redacted; the ring and bars would otherwise still show their proportions.
     private var hidesFigures: Bool { redactionReasons.contains(.privacy) }
+    /// What VoiceOver reads for the calories; no figures while they are hidden on a locked device.
+    private var spokenCalories: String {
+        hidesFigures ? "Today's calories, hidden while locked" : (snapshot?.calorieSpoken ?? "Calories unknown")
+    }
     private var isEmpty: Bool { snapshot?.hasEntries == false }
 
     var body: some View {
@@ -57,7 +61,7 @@ struct TodayWidgetView: View {
             .gaugeStyle(.accessoryCircularCapacity)
             // With no summary the ring is dimmed, so it does not read as an empty day.
             .opacity(snapshot?.energyFraction == nil ? 0.3 : 1)
-            .accessibilityLabel(snapshot?.calorieSpoken ?? "Calories unknown")
+            .accessibilityLabel(spokenCalories)
             .privacySensitive()
         case .accessoryRectangular:
             if isEmpty {
@@ -70,11 +74,11 @@ struct TodayWidgetView: View {
                 Text("Nothing logged today")
             } else if let remaining = snapshot?.remainingInlineText {
                 Text("Calories remaining \(remaining)")
-                    .accessibilityLabel(snapshot?.calorieSpoken ?? "Calories unknown")
+                    .accessibilityLabel(spokenCalories)
                     .privacySensitive()
             } else {
                 Text("\(snapshot?.foodText ?? "—") Food")
-                    .accessibilityLabel(snapshot?.calorieSpoken ?? "Calories unknown")
+                    .accessibilityLabel(spokenCalories)
                     .privacySensitive()
             }
         case .systemMedium:
@@ -133,7 +137,7 @@ struct TodayWidgetView: View {
                 .frame(maxWidth: 96, maxHeight: 96)
                 .privacySensitive()
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel(snapshot?.calorieSpoken ?? "Calories unknown")
+                .accessibilityLabel(spokenCalories)
                 // Food and Burned stay as before; the ring's label above already speaks them.
                 WidgetFoodBurned(snapshot: snapshot, vertical: true)
                     .foregroundStyle(Color("heroSecondaryText"))
@@ -155,7 +159,7 @@ struct TodayWidgetView: View {
                 }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(name) \(figure)")
+        .accessibilityLabel(hidesFigures ? "\(name), hidden" : "\(name) \(figure)")
     }
 }
 
