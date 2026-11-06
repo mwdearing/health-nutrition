@@ -76,7 +76,7 @@ def _bundle(
         "CFBundleIdentifier": bundle_id,
         "CFBundleShortVersionString": "0.1.30",
         "CFBundleVersion": build,
-        "MinimumOSVersion": "18.0",
+        "MinimumOSVersion": "26.0",
     }
     info.update(extra or {})
     if point:

@@ -58,6 +58,21 @@ final class AddIntakeLabelServingTests: XCTestCase {
         XCTAssertEqual(model.amountPreview?.grams, 15)
     }
 
+    /// Under US units one 30 g serving shows as a rounded ounce figure, but the preview scales the exact 30 g
+    /// that saving stores, so it reads the panel's 480 Calories rather than a figure from the rounded ounces.
+    func testCapturedServingCountPreviewUsesTheExactStoredServing() throws {
+        let model = AddIntakeViewModel(
+            store: try makeStore(), now: now, timeZoneIdentifier: "UTC",
+            preferences: InMemoryDisplayPreferences(unitSystem: .usCustomary))
+        model.applyLabelProduct(panel(basis: "per serving (30 g)"), fromLabelCapture: true)
+        model.setServingCount("1")
+
+        XCTAssertEqual(model.unit, .oz)
+        XCTAssertNotEqual(model.amountText, "")
+        XCTAssertEqual(model.amountPreview?.kcal, 480)
+        XCTAssertEqual(model.amountPreview?.grams, 30)
+    }
+
     /// Clearing the form drops the captured serving and basis, so the next entry starts clean.
     func testClearingTheFormDropsTheCapturedServingAndBasis() throws {
         let model = makeModel(try makeStore())

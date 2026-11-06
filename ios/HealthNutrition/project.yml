@@ -4,7 +4,7 @@ options:
   bundleIdPrefix: dev.example
   createIntermediateGroups: true
   deploymentTarget:
-    iOS: "18.0"
+    iOS: "26.0"
   groupSortPosition: top
   generateEmptyDirectories: false
 
@@ -35,7 +35,7 @@ targets:
   HealthNutrition:
     type: application
     platform: iOS
-    deploymentTarget: "18.0"
+    deploymentTarget: "26.0"
     sources:
       - path: Sources
       - path: Resources
@@ -125,7 +125,7 @@ targets:
   HealthNutritionWidgets:
     type: app-extension
     platform: iOS
-    deploymentTarget: "18.0"
+    deploymentTarget: "26.0"
     sources:
       - path: Widgets
         excludes:
@@ -155,7 +155,7 @@ targets:
   HealthNutritionWatch:
     type: application
     platform: watchOS
-    deploymentTarget: "11.0"
+    deploymentTarget: "26.0"
     sources:
       - path: Watch
         excludes:
@@ -190,7 +190,7 @@ targets:
   HealthNutritionWatchWidgets:
     type: app-extension
     platform: watchOS
-    deploymentTarget: "11.0"
+    deploymentTarget: "26.0"
     sources:
       - path: WatchWidgets
         excludes:
@@ -219,11 +219,12 @@ targets:
   HealthNutritionTests:
     type: bundle.unit-test
     platform: iOS
-    deploymentTarget: "18.0"
+    deploymentTarget: "26.0"
     sources:
       - path: Tests
         excludes:
           - AddSearchUITests/**
+          - StoreScreenshotUITests/**
     dependencies:
       - target: HealthNutrition
       # The stores, the Connections view model and the recipe types the assertions use are the
@@ -243,7 +244,7 @@ targets:
   HealthNutritionAddUITests:
     type: bundle.ui-testing
     platform: iOS
-    deploymentTarget: "18.0"
+    deploymentTarget: "26.0"
     sources:
       - path: Tests/AddSearchUITests
     dependencies:
@@ -251,6 +252,19 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.example.HealthNutritionAddUITests
+        GENERATE_INFOPLIST_FILE: YES
+
+  HealthNutritionStoreShotsUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: Tests/StoreScreenshotUITests
+    dependencies:
+      - target: HealthNutrition
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.example.HealthNutritionStoreShotsUITests
         GENERATE_INFOPLIST_FILE: YES
 
 schemes:
@@ -283,3 +297,15 @@ schemes:
       targets:
         - HealthNutritionAddUITests
 
+  HealthNutritionStoreShots:
+    build:
+      targets:
+        HealthNutrition: all
+        HealthNutritionStoreShotsUITests: [test]
+    run:
+      config: Release
+    # Release, so the shots show the shipped app: the debug-only HealthKit tab is not built.
+    test:
+      config: Release
+      targets:
+        - HealthNutritionStoreShotsUITests

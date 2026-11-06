@@ -572,6 +572,239 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         XCTAssertEqual(writer.saveCalls, 0, "a sample written after the delete would undo it")
     }
 
+    /// A delete is hidden from the queue for its Undo window, so an upsert that is still due when the entry is
+    /// deleted finds its intake gone with no delete beside it. Acknowledging it then is final: Undo brings the
+    /// entry back and nothing would ever write it to Health.
+    func testAnUpsertIsKeptWhileItsDeleteIsInsideTheUndoWindowAndWrittenAfterAnUndo() async throws {
+        let (store, writer, _, worker) = try makeWorker()
+
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        let upsertID = try XCTUnwrap(healthKitOperation(store, kind: .upsert)?.operationID)
+        try store.delete(intakeID: intakeID, now: Date())
+
+        let held = await worker.runOnce(now: Date())
+
+        guard case .notDue(let id, let until) = try XCTUnwrap(held.first), held.count == 1 else {
+            return XCTFail("an upsert whose delete is still held waits, got \(held)")
+        }
+        XCTAssertEqual(id, upsertID)
+        XCTAssertGreaterThan(until, Date(), "it is due again when the Undo window closes")
+        XCTAssertEqual(try healthKitOperation(store, kind: .upsert)?.operationID, upsertID, "the row stays pending")
+        XCTAssertEqual(writer.saveCalls, 0)
+
+        try store.undoDelete(intakeID: intakeID)
+        let outcomes = await worker.runOnce(now: Date())
+
+        XCTAssertEqual(outcomes, [.delivered(operationID: upsertID, samples: 1)])
+        XCTAssertEqual(writer.saved.map(\.syncIdentifier), [waterIdentifier(intakeID)])
+        XCTAssertEqual(try projectionState(store, intakeID: intakeID), .succeeded)
+    }
+
+    /// Wraps the real store. Its first `activeIntakes()` returns what the worker would have read before an Undo, and
+    /// then runs that Undo, so the Undo lands between the worker's intake read and its hold check (#1309).
+    private final class UndoAfterFirstIntakeRead:
+        JournalDeliverySuspension, JournalDeleteHold, HealthKitWrittenLedger, @unchecked Sendable {
+        let real: SwiftDataJournalStore
+        private let lock = NSLock()
+        private var undone = false
+        private let undoneIntakeID: String
+
+        init(_ real: SwiftDataJournalStore, intakeID: String) {
+            self.real = real
+            self.undoneIntakeID = intakeID
+        }
+
+        var failNextSaveForTesting: Bool {
+            get { real.failNextSaveForTesting }
+            set { real.failNextSaveForTesting = newValue }
+        }
+
+        @discardableResult
+        func create(_ intake: Intake, components: [IntakeComponent], product: ProductDefinition?, now: Date) throws -> IntakeRevision {
+            try real.create(intake, components: components, product: product, now: now)
+        }
+
+        @discardableResult
+        func edit(intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String, now: Date, occurredAt: Date?, timeZoneIdentifier: String?) throws -> IntakeRevision {
+            try real.edit(intakeID: intakeID, components: components, product: product, changeReason: changeReason, now: now, occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier)
+        }
+
+        @discardableResult
+        func editRemovingUnits(intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String, now: Date, occurredAt: Date?, timeZoneIdentifier: String?, unitRemovals: [String]) throws -> IntakeRevision {
+            try real.editRemovingUnits(intakeID: intakeID, components: components, product: product, changeReason: changeReason, now: now, occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier, unitRemovals: unitRemovals)
+        }
+
+        @discardableResult
+        func edit(intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String, now: Date, occurredAt: Date?, timeZoneIdentifier: String?, expectedRevision: Int) throws -> IntakeRevision {
+            try real.edit(intakeID: intakeID, components: components, product: product, changeReason: changeReason, now: now, occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier, expectedRevision: expectedRevision)
+        }
+
+        @discardableResult
+        func editRemovingUnits(intakeID: String, components: [IntakeComponent], product: ProductDefinition?, changeReason: String, now: Date, occurredAt: Date?, timeZoneIdentifier: String?, unitRemovals: [String], expectedRevision: Int) throws -> IntakeRevision {
+            try real.editRemovingUnits(intakeID: intakeID, components: components, product: product, changeReason: changeReason, now: now, occurredAt: occurredAt, timeZoneIdentifier: timeZoneIdentifier, unitRemovals: unitRemovals, expectedRevision: expectedRevision)
+        }
+
+        func delete(intakeID: String, now: Date) throws {
+            try real.delete(intakeID: intakeID, now: now)
+        }
+
+        @discardableResult
+        func deleteSequenced(intakeID: String, now: Date) throws -> UInt64 {
+            try real.deleteSequenced(intakeID: intakeID, now: now)
+        }
+
+        @discardableResult
+        func createSequenced(_ intake: Intake, components: [IntakeComponent], product: ProductDefinition?, now: Date) throws -> (IntakeRevision, UInt64) {
+            try real.createSequenced(intake, components: components, product: product, now: now)
+        }
+
+        var deleteSequence: UInt64 { real.deleteSequence }
+
+        func undoDelete(intakeID: String) throws {
+            try real.undoDelete(intakeID: intakeID)
+        }
+
+        func activeIntakes() throws -> [Intake] {
+            let result = try real.activeIntakes()
+            let runUndo = lock.withLock { () -> Bool in
+                let first = !undone
+                undone = true
+                return first
+            }
+            if runUndo { try real.undoDelete(intakeID: undoneIntakeID) }
+            return result
+        }
+
+        func revisions(of intakeID: String) throws -> [IntakeRevision] {
+            try real.revisions(of: intakeID)
+        }
+
+        func projections(of intakeID: String) throws -> [DestinationProjection] {
+            try real.projections(of: intakeID)
+        }
+
+        func pendingOutbox() throws -> [OutboxOperation] {
+            try real.pendingOutbox()
+        }
+
+        func product(snapshotID: String) throws -> ProductDefinition? {
+            try real.product(snapshotID: snapshotID)
+        }
+
+        func activeIntakesFromBackground() async throws -> [Intake] {
+            try await real.activeIntakesFromBackground()
+        }
+
+        func close() {
+            real.close()
+        }
+
+        func deliveryState(intakeID: String) throws -> IntakeDeliveryState {
+            try real.deliveryState(intakeID: intakeID)
+        }
+
+        func acknowledge(operationID: String, at date: Date) throws {
+            try real.acknowledge(operationID: operationID, at: date)
+        }
+
+        func recordFailure(operationID: String, retryAt: Date?, needsAttention: Bool) throws {
+            try real.recordFailure(operationID: operationID, retryAt: retryAt, needsAttention: needsAttention)
+        }
+
+        func recordFailure(operationID: String, retryAt: Date?, needsAttention: Bool, reason: String?) throws {
+            try real.recordFailure(
+                operationID: operationID, retryAt: retryAt, needsAttention: needsAttention, reason: reason)
+        }
+
+        func suspendedOperationIDs() throws -> Set<String> {
+            try real.suspendedOperationIDs()
+        }
+
+        func suspensionReason(operationID: String) throws -> String? {
+            try real.suspensionReason(operationID: operationID)
+        }
+
+        func rearmDelivery(operationID: String) throws {
+            try real.rearmDelivery(operationID: operationID)
+        }
+
+        func writtenHealthKitKeys(intakeID: String) throws -> Set<String>? {
+            try real.writtenHealthKitKeys(intakeID: intakeID)
+        }
+
+        func setWrittenHealthKitKeys(intakeID: String, keys: Set<String>) throws {
+            try real.setWrittenHealthKitKeys(intakeID: intakeID, keys: keys)
+        }
+    }
+
+    /// #1309: an Undo that lands between the worker's intake read and its hold check must not ack the upsert as
+    /// superseded. The upsert is kept on that pass and written on the next.
+    func testAnUndoBetweenTheIntakeReadAndTheHoldCheckIsNotAckedAsSuperseded() async throws {
+        let real = try makeStore(try makeDirectory())
+        let writer = FakeHealthSampleWriter()
+        for mapping in HealthKitWritePlanner.mappings {
+            writer.allow(mapping.quantityTypeIdentifier)
+        }
+        let recording = RecordingTotals(["water": .known(dec("250"), .mL)])
+        let racing = UndoAfterFirstIntakeRead(real, intakeID: intakeID)
+        let worker = HealthKitDeliveryWorker(
+            store: racing, writer: writer,
+            totals: { intakeID, revision in try await recording.totals(intakeID: intakeID, revision: revision) },
+            isBusy: { false })
+
+        try real.create(sampleIntake(), components: [component()], product: nil, now: when)
+        let upsertID = try XCTUnwrap(healthKitOperation(real, kind: .upsert)?.operationID)
+        try real.delete(intakeID: intakeID, now: Date())
+
+        let first = await worker.runOnce(now: Date())
+        XCTAssertFalse(
+            first.contains { outcome in
+                if case .superseded = outcome { return true }
+                return false
+            },
+            "an Undo mid-pass must not supersede the upsert, got \(first)")
+
+        // The first pass saw the intake come back and scheduled a retry; the next pass runs once it is due.
+        let retryAfter = TimeInterval(HealthKitDeliveryWorker.backoffSeconds(afterAttempt: 1) + 1)
+        let second = await worker.runOnce(now: Date().addingTimeInterval(retryAfter))
+        XCTAssertEqual(second, [.delivered(operationID: upsertID, samples: 1)])
+        XCTAssertEqual(writer.saveCalls, 1)
+    }
+
+    /// Undo removes the held delete row, so the hold is gone with it: the upsert is not kept waiting for the
+    /// rest of the window, and the very next run writes it.
+    func testTheHoldIsClearedByAnUndoAndTheNextRunWritesTheUpsert() async throws {
+        let (store, writer, _, worker) = try makeWorker()
+
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        let upsertID = try XCTUnwrap(healthKitOperation(store, kind: .upsert)?.operationID)
+        try store.delete(intakeID: intakeID, now: Date())
+        guard case .held = try store.deliveryState(intakeID: intakeID) else {
+            return XCTFail("a delete inside its Undo window holds the intake")
+        }
+
+        try store.undoDelete(intakeID: intakeID)
+
+        XCTAssertEqual(try store.deliveryState(intakeID: intakeID), .active, "no delete row is left to hold")
+        let outcomes = await worker.runOnce(now: Date())
+        XCTAssertEqual(outcomes, [.delivered(operationID: upsertID, samples: 1)])
+        XCTAssertEqual(writer.saveCalls, 1)
+    }
+
+    /// Once the Undo window has closed the delete is offered, so the upsert is superseded as before.
+    func testAnUpsertIsSupersededOnceTheDeleteIsPastItsUndoWindow() async throws {
+        let (store, writer, _, worker) = try makeWorker()
+
+        try store.create(sampleIntake(), components: [component()], product: nil, now: when)
+        try store.delete(intakeID: intakeID, now: Date().addingTimeInterval(-JournalUndo.deleteWindow - 1))
+        let upsertID = try XCTUnwrap(healthKitOperation(store, kind: .upsert)?.operationID)
+
+        let outcomes = await worker.runOnce(now: Date())
+
+        XCTAssertEqual(outcomes.first, .superseded(operationID: upsertID))
+        XCTAssertEqual(writer.saveCalls, 0)
+    }
+
     // MARK: - Authorization
 
     func testADeniedTypeLeavesTheOperationNeedingAttentionAndIsNotRetried() async throws {

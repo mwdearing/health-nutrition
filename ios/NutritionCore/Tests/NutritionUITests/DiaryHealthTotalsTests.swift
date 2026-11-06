@@ -42,6 +42,26 @@ final class DiaryHealthTotalsTests: XCTestCase {
         return (model, key)
     }
 
+    /// Insights counts a day Health states intake for, even though the Diary has no row for it (#1267).
+    func testRecentHealthReadsMarkOnlyDaysWithAStatedIntake() async throws {
+        let (model, _) = try waterOnlyDay()
+        let zone = TimeZone(identifier: "UTC")!
+        let yesterday = JournalViewModel.dayKey(now.addingTimeInterval(-86_400), zone: zone)
+        let twoDaysAgo = JournalViewModel.dayKey(now.addingTimeInterval(-2 * 86_400), zone: zone)
+        model.healthDayReader = { start, _ in
+            if JournalViewModel.dayKey(start, zone: zone) == yesterday {
+                return HealthDayRead(.read(values: ["energy": 700], readKeys: ["energy"]))
+            }
+            if JournalViewModel.dayKey(start, zone: zone) == twoDaysAgo {
+                return HealthDayRead(.read(values: ["energy": 0, "water": 500], readKeys: ["energy", "water"]))
+            }
+            return HealthDayRead(.notConnected)
+        }
+        model.load(now: now)
+        await model.loadRecentHealthTotals(days: 7, now: now)
+        XCTAssertEqual(model.healthIntakeDayKeys, [yesterday], "water alone, a zero and not connected do not mark a day")
+    }
+
     /// Energy another app logged that day shows in the day header.
     func testTheDayHeaderEnergyIncludesHealthEnergyFromOtherApps() throws {
         let (model, key) = try waterOnlyDay()
@@ -67,7 +87,7 @@ final class DiaryHealthTotalsTests: XCTestCase {
     }
 
     /// Health read for one day never changes another day's header, while it does change its own day's.
-    func testHealthForOneDayLeavesOtherDaysJournalOnly() throws {
+    func testHealthForOneDayLeavesOtherDaysJournalOnly() async throws {
         let journal = try makeJournal()
         let yesterday = now.addingTimeInterval(-86_400)
         for occurredAt in [yesterday, now] {
@@ -80,10 +100,46 @@ final class DiaryHealthTotalsTests: XCTestCase {
         let model = JournalViewModel(store: journal, timeZoneIdentifier: "UTC", locale: Locale(identifier: "en_US"))
         let utc = TimeZone(identifier: "UTC")!
         let key = JournalViewModel.dayKey(now, zone: utc), otherKey = JournalViewModel.dayKey(yesterday, zone: utc)
-        model.outsideIntakeByDay[otherKey] = .read(values: ["energy": 620], readKeys: ["energy"])
+        // Read through the feature path, not seeded, so removing the Health read fails this test (#1107).
+        model.healthDayReader = { _, _ in HealthDayRead(.read(values: ["energy": 620], readKeys: ["energy"])) }
+        await model.loadHealthTotals(forDayKey: otherKey, now: now)
         model.load(now: now)
         XCTAssertEqual(model.sections.first { $0.id == otherKey }?.energyText, "620 Calories")
         XCTAssertNil(model.sections.first { $0.id == key }?.energyText)
+    }
+
+    /// #1107: a past day read once stays cached, so a second load for it asks Health again only when the day changes.
+    func testAPastDayReadOnceIsNotAskedAgain() async throws {
+        let (model, key) = try waterOnlyDay()
+        let past = now.addingTimeInterval(-2 * 86_400)
+        let pastKey = JournalViewModel.dayKey(past, zone: TimeZone(identifier: "UTC")!)
+        _ = key
+        var asks = 0
+        model.healthDayReader = { _, _ in
+            asks += 1
+            return HealthDayRead(.read(values: ["energy": 300], readKeys: ["energy"]))
+        }
+        await model.loadHealthTotals(forDayKey: pastKey, now: now)
+        await model.loadHealthTotals(forDayKey: pastKey, now: now)
+        XCTAssertEqual(asks, 1, "a past day read in full is kept, not read again")
+    }
+
+    /// #1107: a day's start is the zone's start of day in every zone, including those whose DST change falls at midnight.
+    func testDayIntervalStartsAtTheZonesStartOfDayAcrossDstChanges() throws {
+        for identifier in ["America/Santiago", "America/Asuncion", "Asia/Gaza", "America/New_York"] {
+            let zone = try XCTUnwrap(TimeZone(identifier: identifier))
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = zone
+            var day = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 1, day: 1, hour: 12)))
+            for _ in 0..<365 {
+                let key = JournalViewModel.dayKey(day, zone: zone)
+                let interval = try XCTUnwrap(JournalViewModel.dayInterval(forKey: key, zone: zone), key)
+                XCTAssertEqual(interval.start, calendar.startOfDay(for: day), "\(identifier) \(key)")
+                let hours = interval.end.timeIntervalSince(interval.start) / 3600
+                XCTAssertTrue((23...25).contains(hours), "\(identifier) \(key) lasted \(hours) h")
+                day = try XCTUnwrap(calendar.date(byAdding: .day, value: 1, to: day))
+            }
+        }
     }
 
     /// The Diary reads Health for a day as it comes on screen and adds it to that day's header.

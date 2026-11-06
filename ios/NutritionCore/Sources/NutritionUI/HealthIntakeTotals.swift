@@ -16,6 +16,14 @@ public enum HealthIntakeTotals {
         /// is a known zero: its query succeeded and Health had no samples. A key outside `readKeys` is unknown,
         /// which is what a failed query leaves.
         case read(values: [String: Decimal], readKeys: Set<String>)
+
+        /// Whether the read states a food or drink amount: some nutrient other than water has a value above zero from a
+        /// query that succeeded. Not connected, a read with no samples, a failed read and the partial subtotal of a
+        /// nutrient some of whose samples could not be read are all false; a day is never logged on a guess.
+        public var statesIntake: Bool {
+            guard case .read(let values, let readKeys) = self else { return false }
+            return values.contains { $0.key != DailyTotalsBuilder.waterKey && readKeys.contains($0.key) && $0.value > 0 }
+        }
     }
 
     /// The lines with Health's side added, water included, so the water goal bar and Today's water figure agree.

@@ -143,7 +143,7 @@ final class AppServicesEraseTests: XCTestCase {
     func testEraseOrderNamesWithoutTheSystemSchedulerAreInOrder() throws {
         XCTAssertEqual(eraseNamesFromBuilderInputs(withCustomReminders: false), [
             "widget data", "saved meals", "supplements", "reminders",
-            "journal", "favorites", "recipes", "goals",
+            "journal", "favorites", "recipes", "goals", "medications",
         ])
     }
 
@@ -152,7 +152,7 @@ final class AppServicesEraseTests: XCTestCase {
     func testEraseOrderNamesIncludeCustomRemindersWithTheSystemScheduler() throws {
         XCTAssertEqual(eraseNamesFromBuilderInputs(withCustomReminders: true), [
             "widget data", "saved meals", "supplements", "reminders", "custom reminders",
-            "journal", "favorites", "recipes", "goals",
+            "journal", "favorites", "recipes", "goals", "medications",
         ])
     }
 
@@ -189,7 +189,8 @@ final class AppServicesEraseTests: XCTestCase {
             journal: try! SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store")),
             favorites: try! SwiftDataFavoritesStore(url: directory.appendingPathComponent("favorites.store")),
             recipes: try! SwiftDataRecipeStore(url: directory.appendingPathComponent("recipes.store")),
-            goals: try! SwiftDataGoalStore(url: directory.appendingPathComponent("goals.store"))))
+            goals: try! SwiftDataGoalStore(url: directory.appendingPathComponent("goals.store")),
+            medications: try! SwiftDataMedicationStore(url: directory.appendingPathComponent("medications.store"))))
         return order.map(\.erasureName)
     }
 
@@ -212,10 +213,12 @@ final class AppServicesEraseTests: XCTestCase {
         let favorites = try SwiftDataFavoritesStore(url: directory.appendingPathComponent("favorites.store"))
         let recipes = try SwiftDataRecipeStore(url: directory.appendingPathComponent("recipes.store"))
         let goals = try SwiftDataGoalStore(url: directory.appendingPathComponent("goals.store"))
+        let medications = try SwiftDataMedicationStore(url: directory.appendingPathComponent("medications.store"))
 
         let stores = AppServices.eraseStores(
             widgets: widgets, savedMeals: savedMeals, supplements: supplements, dailyReminders: daily,
-            customReminders: custom, journal: journal, favorites: favorites, recipes: recipes, goals: goals)
+            customReminders: custom, journal: journal, favorites: favorites, recipes: recipes, goals: goals,
+            medications: medications)
 
         XCTAssertTrue(stores.widgets === widgets)
         XCTAssertTrue(stores.savedMeals === savedMeals)
@@ -227,6 +230,7 @@ final class AppServicesEraseTests: XCTestCase {
         XCTAssertTrue(stores.favorites === favorites)
         XCTAssertTrue(stores.recipes === recipes)
         XCTAssertTrue(stores.goals === goals)
+        XCTAssertTrue(stores.medications === medications)
     }
 
     /// The app supplies its account model to the privacy erase hook. The hook drops the local session
@@ -277,7 +281,7 @@ final class AppServicesEraseTests: XCTestCase {
         let (services, directory) = try makeServices()
         try fill(services)
 
-        for name in ["journal.store", "favorites.store", "recipes.store", "goals.store"] {
+        for name in ["journal.store", "favorites.store", "recipes.store", "goals.store", "medications.store"] {
             XCTAssertTrue(
                 FileManager.default.fileExists(atPath: directory.appendingPathComponent(name).path),
                 "\(name) is not in the given directory")

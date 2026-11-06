@@ -225,3 +225,43 @@ def test_the_unsigned_device_build_uses_the_scheme_so_the_watch_targets_build_fo
     assert "-sdk iphoneos" not in text
     assert "-target HealthNutrition" not in text
     assert "-scheme HealthNutrition -destination 'generic/platform=iOS'" in text
+
+
+def _channel_hex(value: object) -> str:
+    text = str(value).strip()
+    if text.lower().startswith("0x"):
+        number = int(text, 16)
+    elif "." in text:
+        number = round(float(text) * 255)
+    else:
+        number = int(text)
+    return f"{number:02X}"
+
+
+def test_accent_color_asset_matches_the_accent_token() -> None:
+    import re
+
+    tokens = (ROOT / "ios/NutritionCore/Sources/NutritionCore/NutritionTokens.swift").read_text()
+    match = re.search(r'Token\(name: "AccentColor", light: "(#[0-9A-Fa-f]{6})", dark: "(#[0-9A-Fa-f]{6})"\)', tokens)
+    assert match
+    asset = json.loads(
+        (ROOT / "ios/HealthNutrition/Resources/Assets.xcassets/AccentColor.colorset/Contents.json").read_text()
+    )
+    found: dict[str, str] = {}
+    for entry in asset["colors"]:
+        components = entry["color"]["components"]
+        value = "#" + "".join(_channel_hex(components[k]) for k in ("red", "green", "blue"))
+        dark = any(a.get("value") == "dark" for a in entry.get("appearances", []))
+        found["dark" if dark else "light"] = value
+    assert found == {"light": match.group(1).upper(), "dark": match.group(2).upper()}
+
+
+def test_every_target_requires_ios_26_or_watchos_26() -> None:
+    project = _project()
+    assert project["options"]["deploymentTarget"]["iOS"] == "26.0"  # type: ignore[index]
+    targets = cast("dict[str, dict[str, object]]", project["targets"])
+    stale = {name: t.get("deploymentTarget") for name, t in targets.items() if t.get("deploymentTarget") != "26.0"}
+    assert stale == {}
+    package = (ROOT / "ios/NutritionCore/Package.swift").read_text()
+    for needle in ("swift-tools-version: 6.2", ".iOS(.v26)", ".macOS(.v26)"):
+        assert needle in package

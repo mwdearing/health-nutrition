@@ -7,14 +7,18 @@ public enum DesignSpacing {
     public static let s: CGFloat = 8
     public static let m: CGFloat = 14
     public static let l: CGFloat = 22
-    /// Room at the bottom of a scrolling screen for the floating Add button and the tab bar.
-    public static let floatingClearance: CGFloat = 140
+    /// Padding inside a card.
+    public static let cardPadding: CGFloat = 16
+    /// Space between cards.
+    public static let cardGap: CGFloat = 12
 }
 
 /// Corner radii the design uses. Buttons are capsules and need no radius.
 public enum DesignRadius {
     public static let card: CGFloat = 22
     public static let control: CGFloat = 12
+    /// Small tiles.
+    public static let tile: CGFloat = 18
 }
 
 /// A rounded container on the surface color, for content composed of more than standard rows.
@@ -292,7 +296,7 @@ public struct UndoToast: View {
         layout {
             Text(message).font(.body)
             if !stacked { Spacer(minLength: DesignSpacing.s) }
-            // Undo is an accent fill with the background ink, so it reads apart from the accentTint toast.
+            // Undo is an accent fill with the background ink, so it reads apart from the glass toast.
             Button(action: onUndo) {
                 Text("Undo")
                     .font(.headline)
@@ -305,7 +309,7 @@ public struct UndoToast: View {
         }
         .foregroundStyle(TokenColors.textPrimary)
         .padding(DesignSpacing.m)
-        .background(TokenColors.accentTint, in: RoundedRectangle(cornerRadius: DesignRadius.control, style: .continuous))
+        .glassEffect(.regular, in: stacked ? AnyShape(RoundedRectangle(cornerRadius: DesignRadius.control, style: .continuous)) : AnyShape(Capsule()))
         // VoiceOver hears the toast's own message when it appears. It is announced again when the toast is shown
         // again, such as navigating back inside its offer window: the person returns to a live offer, so repeating it is intended.
         .onAppear { AccessibilityNotification.Announcement(message).post() }

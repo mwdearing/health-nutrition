@@ -88,6 +88,26 @@ no planned day is shown. The card reads the saved plan each time it loads, so a 
 next time Today loads. Days are Gregorian dates in the device's time zone, also on a device set to another
 calendar. Nothing on the card grades the figures.
 
+## Weight chart
+
+The "Activity and weight" card draws a small chart under the trend line when at least two days in the last
+28 days, ending today, have a weigh-in. The chart has one point for each such day. Each point is the average
+of that day's weigh-ins, in the display unit the person chose (kilograms or pounds). The chart's spoken
+label is "Weight, last 28 days".
+
+While the Medication log is on, each day in the same 28 days that has a logged dose gets a marker on the
+chart. A marker's spoken label names the day and each dose's medication name, amount and unit, for example
+"Medication log, Apr 10, 2026: Example vial 2.5 mg; Example pen 1,000 units". A day has one marker, however
+many doses it holds. A dose falls on its own local day, in the time zone it was logged in, as the Medication
+log reads it. Archived medications count. A dose's site is never read, shown or spoken.
+
+When the Medication log is off, the chart shows no markers and the trend stays as it is. When the log cannot
+be read, the chart and the trend still show, with no markers.
+
+The markers state dates and doses and nothing else. A marker sits on the chart's date axis, so it lines up with
+that day's weight point; the two share a calendar and nothing more. The app computes no link between a dose and a
+weight, states none and draws none, and the chart carries no status, label or verdict.
+
 ## Units and wording
 
 Every value is in kilograms, the same as goal setup. The screen converts to the person's chosen units

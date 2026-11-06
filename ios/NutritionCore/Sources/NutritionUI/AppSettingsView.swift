@@ -8,15 +8,19 @@ public struct AppSettingsView: View {
     private let reminders: ReminderController?
     private let account: AccountViewModel?
     private let appleHealth: AppleHealthConnectionViewModel?
+    private let medicationLog: MedicationLogViewModel?
     private let now: () -> Date
     private let opensGoals: Bool
     private let onShowWelcome: (() -> Void)?
 
+    /// - Parameter medicationLog: the medication log whose switch sits under "Units and logging". Nil leaves the
+    ///   switch out.
     public init(
         goals: GoalsViewModel? = nil, connections: ConnectionsPrivacyViewModel? = nil,
         reminders: ReminderController? = nil,
         account: AccountViewModel? = nil,
         appleHealth: AppleHealthConnectionViewModel? = nil,
+        medicationLog: MedicationLogViewModel? = nil,
         now: @escaping () -> Date = { Date() }, opensGoals: Bool = false,
         onShowWelcome: (() -> Void)? = nil
     ) {
@@ -25,6 +29,7 @@ public struct AppSettingsView: View {
         self.reminders = reminders
         self.account = account
         self.appleHealth = appleHealth
+        self.medicationLog = medicationLog
         self.now = now
         self.opensGoals = opensGoals
         self.onShowWelcome = onShowWelcome
@@ -33,9 +38,25 @@ public struct AppSettingsView: View {
     public var body: some View {
         if let connections {
             SettingsContent(model: AppSettingsViewModel(connections: connections, goals: goals, reminders: reminders, account: account),
-                            appleHealth: appleHealth,
+                            appleHealth: appleHealth, medicationLog: medicationLog,
                             now: now, opensGoals: opensGoals, onShowWelcome: onShowWelcome)
         }
+    }
+}
+
+/// The Medication log switch and its footnote. Observes the model so the switch redraws when it changes.
+private struct MedicationLogSwitchRow: View {
+    @ObservedObject var model: MedicationLogViewModel
+
+    var body: some View {
+        Toggle("Medication log", isOn: Binding(
+            get: { model.isOn },
+            set: { model.isOn = $0 }
+        ))
+        Text("Turning it off hides the log and keeps the data.")
+            .font(.footnote).foregroundStyle(TokenColors.textSecondary)
+        Text(MedicationLogViewModel.notice)
+            .font(.footnote).foregroundStyle(TokenColors.textSecondary)
     }
 }
 
@@ -49,7 +70,8 @@ private struct AppleHealthRows: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: DesignSpacing.xs) {
-            HStack {
+            HStack(spacing: DesignSpacing.m) {
+                IconWell(systemName: "heart.text.square", size: .small)
                 Text(AppleHealthConnectionViewModel.title)
                 Spacer()
                 Text(model.statusText).foregroundStyle(TokenColors.textSecondary)
@@ -79,22 +101,27 @@ private struct SettingsContent: View {
     @Environment(\.dismiss) private var dismiss
     @FocusState private var waterFocused: Bool
     @State private var showingGoals: Bool
+    @State private var showingPrivacy = false
+    @State private var showingLicenses = false
     @State private var isImporting = false
     @State private var isReadingImport = false
     @State private var importReadToken: JournalImportReadToken?
     @State private var importReadGate = JournalImportReadGate()
     @State private var importReadTask: Task<Data, Error>?
     private let appleHealth: AppleHealthConnectionViewModel?
+    private let medicationLog: MedicationLogViewModel?
     private let now: () -> Date
     private let onShowWelcome: (() -> Void)?
 
     init(
         model: AppSettingsViewModel, appleHealth: AppleHealthConnectionViewModel? = nil,
+        medicationLog: MedicationLogViewModel? = nil,
         now: @escaping () -> Date, opensGoals: Bool,
         onShowWelcome: (() -> Void)? = nil
     ) {
         _model = StateObject(wrappedValue: model)
         self.appleHealth = appleHealth
+        self.medicationLog = medicationLog
         _showingGoals = State(initialValue: opensGoals && model.goals != nil)
         self.now = now
         self.onShowWelcome = onShowWelcome
@@ -107,24 +134,30 @@ private struct SettingsContent: View {
             Section {
                 if model.goals != nil {
                     Button { self.showingGoals = true } label: {
-                        HStack {
-                            Text("Daily goals")
+                        HStack(spacing: DesignSpacing.m) {
+                            Text("Daily goals").foregroundStyle(TokenColors.heroText)
                             Spacer()
-                            Text(model.goalsSetText).foregroundStyle(TokenColors.textSecondary)
-                            Image(systemName: "chevron.right").accessibilityHidden(true)
+                            Text(model.goalsSetText).foregroundStyle(TokenColors.heroSecondaryText)
+                            Image(systemName: "chevron.right").foregroundStyle(TokenColors.heroSecondaryText)
+                                .accessibilityHidden(true)
                         }
+                        .frame(minHeight: 44)
                     }
+                    .listRowBackground(TokenColors.hero)
                 }
             }
             if let account = model.account {
                 AccountSectionView(model: account)
             }
             Section("Units and logging") {
-                Picker("Units", selection: $model.unitSystem) {
-                    Text("Metric").tag(UnitSystem.metric)
-                    Text("US").tag(UnitSystem.usCustomary)
+                HStack(spacing: DesignSpacing.m) {
+                    IconWell(systemName: "ruler", size: .small)
+                    Picker("Units", selection: $model.unitSystem) {
+                        Text("Metric").tag(UnitSystem.metric)
+                        Text("US").tag(UnitSystem.usCustomary)
+                    }
+                    .pickerStyle(.segmented)
                 }
-                .pickerStyle(.segmented)
                 LabeledField("Quick water amount", focus: $waterFocused) { focus in
                     HStack {
                         TextField(text: $model.quickWaterText, prompt: Text("For example, 250")) {
@@ -146,6 +179,9 @@ private struct SettingsContent: View {
                     InlineNotice(error, tone: .failed)
                 }
                 reminderRows
+                if let medicationLog {
+                    MedicationLogSwitchRow(model: medicationLog)
+                }
             }
             if appleHealth != nil {
                 Section("Connections") {
@@ -155,26 +191,36 @@ private struct SettingsContent: View {
                 }
             }
             Section("Privacy") {
-                NavigationLink {
-                    ConnectionsPrivacyView(model: connections, now: now)
-                } label: {
-                    Text(model.privacyStatement)
+                Button { self.showingPrivacy = true } label: {
+                    HStack(spacing: DesignSpacing.m) {
+                        IconWell(systemName: "lock", size: .small)
+                        Text(model.privacyStatement).multilineTextAlignment(.leading)
+                        Spacer()
+                        Image(systemName: "chevron.right").accessibilityHidden(true)
+                    }
                 }
                 Link("Privacy policy", destination: URL(string: "https://github.com/mwdearing/health-nutrition/blob/main/PRIVACY.md")!)
             }
             Section {
-                Button(ConnectionsPrivacyViewModel.exportButtonTitle) {
+                Button {
                     self.connections.export(now: self.now())
+                } label: {
+                    HStack(spacing: DesignSpacing.m) {
+                        IconWell(systemName: "square.and.arrow.up", size: .small)
+                        Text(ConnectionsPrivacyViewModel.exportButtonTitle)
+                    }
                 }
                 .disabled(!connections.canExport)
                 .accessibilityHint("Writes a copy on this device. Nothing is sent until you share it.")
                 if let url = connections.exportFileURL {
                     ShareLink(ConnectionsPrivacyViewModel.shareButtonTitle, item: url)
-                    Text("Exported \(connections.entryCount) entries.").font(.footnote)
+                    Text(ConnectionsPrivacyViewModel.exportedText(count: connections.entryCount)).font(.footnote)
                 }
                 Button("Restore from an export") { self.isImporting = true }
                     .accessibilityHint("Restores an export only while this device's journal is empty.")
                     .disabled(isReadingImport || connections.isImporting || connections.isErasing)
+                Text(ConnectionsPrivacyViewModel.restoreAddsNotice).font(.footnote)
+                    .foregroundStyle(TokenColors.textSecondary)
                 if isReadingImport || connections.isImporting {
                     ProgressView(isReadingImport ? "Reading export…" : "Restoring export…")
                 }
@@ -207,18 +253,20 @@ private struct SettingsContent: View {
                 Text(ConnectionsPrivacyViewModel.eraseFooterMessage).font(.footnote)
             }
             Section("About") {
-                HStack { Text("Version"); Spacer(); Text(model.versionText) }
+                HStack(spacing: DesignSpacing.m) {
+                    IconWell(systemName: "info.circle", size: .small)
+                    Text("Version"); Spacer(); Text(model.versionText)
+                }
                 if let onShowWelcome {
                     Button("Show welcome again") { onShowWelcome() }
                 }
-                NavigationLink("Licenses") {
-                    Form {
-                        Text(model.openFoodFactsAttribution)
-                        Link("Open Database License", destination: URL(string: "https://opendatacommons.org/licenses/odbl/1-0/")!)
-                        Text(model.usdaAttribution)
-                        Link("USDA FoodData Central", destination: URL(string: "https://fdc.nal.usda.gov/")!)
+                Button { self.showingLicenses = true } label: {
+                    HStack(spacing: DesignSpacing.m) {
+                        IconWell(systemName: "doc.text", size: .small)
+                        Text("Licenses")
+                        Spacer()
+                        Image(systemName: "chevron.right").accessibilityHidden(true)
                     }
-                    .navigationTitle("Licenses")
                 }
             }
         }
@@ -226,7 +274,7 @@ private struct SettingsContent: View {
         .foregroundStyle(TokenColors.textPrimary)
         .tint(TokenColors.accent)
         .scrollContentBackground(.hidden)
-        .background(TokenColors.background)
+        .background(TokenColors.page)
         .navigationTitle("Settings")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.large)
@@ -238,6 +286,20 @@ private struct SettingsContent: View {
         }
         .navigationDestination(isPresented: $showingGoals) {
             if let goals = model.goals { GoalsView(model: goals) }
+        }
+        .navigationDestination(isPresented: $showingPrivacy) {
+            ConnectionsPrivacyView(model: connections, now: now)
+        }
+        .navigationDestination(isPresented: $showingLicenses) {
+            Form {
+                Text(model.openFoodFactsAttribution)
+                Link("Open Database License", destination: URL(string: "https://opendatacommons.org/licenses/odbl/1-0/")!)
+                Text(model.usdaAttribution)
+                Link("USDA FoodData Central", destination: URL(string: "https://fdc.nal.usda.gov/")!)
+            }
+            .scrollContentBackground(.hidden)
+            .background(TokenColors.page)
+            .navigationTitle("Licenses")
         }
         .accountPresentations(model.account)
         .onAppear { self.model.load() }
@@ -270,6 +332,13 @@ private struct SettingsContent: View {
             self.importPickedFile($0)
         }
         .onDisappear {
+            // A file read still running stops whenever the form goes, pushed over or not: the sheet can close
+            // from a pushed screen, and nothing else could cancel the read then. There is no result yet to lose.
+            if self.isReadingImport { self.cancelFileImport() }
+            // A screen pushed over this form (Privacy, Licenses, Daily goals) also disappears it. That must not
+            // delete the export or wipe a finished import result; only leaving Settings does. A sheet dismissed
+            // from inside a pushed screen never reaches here, so the host clears on dismissal too.
+            guard !(self.showingGoals || self.showingPrivacy || self.showingLicenses) else { return }
             self.cancelFileImport()
             self.connections.clearExport()
             self.connections.clearImport()

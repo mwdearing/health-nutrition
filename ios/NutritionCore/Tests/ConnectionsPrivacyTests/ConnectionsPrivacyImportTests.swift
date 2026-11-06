@@ -656,6 +656,23 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         XCTAssertEqual(try journal.activeIntakes().map(\.id), [entryID])
     }
 
+    /// A restore that finishes but cannot remove its flag keeps every row and says the restore is done, not that
+    /// the file was bad.
+    func testACompleteRestoreWhoseFlagCannotBeClearedKeepsItsRowsAndSaysSo() async throws {
+        let journal = ImportStubStore()
+        journal.failClearRestoreForTesting = true
+        // A favorites store makes the import a second phase, which is the path that clears the flag.
+        let favorites = ImportStubFavorites()
+        let model = ConnectionsPrivacyViewModel(goals: InMemoryGoalStore(), store: journal, favorites: favorites, erasers: [journal, favorites])
+
+        model.importJournal(data: try export(includeFavorite: true))
+        await waitForImportToSettle(model)
+
+        XCTAssertEqual(model.importMessage, ConnectionsPrivacyViewModel.cleanupIncompleteMessage)
+        XCTAssertEqual(ConnectionsPrivacyViewModel.cleanupIncompleteMessage, "Restored. Could not finish cleaning up; try again to be sure.")
+        XCTAssertFalse(try journal.activeIntakes().isEmpty)
+    }
+
     /// The restore flag is cleared once the import has finished. A failed clear then cancels nothing, erases
     /// nothing, and offers Retry; the import completes and its rows stay.
     func testAFailedFlagClearAfterTheImportFinishesCancelsNothing() async throws {
@@ -1002,6 +1019,34 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         XCTAssertEqual(journal.restoredPlans.count, 1)
     }
 
+    /// Leaving the Settings form (or a screen pushed over it) clears the import result. A restore still writing keeps
+    /// its progress and keeps the restore and export actions off until it publishes.
+    func testClearImportKeepsAnInFlightRestoreVisibleAndBlocking() async throws {
+        let gate = DeliveryRunGate()
+        let model = gatedModel(ImportStubStore(), gate: gate)
+        await gate.enter()
+        model.importJournal(data: try export())
+        XCTAssertTrue(model.isImporting)
+        model.clearImport()
+        XCTAssertTrue(model.isImporting, "the restore is still running")
+        XCTAssertFalse(model.canExport)
+        await gate.leave()
+        await waitForImportToSettle(model)
+        XCTAssertEqual(model.importState, .imported)
+        XCTAssertFalse(model.isImporting)
+        XCTAssertTrue(model.canExport)
+    }
+
+    func testClearImportClearsAFinishedResult() async throws {
+        let model = ConnectionsPrivacyViewModel(
+            goals: InMemoryGoalStore(), store: ImportStubStore(), favorites: ImportStubFavorites())
+        await importAndSettle(model, data: try export())
+        model.clearImport()
+        XCTAssertFalse(model.isImporting)
+        XCTAssertEqual(model.importState, .idle)
+        XCTAssertNil(model.importMessage)
+    }
+
     /// A pass still running after the wait leaves the journal untouched, and the screen says why.
     func testARestoreGivesUpWithNothingImportedWhenAHealthPassIsStillRunning() async throws {
         let gate = DeliveryRunGate()
@@ -1038,5 +1083,12 @@ final class ConnectionsPrivacyImportTests: XCTestCase {
         let stillHeld = await held.pause(upTo: 0.05)
         XCTAssertNil(stillHeld, "a timed-out restore does not release the running pass's hold")
         await held.leave()
+    }
+
+    /// A retry after a finished restore says it finished, with the approved wording pinned as a literal (#1172).
+    func testARetryAfterAFinishedRestoreSaysItFinishedNotThatTheJournalIsFull() {
+        XCTAssertEqual(
+            ConnectionsPrivacyViewModel.importFailureText(for: .alreadyRestored),
+            "Restored earlier. Cleanup is finished; nothing was added again.")
     }
 }

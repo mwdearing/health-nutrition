@@ -358,6 +358,9 @@ public struct RelayDeliveryWorker: Sendable {
                 case .failed(let reason), .unreadable(let reason):
                     outcomes.append(retry(operation, reason: reason, now: now))
                     blocking[intakeID] = operation.operationID
+                case .heldForUndo(let until):
+                    outcomes.append(.notDue(operationID: operation.operationID, nextAttemptAt: until))
+                    blocking[intakeID] = operation.operationID
                 case .refused(let reason):
                     // The encoder answers the same way for the same immutable revision, so a retry could never
                     // succeed. It is parked for a person instead of being retried on every backoff step.
@@ -416,6 +419,10 @@ public struct RelayDeliveryWorker: Sendable {
                 await projections.resolve(projection, with: .retryAfter(next, reason: reason))
                 outcomes.append(.retryScheduled(
                     operationID: projection.operationID, nextAttemptAt: next, reason: reason))
+                blocking[projection.intakeID] = projection.operationID
+            case .heldForUndo(let until):
+                // Left in the queue: Undo brings the intake back, and a resolved projection is never offered again.
+                outcomes.append(.notDue(operationID: projection.operationID, nextAttemptAt: until))
                 blocking[projection.intakeID] = projection.operationID
             case .failed:
                 // A projection that cannot be encoded is the queue's problem to hear about: it offered a
@@ -603,6 +610,9 @@ public struct RelayDeliveryWorker: Sendable {
         /// A store read failed while the payload was being built. That says nothing about the payload itself,
         /// so it is worth another attempt rather than a person's attention.
         case unreadable(reason: String)
+        /// The intake is deleted, but its delete is still inside the Undo window and so is not in the queue yet.
+        /// Not superseded: an Undo brings the intake back, and an acknowledged upsert is never sent.
+        case heldForUndo(until: Date)
         case encoded(RelayEncodedOperation)
     }
 
@@ -630,6 +640,25 @@ public struct RelayDeliveryWorker: Sendable {
         }
     }
 
+    /// What an upsert or link projection for an intake that is not active comes to. A delete inside its Undo window
+    /// is hidden from the queue, so the delete that retracts the upsert is not there to say so yet; settling the
+    /// upsert now would be final, and Undo would bring the entry back with nothing sent for it.
+    private func supersededOrHeld(intakeID: String) -> RelayEncoding {
+        do {
+            switch try (store as? any JournalDeleteHold)?.deliveryState(intakeID: intakeID) {
+            case .held(let until)?:
+                return .heldForUndo(until: until)
+            case .active?:
+                return .unreadable(reason: "the intake changed while it was read")
+            case .gone?, nil:
+                break
+            }
+        } catch {
+            return .unreadable(reason: "the intake could not be read")
+        }
+        return .superseded(detail: nil)
+    }
+
     private func encodeUpsert(_ operation: OutboxOperation) -> RelayEncoding {
         let intake: Intake?
         let revisions: [IntakeRevision]
@@ -639,7 +668,7 @@ public struct RelayDeliveryWorker: Sendable {
         } catch {
             return .failed(reason: "the intake could not be read")
         }
-        guard let intake else { return .superseded(detail: nil) }
+        guard let intake else { return supersededOrHeld(intakeID: operation.intakeID) }
         guard let revision = revisions.first(where: { $0.number == operation.revision }) else {
             return .failed(reason: "the journal no longer holds revision \(operation.revision)")
         }
@@ -774,7 +803,8 @@ public struct RelayDeliveryWorker: Sendable {
                 ? .unreadable(reason: "the intake could not be read")
                 : .failed(reason: "the intake could not be read")
         }
-        guard let intake, let revision = revisions.first(where: { $0.number == projection.revision })
+        guard let intake else { return supersededOrHeld(intakeID: projection.intakeID) }
+        guard let revision = revisions.first(where: { $0.number == projection.revision })
         else { return .superseded(detail: nil) }
         let product: ProductDefinition?
         do {
@@ -1183,6 +1213,11 @@ public struct RelayDeliveryWorker: Sendable {
                 deliveries.append(RelayDelivery(
                     intakeID: item.intakeID, outcome: retry(operation, reason: reason, now: now)))
                 blockedBy[item.intakeID] = item.operationID
+            case .heldForUndo(let until):
+                deliveries.append(RelayDelivery(
+                    intakeID: item.intakeID,
+                    outcome: .notDue(operationID: operation.operationID, nextAttemptAt: until)))
+                blockedBy[item.intakeID] = item.operationID
             case .refused(let reason):
                 deliveries.append(RelayDelivery(
                     intakeID: item.intakeID, outcome: park(operation, reason: reason, now: now)))
@@ -1324,7 +1359,7 @@ public struct RelayDeliveryWorker: Sendable {
             return outcome
         case .staleRevision:
             let outcome = RelayDeliveryOutcome.superseded(
-                operationID: item.operationID, detail: response.detail)
+                operationID: item.operationID, detail: Self.cappedReceiverText(response.detail))
             if case .outbox(let operation) = item.origin {
                 return acknowledge(operation, now: now, outcome: outcome)
             }
@@ -1336,12 +1371,12 @@ public struct RelayDeliveryWorker: Sendable {
             return await park(
                 item,
                 reason: "the receiver reported a \(response.result.reasonText): "
-                    + (response.detail ?? "no detail"),
+                    + (Self.cappedReceiverText(response.detail) ?? "no detail"),
                 now: now)
         case .retryableFailure:
             return await retry(
                 item, reason: "the receiver reported a retryable failure: "
-                    + (response.detail ?? "no detail"),
+                    + (Self.cappedReceiverText(response.detail) ?? "no detail"),
                 now: now)
         }
     }
@@ -1352,7 +1387,22 @@ public struct RelayDeliveryWorker: Sendable {
     /// that is not the document this module expects.
     private static func errorText(in body: Data) -> String? {
         guard let payload = try? IntakeContextJSONReader.read(body) else { return nil }
-        return payload.string("error")
+        return cappedReceiverText(payload.string("error"))
+    }
+
+    /// The longest receiver text kept in a reason a person reads. What the receiver sends is stored and shown,
+    /// so a long or hostile reply is cut here rather than carried whole.
+    static let receiverTextLimit = 200
+
+    /// The receiver's text cut to `receiverTextLimit` Unicode scalars, or nil when it sent none.
+    static func cappedReceiverText(_ text: String?) -> String? {
+        guard let text else { return nil }
+        // Counted in Unicode scalars, not characters: one character can be an endless run of combining marks.
+        let scalars = text.unicodeScalars
+        guard scalars.count > receiverTextLimit else { return text }
+        var cut = String.UnicodeScalarView()
+        cut.append(contentsOf: scalars.prefix(receiverTextLimit))
+        return String(cut) + "…"
     }
 
     // MARK: - Recording

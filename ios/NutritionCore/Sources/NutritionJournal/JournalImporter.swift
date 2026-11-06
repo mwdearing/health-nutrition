@@ -17,6 +17,12 @@ public enum JournalImportError: Error, Sendable, Equatable {
     case savedMealsNotEmpty
     /// The bytes are not a journal export at all: not JSON, or not the shape the schema describes.
     case malformed(String)
+    /// The restore finished and every row is written, but the restore-in-progress flag could not be removed.
+    /// The rows stay; the flag is the only thing left behind.
+    case cleanupIncomplete
+    /// Every part of this file is already written and the restore-in-progress flag was left behind. The retry
+    /// clears the flag and writes nothing, so the restore is reported as finished, not as a refusal (#1172).
+    case alreadyRestored
     /// The file is a version 1 export that cannot be restored as it stands: a snapshot nothing defines,
     /// a revision history that does not line up, an amount that is not exact decimal text.
     case corrupt(String)
@@ -47,9 +53,13 @@ public struct JournalImportSummary: Sendable, Equatable {
     public var keptOutOfLibrary: Int
     /// Goals written, for a nutrient that had no goal on the device. A goal already there is not counted.
     public var goals: Int
+    /// Medications written, for a medication whose identifier and name the device did not hold. A medication already there is not counted.
+    public var medications: Int
+    /// Doses written, for a dose whose identifier the device did not hold and whose medication it holds.
+    public var medicationDoses: Int
 
     public init(intakes: Int, revisions: Int, tombstones: Int, favorites: Int, products: Int, savedMeals: Int = 0,
-                keptOutOfLibrary: Int = 0, goals: Int = 0) {
+                keptOutOfLibrary: Int = 0, goals: Int = 0, medications: Int = 0, medicationDoses: Int = 0) {
         self.intakes = intakes
         self.revisions = revisions
         self.tombstones = tombstones
@@ -58,6 +68,8 @@ public struct JournalImportSummary: Sendable, Equatable {
         self.savedMeals = savedMeals
         self.keptOutOfLibrary = keptOutOfLibrary
         self.goals = goals
+        self.medications = medications
+        self.medicationDoses = medicationDoses
     }
 }
 
@@ -152,6 +164,18 @@ enum JournalImportV8Keys {
     static let goal: Set<String> = ["nutrient", "target", "unit"]
 }
 
+/// The keys each object in a version 9 export has, taken from `contracts/journal-export/v9.schema.json`.
+///
+/// Version 9 is version 8 with `medications` and `medication_doses` at the root, each a medication or a dose as the schema
+/// states them. Every other object is as it was in version 8.
+enum JournalImportV9Keys {
+    static let root: Set<String> = JournalImportV8Keys.root.union(["medications", "medication_doses"])
+    static let medication: Set<String> = ["id", "name", "unit", "schedule_days", "is_archived"]
+    static let medicationDose: Set<String> = [
+        "id", "medication_id", "taken_at", "time_zone", "amount", "unit", "site", "note",
+    ]
+}
+
 /// Version 6 is version 5 with `logged_units` at the root: the unit each spoon, cup or fluid-ounce component was
 /// logged in. Every other object is as it was in version 5.
 enum JournalImportV6Keys {
@@ -202,7 +226,8 @@ public enum JournalImporter {
     /// journal is written.
     public static func importExport(
         _ data: Data, into store: JournalStore, favorites: FavoritesStore?,
-        savedMeals: JournalSavedMealsStore? = nil, goals: GoalStore? = nil, limits: JournalImportLimits = .default
+        savedMeals: JournalSavedMealsStore? = nil, goals: GoalStore? = nil, medications: MedicationStore? = nil,
+        limits: JournalImportLimits = .default
     ) throws -> JournalImportSummary {
         try limits.validate(data)
         let document = try readDocument(data)
@@ -245,8 +270,21 @@ public enum JournalImporter {
             }
             goalsTarget = goals
         }
+        // The same holds for the medication log, from version 9: rows with no medication store are refused before anything is written.
+        let medicationsTarget: MedicationStore?
+        if plan.medications.isEmpty && plan.medicationDoses.isEmpty {
+            medicationsTarget = nil
+        } else {
+            guard let medications else {
+                throw JournalImportError.corrupt(
+                    "the export carries \(plan.medications.count) medications and \(plan.medicationDoses.count) doses and no medication store was given")
+            }
+            medicationsTarget = medications
+        }
         // The goals this restore wrote, from any run, as the receipt's ledger holds them. Set once the goals are done.
         var goalsWritten = 0
+        // The medication rows this restore wrote, from any run, as the receipt's ledger holds them. Set once they are done.
+        var medicationsWritten = MedicationRestoreSet()
 
         // **One import at a time.** The flag below belongs to the run that wrote it, and a second import running
         // alongside could resume over a journal the first is about to undo, or clear a flag the first still
@@ -258,7 +296,7 @@ public enum JournalImporter {
 
         // The second phase is everything written after the journal: the saved meals, then the favorites. The
         // flag below covers it whenever it has anything to write.
-        let hasSecondPhase = favoritesTarget != nil || savedMealsTarget != nil || goalsTarget != nil
+        let hasSecondPhase = favoritesTarget != nil || savedMealsTarget != nil || goalsTarget != nil || medicationsTarget != nil
         let progress = hasSecondPhase ? store as? JournalRestoreProgress : nil
         let digest = fileDigest(data)
         // A file with no entries and no deleted ones writes nothing to the journal, so a stop after its saved meals
@@ -308,7 +346,29 @@ public enum JournalImporter {
                     }
                 }
             }
-            guard !(savedMealsWritten && favoritesWritten && !goalsPending) else { throw JournalImportError.notEmpty }
+            // Every part is written: a flag that outlived the whole restore (a stop after the last save, or a clear
+            // that failed, #828) is not an unfinished restore, however much of it was deleted since. Nothing is written
+            // again and the import is refused as already restored (#1172), but the flag is cleared now, so the cleanup the screen asked
+            // the person to retry is finished and the file cannot later bring back rows deleted since.
+            // The medication part is unfinished while its receipt is not marked done. With no receipt, it is unfinished while
+            // a row it would write is still missing from the device.
+            var medicationsPending = false
+            if let medicationsTarget {
+                switch try medicationReceiptDone(digest, in: medicationsTarget) {
+                case .some(let done): medicationsPending = !done
+                case .none:
+                    let planned = try plannedMedications(plan, in: medicationsTarget)
+                    medicationsPending = !(planned.medications.isEmpty && planned.doses.isEmpty)
+                }
+            }
+            if savedMealsWritten && favoritesWritten && !goalsPending && !medicationsPending {
+                try clearFlagAfterRestore(progress)
+                try? favoritesTarget?.removeRestoreReceipt(digest)
+                try? savedMealsTarget?.removeSavedMealsRestoreReceipt(digest)
+                try? goalsTarget?.removeGoalRestoreReceipt(digest)
+                try? medicationsTarget?.removeMedicationRestoreReceipt(digest)
+                throw JournalImportError.alreadyRestored
+            }
             if let savedMealsTarget, !savedMealsWritten {
                 try savedMealsTarget.restoreJournalSavedMeals(plan.savedMeals, receipt: digest)
             }
@@ -329,16 +389,41 @@ public enum JournalImporter {
                 }
                 try addMissingGoals(recorded, into: goalsTarget, receipt: digest)
                 try goalsTarget.markGoalRestoreReceiptDone(digest)
-                goalsWritten = try goalsTarget.goalRestoreWrittenGoals(digest).count
+                // Every row is written by now, so a ledger that cannot be read is a cleanup to retry (#828).
+                do { goalsWritten = try goalsTarget.goalRestoreWrittenGoals(digest).count } catch {
+                    throw JournalImportError.cleanupIncomplete
+                }
+            }
+            // Medications come after goals, add-only and by id: a receipt marked done means every row was written already, so
+            // nothing is added again; a receipt not yet done names what the stopped run recorded, and resume adds exactly those.
+            if let medicationsTarget, try medicationReceiptDone(digest, in: medicationsTarget) != true {
+                let recorded: MedicationRestoreSet
+                if let existing = try medicationReceipt(digest, in: medicationsTarget) {
+                    recorded = existing
+                } else {
+                    recorded = try plannedMedications(plan, in: medicationsTarget)
+                    try medicationsTarget.recordMedicationRestoreReceipt(digest, planned: recorded)
+                }
+                try addMissingMedications(recorded, names: plan, into: medicationsTarget, receipt: digest)
+                try medicationsTarget.markMedicationRestoreReceiptDone(digest)
+            }
+            // Every row is written by now, so a ledger that cannot be read is a cleanup to retry, not a bad file (#828).
+            if let medicationsTarget {
+                do { medicationsWritten = try medicationsTarget.medicationRestoreWritten(digest) } catch {
+                    throw JournalImportError.cleanupIncomplete
+                }
             }
             // A flag that outlived a finished resume would let a later import of this file write rows the
             // person deleted since, so a failure to clear it is reported rather than swallowed.
-            try progress.clearRestoreInProgress()
+            try clearFlagAfterRestore(progress)
             // The flag is gone, so the receipts have nothing left to answer; one left by a stop here is harmless.
             try? favoritesTarget?.removeRestoreReceipt(digest)
             try? savedMealsTarget?.removeSavedMealsRestoreReceipt(digest)
             try? goalsTarget?.removeGoalRestoreReceipt(digest)
-            return summary(of: plan, goals: goalsWritten)
+            try? medicationsTarget?.removeMedicationRestoreReceipt(digest)
+            return summary(
+                of: plan, goals: goalsWritten, medications: medicationsWritten.medications.count,
+                medicationDoses: medicationsWritten.doses.count)
         }
 
         // Saved meals are restored only into an empty list: merging a file's meals into the phone's would have
@@ -378,6 +463,24 @@ public enum JournalImporter {
                         try goalsTarget.recordGoalRestoreReceipt(digest, goals: recorded)
                     }
                     try addMissingGoals(recorded, into: goalsTarget, receipt: digest)
+                }
+                // Medications come after goals, with the same write-ahead: the rows are recorded under the receipt before the
+                // first is written, and a receipt already on the store is reused, so a row the person deleted is not added back.
+                // A receipt already marked done belongs to a restore of this file that finished and could not remove it
+                // (the removal is best effort). It is not this run's: it is removed, so the rows are planned from the
+                // device and an undo of this run never removes rows that finished restore wrote.
+                if let medicationsTarget {
+                    if try medicationReceiptDone(digest, in: medicationsTarget) == true {
+                        try medicationsTarget.removeMedicationRestoreReceipt(digest)
+                    }
+                    let recorded: MedicationRestoreSet
+                    if let existing = try medicationReceipt(digest, in: medicationsTarget) {
+                        recorded = existing
+                    } else {
+                        recorded = try plannedMedications(plan, in: medicationsTarget)
+                        try medicationsTarget.recordMedicationRestoreReceipt(digest, planned: recorded)
+                    }
+                    try addMissingMedications(recorded, names: plan, into: medicationsTarget, receipt: digest)
                 }
                 // Saved meals first: a replace of an empty list can be written again, so a resume after a stop
                 // between the two saves only has the favorites left to write.
@@ -436,6 +539,25 @@ public enum JournalImporter {
                     keepFlag = true
                     throw JournalImportError.partialRestore(retainedIntakes: 0, retainedTombstones: 0)
                 }
+                // Medications come last of the three, and only the rows this run wrote. A row that cannot be removed keeps its
+                // receipt and the flag. A ledger that cannot be read leaves the rows unknown, which keeps the flag: the next
+                // import of the file then finds the receipt unreadable, removes it and finishes the restore add-only.
+                var medicationsLeft = false
+                if let medicationsTarget {
+                    if let written = try? medicationsTarget.medicationRestoreWritten(digest) {
+                        medicationsLeft = !undoMedications(written, in: medicationsTarget, receipt: digest)
+                    } else {
+                        medicationsLeft = true
+                    }
+                }
+                if medicationsLeft {
+                    keepFlag = true
+                    throw JournalImportError.partialRestore(retainedIntakes: 0, retainedTombstones: 0)
+                }
+                do { try medicationsTarget?.removeMedicationRestoreReceipt(digest) } catch {
+                    keepFlag = true
+                    throw JournalImportError.partialRestore(retainedIntakes: 0, retainedTombstones: 0)
+                }
                 // A saved meal the phone keeps is not a transient failure: a retry meets the same meal, so its own message stays.
                 if case JournalImportError.savedMealsNotEmpty = secondPhaseFailure { throw secondPhaseFailure }
                 // The undo ran and left nothing behind, so the person is told nothing was imported, not that the file was bad.
@@ -446,15 +568,32 @@ public enum JournalImporter {
             // restore is finished from its receipt rather than re-derived from the store.
             try goalsTarget?.markGoalRestoreReceiptDone(digest)
             // Counted before the receipt is removed, since the ledger lives in it.
-            if let goalsTarget { goalsWritten = try goalsTarget.goalRestoreWrittenGoals(digest).count }
+            // Every row is written by now, so a ledger that cannot be read is a cleanup to retry, not a bad file (#828).
+            if let goalsTarget {
+                do { goalsWritten = try goalsTarget.goalRestoreWrittenGoals(digest).count } catch {
+                    throw JournalImportError.cleanupIncomplete
+                }
+            }
+            // The medication rows are all written, so the receipt is marked done before the flag clears, as the goals' is.
+            try medicationsTarget?.markMedicationRestoreReceiptDone(digest)
+            if let medicationsTarget {
+                do { medicationsWritten = try medicationsTarget.medicationRestoreWritten(digest) } catch {
+                    throw JournalImportError.cleanupIncomplete
+                }
+            }
             // A flag that cannot be cleared is reported rather than swallowed. It cannot start a resume over this
             // second phase: every part of it now has its receipt.
-            try progress?.clearRestoreInProgress()
+            // The restore itself is complete, so a flag that cannot be cleared is reported as its own outcome, not as a
+            // failed import: the person's rows are there and a retry would only find them.
+            do { try progress?.clearRestoreInProgress() } catch { throw JournalImportError.cleanupIncomplete }
             try? favoritesTarget?.removeRestoreReceipt(digest)
             try? savedMealsTarget?.removeSavedMealsRestoreReceipt(digest)
             try? goalsTarget?.removeGoalRestoreReceipt(digest)
+            try? medicationsTarget?.removeMedicationRestoreReceipt(digest)
         }
-        return summary(of: plan, goals: goalsWritten)
+        return summary(
+            of: plan, goals: goalsWritten, medications: medicationsWritten.medications.count,
+            medicationDoses: medicationsWritten.doses.count)
     }
 
     private static let importLock = NSLock()
@@ -474,7 +613,19 @@ public enum JournalImporter {
         return Set(deleted.map(\.id)) == Set(plan.tombstones.map(\.id)) && deleted.count == plan.tombstones.count
     }
 
-    private static func summary(of plan: JournalRestorePlan, goals: Int) -> JournalImportSummary {
+    /// Clears the restore flag once every row is written. A failed clear is the restore that finished but could
+    /// not clean up (#828), not a bad file, so it is reported as `cleanupIncomplete`.
+    private static func clearFlagAfterRestore(_ progress: JournalRestoreProgress) throws {
+        do {
+            try progress.clearRestoreInProgress()
+        } catch {
+            throw JournalImportError.cleanupIncomplete
+        }
+    }
+
+    private static func summary(
+        of plan: JournalRestorePlan, goals: Int, medications: Int = 0, medicationDoses: Int = 0
+    ) -> JournalImportSummary {
         JournalImportSummary(
             intakes: plan.entries.count,
             revisions: plan.entries.reduce(0) { $0 + $1.revisions.count },
@@ -484,7 +635,7 @@ public enum JournalImporter {
             savedMeals: plan.savedMeals.count,
             keptOutOfLibrary: plan.entries.reduce(0) { count, entry in
                 count + (plan.keptOutOfLibrary.contains(entry.intake.id) ? 1 : 0)
-            }, goals: goals)
+            }, goals: goals, medications: medications, medicationDoses: medicationDoses)
     }
 
     /// Whether the journal holds any intake, live or deleted.
@@ -554,7 +705,7 @@ public enum JournalImporter {
     static func validateShape(_ root: [String: Any], version: Int) throws {
         let provenanceKeys = version >= 2 ? JournalImportV2Keys.provenance : JournalImportV1Keys.provenance
         let revisionKeys = version >= 3 ? JournalImportV3Keys.revision : JournalImportV1Keys.revision
-        let rootKeys = version >= 8 ? JournalImportV8Keys.root : version >= 6 ? JournalImportV6Keys.root : version >= 5 ? JournalImportV5Keys.root : version >= 4 ? JournalImportV4Keys.root : JournalImportV1Keys.root
+        let rootKeys = version >= 9 ? JournalImportV9Keys.root : version >= 8 ? JournalImportV8Keys.root : version >= 6 ? JournalImportV6Keys.root : version >= 5 ? JournalImportV5Keys.root : version >= 4 ? JournalImportV4Keys.root : JournalImportV1Keys.root
         try checkObject(root, keys: rootKeys, path: "$", version: version)
         try checkMinimumLengthOne(root, keys: ["app_version"], path: "$", version: version)
         for (index, item) in try objects(root["intakes"], path: "$.intakes").enumerated() {
@@ -612,6 +763,20 @@ public enum JournalImporter {
                 let path = "$.goals[\(index)]"
                 try checkObject(
                     try object(item, path: path), keys: JournalImportV8Keys.goal, path: path, version: version)
+            }
+        }
+        if version >= 9 {
+            for (index, item) in try objects(root["medications"], path: "$.medications").enumerated() {
+                let path = "$.medications[\(index)]"
+                let medication = try object(item, path: path)
+                try checkObject(medication, keys: JournalImportV9Keys.medication, path: path, version: version)
+                try checkMinimumLengthOne(medication, keys: ["id", "name"], path: path, version: version)
+            }
+            for (index, item) in try objects(root["medication_doses"], path: "$.medication_doses").enumerated() {
+                let path = "$.medication_doses[\(index)]"
+                let dose = try object(item, path: path)
+                try checkObject(dose, keys: JournalImportV9Keys.medicationDose, path: path, version: version)
+                try checkMinimumLengthOne(dose, keys: ["id", "medication_id", "time_zone"], path: path, version: version)
             }
         }
         if version >= 6 {
@@ -848,13 +1013,157 @@ public enum JournalImporter {
                 try restoredTemplate(favorite, named: "the favorite \(favorite.id)", products: productsByID))
         }
 
+        let restored = try restoredMedications(document.medications, doses: document.medicationDoses)
         return JournalRestorePlan(
             entries: entries, tombstones: tombstones,
             products: productsByID.values.sorted { $0.snapshotID < $1.snapshotID }, favorites: favorites,
             savedMeals: try restoredSavedMeals(document.savedMeals, products: productsByID),
             keptOutOfLibrary: document.keptOutOfLibrary,
             loggedUnits: try restoredLoggedUnits(document.loggedUnits),
-            goals: try restoredGoals(document.goals))
+            goals: try restoredGoals(document.goals),
+            medications: restored.medications, medicationDoses: restored.doses)
+    }
+
+    /// The medication log a version 9 file carries, checked as a whole before anything is written. An id that is not a
+    /// UUID or is listed twice, two medications with one name ignoring case, an unknown unit, a medication or dose that
+    /// breaks a rule the store keeps, or a dose whose medication is not in the file refuses the whole file. A dose keeps
+    /// its own unit: a dose logged before its medication's unit changed is in the old unit, and the app exports it so.
+    private static func restoredMedications(
+        _ items: [JournalExportMedication], doses: [JournalExportMedicationDose]
+    ) throws -> (medications: [Medication], doses: [MedicationDose]) {
+        var medicationIDs = Set<UUID>()
+        var medicationNames = Set<String>()
+        var medications: [Medication] = []
+        for item in items {
+            guard let id = UUID(uuidString: item.id), medicationIDs.insert(id).inserted,
+                  let unit = MedicationUnit(rawValue: item.unit)
+            else {
+                throw JournalImportError.corrupt("the export lists a medication with an id that is not a UUID, twice, or a unit this build does not know")
+            }
+            // A device keeps one medication per name, so the app never writes two; a file that does would lose the
+            // second medication's doses without a word.
+            guard medicationNames.insert(item.name.lowercased()).inserted else {
+                throw JournalImportError.corrupt("the export lists two medications named \(item.name)")
+            }
+            let medication = Medication(
+                id: id, name: item.name, unit: unit, scheduleDays: item.scheduleDays, isArchived: item.isArchived)
+            do { try medication.validate() } catch {
+                throw JournalImportError.corrupt("the medication \(item.id) breaks a rule this build keeps")
+            }
+            medications.append(medication)
+        }
+        var doseIDs = Set<UUID>()
+        var restoredDoses: [MedicationDose] = []
+        for item in doses {
+            guard let id = UUID(uuidString: item.id), doseIDs.insert(id).inserted,
+                  let medicationID = UUID(uuidString: item.medicationID)
+            else {
+                throw JournalImportError.corrupt("the export lists a dose with an id that is not a UUID, or twice")
+            }
+            guard medicationIDs.contains(medicationID) else {
+                throw JournalImportError.corrupt("the dose \(item.id) names a medication that is not in the export")
+            }
+            guard let unit = MedicationUnit(rawValue: item.unit) else {
+                throw JournalImportError.corrupt("the dose \(item.id) has a unit this build does not know")
+            }
+            guard DecimalText.isValidDecimalText(item.amount), let amount = DecimalText.decode(item.amount) else {
+                throw JournalImportError.corrupt("the dose \(item.id) has an amount this build cannot read")
+            }
+            let dose = MedicationDose(
+                id: id, medicationID: medicationID, takenAt: item.takenAt, timeZoneIdentifier: item.timeZone,
+                amount: amount, unit: unit, site: item.site, note: item.note)
+            do { try dose.validate() } catch {
+                throw JournalImportError.corrupt("the dose \(item.id) breaks a rule this build keeps")
+            }
+            restoredDoses.append(dose)
+        }
+        return (medications, restoredDoses)
+    }
+
+    /// The medications and doses a restore would add to this device: a file medication only when the device holds neither
+    /// its identifier nor its name, and a dose only when the device holds no dose with its identifier and either the
+    /// restore adds its medication or the device holds its medication under the file's name, ignoring case. A file
+    /// medication whose identifier the device holds under another name is left out with its doses, as one whose name
+    /// is taken is, so a dose never lands on a medication of another name. The dose keeps its own unit. Read now, so a
+    /// resume sees the device as it is.
+    static func plannedMedications(_ plan: JournalRestorePlan, in store: MedicationStore) throws -> MedicationRestoreSet {
+        let stored = try store.medications()
+        let storedIDs = Set(stored.map(\.id))
+        let storedNames = Set(stored.map { $0.name.lowercased() })
+        let medications = plan.medications.filter {
+            !storedIDs.contains($0.id) && !storedNames.contains($0.name.lowercased())
+        }
+        let plannedIDs = Set(medications.map(\.id))
+        let storedNameByID = Dictionary(stored.map { ($0.id, $0.name.lowercased()) }, uniquingKeysWith: { first, _ in first })
+        let heldUnderFileName = Set(plan.medications.filter { storedNameByID[$0.id] == $0.name.lowercased() }.map(\.id))
+        let storedDoseIDs = Set(try store.allDoses().map(\.id))
+        let doses = plan.medicationDoses.filter { dose in
+            !storedDoseIDs.contains(dose.id)
+                && (plannedIDs.contains(dose.medicationID) || heldUnderFileName.contains(dose.medicationID))
+        }
+        return MedicationRestoreSet(medications: medications, doses: doses)
+    }
+
+    /// Whether the medication receipt is done, as `MedicationStore.medicationRestoreReceiptDone` reads it. A receipt this
+    /// build cannot read is removed and reads as none, so the restore plans its rows again from the device, add-only by
+    /// identifier and name, as a run that never reached the medications would. A row the stopped run wrote is then held
+    /// and is not written again; a row the person deleted since that run can come back, which an unreadable receipt
+    /// cannot prevent. Without this, the receipt would stop every later restore and undo of the file.
+    static func medicationReceiptDone(_ digest: String, in store: MedicationStore) throws -> Bool? {
+        do { return try store.medicationRestoreReceiptDone(digest) } catch MedicationStoreError.unreadableReceipt {
+            try store.removeMedicationRestoreReceipt(digest)
+            return nil
+        }
+    }
+
+    /// The rows the medication receipt still names, with an unreadable receipt removed and read as none, as above. A
+    /// receipt that is read keeps its ledger: the rows it still names are written under the store's own checks, which
+    /// leave out a dose whose medication is now stored under another name than the file's.
+    static func medicationReceipt(_ digest: String, in store: MedicationStore) throws -> MedicationRestoreSet? {
+        do { return try store.medicationRestoreReceipt(digest) } catch MedicationStoreError.unreadableReceipt {
+            try store.removeMedicationRestoreReceipt(digest)
+            return nil
+        }
+    }
+
+    /// Writes the planned rows, medications first and then doses, each with its receipt entry in one save. A row the device
+    /// already holds is left as it is, and it leaves the receipt either way. A dose is written only while its medication
+    /// is stored under the name `plan` gives it, checked by the store in the save that writes the dose, so a medication
+    /// renamed on the device between two runs, or during this one, gets none of the file's doses.
+    static func addMissingMedications(
+        _ recorded: MedicationRestoreSet, names plan: JournalRestorePlan, into store: MedicationStore, receipt: String
+    ) throws {
+        let names = Dictionary(plan.medications.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
+        for medication in recorded.medications {
+            _ = try store.writeRestoredMedication(medication, receipt: receipt)
+        }
+        // Doses go in batches, each one save with its receipt entries, so the receipt is rewritten about twenty times
+        // however long the log is, and never fewer than 250 doses go in one save.
+        let batchSize = max(250, (recorded.doses.count + 19) / 20)
+        var start = 0
+        while start < recorded.doses.count {
+            let end = min(start + batchSize, recorded.doses.count)
+            _ = try store.writeRestoredDoses(Array(recorded.doses[start..<end]), medicationNames: names, receipt: receipt)
+            start = end
+        }
+    }
+
+    /// Removes the rows a restore wrote, but only where the device still holds exactly the row it wrote. Doses go first, so a
+    /// medication is removed only once no dose of it is left. Each check and its removal happen in one store save, so a dose
+    /// the person logs during the undo is never removed. A row the person has changed, and a medication that still holds a
+    /// dose, are left alone and make the undo unclean. With a receipt, every row removed goes back to the receipt's rows
+    /// to write in the same save, so a retry of the same file restores it. Returns false when a row was left or a removal
+    /// failed.
+    static func undoMedications(_ written: MedicationRestoreSet, in store: MedicationStore?, receipt: String? = nil) -> Bool {
+        guard let store else { return true }
+        var clean = true
+        for dose in written.doses {
+            do { if try !store.undoRestoredDose(dose, receipt: receipt) { clean = false } } catch { clean = false }
+        }
+        for medication in written.medications {
+            do { if try !store.undoRestoredMedication(medication, receipt: receipt) { clean = false } } catch { clean = false }
+        }
+        return clean
     }
 
     /// The goals a version 8 file carries. A goal the file lists twice, or one with a name, target or unit this
@@ -1046,11 +1355,12 @@ public enum JournalImporter {
     /// The time zone an entry was recorded in. It is what says when an entry happened where the person was,
     /// so it has to be a name a calendar can actually resolve: an empty string, or one nothing knows, would
     /// be stored as text and read back as a zone the app cannot use, and there would be nothing to repair it
-    /// from later.
+    /// from later. A name the relay encoder refuses (host-local keys such as `localtime`, the `posix/` and
+    /// `right/` copies of the database) is refused here too, so an entry never imports only to fail delivery.
     private static func checkTimeZone(_ identifier: String, of intakeID: String) throws {
-        guard !identifier.isEmpty, TimeZone(identifier: identifier) != nil else {
+        guard !identifier.isEmpty, IntakeContextTimestamp.portableZone(identifier: identifier) != nil else {
             throw JournalImportError.corrupt(
-                "\(intakeID) has the time zone \"\(identifier)\", which is not a time zone")
+                "\(intakeID) has the time zone \"\(identifier)\", which is not a time zone name this app can use")
         }
     }
 

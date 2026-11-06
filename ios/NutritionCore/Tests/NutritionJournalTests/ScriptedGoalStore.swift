@@ -42,8 +42,13 @@ final class ScriptedGoalStore: GoalStore, @unchecked Sendable {
     }
     /// Makes marking a receipt done fail, as a store that cannot write at that moment would.
     var failsMark = false
+    /// Fails the ledger read once the receipt is marked done, the read that counts a finished restore's goals.
+    var failsFinishedLedgerRead = false
     func goalRestoreWrittenGoals(_ receipt: String) throws -> [NutrientGoal] {
-        try base.goalRestoreWrittenGoals(receipt)
+        if failsFinishedLedgerRead, try base.goalRestoreReceiptDone(receipt) == true {
+            throw JournalImportError.corrupt("ledger read failed")
+        }
+        return try base.goalRestoreWrittenGoals(receipt)
     }
     func markGoalRestoreReceiptDone(_ receipt: String) throws {
         if failsMark { throw JournalImportError.corrupt("mark refused") }

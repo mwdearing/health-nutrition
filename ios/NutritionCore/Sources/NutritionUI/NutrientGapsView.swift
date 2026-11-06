@@ -68,6 +68,10 @@ public struct NutrientGapsView: View {
         .background(TokenColors.background)
         .navigationTitle("Vitamins and minerals")
         .onAppear { model.load(now: now()) }
+        .task(id: model.span) {
+            // The Week view reads Apple Health per day; the Day view has nothing to read here.
+            await model.refreshWeekHealth(now: now())
+        }
     }
 }
 
@@ -105,7 +109,7 @@ struct NutrientGapRowView: View {
                     .foregroundStyle(row.tally.known > 0 ? TokenColors.textPrimary : TokenColors.textSecondary)
                     .multilineTextAlignment(.trailing)
             }
-            if row.foodFraction != nil {
+            if row.foodFraction != nil || row.healthFraction != nil {
                 track
             }
             if let status = row.statusText {
@@ -134,6 +138,7 @@ struct NutrientGapRowView: View {
             let width = proxy.size.width
             let food = GoalBar.drawingWidth(of: row.foodFraction ?? 0, in: width)
             let supplements = GoalBar.drawingWidth(of: row.supplementFraction ?? 0, in: width)
+            let health = GoalBar.drawingWidth(of: row.healthFraction ?? 0, in: width)
             ZStack(alignment: .leading) {
                 Capsule().fill(TokenColors.track)
                 HStack(spacing: 0) {
@@ -142,6 +147,9 @@ struct NutrientGapRowView: View {
                     Rectangle().fill(TokenColors.accent)
                         .overlay(HatchLines().stroke(TokenColors.background, lineWidth: 1))
                         .frame(width: min(supplements, max(width - food, 0)))
+                    // Apple Health's part, lighter than the journal's, so it reads as another source.
+                    Rectangle().fill(TokenColors.accent).opacity(0.5)
+                        .frame(width: min(health, max(width - food - supplements, 0)))
                 }
                 .clipShape(Capsule())
                 if let marker = row.referenceMarker {

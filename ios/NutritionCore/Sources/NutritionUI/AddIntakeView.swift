@@ -46,7 +46,7 @@ public struct AddIntakeView: View {
                     .disabled(model.isCustomProduct)
                     // A typed food has nowhere to keep a brand, so the field shows only for a looked-up or captured
                     // product, whose brand is kept with it.
-                    if !model.brand.isEmpty {
+                    if model.showsBrandField {
                         LabeledField("Brand (optional)") { focus in
                             TextField(text: $model.brand, prompt: Text("For example, a store brand")) {
                                 Text("Brand (optional)")
@@ -279,6 +279,7 @@ public struct AddIntakeView: View {
                 PrimaryCapsule("Log") {
                     if self.model.save(now: self.now()) { self.onSaved() }
                 }
+                .disabled(model.hasSaved)
                 .accessibilityLabel("Log")
                 .accessibilityHint("Adds this entry to the Diary")
             }

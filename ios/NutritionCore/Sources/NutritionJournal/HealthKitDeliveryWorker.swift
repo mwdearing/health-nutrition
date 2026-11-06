@@ -459,6 +459,23 @@ private func deliver(_ operation: OutboxOperation, now: Date) async -> HealthKit
             return transient(operation, now: now, reason: "the intake could not be read")
         }
         guard let intake else {
+            // A delete still inside its Undo window is hidden from the queue, so the delete that went with
+            // this upsert is not in it yet. Acknowledging now would be final, and Undo would bring the
+            // entry back with nothing ever written for it. The row stays; once the window closes the delete
+            // is offered and settles this upsert, and an Undo makes the intake active so it is written.
+            do {
+                switch try (store as? any JournalDeleteHold)?.deliveryState(intakeID: operation.intakeID) {
+                case .held(let until)?:
+                    return .notDue(operationID: operation.operationID, nextAttemptAt: until)
+                case .active?:
+                    // The intake came back between the two reads: read it again on the next pass.
+                    return transient(operation, now: now, reason: "the intake changed while it was read")
+                case .gone?, nil:
+                    break
+                }
+            } catch {
+                return transient(operation, now: now, reason: "the intake could not be read")
+            }
             // The intake was deleted after this revision was queued. The delete that went with it is
             // in the same queue, so its samples are removed; writing this revision now would put back
             // what the delete removes.

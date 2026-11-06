@@ -81,14 +81,19 @@ public enum CustomProductMapping {
         return CustomProductRevision(localProductID: UUID(), revisionID: UUID(), content: imported, source: source, importVerification: evidence)
     }
 
+    /// The unit a legacy label fact is stored in. Milligram and microgram nutrients are not grams (#1175).
+    static let legacyUnits: [String: MeasureUnit] = [
+        "energyKcal": .kcal, "sodium": .mg, "calcium": .mg, "iron": .mg, "potassium": .mg, "vitaminD": .mcg,
+    ]
+
     public static func stagedDraft(from product: CommunityProduct) throws -> LegacyCustomProductDraft {
         guard case .legacyLabel(let label) = product.product else { throw CustomProductMappingError.requiresExplicitChoices }
         let facts = try label.nutrients.keys.sorted().map { key -> ProductFact in
             guard let amount = label.nutrients[key], CustomProductValidation.standardDimensions[key] != nil || key == "salt" else {
                 throw CustomProductMappingError.unsupportedLegacyFact
             }
-            return ProductFact(key: key == "salt" ? "ingredient:salt" : key, displayName: key == "salt" ? "Salt" : key,
-                value: .known(amount, key == "energyKcal" ? .kcal : key == "sodium" ? .mg : .g))
+            return ProductFact(key: key == "salt" ? "ingredient:salt" : key, displayName: key == "salt" ? "Salt" : NutrientNames.displayName(for: key),
+                value: .known(amount, legacyUnits[key] ?? .g))
         }
         let serving: ProductServing?
         if let value = label.serving {
@@ -117,7 +122,7 @@ public enum CustomProductMapping {
                 raw = try rawFactKey(key)
             } else if CustomProductValidation.standardDimensions[key] != nil { raw = key }
             else { raw = "ingredient:" + key }
-            return ProductFact(key: raw, displayName: snapshot.nutrientDisplayNames[key] ?? key, value: snapshot.nutrients[key]!)
+            return ProductFact(key: raw, displayName: NutrientNames.displayName(for: key, displayNames: snapshot.nutrientDisplayNames), value: snapshot.nutrients[key]!)
         }
         // Legacy ProductDefinition.kind may be the old implicit food fallback. Require explicit choice.
         return LegacyCustomProductDraft(originalSnapshot: snapshot, legacyLabel: nil, source: nil,

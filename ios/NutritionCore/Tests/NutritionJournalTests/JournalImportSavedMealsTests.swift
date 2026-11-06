@@ -121,6 +121,8 @@ final class JournalImportSavedMealsTests: JournalImportTestCase {
         var root = try fields(try savedMealsExport())
         root["schema_version"] = 3
         root.removeValue(forKey: "goals")
+        root.removeValue(forKey: "medications")
+        root.removeValue(forKey: "medication_doses")
         let data = try JSONSerialization.data(withJSONObject: root)
         XCTAssertThrowsError(try JournalImporter.importExport(
             data, into: try store(try directory()), favorites: nil, savedMeals: MemorySavedMeals())) {
@@ -425,7 +427,7 @@ final class JournalImportSavedMealsTests: JournalImportTestCase {
         savedMeals.meals = []
 
         XCTAssertThrowsError(try JournalImporter.importExport(data, into: journal, favorites: favoritesStore, savedMeals: savedMeals)) {
-            XCTAssertEqual($0 as? JournalImportError, .notEmpty)
+            XCTAssertEqual($0 as? JournalImportError, .alreadyRestored)
         }
         XCTAssertEqual(savedMeals.meals, [])
     }

@@ -104,13 +104,15 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         "Your journal stays on this device and in your own iCloud or device backups, and is not uploaded as a whole. Signing in sends your account email, "
         + "account ID and optional display name to the project's server. A barcode lookup you start sends the "
         + "barcode to the community catalog, and only when you are signed in. "
-        + "A name search in Search foods sends the words you typed to Open Food Facts. "
-        + "Share labels off stops new label submissions but does not disable barcode lookup. A label submission is "
+        + "A name search in Search foods sends the words you typed to USDA FoodData Central (in builds that include its key) and Open Food Facts, "
+        + "and entering an amount for a USDA food sends that food's USDA ID to look up its portion sizes. "
+        + "Share products with the community off stops new label submissions but does not disable barcode lookup. A label submission is "
         + "linked to your signed-in account, but does not include your journal entries or photo. A product you create "
         + "and share is linked the same way. Searching shared products sends your search words to the project's server "
         + "with your account when you are signed in. After you connect Apple Health in Settings, the app writes "
-        + "nutrients from real logged food and water entries to HealthKit on this device and reads back only its own samples, plus steps, activity and weight if you ask on Today; "
-        + "a debug build's HealthKit screen can also write test samples. Erasing journal rows does not remove "
+        + "nutrients from real logged food and water entries to HealthKit on this device and reads back its own samples and the nutrition other apps logged, to add to your day totals. "
+        + "If you ask on Today, it also reads steps, activity and weight, and height to fill in goal setup; height is not stored. "
+        + "Nothing read from Health is uploaded; today's totals are shown on your Home Screen widgets and your paired Apple Watch. A debug build's HealthKit screen can also write test samples. Erasing journal rows does not remove "
         + "HealthKit samples already written. "
         + "For email sign-in, hCaptcha can process browser/device signals and sends a verification result; a rare "
         + "challenge may request camera access. It does not receive your journal. Export writes a local JSON file for "
@@ -120,11 +122,18 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     public static let exportFailedMessage = "Could not export the journal."
     public static let importButtonTitle = "Import a journal export"
     public static let importFailedMessage = "Could not import that file."
+    /// Shown under the restore button: a restore keeps no record of deletions (Mike's decision of 2026-11-05).
+    public static let restoreAddsNotice =
+        "Medications and doses in the file that are not on this device are added, including ones deleted since the file was made."
+    /// A restore that finished but could not clean up its flag. The rows are there; the person is told to retry.
+    /// Wording approved by Mike on 2026-10-31 (#828).
+    public static let cleanupIncompleteMessage = "Restored. Could not finish cleaning up; try again to be sure."
     /// The approved rollback wording: a write failed, and the undo put everything back.
     public static let importRolledBackMessage = "Nothing was imported. Try again."
     /// What the importer refused and why, in the words a person can act on.
     public static let importUnsupportedVersionMessage =
         "That file was made by a newer version of the app, so this one cannot read it."
+    public static let importAlreadyRestoredMessage = "Restored earlier. Cleanup is finished; nothing was added again."
     public static let importNotEmptyMessage =
         "This device already has journal entries. An import only works on a journal that is empty."
     /// A version 4 backup carries the whole saved meals list, so it is not restored over saved meals the phone keeps.
@@ -277,7 +286,11 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// What the quick-water field refuses, in the words a person can act on. It names no unit, because
     /// the field's own label says which one the amount is read in.
     public static let quickWaterInvalidMessage =
-        "Enter a water amount above zero, using digits and a point."
+        "Enter a water amount above zero, such as 250 or 2.5."
+    /// The line under the share button once an export is written, agreeing with the count.
+    public static func exportedText(count: Int) -> String {
+        count == 1 ? "Exported 1 entry." : "Exported \(count) entries."
+    }
     public static let quickWaterTitle = "Quick-add water amount"
     public static let unitsSectionTitle = "Units"
     public static let unitSystemTitle = "Show amounts in"
@@ -287,6 +300,9 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     private let favorites: FavoritesStore?
     /// Where an export reads saved meals and an import writes them; nil leaves them out of both.
     private let savedMeals: JournalSavedMealsStore?
+    /// Where an export reads the medication log (medications and doses) and an import restores it, add-only; nil
+    /// leaves it out of both.
+    private let medications: MedicationStore?
     /// Where an export reads goals and an import writes them. Required, so no caller can leave them out silently.
     private let goals: GoalStore
     private let appVersion: String
@@ -359,6 +375,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     public init(
         goals: GoalStore,
         store: JournalStore, favorites: FavoritesStore? = nil, savedMeals: JournalSavedMealsStore? = nil,
+        medications: MedicationStore? = nil,
         appVersion: String = ConnectionsPrivacyViewModel.defaultAppVersion,
         writer: @escaping ConnectionsPrivacyExportWriter = ConnectionsPrivacyViewModel.writeExport,
         erasers: [JournalErasing] = [],
@@ -379,6 +396,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         self.store = store
         self.favorites = favorites
         self.savedMeals = savedMeals
+        self.medications = medications
         self.goals = goals
         self.appVersion = appVersion
         self.writer = writer
@@ -586,8 +604,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         exportRevision += 1
         do {
             let document = try JournalExporter.makeExport(
-                store: store, favorites: favorites, savedMeals: savedMeals, goals: goals, appVersion: appVersion,
-                exportedAt: now)
+                store: store, favorites: favorites, savedMeals: savedMeals, goals: goals, medications: medications,
+                appVersion: appVersion, exportedAt: now)
             let data = try JournalExporter.encode(document)
             let name = JournalExporter.fileName(exportedAt: now)
             let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
@@ -771,11 +789,13 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         public let favorites: JournalErasing
         public let recipes: JournalErasing
         public let goals: JournalErasing
+        /// The medication log's store, `medications.store`. Erased last, after goals.
+        public let medications: JournalErasing
 
         public init(
             widgets: JournalErasing, savedMeals: JournalErasing, supplements: JournalErasing,
             reminders: [JournalErasing], journal: JournalErasing, favorites: JournalErasing, recipes: JournalErasing,
-            goals: JournalErasing
+            goals: JournalErasing, medications: JournalErasing
         ) {
             self.widgets = widgets
             self.savedMeals = savedMeals
@@ -785,6 +805,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             self.favorites = favorites
             self.recipes = recipes
             self.goals = goals
+            self.medications = medications
         }
     }
 
@@ -792,7 +813,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// publish announced before the erase lands after it, and journal after the lists it does not depend on.
     public static func eraseOrder(_ stores: EraseStores) -> [JournalErasing] {
         [stores.widgets, stores.savedMeals, stores.supplements] + stores.reminders
-            + [stores.journal, stores.favorites, stores.recipes, stores.goals]
+            + [stores.journal, stores.favorites, stores.recipes, stores.goals, stores.medications]
     }
 
     /// Puts the display preferences back to their defaults and republishes that state, so the screen
@@ -862,7 +883,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             switch self {
             case .imported:
                 return true
-            case .failed(.refused(.partialRestore)):
+            case .failed(.refused(.partialRestore)), .failed(.refused(.cleanupIncomplete)):
                 return true
             case .failed:
                 return false
@@ -914,6 +935,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         let store = store
         let favorites = favorites
         let savedMeals = savedMeals
+        let medications = medications
         // Counted first, then read: this import's token is the number *after* its own increment, which is
         // what `apply` compares against. Reading before incrementing hands out the previous import's number,
         // so every outcome looks stale and none is ever published.
@@ -946,7 +968,8 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             do {
                 outcome = .imported(
                     try JournalImporter.importExport(
-                        data, into: store, favorites: favorites, savedMeals: savedMeals, goals: goals))
+                        data, into: store, favorites: favorites, savedMeals: savedMeals, goals: goals,
+                        medications: medications))
             } catch let error as JournalImportError {
                 outcome = .failed(.refused(error))
             } catch {
@@ -1122,10 +1145,14 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
         let savedMeals = summary.savedMeals == 0 ? ""
             : summary.savedMeals == 1 ? ", 1 saved meal" : ", \(count(summary.savedMeals)) saved meals"
         let goals = summary.goals == 0 ? "" : summary.goals == 1 ? ", 1 goal" : ", \(count(summary.goals)) goals"
+        let medications = summary.medications == 0 ? ""
+            : summary.medications == 1 ? ", 1 medication" : ", \(count(summary.medications)) medications"
+        let doses = summary.medicationDoses == 0 ? ""
+            : summary.medicationDoses == 1 ? ", 1 dose" : ", \(count(summary.medicationDoses)) doses"
         let kept = summary.keptOutOfLibrary == 0 ? ""
             : summary.keptOutOfLibrary == 1 ? ", 1 entry kept out of Library > Products"
             : ", \(count(summary.keptOutOfLibrary)) entries kept out of Library > Products"
-        return "Imported \(entries)\(deleted)\(favorites)\(savedMeals)\(goals)\(kept)."
+        return "Imported \(entries)\(deleted)\(favorites)\(savedMeals)\(goals)\(medications)\(doses)\(kept)."
     }
 
     public static func importFailureText(for error: JournalImportError) -> String {
@@ -1142,6 +1169,10 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             return importFailedMessage
         case .partialRestore:
             return partialRestoreWarningMessage
+        case .cleanupIncomplete:
+            return cleanupIncompleteMessage
+        case .alreadyRestored:
+            return importAlreadyRestoredMessage
         case .rolledBack:
             return importRolledBackMessage
         }
@@ -1149,8 +1180,11 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
 
     /// Returns the screen's import state to empty, so a later attempt does not read as part of an earlier
     /// one.
+    ///
+    /// A restore that is still running keeps `isImporting`, so its progress stays and "Restore from an export" stays
+    /// off until the last one publishes (the same rule `canExport` follows).
     public func clearImport() {
-        isImporting = false
+        isImporting = activeImportCompletions > 0
         importState = .idle
         importSummary = nil
         importMessage = nil

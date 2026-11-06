@@ -250,3 +250,13 @@ def test_private_helper_views_delegated_to_are_part_of_the_screen(tmp_path):
     assert ("section", "Units") in screen["elements"]
     assert ("text", "Ounces") in screen["elements"]
     assert "SettingsContent" not in bds.scan_screens(tmp_path)[0]
+
+
+def test_every_token_colors_accessor_names_a_declared_token():
+    accessors = bds.scan_color_aliases(bds.ROOT)
+    declared = bds.read_tokens(bds.TOKENS_SWIFT)
+    assert accessors
+    assert sorted(set(accessors.values()) - set(declared)) == []
+    roles = ["page", "card", "hero", "heroText", "heroSecondaryText", "heroTrack",
+             "macroProtein", "macroCarbs", "macroFat"]
+    assert [r for r in roles if r not in accessors] == []

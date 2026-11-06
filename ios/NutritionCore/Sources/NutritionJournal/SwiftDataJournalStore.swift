@@ -9,6 +9,13 @@ struct StoreFileOperations {
     var remove: (URL) throws -> Void
     /// Opens the store file as a container; the erase calls it again to reopen the emptied store.
     var openContainer: (URL) throws -> ModelContainer
+    /// Test hook: runs in an erase after the rows are deleted and before the file is replaced (#1156). The system
+    /// operations do nothing here.
+    var afterRowsDeleted: () -> Void = {}
+    /// Whether the store file at a URL is damaged, asked before an erase replaces a file without a checkpoint.
+    /// The system operations use SQLite's check (`SwiftDataMedicationStore.storeFileIsDamaged(at:)`); a test
+    /// replaces it to reach a damaged file whose open and row delete succeed.
+    var isDamaged: (URL) -> Bool = SwiftDataMedicationStore.storeFileIsDamaged
 
     static let system = StoreFileOperations(
         checkpoint: { try SwiftDataJournalStore.checkpointStoreFile(at: $0) },
@@ -1096,7 +1103,7 @@ private struct StoredNutrient: Codable {
 /// already met by the two conformances above. Declaring the refinement says so at the type, so a caller
 /// building a `RelayDeliveryWorker` over this store is checked here rather than at the worker's own
 /// initializer.
-public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWrittenLedger, JournalSnapshotSource, JournalLibraryExclusions,
+public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalDeleteHold, HealthKitWrittenLedger, JournalSnapshotSource, JournalLibraryExclusions,
     JournalLoggedUnits,
     JournalTombstoneSource, RelayDeliveryStore, JournalRestoreTarget, JournalRestoreProgress, JournalErasing,
     JournalMealEditing,
@@ -1121,6 +1128,8 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
     private let storeURL: URL
     private let fileOperations: StoreFileOperations
     private let enabledDestinations: Set<JournalDestination>
+    /// Reads the time for the undo window and the outbox hold. The app uses the system clock; tests inject their own.
+    private let clock: @Sendable () -> Date
 
     public var failNextSaveForTesting: Bool {
         get { lock.withLock { failFlag } }
@@ -1133,9 +1142,13 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
         try self.init(url: url, enabledDestinations: enabledDestinations, fileOperations: .system)
     }
 
-    init(url: URL, enabledDestinations: Set<JournalDestination>, fileOperations: StoreFileOperations) throws {
+    init(
+        url: URL, enabledDestinations: Set<JournalDestination>, fileOperations: StoreFileOperations,
+        clock: @escaping @Sendable () -> Date = { Date() }
+    ) throws {
         self.enabledDestinations = enabledDestinations
         self.fileOperations = fileOperations
+        self.clock = clock
         storeURL = url
         restoreMarkerURL = url.appendingPathExtension("restore-in-progress")
         container = try fileOperations.openContainer(url)
@@ -1590,7 +1603,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
             // The window is read at commit, not from the caller's clock: a delivery pass that reads the hold
             // after this commit sees the row withdrawn, so Health cannot get the delete first.
             if !deleteRows.isEmpty {
-                let committedAt = Date()
+                let committedAt = clock()
                 let stillOpen = deleteRows.allSatisfy {
                     $0.acknowledgedAt == nil
                         && committedAt < ($0.deletedAt ?? .distantPast).addingTimeInterval(JournalUndo.deleteWindow)
@@ -2499,6 +2512,34 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
         }.sorted { ($0.revision, $0.destination.rawValue) < ($1.revision, $1.destination.rawValue) }
     }
 
+    /// The intake's delivery state under writeLock, so the active check and the hold check see the same store and an
+    /// Undo cannot land between them (#1309).
+    ///
+    /// `pendingOutbox()` hides a delete for its Undo window, so a worker reading the queue sees an upsert whose intake
+    /// is already deleted and no delete beside it; `.held` is how it tells that from a delete that was delivered. The
+    /// instant is the store's own, not a worker's `now`, so the hold and `pendingOutbox()` agree on the same cutoff.
+    /// `undoDelete` removes the delete rows, so nothing is held after an Undo.
+    public func deliveryState(intakeID: String) throws -> IntakeDeliveryState {
+        let container = try openContainer()
+        writeLock.lock()
+        defer { writeLock.unlock() }
+        if try Self.readActiveIntakes(container: container).contains(where: { $0.id == intakeID }) {
+            return .active
+        }
+        let context = ModelContext(container)
+        let now = Date()
+        let deleteKind = OutboxKind.delete.rawValue
+        let rows = try context.fetch(FetchDescriptor<OutboxRecord>(
+            predicate: #Predicate<OutboxRecord> {
+                $0.intakeID == intakeID && $0.kindRaw == deleteKind && $0.acknowledgedAt == nil
+            }))
+        if let until = rows.compactMap({ $0.deletedAt?.addingTimeInterval(JournalUndo.deleteWindow) })
+            .filter({ $0 > now }).max() {
+            return .held(until: until)
+        }
+        return .gone
+    }
+
     /// Operations not yet acknowledged, oldest revision first, upsert before delete within a revision.
     public func pendingOutbox() throws -> [OutboxOperation] {
         let context = ModelContext(try openContainer())
@@ -2507,7 +2548,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
         writeLock.lock()
         defer { writeLock.unlock() }
         // A delete waits out its Undo window, so an undone delete never reaches Apple Health or the relay.
-        let holdCutoff = Date().addingTimeInterval(-JournalUndo.deleteWindow)
+        let holdCutoff = clock().addingTimeInterval(-JournalUndo.deleteWindow)
         let rows = try context.fetch(FetchDescriptor<OutboxRecord>(
             predicate: #Predicate<OutboxRecord> { $0.acknowledgedAt == nil })).filter { row in
             row.kindRaw != OutboxKind.delete.rawValue || (row.deletedAt ?? .distantPast) <= holdCutoff

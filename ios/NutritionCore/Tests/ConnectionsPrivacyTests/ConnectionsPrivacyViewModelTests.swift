@@ -118,7 +118,16 @@ final class ConnectionsPrivacyViewModelTests: XCTestCase {
         // for name search, never for a barcode.
         XCTAssertTrue(model.privacyText.contains("barcode to the community catalog, and only when you are signed in."))
         XCTAssertFalse(text.contains("barcode to open food facts"))
-        XCTAssertTrue(text.contains("share labels off"))
+        XCTAssertTrue(text.contains("share products with the community off"))
+        XCTAssertFalse(text.contains("share labels"))
+        // The Health and search sentences match what the app reads and sends (PRIVACY.md).
+        XCTAssertTrue(text.contains("other apps"))
+        XCTAssertTrue(text.contains("height"))
+        XCTAssertTrue(text.contains("nothing read from health is uploaded"))
+        XCTAssertTrue(text.contains("paired apple watch"))
+        XCTAssertFalse(text.contains("leaves the device"))
+        XCTAssertTrue(text.contains("usda fooddata central"))
+        XCTAssertFalse(text.contains("reads back only its own samples"))
         XCTAssertTrue(text.contains("does not disable barcode lookup"))
         XCTAssertTrue(text.contains("hcaptcha"))
         XCTAssertTrue(text.contains("export"))

@@ -98,6 +98,25 @@ final class GoalBarTests: XCTestCase {
             model.reason, "2 water entries have a unit that is not a volume and are not counted.")
     }
 
+    func testGoalBarWaterWithAHealthGapUsesTheHealthNote() {
+        let partial = NutrientProgressLine(
+            nutrient: "water", amount: .unknown, goal: goal("water", 2000, .mL), isPartial: true,
+            knownSum: .known(250, .mL), healthGap: true)
+        let model = GoalBarModel.make(line: partial, hasEntries: true, missingCount: 0)
+        XCTAssertEqual(model.reason, "Some data from the Health app can't be counted for water")
+    }
+
+    func testGoalBarWaterWithSkippedEntriesAndAHealthGapSaysBoth() {
+        let partial = NutrientProgressLine(
+            nutrient: "water", amount: .unknown, goal: goal("water", 2000, .mL), isPartial: true,
+            knownSum: .known(250, .mL), healthGap: true)
+        let model = GoalBarModel.make(line: partial, hasEntries: true, missingCount: 0, skippedWaterCount: 2)
+        XCTAssertEqual(
+            model.reason,
+            "2 water entries have a unit that is not a volume and are not counted. "
+                + "Some data from the Health app can't be counted for water.")
+    }
+
     func testGoalBarNothingLoggedDiffersFromAKnownZero() {
         let goalled = goal("protein", Decimal(60), .g)
         let nothing = GoalBarModel.make(
@@ -200,5 +219,20 @@ final class GoalBarTests: XCTestCase {
         let bar = GoalBarModel.make(line: bounded, hasEntries: true, missingCount: 0)
         XCTAssertEqual(bar.valueText, "0 g")
         XCTAssertEqual(bar.reason, "Some entries can't be added up for fiber")
+    }
+}
+
+final class SingularCountCopyTests: XCTestCase {
+    func testSkippedWaterNoteAgreesWithTheCount() {
+        XCTAssertEqual(
+            GoalBarModel.skippedWaterText(count: 1), "1 water entry has a unit that is not a volume and is not counted.")
+        XCTAssertEqual(
+            GoalBarModel.skippedWaterText(count: 3),
+            "3 water entries have a unit that is not a volume and are not counted.")
+    }
+
+    @MainActor func testExportedLineAgreesWithTheCount() {
+        XCTAssertEqual(ConnectionsPrivacyViewModel.exportedText(count: 1), "Exported 1 entry.")
+        XCTAssertEqual(ConnectionsPrivacyViewModel.exportedText(count: 2), "Exported 2 entries.")
     }
 }

@@ -1,0 +1,145 @@
+name: appstore-screenshots
+
+# Captures the App Store screenshots from the real app on the iOS Simulator, in light mode, for the two
+# required iPhone sizes (6.9" and 6.5"), and uploads the PNGs as workflow artifacts. A UI test logs a few
+# entries through the Add screens and then saves one PNG per screen (AppStoreScreenshotUITests). Nothing
+# here uses a device or personal data. Run it by hand ("Run workflow") when the screens change; it also runs
+# on a pull request that changes this workflow or the capture test, so those changes are exercised.
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/appstore-screenshots.yml"
+      - "ios/HealthNutrition/Tests/StoreScreenshotUITests/**"
+      - "ios/HealthNutrition/project.yml"
+      - ".github/scripts/install-xcodegen.sh"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  capture:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - size: "6.9-inch"
+            device: "iPhone 16 Pro Max"
+            fallback: "iPhone 17 Pro Max"
+          - size: "6.5-inch"
+            device: "iPhone 11 Pro Max"
+            fallback: "iPhone XS Max"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Show Xcode version
+        run: xcodebuild -version
+      - name: Install XcodeGen (pinned release, checksum verified)
+        run: bash "$GITHUB_WORKSPACE/.github/scripts/install-xcodegen.sh"
+      - name: Generate the Xcode project
+        working-directory: ios/HealthNutrition
+        run: '"$RUNNER_TEMP/xcodegen-dist/xcodegen/bin/xcodegen" generate'
+      # The device is created from what this runner has: the named type, else its fallback, never a guess.
+      - name: Create and boot the simulator
+        id: simulator
+        env:
+          DEVICE: ${{ matrix.device }}
+          FALLBACK: ${{ matrix.fallback }}
+          SIZE: ${{ matrix.size }}
+        run: |
+          xcrun simctl list devicetypes
+          xcrun simctl list runtimes available
+          type_id=$(xcrun simctl list devicetypes --json | python3 -I -c '
+          import json, os, sys
+          types = {t["name"]: t["identifier"] for t in json.load(sys.stdin)["devicetypes"]}
+          for name in (os.environ["DEVICE"], os.environ["FALLBACK"]):
+              if name in types:
+                  print(types[name])
+                  break
+          ')
+          runtime=$(xcrun simctl list runtimes available --json | python3 -I -c '
+          import json, sys
+          runtimes = [r for r in json.load(sys.stdin)["runtimes"] if r.get("isAvailable") and r["identifier"].startswith("com.apple.CoreSimulator.SimRuntime.iOS")]
+          runtimes.sort(key=lambda r: [int(x) for x in r["version"].split(".")])
+          print(runtimes[-1]["identifier"] if runtimes else "")
+          ')
+          if [ -z "$type_id" ] || [ -z "$runtime" ]; then
+            echo "No simulator type ($DEVICE or $FALLBACK) or iOS runtime on this runner." >&2
+            exit 1
+          fi
+          udid=$(xcrun simctl create "store-$SIZE" "$type_id" "$runtime")
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b
+          xcrun simctl ui "$udid" appearance light
+          xcrun simctl status_bar "$udid" override --time 9:41 --batteryState charged --batteryLevel 100 --cellularMode active --cellularBars 4 --wifiBars 3
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+      - name: Capture the screens
+        working-directory: ios/HealthNutrition
+        env:
+          UDID: ${{ steps.simulator.outputs.udid }}
+          # xcodebuild hands TEST_RUNNER_-prefixed variables to the test process without the prefix.
+          TEST_RUNNER_SCREENSHOT_DIR: ${{ runner.temp }}/store-screenshots
+        run: |
+          mkdir -p "$RUNNER_TEMP/store-screenshots"
+          xcodebuild -project HealthNutrition.xcodeproj -scheme HealthNutritionStoreShots -disableAutomaticPackageResolution \
+            -destination "id=$UDID" CODE_SIGNING_ALLOWED=NO \
+            -resultBundlePath "$RUNNER_TEMP/store-shots.xcresult" test
+          ls -l "$RUNNER_TEMP/store-screenshots"
+          file "$RUNNER_TEMP"/store-screenshots/*.png
+      # The App Store sizes, so a wrong device fallback fails here and not at upload time.
+      - name: Check the screenshot sizes
+        env:
+          SIZE: ${{ matrix.size }}
+        run: |
+          case "$SIZE" in
+            6.9-inch) want="1320x2868" ;;
+            6.5-inch) want="1242x2688" ;;
+            *) echo "unknown size $SIZE" >&2; exit 1 ;;
+          esac
+          count=0
+          for f in "$RUNNER_TEMP"/store-screenshots/*.png; do
+            got=$(sips -g pixelWidth -g pixelHeight "$f" | awk '/pixelWidth/{w=$2} /pixelHeight/{h=$2} END{print w "x" h}')
+            if [ "$got" != "$want" ]; then echo "$f is $got, want $want" >&2; exit 1; fi
+            count=$((count + 1))
+          done
+          if [ "$count" -ne 5 ]; then echo "expected 5 screenshots, found $count" >&2; exit 1; fi
+      # Only a complete, size-checked set is published under the store name.
+      - name: Upload the screenshots
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: appstore-screenshots-${{ matrix.size }}
+          path: ${{ runner.temp }}/store-screenshots/*.png
+          if-no-files-found: warn
+          retention-days: 30
+      # Debug shots and element trees the test keeps when a step misses; never part of the store set.
+      - name: Upload the debug files
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: store-shots-debug-${{ matrix.size }}
+          path: ${{ runner.temp }}/store-screenshots/debug/*
+          if-no-files-found: ignore
+          retention-days: 7
+      # Whatever the capture step saved when a step missed, named so it is never taken for the store set.
+      - name: Upload the partial screenshots
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: partial-not-for-store-${{ matrix.size }}
+          path: ${{ runner.temp }}/store-screenshots/*.png
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Upload the test results
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: store-shots-xcresult-${{ matrix.size }}
+          path: ${{ runner.temp }}/store-shots.xcresult
+          retention-days: 7

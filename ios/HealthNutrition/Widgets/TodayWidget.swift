@@ -52,6 +52,8 @@ struct TodayWidgetView: View {
                 Text(snapshot?.gaugeHeadline ?? "—")
             }
             .gaugeStyle(.accessoryCircularCapacity)
+            // With no summary the ring is dimmed, so it does not read as an empty day.
+            .opacity(snapshot?.energyFraction == nil ? 0.3 : 1)
             .accessibilityLabel(snapshot?.calorieSpoken ?? "Calories unknown")
             .privacySensitive()
         case .accessoryRectangular:
@@ -80,7 +82,7 @@ struct TodayWidgetView: View {
                         Text("Protein \(WidgetFigure.figure(snapshot?.proteinGrams, unit: "g", partial: snapshot?.isPartial("protein") == true))")
                         Text("Carbohydrate \(WidgetFigure.figure(snapshot?.carbohydrateGrams, unit: "g", partial: snapshot?.isPartial("carbohydrate") == true))")
                         Text("Fat \(WidgetFigure.figure(snapshot?.fatGrams, unit: "g", partial: snapshot?.isPartial("fat") == true))")
-                        Text("Water \(WidgetFigure.water(snapshot?.waterMilliliters, usUnits: snapshot?.usUnits))")
+                        Text("Water \(WidgetFigure.water(snapshot?.waterMilliliters, usUnits: snapshot?.usUnits, partial: snapshot?.isPartial("water") == true))")
                         if snapshot?.partialFigures?.isEmpty == false {
                             Text("+ Some entries are missing nutrients").font(.caption2).foregroundStyle(.secondary)
                         }

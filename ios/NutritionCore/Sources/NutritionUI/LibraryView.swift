@@ -54,6 +54,9 @@ public struct LibraryView: View {
                 if let stack = model.supplementStack {
                     NavigationLink("My supplements") { SupplementStackView(model: stack, now: now, onLogged: onAdded) }
                 }
+                if let medicationLog = model.medicationLog, medicationLog.isOn {
+                    NavigationLink("Medication log") { MedicationLogView(model: medicationLog) }
+                }
                 Picker("Library segment", selection: $model.segment) {
                     ForEach(LibrarySegment.allCases) { segment in
                         Text(segment.title).tag(segment)

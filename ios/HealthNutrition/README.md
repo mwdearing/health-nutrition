@@ -20,14 +20,15 @@ is written to Health until the person taps Connect Apple Health in Settings
 (`Sources/HealthKitDeliveryStatus.swift`, reached through `AppleHealthConnecting`). See the
 [writer lifecycle](../../docs/healthkit-writer.md) for the gate, retry and deletion behavior.
 
-A debug build also shows the same driver's full state on a HealthKit tab (`HealthKitDeliveryDebugSection`,
-behind `#if DEBUG`), and the separate debug-only spike (`Sources/Debug/HealthKitSpikeView.swift`)
-records the device observations in [ADR 0002](../../docs/adr/0002-healthkit-sync.md). Release builds
-contain neither debug surface.
+A debug build launched with `SHOW_HEALTHKIT_TAB` set also shows the same driver's full state on a HealthKit tab
+(`HealthKitDeliveryDebugSection`, behind `#if DEBUG`). Without the variable the tab bar keeps the four tabs and
+Add, so the system never moves Add behind a More button. The separate debug-only spike
+(`Sources/Debug/HealthKitSpikeView.swift`) records the device observations in
+[ADR 0002](../../docs/adr/0002-healthkit-sync.md). Release builds contain neither debug surface.
 
 ## What the target contains
 
-- `project.yml`: the XcodeGen spec for the `HealthNutrition` app (iOS 18, Swift 5 language mode).
+- `project.yml`: the XcodeGen spec for the `HealthNutrition` app (iOS 26, Swift 5 language mode).
 - `HealthNutrition.entitlements`: the HealthKit capability and Sign in with Apple. No signing team id,
   certificate or profile is ever committed here.
 - `Support/Info.plist`: the two keys the account settings read, `SUPABASE_URL` and `SUPABASE_ANON_KEY`.
@@ -39,7 +40,8 @@ contain neither debug surface.
   belongs to the instance, so two instances on the same file would assign duplicate revision
   numbers (see [docs/journal-store.md](../../docs/journal-store.md)).
 - `Sources/RootView.swift`: the tab shell with Today, Diary (the journal), Library and Trends (Nutrients and Insights), with a gear on every tab that opens the settings sheet, plus a HealthKit tab in
-  debug builds only. Library opens the personal recipes in its own navigation stack
+  debug builds launched with `SHOW_HEALTHKIT_TAB` set. Add is a separate tab at the end of the bar that opens Add
+  and leaves the shown tab selected. Library opens the personal recipes in its own navigation stack
   (see [docs/recipes.md](../../docs/recipes.md)).
 - `Sources/RecipeNavigation.swift`: the recipe sheet's presentation and navigation stack on one small
   `@MainActor` object, so the erase on the Connections and privacy screen can close the sheet and drop
@@ -59,7 +61,7 @@ contain neither debug surface.
 - `Sources/BarcodeLookup.swift`: the adapter between the nutrition-data client and the lookup protocol
   the screens depend on. The screens never see the client or the source; this file fills in the
   attribution and serving definition that a licensed source requires.
-- `Resources/Assets.xcassets`: an `AccentColor` and a placeholder `AppIcon` (a single 1024-point image, the accent color with a plain mark) so a signed archive can be uploaded; replace it with the real icon when there is one.
+- `Resources/Assets.xcassets`: an `AccentColor` and the `AppIcon`, a single 1024-point image without transparency: a mint lowercase n with a white leaf on a dark teal background. The Watch app's `AppIcon` is the same image. Its vector source is `docs/app-icon.svg`; to change the icon, edit that file and render it again at 1024 by 1024 with no alpha channel.
 - `Tests/`: the app target's own XCTest bundle, hosted by the app so `@testable import HealthNutrition`
   works. See [Running the tests](#running-the-tests).
 

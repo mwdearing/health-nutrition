@@ -20,7 +20,7 @@ read live in `NutritionJournal`. The app target wires them together. Tests cover
 **The welcome** is a full screen shown once per install, on the first launch of the app (`RootView` presents
 `WelcomeView` in a full-screen cover while the welcome flag is not set). It shows the title "HealthNutrition", the
 sentence "Log what you eat and drink. See it against goals you set.", and three cards: "Scan a label or barcode, or
-type it in", "Your journal stays on this phone", and "No scores, no advice". It has two actions:
+type it in", "Your journal stays on this device", and "No scores, no advice". It has two actions:
 - **Get started** stores the welcome flag and closes the screen.
 - **Restore from an export** stores the flag, closes the screen and opens Settings. The restore itself is the
   "Restore from an export" button under **Privacy** in Settings, which works only while the journal is empty.
@@ -37,14 +37,19 @@ four rows in this order:
 2. **Set a daily goal**: done when at least one daily goal is stored. Tapping it opens the daily goals.
 3. **Choose units**: shows the current system under the title, "Metric" or "US". Tapping it marks the step done at
    once, then opens the units settings. The mark is stored, so it stays done even if the units are not changed.
-4. **Connect Apple Health**: a placeholder with a Later badge. It is disabled, announced as "Not available yet", and
-   never done in this build.
+4. **Connect Apple Health**: shown only where Health is available. Before Health has answered, tapping it asks for
+   access. Once Health has answered, the row shows Health's status as its detail ("Partly allowed" or "Turned off in
+   Health"), because iOS asks only once, and tapping it opens the Health app. It counts as done once Health has
+   answered with all or some nutrients allowed; it stays undone when Health is off for the app.
 
 Steps are read again when the app starts, when it returns to the foreground, when Settings closes, after an entry is
-added or edited, after an erase, and after the units step. The card disappears once the first three steps are all
+added or edited, after an erase, and after the units step. Today itself reloads, and reads Health again, when the
+day, the time zone or the clock changes while Today is open. When the entry sheet closes in any way, including a
+swipe down after Log again, the screens behind it reload. The card disappears once the first three steps are all
 done, and it returns only if one of them becomes undone again (for example, every entry is deleted). **Hide**
 removes the card at once and stores the choice, so it stays hidden on later launches until an erase clears it. The
-fourth step never ticks off, so it never keeps the card on screen.
+fourth step can show as done, but only the first three decide whether the card hides, so an undone Health step never
+keeps the card on screen.
 
 ## Totals
 A **DailyTotals** (`ios/NutritionCore/Sources/NutritionUI/DailyTotals.swift`) is what one day adds up to, one entry
@@ -117,9 +122,10 @@ A day with nothing logged is unknown for every nutrient, for the same reason.
 
 ### One day at a time
 The day is the caller's to decide and `DailyTotalsBuilder` never sees two at once. `TodayViewModel` keeps the
-intakes on the same local day as now; `JournalViewModel` groups by day. Both use **each intake's own stored time
-zone**, as `JournalViewModel` already did for its rows, so one instant logged in two zones is two local days and
-neither day absorbs the other's entries. An intake whose stored time zone is not a valid time zone is left out with
+intakes whose day is the Diary's today; `JournalViewModel` groups by day. Both read each intake's day in **its own
+stored time zone**, so one instant logged in two zones is two local days and neither day absorbs the other's entries.
+Which day is today is today's date in the **current zone**, for both screens, so after travel Today and the Diary's
+today hold the same entries (#1139, Mike 2026-10-31). An intake whose stored time zone is not a valid time zone is left out with
 no fallback, exactly as it already was.
 
 `JournalDaySection` carries that day's `DailyTotals`, and `JournalViewModel.totalsText(totals:tracked:goals:)`
@@ -132,6 +138,18 @@ read; a day where nothing at all is known says so on its own.
 Below the water card, a **Supplements** tile shows how many supplement entries are logged today (or "Set up your
 supplements" when the list is empty) and opens the supplement list, where each supplement can be taken. It is hidden
 when the host passes no supplement list. Code: `SupplementsTodayTile`.
+
+## Medications tile
+
+Below the Supplements tile, a **Medications** tile shows while the Medication log switch is on. It is hidden while the
+switch is off, and when the host passes no Medication log. It has one line per active medication: the schedule
+standing, else the last-dose line ("Last dose 2.5 mL on Apr 15, 2026 at 9:36 AM"), never a bare "Today" or
+"3 days since". It shows at most three lines, then "N more"
+(for example "2 more"). With no active medication it reads "Add a medication", and when the log cannot be read it reads
+"Could not read the medication log." A tap opens the Medication log. The injection site and the note are never shown.
+The tile reads the log again whenever the app returns to the foreground, so a day that changed in the background
+shows its own standing.
+Code: `MedicationsTodayTile`.
 
 ## Daily goals
 A **NutrientGoal** (`ios/NutritionCore/Sources/NutritionJournal/GoalStore.swift`) is a nutrient key, an exact
@@ -290,8 +308,8 @@ Text that is not a positive number is refused rather than rounded or guessed at.
   available. Library products say "From your Library"; an unedited recipe keeps its version snapshot.
   Save stays enabled in the bottom inset, with save errors and blocked-field messages above it. Serving
   chips and Log to several days are disabled placeholders with Later badges and "Not available yet".
-- **Local day**: an intake is on Today when its time falls on the same calendar day as "now" in the intake's own time
-  zone. Deleted intakes are hidden. A time corrected on the entry screen moves the entry to the day it now falls on,
+- **Local day**: an intake is on Today when its day, read in the intake's own time zone, is today's date in the current
+  zone, the same today as the Diary's (#1139). Quick-added water takes the current zone at the moment it is added. Deleted intakes are hidden. A time corrected on the entry screen moves the entry to the day it now falls on,
   in the Journal as well as here.
 - **Date subtitle** uses the current device time zone on every reload, including after a zone change.
 - **Missing values**: a food snapshot with only unknown tracked nutrients counts as having no nutrition values.
@@ -300,7 +318,9 @@ Text that is not a positive number is refused rather than rounded or guessed at.
 - **Water total** is the exact `Decimal` sum, in mL, of the volume components of intakes with category `water`. Other
   categories never contribute, whatever their unit. A component whose unit is not a volume is skipped and counted
   (`waterSkippedCount`), never treated as zero. So is a stored amount that is NaN or not above zero, checked before and
-  after conversion to mL.
+  after conversion to mL. Water other apps logged to Health is added when its query completed. When Health is
+  connected but the water query failed, the day's water is unknown on the Health side: with no water goal the figure
+  reads "at least" the known part (or "No data"), and a goal bar notes the Health gap.
 - **Invalid time zone**: a stored intake whose time zone identifier is not a valid time zone is left out of Today (no
   row, not in the water total or coverage) and counted in `skippedIntakeCount`, which is reset on each load. There is no
   fallback to the current time zone for stored intakes.
@@ -387,7 +407,8 @@ state of the app, not of the day.
 
 The reason line under a cannot-total bar says "N entries have no <nutrient> value" only where `CoverageLine`
 reports missing entries for that nutrient, and otherwise "Some entries can't be added up for <nutrient>" (a
-below-threshold bound, an unresolvable basis). For water it is the sentence about entries that are not a volume.
+below-threshold bound, an unresolvable basis). For water it is the sentence about entries that are not a volume, or, when only the Health side is short, the Health
+gap note ("Some data from the Health app can't be counted for water").
 
 ## Missing values line
 The Coverage section is gone from Today. `missingValuesSummary` is one line, "2 entries have no nutrition values",

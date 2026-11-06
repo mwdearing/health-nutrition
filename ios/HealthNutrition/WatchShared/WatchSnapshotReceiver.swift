@@ -36,9 +36,24 @@ final class WatchSnapshotReceiver {
     var highestEraseGeneration: Int { defaults.integer(forKey: Self.highestGenerationKey) }
 
     func receive(context: [String: Any]) {
-        guard let store else { return }
         lock.lock()
         defer { lock.unlock() }
+        receiveLocked(context)
+    }
+
+    /// Reads the context and applies it under one lock hold. A replay of the session's stored context uses this, so a
+    /// newer context the delegate delivers meanwhile is either already in what is read or applied after it, and an
+    /// older read can never overwrite a newer delivery. An empty context is not applied.
+    func receive(contextFrom read: () -> [String: Any]) {
+        lock.lock()
+        defer { lock.unlock() }
+        let context = read()
+        guard !context.isEmpty else { return }
+        receiveLocked(context)
+    }
+
+    private func receiveLocked(_ context: [String: Any]) {
+        guard let store else { return }
         switch WatchSnapshotEnvelope.decode(context: context) {
         case .envelope(let envelope):
             // The generation is only comparable within one install of the phone app. A different epoch (a reinstall,

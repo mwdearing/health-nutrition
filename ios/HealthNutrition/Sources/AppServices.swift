@@ -20,6 +20,9 @@ final class AppServices {
     /// The daily nutrient targets, in their own file. Goals are data, not settings, so they are
     /// stored beside the journal and erased with it.
     let goalStore: SwiftDataGoalStore
+    /// The medication log, in its own file, erased last with everything else. Its screens stay hidden until the
+    /// person turns the Medication log switch on in Settings.
+    let medicationStore: SwiftDataMedicationStore
 
     let today: TodayViewModel
     let journal: JournalViewModel
@@ -32,6 +35,8 @@ final class AppServices {
     let connections: ConnectionsPrivacyViewModel
     /// The Daily goals screen, reached from the Library screen's Connections section.
     let goals: GoalsViewModel
+    /// The Medication log screens, reached from the Library while its Settings switch is on.
+    let medicationLog: MedicationLogViewModel
     /// Saved meals, saved from the Journal and logged from Search foods. Kept in the defaults domain and
     /// erased with everything else.
     let savedMeals: SavedMealsModel
@@ -80,12 +85,15 @@ final class AppServices {
     private var supplementStackRefresh: [AnyCancellable] = []
     /// Reads the saved meals again after a journal restore, which can now write them.
     private var savedMealsRestoreRefresh: AnyCancellable?
+    /// Reads the medication log again after an erase or a restore, so no screen shows a dose the erase removed.
+    private var medicationLogRefresh: AnyCancellable?
 
     deinit { connectivityMonitor?.cancel() }
 
     private init(
         journalStore: SwiftDataJournalStore, favoritesStore: SwiftDataFavoritesStore,
         recipeStore: SwiftDataRecipeStore, goalStore: SwiftDataGoalStore,
+        medicationStore: SwiftDataMedicationStore,
         displayPreferences: UserDefaultsDisplayPreferences = UserDefaultsDisplayPreferences(),
         reminderScheduler: ReminderScheduling,
         productService: (any CommunityProductServicing)? = nil,
@@ -116,11 +124,13 @@ final class AppServices {
         self.favoritesStore = favoritesStore
         self.recipeStore = recipeStore
         self.goalStore = goalStore
+        self.medicationStore = medicationStore
         // Today's coverage reads the nutrient values each entry's product snapshot carries, so a
         // logged recipe or a looked-up product contributes what it states. An entry typed by hand has
         // no snapshot and stays unknown, never zero.
-        today = TodayViewModel(
+        let todayForLimits = TodayViewModel(
             store: journalStore, goals: goalStore, lookup: SnapshotNutrientFacts(), preferences: displayPreferences)
+        today = todayForLimits
         let journalModel = JournalViewModel(
             store: journalStore, goals: goalStore, lookup: SnapshotNutrientFacts(), preferences: displayPreferences)
         journal = journalModel
@@ -133,8 +143,12 @@ final class AppServices {
         supplementStack = SupplementStackViewModel(
             store: journalStore, favorites: favoritesStore, schedules: supplementSchedules,
             lookup: SnapshotNutrientFacts(), referencePreferences: displayPreferences,
-            preferences: displayPreferences)
+            preferences: displayPreferences,
+            // Today's Apple Health totals, as the vitamins and minerals Day span adds them (#1292).
+            healthToday: { [weak todayForLimits] in todayForLimits?.outsideIntake ?? .notConnected })
         goals = GoalsViewModel(store: goalStore, journal: journalStore, preferences: displayPreferences)
+        medicationLog = MedicationLogViewModel(
+            store: medicationStore, preferences: displayPreferences, eraser: medicationStore)
         let savedMealStore = UserDefaultsSavedMealStore()
         let savedMeals = SavedMealsModel(store: savedMealStore, journal: journalStore)
         self.savedMeals = savedMeals
@@ -154,12 +168,13 @@ final class AppServices {
             Self.eraseStores(
                 widgets: widgetSnapshotEraser, savedMeals: savedMealStore, supplements: supplementSchedules,
                 dailyReminders: reminderEraser, customReminders: customReminderEraser,
-                journal: journalStore, favorites: favoritesStore, recipes: recipeStore, goals: goalStore))
+                journal: journalStore, favorites: favoritesStore, recipes: recipeStore, goals: goalStore,
+                medications: medicationStore))
         // One gate for the Health delivery worker and Erase all data: the erase holds it while it runs, so no
         // delivery pass is between its busy check and its Health write while the stores are emptied (#841).
         let healthKitDeliveryGate = DeliveryRunGate()
         connections = ConnectionsPrivacyViewModel(goals: goalStore,
-            store: journalStore, favorites: favoritesStore, savedMeals: savedMealStore,
+            store: journalStore, favorites: favoritesStore, savedMeals: savedMealStore, medications: medicationStore,
             appVersion: Self.appVersion,
             erasers: erasers,
             preferences: displayPreferences,
@@ -236,12 +251,16 @@ final class AppServices {
         let healthReader = HealthKitReader()
         bodyActivity = BodyActivityViewModel(
             reader: healthReader, unitSystem: { [displayPreferences] in displayPreferences.unitSystem },
-            weightPlan: { [goalStore] in try? goalStore.weightPlan() })
+            weightPlan: { [goalStore] in try? goalStore.weightPlan() },
+            medications: medicationStore, medicationPreferences: displayPreferences)
         // Each Diary day header adds what other apps logged to Apple Health that day, read as the day comes on screen.
         journal.healthDayReader = { start, end in await healthReader.outsideIntakeDay(from: start, to: end) }
+        // Through the local `todayModel`: `self.today` cannot be read before every stored property is set.
+        todayModel.healthDayReader = { start, end in await healthReader.outsideIntakeDay(from: start, to: end) }
         goals.latestHeightCentimeters = { [bodyActivity] in bodyActivity.readings.latestHeightCm }
         // Set after every stored property, so the Library can link to the supplement list.
         library.supplementStack = supplementStack
+        library.medicationLog = medicationLog
         // The list follows the journal. Every reload of the app's screens, from any window, reloads the
         // Library, so an entry added, edited or deleted elsewhere shows on the list while it is open (a list
         // out of view reads everything when it appears). An erase or a restore replaces what the stores hold,
@@ -249,6 +268,9 @@ final class AppServices {
         // set, which is after the stores were written.
         let storesReplaced = connections.$eraseGeneration.dropFirst().map { _ in () }
             .merge(with: connections.$journalRestoreGeneration.dropFirst().map { _ in () })
+        medicationLogRefresh = storesReplaced.sink { [weak medicationLog = self.medicationLog] _ in
+            MainActor.assumeIsolated { medicationLog?.storesWereReplaced() }
+        }
         supplementStackRefresh = [
             storesReplaced.sink { [weak stack = self.supplementStack] _ in
                 MainActor.assumeIsolated { _ = stack?.storesWereReplaced(now: Date()) }
@@ -259,13 +281,19 @@ final class AppServices {
         ]
         // Today counts the active energy toward the calorie goal when the person switched that on;
         // it reloads only when the figure changed, so a foreground does not load Today twice for nothing.
-        bodyActivity.onRead = { [today] readings in
+        // A new day starts with no Health readings on Today; read Health again so the day's own figures arrive.
+        today.onDayChange = { [bodyActivity] in
+            Task { await bodyActivity.load(now: Date()) }
+        }
+        bodyActivity.onRead = { [today, weak stack = self.supplementStack] readings in
             guard TodayViewModel.needsReload(
                 activeEnergyKcal: today.activeEnergyKcal, outsideIntake: today.outsideIntake, for: readings
             ) else { return }
             today.activeEnergyKcal = readings.activeEnergyKcal
             today.outsideIntake = readings.outsideIntake
             today.load(now: Date())
+            // The list's upper-limit check adds the same Health totals, so it reads again once they have arrived (#1292).
+            stack?.reloadIfShown(now: Date())
         }
         if let productSharing {
             let monitor = NWPathMonitor()
@@ -333,12 +361,12 @@ final class AppServices {
         widgets: WidgetSnapshotEraser, savedMeals: UserDefaultsSavedMealStore,
         supplements: UserDefaultsSupplementStackStore, dailyReminders: ReminderEraser,
         customReminders: CustomReminderEraser?, journal: SwiftDataJournalStore, favorites: SwiftDataFavoritesStore,
-        recipes: SwiftDataRecipeStore, goals: SwiftDataGoalStore
+        recipes: SwiftDataRecipeStore, goals: SwiftDataGoalStore, medications: SwiftDataMedicationStore
     ) -> ConnectionsPrivacyViewModel.EraseStores {
         let reminders: [JournalErasing] = [dailyReminders] + (customReminders.map { [$0] } ?? [])
         return ConnectionsPrivacyViewModel.EraseStores(
             widgets: widgets, savedMeals: savedMeals, supplements: supplements, reminders: reminders,
-            journal: journal, favorites: favorites, recipes: recipes, goals: goals)
+            journal: journal, favorites: favorites, recipes: recipes, goals: goals, medications: medications)
     }
 
     /// The custom-reminder side of a scheduler, when it takes custom reminders. The system scheduler does; a fake may not.
@@ -348,7 +376,7 @@ final class AppServices {
         scheduler as? (ReminderScheduling & CustomReminderScheduling)
     }
 
-    /// Opens all four store files in `directory`, creating the directory and the files if needed.
+    /// Opens all five store files in `directory`, creating the directory and the files if needed.
     ///
     /// The directory is a parameter so a test can build a whole app on throwaway files instead of the
     /// real Application Support ones. The default is the app's own directory, unchanged.
@@ -402,19 +430,24 @@ final class AppServices {
             journalStore.close()
             throw StoreStartupError.recipes(error)
         }
+        let goalStore: SwiftDataGoalStore
         do {
-            let goalStore = try SwiftDataGoalStore(url: directory.appendingPathComponent("goals.store"))
-            return AppServices(
-                journalStore: journalStore, favoritesStore: favoritesStore, recipeStore: recipeStore,
-                goalStore: goalStore, displayPreferences: displayPreferences,
-                reminderScheduler: reminderScheduler, productService: productService,
-                accountServiceOverride: accountServiceOverride, widgetSnapshotEraser: widgetSnapshotEraser)
+            goalStore = try SwiftDataGoalStore(url: directory.appendingPathComponent("goals.store"))
         } catch {
             recipeStore.close()
             favoritesStore.close()
             journalStore.close()
             throw StoreStartupError.goals(error)
         }
+        // Never blocks launch: a file that cannot be opened is retried on each read, and the Medication log offers
+        // to clear it.
+        let medicationURL = directory.appendingPathComponent("medications.store")
+        let medicationStore = SwiftDataMedicationStore(retryingOpenAt: medicationURL)
+        return AppServices(
+            journalStore: journalStore, favoritesStore: favoritesStore, recipeStore: recipeStore,
+            goalStore: goalStore, medicationStore: medicationStore, displayPreferences: displayPreferences,
+            reminderScheduler: reminderScheduler, productService: productService,
+            accountServiceOverride: accountServiceOverride, widgetSnapshotEraser: widgetSnapshotEraser)
     }
 
     /// Which store file failed to open at startup, so the failure screen names the right one.

@@ -156,6 +156,10 @@ public struct NutrientKeyChoice: Identifiable, Equatable {
         return (head + rows).joined(separator: "\u{1F}")
     }
     @Published public var errorMessage: String?
+    /// Set by a successful save when the screen had promised a share that eligibility no longer allowed, so the
+    /// product was saved on this device alone. The editor is dismissed on save, so the caller reads this to word
+    /// its confirmation; it is not shown inside the editor.
+    public private(set) var savedLocallyAfterSharePromise = false
     @Published public private(set) var revision: CustomProductRevision?
     private let store: any CustomProductStore
     private let sharing: ProductShareCoordinator?
@@ -196,7 +200,25 @@ public struct NutrientKeyChoice: Identifiable, Equatable {
         try CustomProductValidation.validate(value)
         return value
     }
-    @discardableResult public func save(now: Date) throws -> CustomProductRevision {
+    /// True when Save will also queue and send this product: a new product, with the same eligibility check the
+    /// save path makes. Read when the form is drawn, so the button names what a tap does.
+    public var savesAndShares: Bool {
+        guard revision == nil, legacy == nil, let sharing else { return false }
+        return ((try? sharing.newProductEligibility(using: store)) ?? nil) != nil
+    }
+    public var saveButtonTitle: String { Self.saveButtonTitle(shares: savesAndShares) }
+    public static func saveButtonTitle(shares: Bool) -> String { shares ? "Save and share product" : "Save product on this device" }
+    /// What Save does, shown above the button. The upload sentence appears only when the upload will happen.
+    public var saveScopeMessage: String { Self.saveScopeMessage(shares: savesAndShares) }
+    public static func saveScopeMessage(shares: Bool) -> String {
+        shares
+            ? "Sharing is on, so saving this new product also sends its name, brand, barcode, serving and nutrient facts to the community catalog."
+            : "Saves this product on this device only."
+    }
+    /// `shareAsShown` is the scope the person saw on the button when they tapped it. Only a screen that said it
+    /// shares can queue an upload, and only while eligibility still allows it; otherwise the product is saved on
+    /// this device alone, and `savedLocallyAfterSharePromise` records when the screen had promised a share.
+    @discardableResult public func save(now: Date, shareAsShown: Bool) throws -> CustomProductRevision {
         // Refused before validation: the unnamed row already shows its note.
         guard canSave else { throw CustomProductFieldError(field: "ingredient", code: .required) }
         do {
@@ -206,7 +228,8 @@ public struct NutrientKeyChoice: Identifiable, Equatable {
             }
             let result = CustomProductRevision(localProductID: localProductID, revisionID: UUID(), content: try content(), source: revision?.source ?? legacy?.source)
             var publication: ProductShareOperation?
-            if revision == nil, legacy == nil, let sharing, let eligibility = try sharing.newProductEligibility(using: store) {
+            let promisedShare = shareAsShown && revision == nil && legacy == nil && sharing != nil
+            if promisedShare, let sharing, let eligibility = try sharing.newProductEligibility(using: store) {
                 publication = try sharing.newProductPublication(result, eligibility: eligibility, using: store)
             }
             // No suspension separates current eligibility from the atomic revision/mapping/operation save.
@@ -214,14 +237,23 @@ public struct NutrientKeyChoice: Identifiable, Equatable {
             if publication != nil {
                 Task { await sharing?.runDueOperations(now: now) }
             }
-            revision = saved; errorMessage = nil
+            revision = saved
+            // The screen promised a share that is no longer allowed: the caller's confirmation says what happened.
+            savedLocallyAfterSharePromise = promisedShare && publication == nil
+            errorMessage = nil
+            // What is on screen is now what was saved, so leaving does not ask to discard it.
+            shownWith = fingerprint
             return saved
         } catch {
             errorMessage = Self.message(for: error); throw error
         }
     }
-    nonisolated static func decimal(_ text: String, field: String) throws -> Decimal {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    /// Reads a typed amount. The decimal pad offers the region's separator, so a comma is read as
+    /// `AmountParser.normalizedTyped` reads it, like every other amount field in the app.
+    nonisolated static func decimal(
+        _ text: String, field: String, decimalSeparator: String? = Locale.current.decimalSeparator
+    ) throws -> Decimal {
+        let trimmed = AmountParser.normalizedTyped(text.trimmingCharacters(in: .whitespacesAndNewlines), decimalSeparator: decimalSeparator)
         guard trimmed.range(of: "^[0-9]+(?:\\.[0-9]{1,6})?$", options: .regularExpression) != nil,
               let value = Decimal(string: trimmed, locale: Locale(identifier: "en_US_POSIX")), value <= 1_000_000_000 else {
             throw CustomProductFieldError(field: field, code: .invalidAmount)
@@ -231,8 +263,37 @@ public struct NutrientKeyChoice: Identifiable, Equatable {
     private static func optional(_ value: String) -> String? {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines); return trimmed.isEmpty ? nil : trimmed
     }
+    /// A plain sentence for a field problem; internal paths such as "facts[0].amount" are never shown.
+    static func message(for error: CustomProductFieldError) -> String {
+        let field = error.field
+        switch error.code {
+        case .invalidAmount:
+            if field == "serving" || field.hasPrefix("serving.") { return "Enter a serving size greater than zero, such as 150 or 2.5." }
+            if field.hasPrefix("facts[") { return "Enter each amount as a number, such as 2.5." }
+            return "Enter the \(field.lowercased()) amount as a number, such as 2.5."
+        case .servingRequired:
+            return "Enter a serving size, such as 150, or show the facts per 100 g instead."
+        case .invalidBarcode:
+            return "That barcode is not valid. Check its digits, or leave it empty."
+        case .required:
+            if field.hasSuffix(" unit") { return "Choose a unit for the \(field.dropLast(5).lowercased()) amount." }
+            if field == "ingredient" { return "Name this ingredient before saving." }
+            if field == "name" { return "Enter a name for this product." }
+            return "Fill in the missing entry before saving."
+        case .tooLong:
+            return "One of the entries is too long. Shorten it and try again."
+        case .tooManyFacts:
+            return "This product has too many facts. Remove some and try again."
+        case .duplicateKey:
+            return "Two facts are the same. Remove one of them."
+        case .unsupportedKey, .unsupportedDimension:
+            return "One of the facts uses a unit that does not fit it. Choose a different unit."
+        case .invalidText:
+            return "One of the entries has characters that cannot be saved. Remove them and try again."
+        }
+    }
     public static func message(for error: Error) -> String {
-        if let field = error as? CustomProductFieldError { return "Check \(field.field): \(field.code.rawValue)." }
+        if let field = error as? CustomProductFieldError { return message(for: field) }
         if error as? CustomProductMappingError == .sourcedIdentityIsFixed { return "This imported product's kind and barcode are fixed. Keep them to edit this product." }
         if error is CustomProductMappingError { return "Choose a product kind, facts basis and explicit serving before saving." }
         if error as? CustomProductStoreError == .barcodeBindingRequiresReview { return "This shared product's barcode is fixed. Keep its barcode to edit this product." }

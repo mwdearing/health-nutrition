@@ -34,7 +34,7 @@ final class EntryDetailDesignTests: XCTestCase {
     func testEntryDetailSourceLineReadsEachOrigin() {
         let barcode = ProductDefinition(
             snapshotID: "design-barcode", productID: "4006381333931", name: "Example oats",
-            labelBasis: "per 100 g", catalogOrigin: "example-catalog", catalogVersion: "1")
+            barcode: "4006381333931", labelBasis: "per 100 g", catalogOrigin: "example-catalog", catalogVersion: "1")
         XCTAssertEqual(EntryDetailViewModel.sourceLine(for: barcode), "Barcode lookup · values per 100 g")
 
         let label = ProductDefinition(

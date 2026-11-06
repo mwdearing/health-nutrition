@@ -449,6 +449,37 @@ final class RelayDeliveryWorkerTests: XCTestCase {
         XCTAssertFalse(retried, "a refusal the encoder repeats on every attempt is not retried: \(second)")
     }
 
+    /// What the receiver says is stored and shown, so a long reply is cut instead of carried whole.
+    func testALongReceiverDetailIsCutInTheReason() async throws {
+        let (store, transport, worker) = try makeWorker()
+        try store.create(sampleIntake(), components: components(), product: nil, now: when)
+        transport.answer(.init(
+            results: [.permanentFailure], detail: String(repeating: "x", count: 5_000)))
+
+        let outcomes = await worker.runOnce(now: when)
+
+        guard case .needsAttention(_, let reason) = try XCTUnwrap(outcomes.first) else {
+            return XCTFail("a permanent failure must not be retried, got \(outcomes)")
+        }
+        XCTAssertLessThan(reason.count, 400, "the receiver's 5,000 characters are cut")
+        XCTAssertTrue(reason.hasSuffix("…"), reason)
+    }
+
+    /// One character can be thousands of combining marks, so the cut counts scalars, not characters.
+    func testACombiningMarkRunIsCutByScalarsNotCharacters() async throws {
+        let (store, transport, worker) = try makeWorker()
+        try store.create(sampleIntake(), components: components(), product: nil, now: when)
+        transport.answer(.init(
+            results: [.permanentFailure], detail: "e" + String(repeating: "\u{0301}", count: 5_000)))
+
+        let outcomes = await worker.runOnce(now: when)
+
+        guard case .needsAttention(_, let reason) = try XCTUnwrap(outcomes.first) else {
+            return XCTFail("a permanent failure must not be retried, got \(outcomes)")
+        }
+        XCTAssertLessThan(reason.unicodeScalars.count, 400, "5,001 scalars in one character are cut")
+    }
+
     /// `retryable_failure` is the receiver's own word for "send the same bytes again", so the operation goes
     /// back on the backoff rather than being parked.
     func testARetryableFailureResultSchedulesABackoff() async throws {
@@ -1854,6 +1885,34 @@ final class AlternatingLinkProvider: @unchecked Sendable {
         XCTAssertEqual(id, upsertID)
         XCTAssertEqual(
             transport.sentOperationIDs.count, 1, "only the tombstone was sent")
+        XCTAssertEqual(try pendingRelay(store), [])
+    }
+
+    /// A delete inside its Undo window is hidden from the queue, so the upsert beside it cannot be called
+    /// superseded yet: Undo brings the entry back, and an acknowledged upsert is never sent.
+    func testAnUpsertIsKeptWhileItsDeleteIsInsideTheUndoWindowAndSentAfterAnUndo() async throws {
+        let (store, transport, worker) = try makeWorker()
+        try store.create(sampleIntake(), components: components(), product: nil, now: when)
+        let upsertID = try XCTUnwrap(relayOperation(store, kind: .upsert)?.operationID)
+        try store.delete(intakeID: intakeID, now: Date())
+        transport.answerEverythingAccepted()
+
+        let held = await worker.runOnce(now: Date())
+
+        guard case .notDue(let id, _) = try XCTUnwrap(held.first) else {
+            return XCTFail("an upsert whose delete is still held waits, got \(held)")
+        }
+        XCTAssertEqual(id, upsertID)
+        XCTAssertEqual(transport.sentOperationIDs, [])
+        XCTAssertEqual(try relayOperation(store, kind: .upsert)?.operationID, upsertID, "the row stays pending")
+
+        try store.undoDelete(intakeID: intakeID)
+        let outcomes = await worker.runOnce(now: Date())
+
+        guard case .delivered(let sentID, _, _) = try XCTUnwrap(outcomes.first) else {
+            return XCTFail("after the Undo the upsert is sent, got \(outcomes)")
+        }
+        XCTAssertEqual(sentID, upsertID)
         XCTAssertEqual(try pendingRelay(store), [])
     }
 

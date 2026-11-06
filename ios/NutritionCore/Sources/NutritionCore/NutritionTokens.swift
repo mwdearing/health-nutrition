@@ -144,8 +144,21 @@ public enum NutritionTokens: Sendable {
         Token(name: "accentTint", light: "#E3F1F0", dark: "#134B58"),
     ]
 
-    /// Looks a token up by name in all three lists.
+    /// Roles for the branded-hero layout, approved 2026-11-06; kept in their own list so the earlier tables stay as approved.
+    public static let layout: [Token] = [
+        Token(name: "page", light: "#F2F2F7", dark: "#07222E"),
+        Token(name: "card", light: "#FFFFFF", dark: "#0B3D4A"),
+        Token(name: "hero", light: "#07222E", dark: "#11505F"),
+        Token(name: "heroText", light: "#FFFFFF", dark: "#FFFFFF"),
+        Token(name: "heroSecondaryText", light: "#9FC5CC", dark: "#9FC5CC"),
+        Token(name: "heroTrack", light: "#17464C", dark: "#1F6C74"),
+        Token(name: "macroProtein", light: "#0F6B78", dark: "#5EEAD4"),
+        Token(name: "macroCarbs", light: "#B45309", dark: "#FBBF24"),
+        Token(name: "macroFat", light: "#2563EB", dark: "#93B4FF"),
+    ]
+
+    /// Looks a token up by name in all four lists.
     public static func token(named name: String) -> Token? {
-        (audited + semantic + design).first { $0.name == name }
+        (audited + semantic + design + layout).first { $0.name == name }
     }
 }

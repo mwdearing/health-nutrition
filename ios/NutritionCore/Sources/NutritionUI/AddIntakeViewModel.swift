@@ -32,7 +32,8 @@ public enum AmountParser {
     /// The decimal pad offers the separator of the device's region, so where that is a comma a typed
     /// "2,5" means two and a half. It is read as such only there, and only when it is the one separator
     /// in the text: "1,000" typed where the separator is a point is refused as before rather than read
-    /// as one, and "1.234,5" is refused everywhere. A point is accepted in every region. Stored text is
+    /// as one, "1,000" typed where it is a comma is refused as a possible thousands separator (see
+    /// `looksLikeThousandsSeparator`), and "1.234,5" is refused everywhere. A point is accepted in every region. Stored text is
     /// never read through this; it goes through `parse`, which stays independent of the region.
     public static func parseTyped(
         _ text: String, decimalSeparator: String? = Locale.current.decimalSeparator
@@ -48,9 +49,32 @@ public enum AmountParser {
     ) -> String {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         guard decimalSeparator == ",", !trimmed.contains("."),
-            trimmed.filter({ $0 == "," }).count == 1
+            trimmed.filter({ $0 == "," }).count == 1,
+            !looksLikeThousandsSeparator(trimmed)
         else { return trimmed }
         return trimmed.replacingOccurrences(of: ",", with: ".")
+    }
+
+    /// The plain sentence for an amount typed with a comma that could be a thousands separator.
+    public static let thousandsSeparatorMessage = "Type the amount without a thousands separator, or use a point for a decimal."
+
+    /// Whether `text` is one comma between a whole part that does not start with zero and exactly three digits, such
+    /// as "1,000" or "12,500". In a region that writes a decimal comma that could be a thousands separator, and
+    /// reading it as a decimal would save a thousandth of what the person meant. "2,5", "2,50" and "0,125" stay
+    /// decimals: a thousands group never starts with zero, and fewer or more than three digits are not a group.
+    public static func looksLikeThousandsSeparator(_ text: String) -> Bool {
+        let parts = text.trimmingCharacters(in: .whitespaces).split(separator: ",", omittingEmptySubsequences: false)
+        guard parts.count == 2, let whole = parts.first, let fraction = parts.last else { return false }
+        return !whole.isEmpty && whole.first != "0" && whole.count <= 3
+            && whole.allSatisfy { $0.isASCII && $0.isNumber }
+            && fraction.count == 3 && fraction.allSatisfy { $0.isASCII && $0.isNumber }
+    }
+
+    /// Whether `text` is refused for being a thousands-style comma in a comma region, so the field can say why.
+    public static func isRefusedThousandsSeparator(
+        _ text: String, decimalSeparator: String? = Locale.current.decimalSeparator
+    ) -> Bool {
+        decimalSeparator == "," && looksLikeThousandsSeparator(text)
     }
 }
 
@@ -138,6 +162,13 @@ public final class AddIntakeViewModel: ObservableObject {
     public nonisolated let formID = UUID()
     @Published public private(set) var customProduct: CustomProductRevision?
     public var isCustomProduct: Bool { customProduct != nil }
+
+    /// Whether the Brand field is offered: a looked-up, captured, stored or custom product keeps a brand, a
+    /// typed food has nowhere to keep one. It reads the product, never the field's own text, so clearing the
+    /// brand to retype it does not remove the field.
+    public var showsBrandField: Bool {
+        lookedUp != nil || labelValues != nil || storedProduct != nil || customProduct != nil
+    }
     @Published public var name: String = "" {
         didSet { editedFields.insert(.name) }
     }
@@ -245,6 +276,8 @@ public final class AddIntakeViewModel: ObservableObject {
     }
     /// Whether a tap of Save has been made on this form. Once it has, every field that is wrong shows its error.
     @Published public private(set) var hasAttemptedSave = false
+    /// True once this draft has been written. A second tap on Log, before the sheet is gone, writes nothing.
+    @Published public private(set) var hasSaved = false
     /// The fields edited so far, and the fields focus has left since. An error shows under a field once
     /// both are true, so a person is not told a field is wrong while they are still typing in it.
     private var editedFields: Set<AddIntakeField> = []
@@ -383,7 +416,7 @@ public final class AddIntakeViewModel: ObservableObject {
 
     public var servingHint: String? {
         guard let serving, !serving.isEmpty else { return nil }
-        return "1 serving = \(serving.label)"
+        return "1 serving = \(serving.shownLabel)"
     }
 
     public var attributionTitle: String? { attribution?.text }
@@ -418,14 +451,16 @@ public final class AddIntakeViewModel: ObservableObject {
 
     /// The sentence beside Save when a tap of it was refused, because the fields it names carry their errors.
     public static let fixFieldsMessage = "Fix the fields marked above."
-    private static let amountMessage = "Enter an amount greater than zero, using digits and a point."
+    static let amountMessage = "Enter an amount greater than zero, such as 150 or 2.5."
 
     /// Why the name will not save, whether or not its field shows that yet.
     public var nameError: String? { typedName.isEmpty ? "Enter a name." : nil }
 
     /// Why the amount will not save, whether or not its field shows that yet.
     public var amountError: String? {
-        AmountParser.parseTyped(amountText) == nil ? Self.amountMessage : nil
+        guard AmountParser.parseTyped(amountText) == nil else { return nil }
+        return AmountParser.isRefusedThousandsSeparator(amountText)
+            ? AmountParser.thousandsSeparatorMessage : Self.amountMessage
     }
 
     /// The name's error as its field shows it: after a Save attempt, or once the name was edited and left.
@@ -960,16 +995,25 @@ public final class AddIntakeViewModel: ObservableObject {
             return
         }
         isPrefilling = true
-        amountText = DecimalFormatting.text(display.quantity)
+        amountText = DecimalFormatting.text(Self.shownServing(display.quantity))
         unit = display.unit
         isPrefilling = false
         servingCount = "1"
         // The opened amount is the serving, so emptying the Servings field later clears it.
         amountFromServings = true
-        // Saved as the exact serving the source gave, so the rounded figure shown never restates it.
+        // Saved as the exact serving the source gave, in metric, so the rounded figure shown never restates it.
         if let servingOption, let shown = AmountParser.parseTyped(amountText) {
-            prefillBacking = (shown, display.unit, servingOption.quantity ?? shown, servingOption.unit ?? display.unit)
+            let stored = Self.storedMetric(
+                amount: servingOption.quantity ?? shown, unit: servingOption.unit ?? display.unit)
+            prefillBacking = (shown, display.unit, stored.amount, stored.unit)
         }
+    }
+
+    /// A serving figure as the Amount field shows it: rounded the way a stored amount is read, so a converted
+    /// serving never opens as a 38-digit quotient. The exact figure stays in `prefillBacking`.
+    private static func shownServing(_ value: Decimal) -> Decimal {
+        let rounded = DisplayRounding.rounded(value, fractionDigits: AmountDisplay.fractionDigits(for: value))
+        return rounded > 0 || value <= 0 ? rounded : value
     }
 
     /// The serving in the person's mass unit: ounces under US units, grams under metric. The amount that
@@ -1004,12 +1048,13 @@ public final class AddIntakeViewModel: ObservableObject {
         // ("", "0", "0.", "0.0", "0,") is still being typed and leaves the amount alone; commitServingCount
         // settles it when the edit commits.
         guard let count = AmountParser.parseTyped(text, decimalSeparator: countDecimalSeparator) else { return }
-        amountText = DecimalFormatting.text(count * display.quantity)
+        amountText = DecimalFormatting.text(Self.shownServing(count * display.quantity))
         amountFromServings = true
         unit = display.unit
         if let servingOption, let quantity = servingOption.quantity, let servingUnit = servingOption.unit,
            let shown = AmountParser.parseTyped(amountText) {
-            prefillBacking = (shown, display.unit, count * quantity, servingUnit)
+            let stored = Self.storedMetric(amount: count * quantity, unit: servingUnit)
+            prefillBacking = (shown, display.unit, stored.amount, stored.unit)
         }
     }
 
@@ -1043,13 +1088,14 @@ public final class AddIntakeViewModel: ObservableObject {
               let display = servingInDisplayUnit else { return }
         isSettingServings = true
         defer { isSettingServings = false }
-        amountText = DecimalFormatting.text(count * display.quantity)
+        amountText = DecimalFormatting.text(Self.shownServing(count * display.quantity))
         amountFromServings = true
         unit = display.unit
         // The same exact-backing rule setServingCount applies, so a settled count saves the stored serving, not a rounded figure.
         if let servingOption, let quantity = servingOption.quantity, let servingUnit = servingOption.unit,
            let shown = AmountParser.parseTyped(amountText, decimalSeparator: countDecimalSeparator) {
-            prefillBacking = (shown, display.unit, count * quantity, servingUnit)
+            let stored = Self.storedMetric(amount: count * quantity, unit: servingUnit)
+            prefillBacking = (shown, display.unit, stored.amount, stored.unit)
         }
     }
 
@@ -1057,7 +1103,13 @@ public final class AddIntakeViewModel: ObservableObject {
     /// mass or the values are not per 100 g; per-serving values are not scaled here.
     public var amountPreview: AmountPreview? {
         if let basis = lookupBasis ?? lookedUp?.basis {
-            return AmountPreview.make(nutrients: prefilledNutrients, basis: basis, amountText: amountText, unit: unit)
+            var exact: (amount: Decimal, unit: MeasureUnit)?
+            if let backing = prefillBacking, let typed = AmountParser.parseTyped(amountText),
+               backing.shownAmount == typed, backing.shownUnit == unit {
+                exact = (backing.storedAmount, backing.storedUnit)
+            }
+            return AmountPreview.make(
+                nutrients: prefilledNutrients, basis: basis, amountText: amountText, unit: unit, exact: exact)
         }
         guard let labelBasis = capturedLabelBasis else { return nil }
         return capturedPreview(labelBasis: labelBasis)
@@ -1067,10 +1119,18 @@ public final class AddIntakeViewModel: ObservableObject {
     /// save path do: IntakeContextSnapshotBasis's scaling factor for the stored label basis and the amount typed.
     /// Only a mass amount is scaled, so a volume or count amount shows no preview.
     private func capturedPreview(labelBasis: String) -> AmountPreview? {
-        guard let amount = AmountParser.parseTyped(amountText), unit.dimension == .mass,
-              let converted = try? Quantity(value: amount, unit: unit).converted(to: .g)
-        else { return nil }
-        let component = IntakeComponent(componentID: "preview", name: name, amount: amount, unit: unit)
+        guard let typed = AmountParser.parseTyped(amountText), unit.dimension == .mass else { return nil }
+        // A serving shown rounded and left alone is previewed from the exact quantity saving stores, the same
+        // backing `amountPreview` and the "This adds" lines read, so the three never disagree.
+        var amount = typed
+        var amountUnit = unit
+        if let backing = prefillBacking, backing.shownAmount == typed, backing.shownUnit == unit,
+           backing.storedUnit.dimension == .mass {
+            amount = backing.storedAmount
+            amountUnit = backing.storedUnit
+        }
+        guard let converted = try? Quantity(value: amount, unit: amountUnit).converted(to: .g) else { return nil }
+        let component = IntakeComponent(componentID: "preview", name: name, amount: amount, unit: amountUnit)
         guard let factor = DailyTotalsBuilder.scalingFactor(labelBasis: labelBasis, logged: [component]) else {
             return nil
         }
@@ -1102,6 +1162,7 @@ public final class AddIntakeViewModel: ObservableObject {
     /// Validates and writes one intake. Invalid input sets field errors and writes nothing.
     @discardableResult
     public func save(now: Date) -> Bool {
+        guard !hasSaved else { return false }
         hasAttemptedSave = true
         commitServingCount()
         let trimmedName = typedName
@@ -1146,6 +1207,7 @@ public final class AddIntakeViewModel: ObservableObject {
             saveError = "Could not save the entry."
             return false
         }
+        hasSaved = true
         submitLabelIfShared()
         return true
     }

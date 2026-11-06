@@ -273,6 +273,96 @@ final class NutrientGapsTests: XCTestCase {
         XCTAssertEqual(zinc.amountText, "At least 0.65 mg")
     }
 
+    /// Health's day total counts toward the day like Today's Health side: a completed read reaches the reference
+    /// with no journal entries at all, and the upper limit is checked on the total (vitamin C, men 31+: RDA 90 mg).
+    func testAHealthOnlyDayReachesTheReferenceOnTheDaySpan() throws {
+        let store = try makeStore()
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setReferenceGroup(men31)
+        let model = NutrientGapsViewModel(
+            store: store, lookup: GapsSnapshotFacts(), preferences: preferences,
+            healthToday: { .read(values: ["vitaminC": 500], readKeys: ["vitaminC"]) })
+        model.load(now: noon)
+        let vitaminC = try XCTUnwrap(model.rows.first { $0.nutrient == "vitaminC" })
+        XCTAssertEqual(vitaminC.tally.fromHealth, 500)
+        XCTAssertEqual(vitaminC.status, .reachedReference)
+        XCTAssertNotNil(vitaminC.healthFraction, "the bar draws Health's part, so it agrees with the total")
+    }
+
+    /// A completed Health read with no samples is a known zero, so the day is below the reference, not unknown.
+    func testAHealthZeroIsAKnownZeroNotUnknown() throws {
+        let store = try makeStore()
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setReferenceGroup(men31)
+        let model = NutrientGapsViewModel(
+            store: store, lookup: GapsSnapshotFacts(), preferences: preferences,
+            healthToday: { .read(values: [:], readKeys: ["vitaminC"]) })
+        model.load(now: noon)
+        let vitaminC = try XCTUnwrap(model.rows.first { $0.nutrient == "vitaminC" })
+        XCTAssertEqual(vitaminC.status, .belowReference)
+    }
+
+    /// A Health query that failed is unknown, never zero: the day with no journal entries says unknown.
+    func testAFailedHealthReadIsUnknownNeverZero() throws {
+        let store = try makeStore()
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setReferenceGroup(men31)
+        let model = NutrientGapsViewModel(
+            store: store, lookup: GapsSnapshotFacts(), preferences: preferences,
+            healthToday: { .read(values: [:], readKeys: []) })
+        model.load(now: noon)
+        let vitaminC = try XCTUnwrap(model.rows.first { $0.nutrient == "vitaminC" })
+        XCTAssertEqual(vitaminC.status, .unknown)
+    }
+
+    /// A failed Health query beside a journal amount below the reference says the day may be higher, as the
+    /// Diary's "at least" does: the nutrient is counted as missing, not as a finished total.
+    func testAFailedHealthReadBesideAJournalAmountSaysMayBeHigher() throws {
+        let store = try makeStore()
+        try log(store, "Orange", at: noon, product: product("orange", kind: .food, nutrients: [
+            "vitaminC": .known(60, .mg),
+        ]))
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setReferenceGroup(men31)
+        let model = NutrientGapsViewModel(
+            store: store, lookup: GapsSnapshotFacts(), preferences: preferences,
+            healthToday: { .read(values: [:], readKeys: []) })
+        model.load(now: noon)
+        let vitaminC = try XCTUnwrap(model.rows.first { $0.nutrient == "vitaminC" })
+        XCTAssertEqual(vitaminC.status, .belowReferenceSoFar)
+    }
+
+    /// #1240: a week of Apple Health days with nothing in the journal counts each day and averages Health's amount.
+    func testAHealthOnlyWeekCountsEachDayAndAveragesHealth() async throws {
+        let store = try makeStore()
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setReferenceGroup(men31)
+        let model = NutrientGapsViewModel(store: store, lookup: GapsSnapshotFacts(), preferences: preferences)
+        model.healthDayReader = { _, _ in HealthDayRead(.read(values: ["vitaminC": 100], readKeys: ["vitaminC"])) }
+        model.chooseSpan(.week, now: noon)
+        await model.refreshWeekHealth(now: noon)
+        XCTAssertEqual(model.loggedDays, 7)
+        XCTAssertEqual(model.spanSummary, "Average per day over the 7 days you logged in the last 7.")
+        let vitaminC = try XCTUnwrap(model.rows.first { $0.nutrient == "vitaminC" })
+        XCTAssertEqual(vitaminC.tally.fromHealth, 100)
+        XCTAssertEqual(vitaminC.status, .reachedReference)
+    }
+
+    /// #1240: a failed Health read is unknown, never zero, so an empty week with no read says nothing was logged.
+    func testAFailedHealthWeekDayStaysUnknownNotZero() async throws {
+        let store = try makeStore()
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setReferenceGroup(men31)
+        let model = NutrientGapsViewModel(store: store, lookup: GapsSnapshotFacts(), preferences: preferences)
+        model.healthDayReader = { _, _ in HealthDayRead(.read(values: [:], readKeys: []), complete: false) }
+        model.chooseSpan(.week, now: noon)
+        await model.refreshWeekHealth(now: noon)
+        XCTAssertEqual(model.loggedDays, 0)
+        XCTAssertEqual(model.spanSummary, "Nothing was logged in the last 7 days.")
+        let vitaminC = try XCTUnwrap(model.rows.first { $0.nutrient == "vitaminC" })
+        XCTAssertEqual(vitaminC.status, .unknown)
+    }
+
     func testAHandTypedSupplementCountsAsSupplementNotFood() throws {
         let store = try makeStore()
         let intake = Intake(
@@ -551,11 +641,92 @@ final class NutrientGapsTests: XCTestCase {
                 + "that it has none.")
     }
 
-    func testDaysBeforeCountsLocalDaysInTheEntrysOwnZone() {
+    func testDaysBeforeCountsDaysFromTheEntrysOwnDateToTodaysDateInTheCurrentZone() {
         let entry = Intake(id: "x", category: "food", occurredAt: noon - 6 * 86_400, timeZoneIdentifier: "UTC")
-        XCTAssertEqual(NutrientGapsViewModel.daysBefore(noon, entry), 6)
+        XCTAssertEqual(NutrientGapsViewModel.daysBefore(noon, entry, zone: TimeZone(identifier: "UTC")!), 6)
         let bad = Intake(id: "y", category: "food", occurredAt: noon, timeZoneIdentifier: "Not/AZone")
-        XCTAssertNil(NutrientGapsViewModel.daysBefore(noon, bad))
+        XCTAssertNil(NutrientGapsViewModel.daysBefore(noon, bad, zone: TimeZone(identifier: "UTC")!))
+    }
+
+    // MARK: #1291, #1293 and the source line
+
+    /// Every nutrient with a Health mapping except the ones named, as a read that answered the rest.
+    private func healthRead(except failed: Set<String> = [], values: [String: Decimal] = [:]) -> HealthDayRead {
+        let keys = Set(
+            NutrientGapsViewModel.nutrients.filter { HealthKitWritePlanner.mapping(for: $0) != nil }
+                .map { HealthKitWritePlanner.canonicalKey(for: $0) }
+        ).subtracting(failed)
+        return HealthDayRead(.read(values: values, readKeys: keys), complete: failed.isEmpty)
+    }
+
+    /// #1291: one failed Health query must not give the other nutrients a known-zero day. Vitamin C is stated by one
+    /// logged day, so its average is that day's 100 mg, exact, over 1 day.
+    func testOneFailedHealthQueryAddsNoKnownZeroDaysToOtherNutrients() async throws {
+        let store = try makeStore()
+        try log(store, "Orange", at: noon, product: product("orange", kind: .food, nutrients: [
+            "vitaminC": .known(100, .mg),
+        ]))
+        let model = NutrientGapsViewModel(store: store, lookup: GapsSnapshotFacts(), timeZoneIdentifier: "UTC")
+        model.healthDayReader = { [self] _, _ in healthRead(except: ["vitaminK"]) }
+        model.chooseSpan(.week, now: noon)
+        await model.refreshWeekHealth(now: noon)
+        let vitaminC = try XCTUnwrap(model.rows.first { $0.nutrient == "vitaminC" })
+        XCTAssertEqual(model.loggedDays, 1)
+        XCTAssertEqual(vitaminC.averagedOverDays, 1)
+        XCTAssertEqual(vitaminC.tally.fromFood, 100)
+        XCTAssertEqual(vitaminC.amountText, "100 mg")
+        let vitaminK = try XCTUnwrap(model.rows.first { $0.nutrient == "vitaminK" })
+        XCTAssertEqual(vitaminK.status, .unknown, "the failed query itself stays unknown")
+    }
+
+    /// #1291: a logged day with only a supplement that does not declare vitamin C says nothing about it, so Health's
+    /// zeros do not make it a known-zero day for vitamin C.
+    func testHealthZerosDoNotCountAsKnownDaysForNutrientsTheJournalDayDoesNotState() async throws {
+        let store = try makeStore()
+        try log(store, "Orange", at: noon, product: product("orange", kind: .food, nutrients: [
+            "vitaminC": .known(90, .mg),
+        ]))
+        try log(store, "Magnesium", at: noon - 86_400, category: "supplement",
+            product: product("mag", kind: .supplement, nutrients: ["magnesium": .known(100, .mg)]))
+        let model = NutrientGapsViewModel(store: store, lookup: GapsSnapshotFacts(), timeZoneIdentifier: "UTC")
+        model.healthDayReader = { [self] _, _ in healthRead() }
+        model.chooseSpan(.week, now: noon)
+        await model.refreshWeekHealth(now: noon)
+        let vitaminC = try XCTUnwrap(model.rows.first { $0.nutrient == "vitaminC" })
+        XCTAssertEqual(vitaminC.averagedOverDays, 1)
+        XCTAssertEqual(vitaminC.tally.fromFood, 90)
+    }
+
+    /// The source line adds up to the figure: Health's part is named, and "All from supplements" is only said when
+    /// food and Health are both zero.
+    func testTheSourceLineNamesAppleHealthAndNeverSaysAllFromSupplementsWithHealthInTheTotal() throws {
+        let withHealth = try row("vitaminC", NutrientDayTally(fromSupplements: 50, fromHealth: 40, known: 2))
+        XCTAssertFalse(withHealth.detailLines.contains("All from supplements"))
+        XCTAssertEqual(withHealth.detailLines.first, "Supplements 50 mg, Apple Health 40 mg")
+        let all = try row("vitaminC", NutrientDayTally(fromFood: 30, fromSupplements: 50, fromHealth: 40, known: 3))
+        XCTAssertEqual(all.detailLines.first, "Food 30 mg, supplements 50 mg, Apple Health 40 mg")
+        let alone = try row("vitaminC", NutrientDayTally(fromSupplements: 50, known: 1))
+        XCTAssertEqual(alone.detailLines.first, "All from supplements")
+    }
+
+    /// #1293: logged 2026-11-05 09:00 in Tokyo, then the person flew to New York, where it is 2026-11-05 20:00. The
+    /// Diary's and Today's today is 2026-11-05 there, the entry's own date, so the Day span counts it. (The old rule
+    /// read "now" in Tokyo, where it is already 2026-11-06, and left it out.)
+    func testTheDaySpanCountsEntriesUnderTheDiarysTodayInTheCurrentZone() throws {
+        let loggedInTokyo = Date(timeIntervalSince1970: 1793836800)
+        let nowInNewYork = Date(timeIntervalSince1970: 1793926800)
+        let store = try makeStore()
+        try log(store, "Orange", at: loggedInTokyo, product: product("orange", kind: .food, nutrients: [
+            "vitaminC": .known(60, .mg),
+        ]), zone: "Asia/Tokyo")
+        let model = NutrientGapsViewModel(
+            store: store, lookup: GapsSnapshotFacts(), timeZoneIdentifier: "America/New_York")
+        model.load(now: nowInNewYork)
+        XCTAssertEqual(try XCTUnwrap(model.rows.first { $0.nutrient == "vitaminC" }).tally.fromFood, 60)
+        // Where the current zone is Tokyo itself, the same instant is already the next day and the entry is yesterday.
+        let tokyo = NutrientGapsViewModel(store: store, lookup: GapsSnapshotFacts(), timeZoneIdentifier: "Asia/Tokyo")
+        tokyo.load(now: nowInNewYork)
+        XCTAssertEqual(try XCTUnwrap(tokyo.rows.first { $0.nutrient == "vitaminC" }).tally.fromFood, 0)
     }
 
     func testClearingTheGroupShowsAmountsAloneAndForgetsTheChoice() throws {

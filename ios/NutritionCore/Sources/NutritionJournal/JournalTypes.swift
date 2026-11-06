@@ -522,6 +522,23 @@ public protocol JournalStore: AnyObject, Sendable {
     func close()
 }
 
+/// A store that holds a delete back for its Undo window. A separate protocol, so a stand-in that never holds
+/// one need not change; a worker that is not given one treats an upsert whose intake is gone as superseded.
+public protocol JournalDeleteHold: AnyObject, Sendable {
+    /// The intake's delivery state, read in one step so an Undo cannot land between two reads (#1309).
+    func deliveryState(intakeID: String) throws -> IntakeDeliveryState
+}
+
+/// What a delivery pass sees for an intake: active, hidden by a delete still in its Undo window, or gone (#1309).
+public enum IntakeDeliveryState: Equatable, Sendable {
+    /// The intake is active, so its upsert is written.
+    case active
+    /// The intake is hidden by an unacknowledged delete that is still inside its Undo window, which ends at `until`.
+    case held(until: Date)
+    /// The intake has no active entry and no held delete.
+    case gone
+}
+
 /// How long a delete can still be taken back. A delete reaches Apple Health and the relay only after it.
 public enum JournalUndo {
     public static let deleteWindow: TimeInterval = 10
@@ -637,11 +654,17 @@ public struct JournalRestorePlan: Sendable {
     public var loggedUnits: [JournalLoggedUnit]
     /// The daily goals, from version 8. Written only for a nutrient with no goal on the device, never over one.
     public var goals: [NutrientGoal]
+    /// The medications the file carries, from version 9, in the file's order. Written only when the device holds no
+    /// medication with the same identifier or name, never over one.
+    public var medications: [Medication]
+    /// The doses the file carries, from version 9, in the file's order. Each belongs to a medication in the file.
+    public var medicationDoses: [MedicationDose]
 
     public init(
         entries: [JournalRestoreEntry], tombstones: [Intake],
         products: [ProductDefinition], favorites: [FavoriteTemplate], savedMeals: [JournalSavedMeal] = [],
-        keptOutOfLibrary: [String] = [], loggedUnits: [JournalLoggedUnit] = [], goals: [NutrientGoal] = []
+        keptOutOfLibrary: [String] = [], loggedUnits: [JournalLoggedUnit] = [], goals: [NutrientGoal] = [],
+        medications: [Medication] = [], medicationDoses: [MedicationDose] = []
     ) {
         self.entries = entries
         self.tombstones = tombstones
@@ -651,6 +674,8 @@ public struct JournalRestorePlan: Sendable {
         self.keptOutOfLibrary = keptOutOfLibrary
         self.loggedUnits = loggedUnits
         self.goals = goals
+        self.medications = medications
+        self.medicationDoses = medicationDoses
     }
 }
 

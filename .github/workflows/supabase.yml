@@ -4,11 +4,17 @@ on:
   pull_request:
     paths:
       - "supabase/**"
+      - "scripts/tests/test_supabase_config.py"
+      - "scripts/ci-requirements.in"
+      - "scripts/ci-requirements.txt"
       - ".github/workflows/supabase.yml"
   push:
     branches: [main]
     paths:
       - "supabase/**"
+      - "scripts/tests/test_supabase_config.py"
+      - "scripts/ci-requirements.in"
+      - "scripts/ci-requirements.txt"
       - ".github/workflows/supabase.yml"
 
 permissions:
@@ -22,3 +28,27 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Apply the migrations to a throwaway Postgres and run the behavior test
         run: supabase/tests/run.sh
+  apple-grant:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Test the Apple grant function against doubles
+        run: npx --yes deno@2.1.4 test --no-check supabase/functions/apple-grant/handler_test.ts
+  config:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: 0.12.19
+          enable-cache: false
+      - name: Install hash-locked CI tools
+        run: uv pip sync --python "$(python -c 'import sys; print(sys.executable)')" --require-hashes scripts/ci-requirements.txt
+      - name: Test the checked-in Auth config
+        run: python -m pytest -q -p no:cacheprovider scripts/tests/test_supabase_config.py

@@ -9,7 +9,7 @@ A native iOS app for a local food, supplement and hydration journal. This reposi
 - Favorites, recents, repeat entries and versioned personal recipes
 - Versioned journal export and import, plus Erase all data in Settings, which clears the local stores and the community session on the phone
 - On-demand barcode lookup, Nutrition Facts label capture and confirmation, and NIH DSLD provider components
-- Open Food Facts name search, sent only when the person submits the search field
+- Open Food Facts name search, sent only when the person submits the search field; USDA FoodData Central name search joins it when the build carries a key
 - Optional sign-in with Sign in with Apple or an emailed one-time code, in builds that carry the project settings
 - Custom products with optional barcodes, serving information and structured facts; a selected product can be shared after review, and shared products can be found by name
 - Community catalog client: label submission, a barcode fallback for barcodes that Open Food Facts does not know, and product search
@@ -18,7 +18,7 @@ A native iOS app for a local food, supplement and hydration journal. This reposi
 - App Intents: Log water, a saved meal and a supplement from Siri, Spotlight and the Shortcuts app; each is queued for Apple Health like any other entry
 - Trends and Insights: per-day averages and a 7-day view, computed from the Diary alone and making no medical claim
 - My supplements, water and supplement reminders, and Today widgets on the Home Screen and Lock Screen
-- Apple Health reading of steps, active energy and weight, plus the nutrient types the app writes, requested only when the person asks
+- Apple Health reading of steps, active energy and weight, plus the nutrient types the app writes, requested only when the person asks; the newest height is read only to prefill goal setup and is never stored
 - Intake-context canonical JSON, digest calculation and journal-revision encoding
 - Swift package and app-target tests, source lint, privacy checks and unsigned build workflows
 - A manual, reviewer-gated signed-upload workflow for beta builds

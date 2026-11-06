@@ -1,4 +1,8 @@
+import Combine
 import SwiftUI
+#if os(iOS)
+import UIKit
+#endif
 import NutritionDomain
 import NutritionJournal
 
@@ -33,6 +37,8 @@ public struct TodayView: View {
     private let supplementStack: SupplementStackViewModel?
     /// Called after a Taken or an Undo on the supplement list opened from the tile.
     private let onSupplementLogged: () -> Void
+    /// The Medication log. Nil hides the Medications tile.
+    private let medicationLog: MedicationLogViewModel?
 
     public init(
         model: TodayViewModel, now: @escaping () -> Date = { Date() }, onAddIntake: @escaping () -> Void,
@@ -40,7 +46,8 @@ public struct TodayView: View {
         onAddToMeal: ((MealLabel?) -> Void)? = nil,
         checklist: FirstDayChecklistModel? = nil, onOpenUnits: (() -> Void)? = nil,
         bodyActivity: BodyActivityViewModel? = nil, supplementStack: SupplementStackViewModel? = nil,
-        onSupplementLogged: @escaping () -> Void = {}
+        onSupplementLogged: @escaping () -> Void = {},
+        medicationLog: MedicationLogViewModel? = nil
     ) {
         self.model = model
         self.now = now
@@ -53,6 +60,7 @@ public struct TodayView: View {
         self.bodyActivity = bodyActivity
         self.supplementStack = supplementStack
         self.onSupplementLogged = onSupplementLogged
+        self.medicationLog = medicationLog
     }
 
     public var body: some View {
@@ -93,6 +101,7 @@ public struct TodayView: View {
                 if let supplementStack {
                     SupplementsTodayTile(model: supplementStack, now: now, onLogged: onSupplementLogged)
                 }
+                if let medicationLog { MedicationsTodayTile(model: medicationLog) }
                 if let bodyActivity {
                     BodyActivityCard(model: bodyActivity, now: now)
                 }
@@ -106,7 +115,6 @@ public struct TodayView: View {
             }
             .padding(.horizontal, DesignSpacing.m)
             .padding(.vertical, DesignSpacing.s)
-            .padding(.bottom, DesignSpacing.floatingClearance)
         }
         .background(TokenColors.background)
         // The screen name stays the navigation title, so VoiceOver and the back button keep "Today". The bar draws no
@@ -119,6 +127,21 @@ public struct TodayView: View {
         }
 #endif
         .onAppear { model.load(now: now()) }
+        // Midnight, a time-zone change or a clock change while the app is open moves Today to the new day.
+        .task {
+            await model.runDayChangeReloads({ Self.dayChanges().values }, now: now)
+        }
+    }
+
+    /// The system's notices that the day, the zone or the clock changed.
+    private static func dayChanges() -> AnyPublisher<Void, Never> {
+        var names: [Notification.Name] = [.NSCalendarDayChanged, .NSSystemTimeZoneDidChange]
+        #if os(iOS)
+        names.append(UIApplication.significantTimeChangeNotification)
+        #endif
+        return Publishers.MergeMany(names.map { NotificationCenter.default.publisher(for: $0) })
+            .map { _ in () }
+            .eraseToAnyPublisher()
     }
 
     /// Opens today's vitamins and minerals against published reference values. It pushes onto the
@@ -192,14 +215,14 @@ public struct TodayView: View {
                             .font(.headline)
                             .foregroundStyle(TokenColors.textPrimary)
                         Spacer(minLength: DesignSpacing.s)
-                        Text(model.waterTotalDisplay.text)
+                        Text(model.waterFigureText)
                             .font(.title3)
                             .foregroundStyle(TokenColors.textPrimary)
                             .accessibilityValue(model.waterAccessibilityValue)
                     }
                     if model.waterSkippedCount > 0 {
                         InlineNotice(
-                            "\(model.waterSkippedCount) water entries have a unit that is not a volume and are not counted.",
+                            GoalBarModel.skippedWaterText(count: model.waterSkippedCount),
                             tone: .waiting)
                     }
                 }
@@ -209,12 +232,17 @@ public struct TodayView: View {
                     }
                     .accessibilityLabel(model.quickWaterAccessibilityLabel)
                     .accessibilityHint("Adds one water entry. You can undo it for 10 seconds.")
-                    if model.isUndoAvailable(now: now()), model.undo?.isDelete != true {
-                        QuietCapsule("Undo water") {
-                            model.undoLastQuickAdd(now: now())
+                    if model.undo?.isDelete != true {
+                        // Re-read once a second, so the control goes away when its window closes.
+                        TimelineView(.periodic(from: .now, by: 1)) { context in
+                            if model.isUndoAvailable(now: context.date) {
+                                QuietCapsule("Undo water") {
+                                    model.undoLastQuickAdd(now: now())
+                                }
+                                .accessibilityLabel("Undo last water")
+                                .accessibilityValue("Available for 10 seconds after adding")
+                            }
                         }
-                        .accessibilityLabel("Undo last water")
-                        .accessibilityValue("Available for 10 seconds after adding")
                     }
                     Spacer(minLength: DesignSpacing.s)
                 }
