@@ -27,8 +27,8 @@ with custom as (
    from catalog_v2.barcode_bindings b cross join lateral catalog_v2.legacy_rows(b.barcode) l
    join catalog_v2.legacy_revisions lr on lr.product_id=p and lr.content=l.content
    where b.product_id=p and not catalog_v2.suppressed(p,l.content->>'basis')
-  ) select row_number() over(order by reviewed desc,support desc,revision),revision,support::bigint,reviewed,missing,legacy,content
- from candidates where not catalog_v2.suppressed(p) order by reviewed desc,support desc,revision;
+  ) select row_number() over(order by support desc,revision),revision,support::bigint,reviewed,missing,legacy,content
+ from candidates where not catalog_v2.suppressed(p) order by support desc,revision;
 $$;
 
 -- Stored search entries copy the representative's name. Rebuild those whose displayed representative is not the
