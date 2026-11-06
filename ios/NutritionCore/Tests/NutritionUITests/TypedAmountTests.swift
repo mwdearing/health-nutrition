@@ -13,6 +13,14 @@ final class TypedAmountTests: XCTestCase {
         XCTAssertEqual(AmountParser.parseTyped("250", decimalSeparator: ","), Decimal(250))
     }
 
+    func testACommaFollowedByExactlyThreeDigitsIsRefusedWhereTheRegionUsesOne() {
+        // "1,000" in a comma region could be a thousands separator. It is refused, not read as 1.0.
+        XCTAssertNil(AmountParser.parseTyped("1,000", decimalSeparator: ","))
+        XCTAssertNil(AmountParser.normalizedTyped("1,000", decimalSeparator: ",").isEmpty ? nil : AmountParser.parse(AmountParser.normalizedTyped("1,000", decimalSeparator: ",")))
+        XCTAssertEqual(AmountParser.parseTyped("2,50", decimalSeparator: ","), Decimal(string: "2.5"))
+        XCTAssertEqual(AmountParser.parseTyped("2,5", decimalSeparator: ","), Decimal(string: "2.5"))
+    }
+
     func testACommaIsRefusedWhereTheRegionUsesAPoint() {
         XCTAssertNil(AmountParser.parseTyped("2,5", decimalSeparator: "."))
         XCTAssertNil(AmountParser.parseTyped("1,000", decimalSeparator: "."))
