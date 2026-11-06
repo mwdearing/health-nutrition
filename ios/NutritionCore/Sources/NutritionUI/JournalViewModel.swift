@@ -209,6 +209,12 @@ public final class JournalViewModel: ObservableObject {
         }
     }
 
+    /// The identity of the week's Health read: the Diary's zone, the forget count and today's date, so a zone change,
+    /// forgetting the figures or the day turning over while the Diary stays open starts a fresh read of the week.
+    public func healthWeekTaskID(now: Date) -> String {
+        "week|\(dayZone.identifier)|\(healthReadEpoch)|\(Self.dayKey(now, zone: dayZone))"
+    }
+
     /// The identity of a day row's Health read: the day and the Diary's zone, so a zone change starts a fresh read for
     /// each day on screen rather than leaving it journal-only until it scrolls away and back.
     /// It also carries the forget count, so forgetting the figures (Erase, or a Health access change) starts a fresh
@@ -466,7 +472,8 @@ public final class JournalViewModel: ObservableObject {
                 sections: sections, now: now,
                 zone: TimeZone(identifier: journalZoneID()) ?? TimeZone.current,
                 goals: storedGoals, hidden: hiddenGoals, unitSystem: self.preferences.unitSystem,
-                displayNames: printedNames(in: intakesByDay.values.flatMap { $0 }.filter { $0.occurredAt >= weekWindowStart(now: now) && $0.occurredAt <= now }, goals: storedGoals))
+                displayNames: printedNames(in: intakesByDay.values.flatMap { $0 }.filter { $0.occurredAt >= weekWindowStart(now: now) && $0.occurredAt <= now }, goals: storedGoals),
+                outsideByDay: outsideIntakeByDay)
             skippedCount = skipped
             errorMessage = nil
             goalsErrorMessage = goalsReadFailed ? GoalsViewModel.readFailedMessage : nil
@@ -481,6 +488,17 @@ public final class JournalViewModel: ObservableObject {
             errorMessage = "Could not read the journal."
         }
     }
+
+    /// The empty state's wording. Beside a week card that counts days from Apple Health, "Your journal is empty" would
+    /// contradict the card, so the title and message say the journal has no entries of its own.
+    public static let emptyTitle = "Your journal is empty"
+    public static let emptyMessage = "Everything you log is listed here by day."
+    public static let emptyWithHealthWeekTitle = "No entries in this journal yet"
+    public static let emptyWithHealthWeekMessage =
+        "The week above counts days from Apple Health. Everything you log here is listed by day."
+
+    public var emptyStateTitle: String { weekSummary == nil ? Self.emptyTitle : Self.emptyWithHealthWeekTitle }
+    public var emptyStateMessage: String { weekSummary == nil ? Self.emptyMessage : Self.emptyWithHealthWeekMessage }
 
     /// True when nothing is listed after a successful load: no day and no skipped entry.
     public var isEmpty: Bool {
@@ -878,9 +896,9 @@ public final class JournalViewModel: ObservableObject {
     /// the seven days ending today in the journal's zone, today included; a later day is outside it.
     static func makeWeekSummary(
         sections: [JournalDaySection], now: Date, zone: TimeZone, goals: [NutrientGoal],
-        hidden: Set<String>, unitSystem: UnitSystem, displayNames: [String: String] = [:]
+        hidden: Set<String>, unitSystem: UnitSystem, displayNames: [String: String] = [:],
+        outsideByDay: [String: HealthIntakeTotals.Outside] = [:]
     ) -> JournalWeekSummary? {
-        guard !sections.isEmpty else { return nil }
         // The window is read by instant in the journal's zone: from the start of the day six days back to now.
         // An entry's own zone only decides which day section it sits in, so a trip across zones cannot move an
         // entry in or out of the week or make a section count twice.
@@ -893,15 +911,68 @@ public final class JournalViewModel: ObservableObject {
         let week = sections.filter { section in
             section.rows.contains { $0.occurredAt >= windowStart && $0.occurredAt <= windowEnd }
         }
-        let logged = week.filter { hasFoodEntries($0.rows) }
-        guard !logged.isEmpty else {
+        // The window's own days, newest first, as the Diary's yyyy-MM-dd keys: where a day Apple Health states intake
+        // for, with no journal entry, is found.
+        let windowKeys = (0..<weekLength).compactMap { back in
+            calendar.date(byAdding: .day, value: -back, to: startOfToday).map { dayKey($0, zone: zone) }
+        }
+        // A day with a section but no row inside the window (an entry dated later than now) counts here too: what is
+        // dated later has not happened, so only Health's intake states that day, as for a day with no section.
+        let healthOnlyKeys = windowKeys.filter { key in
+            outsideByDay[key]?.statesIntake == true && !week.contains { $0.id == key }
+        }
+        // A journal with no day at all has a week card only when Health states intake for a day in the window;
+        // otherwise it shows its empty state alone.
+        guard !sections.isEmpty || !healthOnlyKeys.isEmpty else { return nil }
+        let logged = week.filter { hasFoodEntries($0.rows) || outsideByDay[$0.id]?.statesIntake == true }
+        let days: [WeekDay] = logged.map { WeekDay(totals: $0.totals, outside: outsideByDay[$0.id] ?? .notConnected) }
+            + healthOnlyKeys.map { WeekDay(totals: nil, outside: outsideByDay[$0] ?? .notConnected) }
+        guard !days.isEmpty else {
             return JournalWeekSummary(headline: "Nothing logged this week.", goalLines: [])
         }
         let lines = goals
             .filter { $0.nutrient != DailyTotalsBuilder.waterKey && !hidden.contains($0.nutrient) }
             .prefix(3)
-            .map { weekGoalLine(goal: $0, days: logged, unitSystem: unitSystem, displayNames: displayNames) }
-        return JournalWeekSummary(headline: "Logged \(min(logged.count, weekLength)) of 7 days", goalLines: Array(lines))
+            .map { weekGoalLine(goal: $0, days: days, unitSystem: unitSystem, displayNames: displayNames) }
+        return JournalWeekSummary(headline: "Logged \(min(days.count, weekLength)) of 7 days", goalLines: Array(lines))
+    }
+
+    /// One logged day of the week card: the journal's totals for it (nil for a day only Apple Health states) and what
+    /// other apps logged to Apple Health that day.
+    struct WeekDay {
+        let totals: DailyTotals?
+        let outside: HealthIntakeTotals.Outside
+    }
+
+    /// The day's amount of the goal's nutrient for the week average: the journal's total with Apple Health's added when
+    /// Health answered for this nutrient, the journal's total alone otherwise (not connected, or a query that failed,
+    /// as the day header does), and unknown when the day cannot state it exactly.
+    static func weekDayAmount(goal: NutrientGoal, day: WeekDay) -> NutrientValue? {
+        let journalLine = NutrientProgressLine.make(
+            nutrient: goal.nutrient, total: day.totals?.total(for: goal.nutrient), goal: goal,
+            knownSum: day.totals?.knownSum(for: goal.nutrient),
+            missingCount: day.totals?.missingCount(for: goal.nutrient) ?? 0)
+        let canonical = HealthKitWritePlanner.canonicalKey(for: goal.nutrient)
+        guard case .read(let values, let readKeys) = day.outside, readKeys.contains(canonical)
+        else {
+            // Health added nothing here: a day with a journal total reads it as before; a day only Health states, whose
+            // query for this nutrient failed, cannot be totaled.
+            return day.totals?.total(for: goal.nutrient)?.value
+        }
+        // A day whose journal side states nothing for this nutrient and holds no value for it (no entry at all, or only
+        // water or supplements that do not state it; a value the totals could not add up is not "nothing") is logged by Health's intake, and Health's query for this nutrient
+        // succeeded: no sample is a known zero, not an unknown.
+        let journalStatedCount = day.totals?.total(for: goal.nutrient)?.coverage.totalCount ?? 0
+        if journalStatedCount == 0, case .unknown = journalLine.amount, !journalLine.isPartial,
+           journalLine.missingCount == 0 {
+            guard let unit = HealthKitWritePlanner.mapping(for: goal.nutrient)?.unit else { return nil }
+            return .known(values[canonical] ?? 0, unit)
+        }
+        // The journal holds a value for this nutrient that the totals could not add up (a unit of another kind): the day
+        // cannot be totaled, and Health's amount must not stand in for the whole day.
+        if journalStatedCount > 0, case .unknown = journalLine.amount, !journalLine.isPartial { return nil }
+        let combined = HealthIntakeTotals.combine([journalLine], outside: day.outside).first ?? journalLine
+        return combined.isPartial ? nil : combined.amount
     }
 
     /// The words the labels printed for the goal nutrients (`DHA`, never `Dha`), read from the snapshots the
@@ -943,13 +1014,13 @@ public final class JournalViewModel: ObservableObject {
     /// One goal's line for the logged days. The average is over the days whose total is known, converted
     /// to the goal's unit, and each day that cannot be totaled is counted in the parenthetical.
     static func weekGoalLine(
-        goal: NutrientGoal, days: [JournalDaySection], unitSystem: UnitSystem, displayNames: [String: String] = [:]
+        goal: NutrientGoal, days: [WeekDay], unitSystem: UnitSystem, displayNames: [String: String] = [:]
     ) -> String {
         let name = NutrientNames.displayName(for: goal.nutrient, displayNames: displayNames)
         var known: [Decimal] = []
         var unknownDays = 0
         for day in days {
-            guard let total = day.totals.total(for: goal.nutrient), case .known(let amount, let unit) = total.value,
+            guard let value = weekDayAmount(goal: goal, day: day), case .known(let amount, let unit) = value,
                   let converted = try? Quantity(value: amount, unit: unit).converted(to: goal.unit).value
             else {
                 unknownDays += 1

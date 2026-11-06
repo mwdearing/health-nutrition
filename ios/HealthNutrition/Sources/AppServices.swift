@@ -171,7 +171,7 @@ final class AppServices {
         // delivery pass is between its busy check and its Health write while the stores are emptied (#841).
         let healthKitDeliveryGate = DeliveryRunGate()
         connections = ConnectionsPrivacyViewModel(goals: goalStore,
-            store: journalStore, favorites: favoritesStore, savedMeals: savedMealStore,
+            store: journalStore, favorites: favoritesStore, savedMeals: savedMealStore, medications: medicationStore,
             appVersion: Self.appVersion,
             erasers: erasers,
             preferences: displayPreferences,
@@ -278,6 +278,10 @@ final class AppServices {
         ]
         // Today counts the active energy toward the calorie goal when the person switched that on;
         // it reloads only when the figure changed, so a foreground does not load Today twice for nothing.
+        // A new day starts with no Health readings on Today; read Health again so the day's own figures arrive.
+        today.onDayChange = { [bodyActivity] in
+            Task { await bodyActivity.load(now: Date()) }
+        }
         bodyActivity.onRead = { [today] readings in
             guard TodayViewModel.needsReload(
                 activeEnergyKcal: today.activeEnergyKcal, outsideIntake: today.outsideIntake, for: readings

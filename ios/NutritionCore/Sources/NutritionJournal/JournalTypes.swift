@@ -646,11 +646,17 @@ public struct JournalRestorePlan: Sendable {
     public var loggedUnits: [JournalLoggedUnit]
     /// The daily goals, from version 8. Written only for a nutrient with no goal on the device, never over one.
     public var goals: [NutrientGoal]
+    /// The medications the file carries, from version 9, in the file's order. Written only when the device holds no
+    /// medication with the same identifier or name, never over one.
+    public var medications: [Medication]
+    /// The doses the file carries, from version 9, in the file's order. Each belongs to a medication in the file.
+    public var medicationDoses: [MedicationDose]
 
     public init(
         entries: [JournalRestoreEntry], tombstones: [Intake],
         products: [ProductDefinition], favorites: [FavoriteTemplate], savedMeals: [JournalSavedMeal] = [],
-        keptOutOfLibrary: [String] = [], loggedUnits: [JournalLoggedUnit] = [], goals: [NutrientGoal] = []
+        keptOutOfLibrary: [String] = [], loggedUnits: [JournalLoggedUnit] = [], goals: [NutrientGoal] = [],
+        medications: [Medication] = [], medicationDoses: [MedicationDose] = []
     ) {
         self.entries = entries
         self.tombstones = tombstones
@@ -660,6 +666,8 @@ public struct JournalRestorePlan: Sendable {
         self.keptOutOfLibrary = keptOutOfLibrary
         self.loggedUnits = loggedUnits
         self.goals = goals
+        self.medications = medications
+        self.medicationDoses = medicationDoses
     }
 }
 
