@@ -48,7 +48,8 @@ day, the time zone or the clock changes while Today is open. When the entry shee
 swipe down after Log again, the screens behind it reload. The card disappears once the first three steps are all
 done, and it returns only if one of them becomes undone again (for example, every entry is deleted). **Hide**
 removes the card at once and stores the choice, so it stays hidden on later launches until an erase clears it. The
-fourth step does not count toward hiding the card, so it never keeps the card on screen.
+fourth step can show as done, but only the first three decide whether the card hides, so an undone Health step never
+keeps the card on screen.
 
 ## Totals
 A **DailyTotals** (`ios/NutritionCore/Sources/NutritionUI/DailyTotals.swift`) is what one day adds up to, one entry
