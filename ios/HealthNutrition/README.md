@@ -20,10 +20,11 @@ is written to Health until the person taps Connect Apple Health in Settings
 (`Sources/HealthKitDeliveryStatus.swift`, reached through `AppleHealthConnecting`). See the
 [writer lifecycle](../../docs/healthkit-writer.md) for the gate, retry and deletion behavior.
 
-A debug build also shows the same driver's full state on a HealthKit tab (`HealthKitDeliveryDebugSection`,
-behind `#if DEBUG`), and the separate debug-only spike (`Sources/Debug/HealthKitSpikeView.swift`)
-records the device observations in [ADR 0002](../../docs/adr/0002-healthkit-sync.md). Release builds
-contain neither debug surface.
+A debug build launched with `SHOW_HEALTHKIT_TAB` set also shows the same driver's full state on a HealthKit tab
+(`HealthKitDeliveryDebugSection`, behind `#if DEBUG`). Without the variable the tab bar keeps the four tabs and
+Add, so the system never moves Add behind a More button. The separate debug-only spike
+(`Sources/Debug/HealthKitSpikeView.swift`) records the device observations in
+[ADR 0002](../../docs/adr/0002-healthkit-sync.md). Release builds contain neither debug surface.
 
 ## What the target contains
 
@@ -39,7 +40,8 @@ contain neither debug surface.
   belongs to the instance, so two instances on the same file would assign duplicate revision
   numbers (see [docs/journal-store.md](../../docs/journal-store.md)).
 - `Sources/RootView.swift`: the tab shell with Today, Diary (the journal), Library and Trends (Nutrients and Insights), with a gear on every tab that opens the settings sheet, plus a HealthKit tab in
-  debug builds only. Library opens the personal recipes in its own navigation stack
+  debug builds launched with `SHOW_HEALTHKIT_TAB` set. Add is a separate tab at the end of the bar that opens Add
+  and leaves the shown tab selected. Library opens the personal recipes in its own navigation stack
   (see [docs/recipes.md](../../docs/recipes.md)).
 - `Sources/RecipeNavigation.swift`: the recipe sheet's presentation and navigation stack on one small
   `@MainActor` object, so the erase on the Connections and privacy screen can close the sheet and drop

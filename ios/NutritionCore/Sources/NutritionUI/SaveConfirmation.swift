@@ -12,11 +12,37 @@ public extension View {
     /// Shows a brief "Saved" line when `notice` changes, with a success haptic and a VoiceOver announcement.
     /// Attach it to the screen that stays on screen after the save, or to the screen the editor returns to.
     func saveConfirmation(_ notice: SaveNotice?) -> some View {
-        modifier(SaveConfirmationModifier(notice: notice))
+        saveFeedback(notice).saveConfirmationLine(notice)
+    }
+
+    /// The success haptic and the VoiceOver announcement for each new notice, once. No visual.
+    func saveFeedback(_ notice: SaveNotice?) -> some View {
+        modifier(SaveFeedbackModifier(notice: notice))
+    }
+
+    /// The brief visual line for each new notice, resting at the bottom of the view it is attached to.
+    /// Attach it inside a tab so the line sits above the tab bar.
+    func saveConfirmationLine(_ notice: SaveNotice?) -> some View {
+        modifier(SaveConfirmationLineModifier(notice: notice))
     }
 }
 
-private struct SaveConfirmationModifier: ViewModifier {
+private struct SaveFeedbackModifier: ViewModifier {
+    let notice: SaveNotice?
+
+    func body(content: Content) -> some View {
+        content
+            .sensoryFeedback(.success, trigger: notice?.id) { _, new in new != nil }
+            .onChange(of: notice) { _, new in
+                guard let new else { return }
+                #if os(iOS)
+                AccessibilityNotification.Announcement(new.message).post()
+                #endif
+            }
+    }
+}
+
+private struct SaveConfirmationLineModifier: ViewModifier {
     let notice: SaveNotice?
     @State private var shown: SaveNotice?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -29,9 +55,9 @@ private struct SaveConfirmationModifier: ViewModifier {
                         .font(.body.weight(.medium))
                         .foregroundStyle(TokenColors.textPrimary)
                         .padding(DesignSpacing.m)
-                        .background(TokenColors.accentTint, in: RoundedRectangle(cornerRadius: DesignRadius.control))
+                        .glassEffect(.regular, in: Capsule())
                         .padding(DesignSpacing.m)
-                        // VoiceOver hears the announcement posted below, so the visual line stays silent.
+                        // VoiceOver hears the announcement posted by saveFeedback, so the visual line stays silent.
                         .accessibilityHidden(true)
                         // The line is information only, so taps on the controls behind it still reach them.
                         .allowsHitTesting(false)
@@ -39,13 +65,9 @@ private struct SaveConfirmationModifier: ViewModifier {
                 }
             }
             .animation(reduceMotion ? nil : .snappy, value: shown?.id)
-            .sensoryFeedback(.success, trigger: notice?.id) { _, new in new != nil }
             .onChange(of: notice) { _, new in
                 guard let new else { return }
                 shown = new
-                #if os(iOS)
-                AccessibilityNotification.Announcement(new.message).post()
-                #endif
                 Task {
                     try? await Task.sleep(for: .seconds(2.5))
                     if shown == new { shown = nil }
