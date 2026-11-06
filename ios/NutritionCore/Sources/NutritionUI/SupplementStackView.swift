@@ -25,6 +25,7 @@ public struct SupplementStackView: View {
 
     public var body: some View {
         List {
+            Group {
             if model.unreadableEntriesToday > 0 {
                 InlineNotice(
                     "\(model.unreadableEntriesToday) of today's entries can't be read, so a time may show "
@@ -71,9 +72,11 @@ public struct SupplementStackView: View {
             if let message = model.errorMessage {
                 Text(message).font(.footnote).foregroundStyle(TokenColors.error)
             }
+            }
+            .listRowBackground(TokenColors.card)
         }
         .scrollContentBackground(.hidden)
-        .background(TokenColors.background)
+        .background(TokenColors.page)
         .navigationTitle("My supplements")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -273,7 +276,7 @@ struct SupplementStackPicker: View {
             }
         }
         .scrollContentBackground(.hidden)
-        .background(TokenColors.background)
+        .background(TokenColors.page)
         .navigationTitle("Add a supplement")
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {

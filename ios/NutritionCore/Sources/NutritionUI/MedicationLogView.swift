@@ -22,6 +22,7 @@ public struct MedicationLogView: View {
 
     public var body: some View {
         List {
+            Group {
             if let undo = model.undoText {
                 Section {
                     HStack {
@@ -75,9 +76,11 @@ public struct MedicationLogView: View {
                     Button("Clear the medication log", role: .destructive) { self.isConfirmingClear = true }
                 }
             }
+            }
+            .listRowBackground(TokenColors.card)
         }
         .scrollContentBackground(.hidden)
-        .background(TokenColors.background)
+        .background(TokenColors.page)
         .navigationTitle("Medication log")
         .confirmationDialog("Clear the medication log?", isPresented: $isConfirmingClear, titleVisibility: .visible) {
             Button("Clear the log", role: .destructive) { self.model.clearLog() }

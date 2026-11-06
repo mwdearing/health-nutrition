@@ -124,6 +124,8 @@ public struct CustomProductEditorView: View {
             }
             if let item = model.revision, let sharing { CustomProductSharingSection(item: item, model: sharing) }
         }
+        .scrollContentBackground(.hidden)
+        .background(TokenColors.page)
         .navigationTitle("Product editor")
         // Changes are only at risk once made: a changed product asks before leaving.
         .navigationBarBackButtonHidden(model.hasTypedInput)

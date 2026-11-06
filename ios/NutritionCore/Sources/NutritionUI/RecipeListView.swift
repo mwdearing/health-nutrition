@@ -14,6 +14,7 @@ public struct RecipeListView: View {
 
     public var body: some View {
         List {
+            Group {
             Section {
                 Button(RecipeLabels.newRecipe) { onNew() }
                     .font(.headline)
@@ -58,9 +59,11 @@ public struct RecipeListView: View {
             if let message = model.errorMessage {
                 Text(message).font(.footnote).foregroundStyle(TokenColors.error)
             }
+            }
+            .listRowBackground(TokenColors.card)
         }
         .scrollContentBackground(.hidden)
-        .background(TokenColors.background)
+        .background(TokenColors.page)
         .navigationTitle("Recipes")
         .onAppear { model.load() }
         .confirmationDialog(
