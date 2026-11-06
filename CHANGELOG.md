@@ -4,6 +4,7 @@ Recent changes to the Health Nutrition iOS app. The newest entry is first. This 
 
 ## Unreleased
 
+- **#1329**: Insights no longer counts a water-only or supplement-only day as logged. The Medications tile shows the last-dose line. Recipe rows say "1 ingredient", and a failed recipe read clears stale rows. Closes #1295, #1296, #1314.
 - **#1325**: the label review serving size can be corrected whether or not the parser flagged it. Review buttons are spoken with their on-screen titles first. Closes #1312.
 - **#1318**: the supplement Shortcut picks the nearest open time within today without wrapping past midnight, so a late-evening time is tonight's. Closes #1300.
 - **#1333**: Today follows midnight, time-zone and clock changes while open and reads Health again. Undo water closes on time. The first-day Apple Health row shows its status and opens the Health app once Health has answered. The startup failure screen has Try again. Closing an entry sheet always reloads the screens behind it. Closes #1327, #1328.
@@ -25,7 +26,6 @@ Recent changes to the Health Nutrition iOS app. The newest entry is first. This 
 From the security, bug and usability review of 2026-11-05. Each line moves under Unreleased when its PR merges, and is dropped if the PR closes unmerged.
 
 - **#1330**: opening Privacy, Licenses or Daily goals from Settings no longer deletes the export file or clears the restore result; only leaving Settings does. Closes #1290.
-- **#1329**: Insights no longer counts a water-only or supplement-only day as logged. The Medications tile shows the last-dose line. Recipe rows say "1 ingredient", and a failed recipe read clears stale rows. Closes #1295, #1296, #1314.
 - **#1324**: the custom product editor accepts the region's decimal comma and shows plain-sentence field errors. Closes #1288.
 - **#1320**: USDA servings are stored in grams and shown in ounces only for display, rounded, with previews and saves using the exact grams. Source lines say "Food search" and "Custom product". Singular wording, clearer amount errors, and the Brand field stays while it is cleared. Closes #1285, #1289.
 - **#1316**: the privacy statement says Health readings are not uploaded but totals can show on widgets and a paired Apple Watch. The in-app summary names USDA FoodData Central and the Health nutrition reads. Closes #1286.
