@@ -65,7 +65,7 @@ final class MedicationStoreDamagedRowEraseTests: XCTestCase {
         XCTAssertEqual(sqlite3_open_v2(url.path, &database, SQLITE_OPEN_READWRITE, nil), SQLITE_OK)
         // `close()` only drops the store's container; the file's last connection can be released a moment later, and a
         // write in that moment is refused as busy (SQLITE_BUSY, 5, seen in CI). This connection waits up to 10 s for
-        // the lock, as the store's own checks do, so the write below is judged on what it does, not on timing.
+        // the lock (the store's own file check waits 2 s), so the write below is judged on what it does, not on timing.
         XCTAssertEqual(sqlite3_busy_timeout(database, 10_000), SQLITE_OK)
         XCTAssertEqual(sqlite3_exec(database, "UPDATE ZMEDICATIONRECORD SET ZNAME = NULL", nil, nil, nil), SQLITE_OK)
         XCTAssertEqual(sqlite3_changes(database), 1, "the row written outside the app has no name")
