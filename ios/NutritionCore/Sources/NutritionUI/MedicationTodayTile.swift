@@ -70,11 +70,9 @@ struct MedicationsTodayTile: View {
             NavigationLink {
                 MedicationLogView(model: model)
             } label: {
-                Card {
+                ContentCard {
                     HStack(spacing: DesignSpacing.m) {
-                        Image(systemName: "cross.case")
-                            .foregroundStyle(TokenColors.accent)
-                            .accessibilityHidden(true)
+                        IconWell(systemName: "cross.case")
                         VStack(alignment: .leading, spacing: DesignSpacing.xs) {
                             Text(MedicationTodayTileContent.title)
                                 .font(.headline)

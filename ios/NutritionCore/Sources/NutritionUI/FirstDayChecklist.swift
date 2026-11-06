@@ -138,12 +138,9 @@ public struct FirstDayChecklistView: View {
     }
 
     public var body: some View {
-        Card {
+        ContentCard {
             VStack(alignment: .leading, spacing: DesignSpacing.m) {
-                Text("Getting started")
-                    .font(.headline)
-                    .foregroundStyle(TokenColors.textPrimary)
-                    .accessibilityAddTraits(.isHeader)
+                SectionHeader("Getting started")
                 ForEach(model.items) { item in
                     itemRow(item)
                 }
