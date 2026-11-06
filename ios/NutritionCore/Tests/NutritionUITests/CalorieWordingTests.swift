@@ -5,6 +5,7 @@ import XCTest
 
 /// Calories is a label or heading with a capital C. Inside a phrase the word is lowercase, with the
 /// singular for exactly one (approved wording, #516).
+@MainActor
 final class CalorieWordingTests: XCTestCase {
     func testADiaryDayTotalReadsInLowercaseWithItsCount() {
         XCTAssertEqual(JournalViewModel.energyText(totals: totals(kcal: 400)), "400 calories")
