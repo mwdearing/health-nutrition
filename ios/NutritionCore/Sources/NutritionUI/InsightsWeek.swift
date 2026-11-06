@@ -14,7 +14,7 @@ public struct InsightsWeek: Equatable {
         /// The day holds a food or drink entry. Water and supplements do not make a logged day, the same rule as the
         /// Diary's week card and the 30-day averages.
         public var hasFoodEntry: Bool = false
-        public var isLogged: Bool { hasFoodEntry || hasHealthIntake }
+        public var isLogged: Bool { entryCount > 0 || hasHealthIntake }
     }
 
     public static let length = 7
