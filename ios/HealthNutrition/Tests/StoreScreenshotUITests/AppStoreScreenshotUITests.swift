@@ -247,6 +247,11 @@ final class AppStoreScreenshotUITests: XCTestCase {
         guard dateButton.exists else { debugFail("no-when-button", "no date button in the When control"); return }
         dateButton.tap()
         let day = app.buttons[dayName]
+        // Early in a month the day is in the month before the one the calendar opens on, so it pages back once.
+        if !day.waitForExistence(timeout: 5) {
+            let previousMonth = app.buttons["Previous Month"]
+            if previousMonth.exists && previousMonth.isHittable { previousMonth.tap() }
+        }
         if !day.waitForExistence(timeout: 5) { debugFail("no-day-\(daysAgo)", "no calendar day named \(dayName)"); return }
         day.tap()
         // A tap outside the calendar closes it; the form is touched again only once the calendar is gone, because a
@@ -421,10 +426,6 @@ final class AppStoreScreenshotUITests: XCTestCase {
         dismissKeyboard()
         XCTAssertTrue(logButton.isEnabled, "Log is disabled after the amounts were typed")
         logButton.tap()
-        // One more tap if the first was swallowed while a popover was closing.
-        if !pollUntil(timeout: 6, { !self.app.navigationBars["Amounts only"].exists }), logButton.exists, logButton.isHittable {
-            logButton.tap()
-        }
         if !pollUntil(timeout: 20, { !self.app.navigationBars["Amounts only"].exists }) {
             debugFail("log-did-not-close-\(name)", "the sheet did not close after Log")
         }
