@@ -36,11 +36,14 @@ struct TodayProvider: TimelineProvider {
 
 struct TodayWidgetView: View {
     @Environment(\.widgetFamily) private var family
+    @Environment(\.redactionReasons) private var redactionReasons
     let entry: TodayEntry
 
     private var snapshot: WidgetSnapshot? { entry.snapshot }
     /// No summary could be read (not written yet, or the device has not been unlocked since a restart): the
     /// widget then states nothing about the day rather than claiming nothing was logged.
+    /// On a locked device the figures are redacted; the ring and bars would otherwise still show their proportions.
+    private var hidesFigures: Bool { redactionReasons.contains(.privacy) }
     private var isEmpty: Bool { snapshot?.hasEntries == false }
 
     var body: some View {
@@ -111,7 +114,7 @@ struct TodayWidgetView: View {
                 ZStack {
                     Circle().stroke(Color("heroTrack"), lineWidth: 8)
                     Circle()
-                        .trim(from: 0, to: snapshot?.energyFraction ?? 0)
+                        .trim(from: 0, to: hidesFigures ? 0 : (snapshot?.energyFraction ?? 0))
                         .stroke(Color("RelayMint"), style: StrokeStyle(lineWidth: 8, lineCap: .round))
                         .rotationEffect(.degrees(-90))
                     VStack(spacing: 0) {
@@ -147,7 +150,7 @@ struct TodayWidgetView: View {
             Capsule().fill(Color("heroTrack")).frame(height: 5)
                 .overlay(alignment: .leading) {
                     GeometryReader { proxy in
-                        Capsule().fill(color).frame(width: proxy.size.width * (share ?? 0))
+                        Capsule().fill(color).frame(width: proxy.size.width * (hidesFigures ? 0 : (share ?? 0)))
                     }
                 }
         }
