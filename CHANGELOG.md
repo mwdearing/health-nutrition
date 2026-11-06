@@ -4,6 +4,7 @@ Recent changes to the Health Nutrition iOS app. The newest entry is first. This 
 
 ## Unreleased
 
+- **#1330**: opening Privacy, Licenses or Daily goals from Settings no longer deletes the export file or clears the restore result; only leaving Settings does. Closes #1290.
 - **#1308**: CI runs four Python test suites that no workflow ran before. The medication add, dose and edit fields have labels. Closes #1301.
 - **#1307**: label scan no longer reads Polyunsaturated, Monounsaturated or Unsaturated Fat, or Soluble or Insoluble Fiber, as the total row. "Total Carbohydrates", "Carbohydrates" and "Total Sugar" are recognised. An extra row cannot overwrite a nutrient the person already answered. Closes #1283.
 - **#1306**: the privacy manifest check scans each embedded bundle (app, widget extension, Watch app, Watch widget extension) against its own `PrivacyInfo.xcprivacy`, and an escaped backslash no longer hides the rest of a line. Closes #1302.
@@ -30,7 +31,6 @@ Recent changes to the Health Nutrition iOS app. The newest entry is first. This 
 
 From the security, bug and usability review of 2026-11-05. Each line moves under Unreleased when its PR merges, and is dropped if the PR closes unmerged.
 
-- **#1330**: opening Privacy, Licenses or Daily goals from Settings no longer deletes the export file or clears the restore result; only leaving Settings does. Closes #1290.
 - **#1324**: the custom product editor accepts the region's decimal comma and shows plain-sentence field errors. Closes #1288.
 - **#1320**: USDA servings are stored in grams and shown in ounces only for display, rounded, with previews and saves using the exact grams. Source lines say "Food search" and "Custom product". Singular wording, clearer amount errors, and the Brand field stays while it is cleared. Closes #1285, #1289.
 - **#1316**: the privacy statement says Health readings are not uploaded but totals can show on widgets and a paired Apple Watch. The in-app summary names USDA FoodData Central and the Health nutrition reads. Closes #1286.
