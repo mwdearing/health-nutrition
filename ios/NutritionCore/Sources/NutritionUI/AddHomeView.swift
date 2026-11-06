@@ -212,7 +212,7 @@ public struct AddHomeView: View {
             } label: {
                 Text("Add")
                     .font(.headline)
-                    .foregroundStyle(TokenColors.accentInk)
+                    .foregroundStyle(TokenColors.onMint)
                     .padding(.horizontal, DesignSpacing.m)
                     .frame(minWidth: 44, minHeight: 44)
                     .background(TokenColors.mint, in: Capsule())
