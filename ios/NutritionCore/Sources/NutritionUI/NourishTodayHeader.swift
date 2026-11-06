@@ -86,7 +86,11 @@ public struct NourishTodayHeader: View {
     /// footnote.
     static func spokenSummary(_ calories: CalorieRemaining, partial: String?, footnote: String?) -> String {
         [
-            calories.remaining.map { "\(BodyActivityViewModel.whole($0)) calories remaining" },
+            calories.remaining.map { value in
+                value < 0
+                    ? "\(BodyActivityViewModel.whole(-value)) calories over goal"
+                    : (calories.isPartial && value > 0 ? "up to " : "") + "\(BodyActivityViewModel.whole(value)) calories remaining"
+            },
             calories.food.map { "Food, \(BodyActivityViewModel.whole($0)) calories" },
             calories.burned.map { "Burned, \(BodyActivityViewModel.whole($0)) calories" },
             partial,
@@ -105,21 +109,33 @@ public struct NourishTodayHeader: View {
     /// without a goal and a dash with one but no known food. Burned is hidden unless the model has a Health figure.
     struct SummaryFigures: Equatable {
         let remaining: String?
+        /// "Calories remaining", or "Calories over goal" when the day is past the goal (the figure is then positive).
+        let caption: String
         let food: String
         let burned: String?
     }
 
     static func summaryFigures(_ calories: CalorieRemaining) -> SummaryFigures {
         let remaining: String?
-        if let value = calories.remaining {
-            remaining = BodyActivityViewModel.whole(value)
+        let caption: String
+        if let value = calories.remaining, value < 0 {
+            remaining = BodyActivityViewModel.whole(-value)
+            caption = "Calories over goal"
+        } else if let value = calories.remaining {
+            // Partial day with something left: an upper bound, so "Up to N".
+            let upper = calories.isPartial && value > 0 ? "Up to " : ""
+            remaining = upper + BodyActivityViewModel.whole(value)
+            caption = "Calories remaining"
         } else if calories.goal != nil {
             remaining = "—"
+            caption = "Calories remaining"
         } else {
             remaining = nil
+            caption = "Calories remaining"
         }
         return SummaryFigures(
             remaining: remaining,
+            caption: caption,
             food: calories.food.map { BodyActivityViewModel.whole($0) } ?? "—",
             burned: calories.burned.map { BodyActivityViewModel.whole($0) })
     }
@@ -143,7 +159,7 @@ public struct NourishTodayHeader: View {
                     .font(.largeTitle.weight(.semibold))
                     .foregroundStyle(TokenColors.textPrimary)
                     .accessibilityIdentifier("calorieRemainingFigure")
-                Text("Calories remaining")
+                Text(figures.caption)
                     .font(.subheadline)
                     .foregroundStyle(TokenColors.textSecondary)
                     .multilineTextAlignment(.center)

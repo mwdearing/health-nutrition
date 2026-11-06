@@ -66,7 +66,7 @@ struct TodayWidgetView: View {
             if isEmpty {
                 Text("Nothing logged today")
             } else if let remaining = snapshot?.remainingInlineText {
-                Text("Calories remaining \(remaining)")
+                Text("\(snapshot?.remainingCaption ?? "Calories remaining") \(remaining)")
                     .accessibilityLabel(snapshot?.calorieSpoken ?? "Calories unknown")
                     .privacySensitive()
             } else {
