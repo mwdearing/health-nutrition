@@ -121,18 +121,55 @@ struct WatchTodayView: View {
     }
 
     private func content(for snapshot: WidgetSnapshot?) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            if snapshot?.hasEntries == false {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 6) {
                 Text("Today").font(.headline)
-                Text("Nothing logged today").font(.footnote).foregroundStyle(.secondary)
-            } else {
-                WidgetCalorieSummary(snapshot: snapshot, verticalDetails: true)
-                Text(
-                    "P \(WidgetFigure.number(snapshot?.proteinGrams, partial: snapshot?.isPartial("protein") == true)) · C \(WidgetFigure.number(snapshot?.carbohydrateGrams, partial: snapshot?.isPartial("carbohydrate") == true)) · F \(WidgetFigure.number(snapshot?.fatGrams, partial: snapshot?.isPartial("fat") == true)) g"
-                ).font(.footnote).privacySensitive()
-                Text("\(WidgetFigure.water(snapshot?.waterMilliliters, usUnits: snapshot?.usUnits, partial: snapshot?.isPartial("water") == true)) water").font(.footnote).privacySensitive()
+                if snapshot?.hasEntries == false {
+                    Text("Nothing logged today").font(.footnote).foregroundStyle(.secondary)
+                } else {
+                    ring(for: snapshot)
+                    macroRow("Protein", grams: snapshot?.proteinGrams, key: "protein", color: Color("macroProtein"), snapshot: snapshot)
+                    macroRow("Carbohydrate", grams: snapshot?.carbohydrateGrams, key: "carbohydrate", color: Color("macroCarbs"), snapshot: snapshot)
+                    macroRow("Fat", grams: snapshot?.fatGrams, key: "fat", color: Color("macroFat"), snapshot: snapshot)
+                    Text("\(WidgetFigure.water(snapshot?.waterMilliliters, usUnits: snapshot?.usUnits, partial: snapshot?.isPartial("water") == true)) water")
+                        .font(.footnote)
+                        .privacySensitive()
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The remaining figure inside a ring; the food and burned lines follow, and one spoken label covers them all.
+    private func ring(for snapshot: WidgetSnapshot?) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Gauge(value: snapshot?.energyFraction ?? 0) {
+                Text("Calories")
+            } currentValueLabel: {
+                Text(snapshot?.remainingDisplay ?? snapshot?.foodText ?? "—")
+                    .minimumScaleFactor(0.5)
+                    .lineLimit(1)
+            }
+            .gaugeStyle(.accessoryCircularCapacity)
+            .tint(Color("RelayMint"))
+            .scaleEffect(1.3)
+            .frame(maxWidth: .infinity, minHeight: 64)
+            .privacySensitive()
+            WidgetFoodBurned(snapshot: snapshot, vertical: true)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(snapshot?.calorieSpoken ?? "Calories unknown")
+    }
+
+    /// A coloured dot (a fill, never text) beside the macro's name and grams in the primary text colour.
+    private func macroRow(_ name: String, grams: Double?, key: String, color: Color, snapshot: WidgetSnapshot?) -> some View {
+        let figure = WidgetFigure.figure(grams, unit: "g", partial: snapshot?.isPartial(key) == true)
+        return HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Circle().fill(color).frame(width: 8, height: 8)
+            Text("\(name) \(figure)").font(.footnote)
+        }
+        .privacySensitive()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(name) \(figure)")
     }
 }

@@ -75,36 +75,84 @@ struct TodayWidgetView: View {
                     .privacySensitive()
             }
         case .systemMedium:
-            HStack(alignment: .top, spacing: 16) {
-                summary
+            HStack(alignment: .center, spacing: 16) {
+                heroRing
                 if !isEmpty {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Protein \(WidgetFigure.figure(snapshot?.proteinGrams, unit: "g", partial: snapshot?.isPartial("protein") == true))")
-                        Text("Carbohydrate \(WidgetFigure.figure(snapshot?.carbohydrateGrams, unit: "g", partial: snapshot?.isPartial("carbohydrate") == true))")
-                        Text("Fat \(WidgetFigure.figure(snapshot?.fatGrams, unit: "g", partial: snapshot?.isPartial("fat") == true))")
+                    VStack(alignment: .leading, spacing: 6) {
+                        macroBar("Protein", grams: snapshot?.proteinGrams, share: snapshot?.macroShares?.protein,
+                                 color: Color("macroProtein"), key: "protein")
+                        macroBar("Carbohydrate", grams: snapshot?.carbohydrateGrams, share: snapshot?.macroShares?.carbohydrate,
+                                 color: Color("macroCarbs"), key: "carbohydrate")
+                        macroBar("Fat", grams: snapshot?.fatGrams, share: snapshot?.macroShares?.fat,
+                                 color: Color("macroFat"), key: "fat")
                         Text("Water \(WidgetFigure.water(snapshot?.waterMilliliters, usUnits: snapshot?.usUnits, partial: snapshot?.isPartial("water") == true))")
+                            .font(.footnote)
+                            .foregroundStyle(Color("heroText"))
                         if snapshot?.partialFigures?.isEmpty == false {
-                            Text("+ Some entries are missing nutrients").font(.caption2).foregroundStyle(.secondary)
+                            Text("+ Some entries are missing nutrients").font(.caption2)
+                                .foregroundStyle(Color("heroSecondaryText"))
                         }
                     }
-                    .font(.footnote)
                     .privacySensitive()
                 }
             }
         default:
-            summary
+            heroRing
         }
     }
 
-    private var summary: some View {
+    /// The remaining figure inside a ring (mint on the track) with the captions beside or under it; one spoken label.
+    private var heroRing: some View {
         VStack(alignment: .leading, spacing: 6) {
             if isEmpty {
-                Text("Today").font(.headline)
-                Text("Nothing logged today").font(.footnote)
+                Text("Today").font(.headline).foregroundStyle(Color("heroText"))
+                Text("Nothing logged today").font(.footnote).foregroundStyle(Color("heroSecondaryText"))
             } else {
-                WidgetCalorieSummary(snapshot: snapshot, verticalDetails: true)
+                ZStack {
+                    Circle().stroke(Color("heroTrack"), lineWidth: 8)
+                    Circle()
+                        .trim(from: 0, to: snapshot?.energyFraction ?? 0)
+                        .stroke(Color("RelayMint"), style: StrokeStyle(lineWidth: 8, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                    VStack(spacing: 0) {
+                        Text(snapshot?.remainingDisplay ?? snapshot?.foodText ?? "—")
+                            .font(.title3.weight(.semibold))
+                            .minimumScaleFactor(0.6)
+                            .lineLimit(1)
+                            .foregroundStyle(Color("heroText"))
+                        Text(snapshot?.remainingDisplay == nil ? "Food" : "Calories remaining")
+                            .font(.caption2)
+                            .minimumScaleFactor(0.6)
+                            .foregroundStyle(Color("heroSecondaryText"))
+                    }
+                    .padding(12)
+                }
+                .frame(maxWidth: 96, maxHeight: 96)
+                .privacySensitive()
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(snapshot?.calorieSpoken ?? "Calories unknown")
+                // Food and Burned stay as before; the ring's label above already speaks them.
+                WidgetFoodBurned(snapshot: snapshot, vertical: true)
+                    .foregroundStyle(Color("heroSecondaryText"))
+                    .accessibilityHidden(true)
             }
         }
+    }
+
+    /// One macro: its name and grams in white over a bar filled in the macro colour; one spoken label.
+    private func macroBar(_ name: String, grams: Double?, share: Double?, color: Color, key: String) -> some View {
+        let figure = WidgetFigure.figure(grams, unit: "g", partial: snapshot?.isPartial(key) == true)
+        return VStack(alignment: .leading, spacing: 2) {
+            Text("\(name) \(figure)").font(.footnote).foregroundStyle(Color("heroText"))
+            Capsule().fill(Color("heroTrack")).frame(height: 5)
+                .overlay(alignment: .leading) {
+                    GeometryReader { proxy in
+                        Capsule().fill(color).frame(width: proxy.size.width * (share ?? 0))
+                    }
+                }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(name) \(figure)")
     }
 }
 
@@ -112,7 +160,7 @@ struct TodayWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "TodayWidget", provider: TodayProvider()) { entry in
             TodayWidgetView(entry: entry)
-                .containerBackground(.fill.tertiary, for: .widget)
+                .containerBackground(Color("hero"), for: .widget)
         }
         .configurationDisplayName("Today")
         .supportedFamilies([
