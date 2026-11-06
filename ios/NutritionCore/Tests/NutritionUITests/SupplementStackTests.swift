@@ -937,7 +937,7 @@ final class SupplementStackTests: XCTestCase {
     private let men31 = ReferenceGroup(sex: .male, ageBand: .years31To50)
 
     /// A product whose label states `nutrients` per 100 g, logged as 100 g so the day holds exactly those.
-    private func labelled(
+    private func labeled(
         _ snapshot: String, name: String, kind: ProductKind, nutrients: [String: NutrientValue]
     ) -> ProductDefinition {
         ProductDefinition(
@@ -964,7 +964,7 @@ final class SupplementStackTests: XCTestCase {
         let store = UnitReadCountingStore(inner: try makeStore())
         let favorites = try makeFavorites()
         let schedules = try makeSchedules()
-        let magnesium = labelled(
+        let magnesium = labeled(
             "s-magnesium-400", name: "Example magnesium", kind: .supplement, nutrients: ["magnesium": .known(400, .mg)])
         try log(store, at: now.addingTimeInterval(-3_600), amount: 100, unit: .g, product: magnesium)
         try saveFavorite(favorites, snapshot: "s-magnesium-400")
@@ -983,7 +983,7 @@ final class SupplementStackTests: XCTestCase {
         let store = try makeStore()
         let favorites = try makeFavorites()
         let schedules = try makeSchedules()
-        let magnesium = labelled(
+        let magnesium = labeled(
             "s-magnesium-400", name: "Example magnesium", kind: .supplement, nutrients: ["magnesium": .known(400, .mg)])
         try log(store, at: now.addingTimeInterval(-3_600), amount: 100, unit: .g, product: magnesium)
         try saveFavorite(favorites, snapshot: "s-magnesium-400")
@@ -1007,13 +1007,13 @@ final class SupplementStackTests: XCTestCase {
         let favorites = try makeFavorites()
         let schedules = try makeSchedules()
         // The supplement on the list was logged two days ago, so only its label is in the journal today.
-        let multi = labelled(
+        let multi = labeled(
             "s-multi", name: "Example magnesium", kind: .supplement,
             nutrients: ["magnesium": .known(50, .mg), "vitaminC": .known(100, .mg)])
         try log(store, at: now.addingTimeInterval(-2 * 86_400), amount: 100, unit: .g, product: multi)
         // Today's food states more magnesium than the supplement limit and more vitamin C than the limit
         // on everything eaten and taken.
-        let food = labelled(
+        let food = labeled(
             "s-food", name: "Example fortified cereal", kind: .food,
             nutrients: ["magnesium": .known(600, .mg), "vitaminC": .known(2_500, .mg)])
         try log(
@@ -1034,7 +1034,7 @@ final class SupplementStackTests: XCTestCase {
         let store = try makeStore()
         let favorites = try makeFavorites()
         let schedules = try makeSchedules()
-        let zinc = labelled(
+        let zinc = labeled(
             "s-zinc-30", name: "Example zinc", kind: .supplement, nutrients: ["zinc": .known(30, .mg)])
         try log(store, name: "Example zinc", at: now.addingTimeInterval(-3_600), amount: 100, unit: .g, product: zinc)
         try saveFavorite(favorites, snapshot: "s-zinc-30")
@@ -1058,7 +1058,7 @@ final class SupplementStackTests: XCTestCase {
         let store = try makeStore()
         let favorites = try makeFavorites()
         let schedules = try makeSchedules()
-        let zinc = labelled(
+        let zinc = labeled(
             "s-zinc-30", name: "Example zinc", kind: .supplement, nutrients: ["zinc": .known(30, .mg)])
         try log(store, name: "Example zinc", at: now.addingTimeInterval(-3_600), amount: 100, unit: .g, product: zinc)
         try saveFavorite(favorites, snapshot: "s-zinc-30")
@@ -1081,7 +1081,7 @@ final class SupplementStackTests: XCTestCase {
         let schedules = try makeSchedules()
         let loggedInTokyo = Date(timeIntervalSince1970: 1_793_836_800)  // 2026-11-05 09:00 Tokyo
         let nowInNewYork = Date(timeIntervalSince1970: 1_793_926_800)  // 2026-11-05 20:00 New York
-        let magnesium = labelled(
+        let magnesium = labeled(
             "s-magnesium-400", name: "Example magnesium", kind: .supplement, nutrients: ["magnesium": .known(400, .mg)])
         try log(store, at: loggedInTokyo, zone: "Asia/Tokyo", amount: 100, unit: .g, product: magnesium)
         try saveFavorite(favorites, snapshot: "s-magnesium-400")
@@ -1098,7 +1098,7 @@ final class SupplementStackTests: XCTestCase {
         let store = try makeStore()
         let favorites = try makeFavorites()
         let schedules = try makeSchedules()
-        let magnesium = labelled(
+        let magnesium = labeled(
             "s-magnesium-400", name: "Example magnesium", kind: .supplement, nutrients: ["magnesium": .known(400, .mg)])
         try log(store, at: now.addingTimeInterval(-3_600), amount: 100, unit: .g, product: magnesium)
         try saveFavorite(favorites, snapshot: nil)
@@ -1122,7 +1122,7 @@ final class SupplementStackTests: XCTestCase {
         let store = StackReadCountingStore(inner: inner)
         let favorites = try makeFavorites()
         let schedules = try makeSchedules()
-        let magnesium = labelled(
+        let magnesium = labeled(
             "s-magnesium-400", name: "Example magnesium", kind: .supplement, nutrients: ["magnesium": .known(400, .mg)])
         try log(inner, at: now.addingTimeInterval(-3_600), amount: 100, unit: .g, product: magnesium)
         try saveFavorite(favorites, snapshot: "s-magnesium-400")
@@ -1161,7 +1161,7 @@ final class SupplementStackTests: XCTestCase {
         let store = try makeStore()
         let favorites = try makeFavorites()
         let schedules = try makeSchedules()
-        let magnesium = labelled(
+        let magnesium = labeled(
             "s-magnesium-400", name: "Example magnesium", kind: .supplement, nutrients: ["magnesium": .known(400, .mg)])
         try log(store, at: now.addingTimeInterval(-3_600), amount: 100, unit: .g, product: magnesium)
         try saveFavorite(favorites, snapshot: "s-magnesium-400")
@@ -1180,7 +1180,7 @@ final class SupplementStackTests: XCTestCase {
         let store = try makeStore()
         let favorites = try makeFavorites()
         let schedules = try makeSchedules()
-        let vitaminC = labelled(
+        let vitaminC = labeled(
             "s-vitamin-c", name: "Example magnesium", kind: .supplement, nutrients: ["vitamin-c": .known(2_500, .mg)])
         try log(store, at: now.addingTimeInterval(-3_600), amount: 100, unit: .g, product: vitaminC)
         try saveFavorite(favorites, snapshot: "s-vitamin-c")
@@ -1195,7 +1195,7 @@ final class SupplementStackTests: XCTestCase {
         let store = try makeStore()
         let favorites = try makeFavorites()
         let schedules = try makeSchedules()
-        let magnesium = labelled(
+        let magnesium = labeled(
             "s-magnesium-400", name: "Example magnesium", kind: .supplement, nutrients: ["magnesium": .known(400, .mg)])
         try log(store, at: now.addingTimeInterval(-3_600), amount: 100, unit: .g, product: magnesium)
         try saveFavorite(favorites, snapshot: "s-magnesium-400")

@@ -153,7 +153,7 @@ public struct PrimaryCapsule: View {
             .foregroundStyle(TokenColors.onMint)
             .frame(maxWidth: .infinity, minHeight: 50)
             .background(TokenColors.mint, in: Capsule())
-            // A disabled capsule looks disabled: the fixed colours alone read as tappable.
+            // A disabled capsule looks disabled: the fixed colors alone read as tappable.
             .opacity(isEnabled ? 1 : 0.5)
         }
         .buttonStyle(.plain)

@@ -28,7 +28,7 @@ public struct CommunityProductSearchView: View {
     /// Focus is taken once per screen, and only once it has actually been set. A screen that closes before
     /// its focus lands counts as having taken it, so returning to it never raises the keyboard unasked.
     @State private var didAutoFocus = false
-    /// The pending focus request: nil once it has set focus or the screen has gone. It is cancelled only when the
+    /// The pending focus request: nil once it has set focus or the screen has gone. It is canceled only when the
     /// screen disappears.
     @State private var focusTask: Task<Void, Never>?
     public init(model: CommunityProductSearchViewModel, onSelect: @escaping (CustomProductRevision) -> Void, onLegacy: @escaping (LegacyCustomProductDraft) -> Void, onSignIn: (() -> Void)?, onOpenFoodFacts: @escaping (LookedUpProduct, ProductKind?) -> Void = { _, _ in },
@@ -251,7 +251,7 @@ public struct CommunityProductSearchView: View {
         }
     }
     /// Focus after the push animation. Setting focus during the transition can be dropped, so the request
-    /// waits 400 ms. The screen's focus is marked taken once the request sets it; a request cancelled
+    /// waits 400 ms. The screen's focus is marked taken once the request sets it; a request canceled
     /// before then is marked when the screen disappears.
     private func requestAutoFocus() {
         guard focusSearchOnAppear, !didAutoFocus, focusTask == nil else { return }

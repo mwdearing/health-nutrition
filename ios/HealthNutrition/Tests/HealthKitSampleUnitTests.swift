@@ -65,7 +65,7 @@ final class HealthKitSampleUnitTests: XCTestCase {
         XCTAssertEqual(read.1, .g)
     }
 
-    /// A litre sample is converted into a millilitre nutrient: 0.5 L of water is read as 500 mL.
+    /// A liter sample is converted into a milliliter nutrient: 0.5 L of water is read as 500 mL.
     func testALiterSampleIsReadInMilliliters() throws {
         let read = try XCTUnwrap(readBack(HKQuantity(unit: .liter(), doubleValue: 0.5), key: "water"))
         XCTAssertEqual(read.0, 500, accuracy: 0.0001)

@@ -119,7 +119,7 @@ public struct TodayView: View {
         }
         .background(TokenColors.background)
         // The screen name stays the navigation title, so VoiceOver and the back button keep "Today". The bar draws no
-        // visible title: the heading is drawn in the content, centred, and an empty principal item hides the bar copy.
+        // visible title: the heading is drawn in the content, centered, and an empty principal item hides the bar copy.
         .navigationTitle("Today")
 #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)

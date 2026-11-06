@@ -91,7 +91,7 @@
       "id": "convert_mass_to_volume_with_stated_density",
       "op": "convert",
       "nutrient": "water",
-      "note": "Density in grams per millilitre, stated, positive.",
+      "note": "Density in grams per milliliter, stated, positive.",
       "input": {
         "amount": "80",
         "unit": "g",

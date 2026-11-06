@@ -1,6 +1,6 @@
 # Visual redesign: branded hero
 
-Status: approved by the owner on 2026-11-06, including the colour roles and the five proposed tokens named under Colour. Nothing here is built yet. The owner chose the direction (B, "branded
+Status: approved by the owner on 2026-11-06, including the color roles and the five proposed tokens named under Color. Nothing here is built yet. The owner chose the direction (B, "branded
 hero") from a set of mock-ups on 2026-11-06; this document turns that choice into something a builder can plan from.
 Choices marked **owner decision** wait for an answer. Choices marked *builder's call* were made by the author and can
 be changed during planning without asking.
@@ -10,7 +10,7 @@ be changed during planning without asking.
 The owner's words: the app "all just looks like plain text on a screen and outdated Android design". The new icon (a
 mint lowercase n with a white leaf on deep teal, `docs/app-icon.svg`) sets the look the rest of the app should match.
 The target is an app that looks as if Apple designed it for iOS 27: current materials, clear hierarchy, the system
-font, charts and motion, with the brand carried by colour and content rather than by custom chrome. This ships in the
+font, charts and motion, with the brand carried by color and content rather than by custom chrome. This ships in the
 first App Store release. The owner accepted that the submission date moves for it, so the plan covers every step
 below rather than a cut list.
 
@@ -22,31 +22,31 @@ What makes the current app read as plain text (from a review of the source at 86
 - The brand mint appears only on the floating Add capsule. There is no ring (docs/today-screen.md describes one, the
   code draws text), one chart, no imagery.
 - Patterns that read as another platform: a floating pill button on every tab, a snackbar-style undo toast, circular
-  icon wells, a centred title drawn inside the content with the navigation title hidden.
+  icon wells, a centered title drawn inside the content with the navigation title hidden.
 - The `AccentColor` asset is #167A5A / #4FBA9C, not the documented #0F6B78 / #5EEAD4, so stock controls and explicitly
   tinted controls show two different greens.
-- Widgets and the Watch app use system grey only; they cannot reach the tokens.
+- Widgets and the Watch app use system gray only; they cannot reach the tokens.
 
 ## Goals
 
 1. **Native chrome.** Tab bar, toolbars, search fields, sheets, menus and buttons are the system's iOS 26 Liquid Glass
    components. Nothing in the navigation layer is drawn by hand.
-2. **Brand in the content.** Colour lives inside the scrolling content, following Apple's guidance for branding on
+2. **Brand in the content.** Color lives inside the scrolling content, following Apple's guidance for branding on
    iOS 26 and later: a deep teal hero on Today with a mint calorie ring, and deep teal feature cards elsewhere. The
-   glass controls pick up that colour as content scrolls under them.
+   glass controls pick up that color as content scrolls under them.
 3. **Hierarchy.** White cards on the grouped background in light mode; teal cards on deep teal in dark mode. Large
    titles, real section headers, fewer footnotes.
-4. **A visual vocabulary.** A calorie ring, labelled macro bars, Swift Charts for trends, rounded-square icon wells with
+4. **A visual vocabulary.** A calorie ring, labeled macro bars, Swift Charts for trends, rounded-square icon wells with
    SF Symbols, rounded numerals for figures.
 5. **Motion with purpose.** Spring animations on value changes, a zoom transition into an entry, symbol effects on
    confirmations, all off when Reduce Motion is on.
-6. **One family across surfaces.** Widgets, Lock Screen accessories and the Watch app use the same ring, colours and
+6. **One family across surfaces.** Widgets, Lock Screen accessories and the Watch app use the same ring, colors and
    type.
 
 ## Non-goals
 
 - No change to what the app does: logging, calculations, goals, sync, HealthKit, privacy, export and import contracts,
-  reminders, medication and supplement behaviour all stay as they are. Copy changes only where a label is unified
+  reminders, medication and supplement behavior all stay as they are. Copy changes only where a label is unified
   (below).
 - No custom fonts, illustrations or photography.
 - No iPad-specific layouts. iPad keeps working with the same screens at a readable width.
@@ -54,7 +54,7 @@ What makes the current app read as plain text (from a review of the source at 86
 
 ## Anti-goals (a failure even if it builds)
 
-- Text that becomes hard to read over glass, or meaning carried by colour alone.
+- Text that becomes hard to read over glass, or meaning carried by color alone.
 - Anything that breaks Dynamic Type up to the largest accessibility size, VoiceOver, Reduce Transparency, Increase
   Contrast or Reduce Motion.
 - A dark mode that looks inverted rather than designed.
@@ -68,7 +68,7 @@ The mock-ups (shared with the builder outside the repository) are the reference 
 below are the reference for numbers. Light and
 dark are both first-class.
 
-### Colour
+### Color
 
 Existing tokens keep their names and values, `background` and `surface` included; screens that move to the new
 layout use `page` and `card` instead, and the older roles stay for anything that still needs them. New semantic roles (all opaque sRGB, like the rest of `NutritionTokens.swift`):
@@ -85,7 +85,7 @@ layout use `page` and `card` instead, and the older roles stay for anything that
 | `macroCarbs` | #B45309 | #FBBF24 | Carbs bar and legend |
 | `macroFat` | #2563EB | #93B4FF | Fat bar and legend |
 
-On `hero` the macro colours always use their dark values. Mint (`RelayMint`) is a fill, as today: the ring, the Add
+On `hero` the macro colors always use their dark values. Mint (`RelayMint`) is a fill, as today: the ring, the Add
 button and the selected day; text on it is `RelayOnMint`.
 
 Contrast, measured with the WCAG 2.x formula (the unit tests add these pairs):
@@ -102,7 +102,7 @@ Contrast, measured with the WCAG 2.x formula (the unit tests add these pairs):
 | textSecondary on page (light), #6C6C70 light / #AEAEB2 dark | 4.69 |
 | accent on page (light) | 5.54 |
 
-The three macro colours are close in lightness, so every bar carries its label and value; colour is never the only
+The three macro colors are close in lightness, so every bar carries its label and value; color is never the only
 cue.
 
 `AccentColor.colorset` changes to #0F6B78 / #5EEAD4 so stock controls match the tokens, and a test compares the asset
@@ -123,12 +123,12 @@ those five at their current values and the nine new rows above.
 
 - Cards: continuous corner radius 22, padding 16, 12 between cards, 16 from the screen edge. Small tiles: radius 18.
 - Icon wells: 30 to 36 pt rounded squares (radius about 28% of the side) in `accentTint` with an `accent` symbol.
-  Settings rows use the system's coloured-tile convention.
-- No drop shadows on cards; separation comes from the page and card colours. Glass carries its own depth.
+  Settings rows use the system's colored-tile convention.
+- No drop shadows on cards; separation comes from the page and card colors. Glass carries its own depth.
 
 ### Components (new or reworked, shared across screens)
 
-- `CalorieRing`: progress ring with the remaining figure in the centre; sizes scale with Dynamic Type
+- `CalorieRing`: progress ring with the remaining figure in the center; sizes scale with Dynamic Type
   (`@ScaledMetric`); VoiceOver reads "1,240 calories left of 2,300".
 - `MacroBar`: label, "82 / 140 g", a 6 pt capsule bar.
 - `HeroCard`: the deep teal container (Today hero, Diary week strip, Trends calories card, Library highlight, Settings
@@ -139,7 +139,7 @@ those five at their current values and the nine new rows above.
 
 ## Screens
 
-Each screen keeps its current content and behaviour; only presentation changes.
+Each screen keeps its current content and behavior; only presentation changes.
 
 - **Tab bar.** System `TabView` with four tabs in this order: Today (`sun.max`), Diary (`book.closed`), Library
   (`square.grid.2x2`), Trends (`chart.bar`). The Add action is a separate mint circle trailing the tab bar, the way
@@ -149,7 +149,7 @@ Each screen keeps its current content and behaviour; only presentation changes.
   long as it is a system component and looks like the mock-up.*
 - **Settings.** Stays a sheet opened from a glass toolbar button on every tab. Top: a hero card for the existing
   Daily goals row. Then the existing sections (Units and logging, Connections, Privacy, Your data, About) as inset
-  grouped cards, each row with a coloured icon tile.
+  grouped cards, each row with a colored icon tile.
 - **Today.** Hero (large title "Today" and date in the navigation bar over the hero, calorie ring, Goal / Food /
   Exercise, three macro bars), then Water and Supplements tiles, then the Medications tile when the medication log is
   on, a Meals card (breakfast, lunch, snack, dinner with totals; an empty meal shows an add button), the weight
@@ -174,7 +174,7 @@ Each screen keeps its current content and behaviour; only presentation changes.
   style; Welcome uses the hero for its first card and the icon's mark.
 - **Widgets.** Small: ring and remaining calories on `hero`. Medium: ring, macro bars and water. Lock Screen
   accessories keep the system's rendering (the accessory families draw in the system tint). Widgets and the Watch get
-  the colours they need through their own asset catalog entries, since they do not link NutritionCore; a test keeps
+  the colors they need through their own asset catalog entries, since they do not link NutritionCore; a test keeps
   those entries equal to the tokens.
 - **Watch.** Title, ring with remaining calories, then the day's macros, from the snapshot the Watch already
   receives; complications keep their families with the ring style.
@@ -195,7 +195,7 @@ on any further wording, within the existing copy rules.*
 
 **Minimum iOS: raised to iOS 26 and watchOS 26** (owner decision, 2026-11-06). The app and its widget extensions
 move from iOS 18.0 to 26.0 and the Watch app and its complications from watchOS 11.0 to 26.0, so every Liquid Glass
-API (`glassEffect`, glass button styles, the separated tab, scroll edge effects, tab bar minimising) is used directly,
+API (`glassEffect`, glass button styles, the separated tab, scroll edge effects, tab bar minimizing) is used directly,
 with no availability checks or fallback look. People on iOS 25 or earlier cannot install the app.
 
 CI builds with Xcode 26.6 (iOS 26.5 SDK), which has every API this design uses. Running on iOS 27 adds Apple's 2026
@@ -222,7 +222,7 @@ glass refinements without a rebuild.
   - `AppStoreScreenshotUITests` (tabs by label);
   - `scripts/tests/test_add_capsule_placement.py` (rewritten for the new Add button);
   - `NutritionTokensTests` (new rows and contrast pairs added; the audited values untouched).
-- `scripts/lint_swift_sources.py` rules stay: no colour literals, no fixed fonts or sizes, every image labelled.
+- `scripts/lint_swift_sources.py` rules stay: no color literals, no fixed fonts or sizes, every image labeled.
 - The design-system pipeline (`build_design_system.py --check`, light and dark screenshots per screen) passes, and its
   screenshots are regenerated.
 - The App Store screenshots are retaken from the new build.
@@ -245,7 +245,7 @@ next starts:
 
 ## Follow-ups (not in this work)
 
-Shown in the mock-ups but new behaviour, so each needs its own design: a Week / Month / 6 months range on Trends, a
+Shown in the mock-ups but new behavior, so each needs its own design: a Week / Month / 6 months range on Trends, a
 "Log water" button on the Watch (needs a Watch-to-phone write), Supplements and Medications as Library sections, and a
 Saved meal quick action in the Log sheet.
 

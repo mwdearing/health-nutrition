@@ -277,7 +277,7 @@ final class DailyGoalsTests: XCTestCase {
         XCTAssertEqual(clock.now, clearedAt.addingTimeInterval(10), "the Undo expires at the deadline")
     }
 
-    /// A cancelled wait returns without hiding the Undo, so it cannot expire a newer Clear (#526).
+    /// A canceled wait returns without hiding the Undo, so it cannot expire a newer Clear (#526).
     func testCancelledExpiryLeavesTheUndoAlone() async throws {
         let goals = try makeGoalStore()
         try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
@@ -289,7 +289,7 @@ final class DailyGoalsTests: XCTestCase {
         let clock = FakeClock(now: clearedAt)
         await model.runClearUndoExpiry(
             sleep: { _ in throw CancellationError() }, now: { clock.now })
-        XCTAssertNotNil(model.clearedGoal, "a cancelled wait does not hide the Undo")
+        XCTAssertNotNil(model.clearedGoal, "a canceled wait does not hide the Undo")
     }
 
     /// A second Clear inside the first's window replaces the first Undo, and its Undo still works at +3 (#526).

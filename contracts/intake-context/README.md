@@ -102,7 +102,7 @@ Each makes the operation a `permanent_failure`:
   `dietary_<name>`, for example `dietary_caffeine`), and a link's
   `healthkit_type` is the type of the linked fact's `code`: `hydration`
   is `HKQuantityTypeIdentifierDietaryWater`, and every `dietary_<name>` code is
-  `HKQuantityTypeIdentifierDietary<Name>` with each part capitalised
+  `HKQuantityTypeIdentifierDietary<Name>` with each part capitalized
   (`dietary_vitamin_b6` is `HKQuantityTypeIdentifierDietaryVitaminB6`).
 - `time_zone` is a name in the IANA time zone database. Host-local or
   implementation-specific keys (`localtime`, `posixrules`, `Factory`, and the
@@ -293,7 +293,7 @@ language must produce the same bytes for the same value.
    with lowercase hex for any other control character below U+0020. Every other
    character, including non-ASCII text, U+007F and U+2028, is written as its raw
    UTF-8 bytes. A string containing an unpaired surrogate has no UTF-8
-   encoding and is invalid input; it is rejected before canonicalisation.
+   encoding and is invalid input; it is rejected before canonicalization.
 4. There are no floating-point numbers, `NaN` or infinities anywhere. Decimals
    are strings. Integers are written in plain decimal digits with a leading `-`
    only when negative, no leading zeros, no `+`, and no fraction or exponent.

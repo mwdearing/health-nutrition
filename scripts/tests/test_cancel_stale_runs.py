@@ -1,4 +1,4 @@
-"""The stale-run selector decides which queued or running CI runs are cancelled."""
+"""The stale-run selector decides which queued or running CI runs are canceled."""
 from __future__ import annotations
 
 import runpy
@@ -38,7 +38,7 @@ def test_current_head_of_open_pr_is_kept() -> None:
     assert select_stale([run(1)], heads, "main", NOW) == []
 
 
-def test_run_for_a_superseded_head_is_cancelled() -> None:
+def test_run_for_a_superseded_head_is_canceled() -> None:
     heads = {("o/r", "feature/a"): "b" * 40}
     assert ids(select_stale([run(1)], heads, "main", NOW)) == [1]
 
@@ -50,7 +50,7 @@ def test_a_fork_branch_with_the_same_name_is_judged_by_its_own_repository() -> N
     assert ids(select_stale([fork_current, fork_stale], heads, "main", NOW)) == [2]
 
 
-def test_run_for_a_closed_pull_request_is_cancelled() -> None:
+def test_run_for_a_closed_pull_request_is_canceled() -> None:
     assert ids(select_stale([run(1)], {}, "main", NOW)) == [1]
 
 
@@ -66,13 +66,13 @@ def test_workflows_outside_the_allowlist_are_never_touched() -> None:
         assert select_stale([run(1, name=name)], {}, "main", NOW) == []
 
 
-def test_manual_and_scheduled_runs_are_never_cancelled_for_head_reasons() -> None:
+def test_manual_and_scheduled_runs_are_never_canceled_for_head_reasons() -> None:
     manual = run(1, event="workflow_dispatch", head_branch="feature/z")
     scheduled = run(2, event="schedule", head_branch="main")
     assert select_stale([manual, scheduled], {}, "main", NOW) == []
 
 
-def test_a_run_queued_past_the_ceiling_is_cancelled_even_on_a_current_head() -> None:
+def test_a_run_queued_past_the_ceiling_is_canceled_even_on_a_current_head() -> None:
     heads = {("o/r", "feature/a"): "a" * 40}
     aged = run(1, created_at=(NOW - timedelta(hours=7)).isoformat())
     assert ids(select_stale([aged], heads, "main", NOW)) == [1]

@@ -176,7 +176,7 @@ public enum IntakeContextSnapshotBasis: Equatable {
 
     /// The factor for "per 100 g or mL", the basis a barcode source gives a product whose label is per
     /// 100 g for a solid and per 100 mL for a liquid. The logged amount is in the dimension it was
-    /// entered in, so a grams entry is over 100 g and a millilitre entry is over 100 mL. No density is
+    /// entered in, so a grams entry is over 100 g and a milliliter entry is over 100 mL. No density is
     /// used: the label's own figure is the one the app has, and the milk-sized correction it would add
     /// is about 3 percent of a number already rounded on the label. An amount in neither mass nor volume,
     /// such as a scoop or a piece, has no factor, and neither has a mix of the two.

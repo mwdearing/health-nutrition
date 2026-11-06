@@ -59,7 +59,7 @@ final class WidgetSnapshotPublisher {
         subscription = today.$lastLoadedAt
             .compactMap { $0 }
             // Stamped with the erase generation when the load is announced, before the debounce, so a write that
-            // was already pending when an erase ran is recognised whatever the clock does in between. Today's load
+            // was already pending when an erase ran is recognized whatever the clock does in between. Today's load
             // is synchronous on the main actor, so the moment it is announced is the moment the journal was read:
             // no read can start before an erase and finish after it.
             .map { [erasure] loadedAt in (loadedAt: loadedAt, generation: erasure.generation) }
@@ -161,7 +161,7 @@ enum WidgetSnapshotUnits {
 }
 
 /// A counter that moves on every Erase all data, so a summary write that was already pending (a load announced
-/// before the erase) can be recognised and dropped instead of putting the erased figures back. A counter, not a
+/// before the erase) can be recognized and dropped instead of putting the erased figures back. A counter, not a
 /// time: it does not depend on the clock.
 final class WidgetSnapshotErasure: @unchecked Sendable {
     static let shared = WidgetSnapshotErasure()
@@ -190,7 +190,7 @@ final class WidgetSnapshotErasure: @unchecked Sendable {
 /// Clears the widgets' summary when the person's data is erased, so "Erase all data" leaves no figures in the App
 /// Group. It first replaces the summary with an empty one, so the widget reads "Nothing logged today" at once; if
 /// that write fails it removes the file instead, and it reloads the widgets either way. A summary write already
-/// pending at that moment is recognised by its erase generation and dropped.
+/// pending at that moment is recognized by its erase generation and dropped.
 final class WidgetSnapshotEraser: JournalErasing, @unchecked Sendable {
     private let store: WidgetSnapshotStore?
     private let erasure: WidgetSnapshotErasure

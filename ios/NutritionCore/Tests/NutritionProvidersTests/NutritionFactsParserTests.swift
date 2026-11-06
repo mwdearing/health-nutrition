@@ -1089,7 +1089,7 @@ final class NutritionFactsParserTests: XCTestCase {
                        "each row stays its own extra, none is read as a named nutrient")
     }
 
-    /// Capitalised real words that end a nutrient name are rows: a fragment starts lowercase, so "Mind",
+    /// Capitalized real words that end a nutrient name are rows: a fragment starts lowercase, so "Mind",
     /// "Hydrate", "Sterol" and "MIND" stay extras while "minD" is unread.
     func testCapitalisedWordsEndingANutrientNameStayRows() throws {
         let panel = parse(["Supplement Facts", "Serving size 1 capsule", "Mind 200mg", "Hydrate 50mg", "Sterol 100mg"])

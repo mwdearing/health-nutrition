@@ -344,7 +344,7 @@
       }
     },
     "source": {
-      "description": "Where the record came from and under what licence it may be reused. Every record states its licence.",
+      "description": "Where the record came from and under what license it may be reused. Every record states its license.",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -361,14 +361,14 @@
           "pattern": "^[a-z][a-z0-9_]{0,63}(?!\\n)$"
         },
         "licence": {
-          "description": "SPDX-style licence identifier of the source data.",
+          "description": "SPDX-style license identifier of the source data.",
           "type": "string",
           "minLength": 1,
           "maxLength": 64,
           "pattern": "^[A-Za-z0-9][A-Za-z0-9.+-]{0,63}(?!\\n)$"
         },
         "attribution": {
-          "description": "The credit line the licence requires. Safe to show to a user; never a person or an account.",
+          "description": "The credit line the license requires. Safe to show to a user; never a person or an account.",
           "type": "string",
           "minLength": 1,
           "maxLength": 512,

@@ -4,8 +4,8 @@ Status: proposed, waiting for owner decisions. Nothing here is built. Each choic
 the ones marked **owner decision** change something a person sees or what the app stores, so they wait for an answer
 before any code is written.
 
-This is the design for #86 (NF-10): an offline cache of catalog products, source and licence attribution and evidence
-badges kept with each cached product, and local, manual and favourite operations that keep working while the catalog is
+This is the design for #86 (NF-10): an offline cache of catalog products, source and license attribution and evidence
+badges kept with each cached product, and local, manual and favorite operations that keep working while the catalog is
 unreachable. It is the prerequisite of #87 (NF-11), which freezes the selected product version into the intake
 revision.
 
@@ -81,14 +81,14 @@ for that barcode." for every failure, as now.
 
 ### 6. Attribution and evidence badges
 
-- **A. Recommended: cached exactly as received.** Each cached product keeps the source, licence and verification
+- **A. Recommended: cached exactly as received.** Each cached product keeps the source, license and verification
   source the catalog sent (`community` or `owner_reviewed`), and the screen shows the same attribution line and badge
   as for a live result. A cached product also shows when it was cached. The proposed wording, for approval:
   "Saved on this phone on Oct 31". A missing or unknown source still fails closed, as it does live.
 
 ### 7. Operations that must keep working offline
 
-Logging from the Library, manual entry, favourites, saved meals, recipes, repeating an entry and logging a cached
+Logging from the Library, manual entry, favorites, saved meals, recipes, repeating an entry and logging a cached
 product all work with no connection, because none of them needs the catalog. Sharing a label and publishing a product
 keep their existing rules (an upload that fails is not retried; a publication stays recoverable).
 

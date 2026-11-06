@@ -3,7 +3,7 @@
 `ReferenceIntakes` (`ios/NutritionCore/Sources/NutritionDomain/ReferenceIntakes.swift`) holds the published Dietary
 Reference Intakes, for ages 14 and over, for the vitamins and minerals the app tracks. It is a table, not advice: a
 screen may show these values beside a day's total so the number has something to be read against, and say which figure
-it is (RDA, AI or UL). Nothing in it is personalised beyond the published row a person picks.
+it is (RDA, AI or UL). Nothing in it is personalized beyond the published row a person picks.
 
 ## What it covers
 
@@ -239,5 +239,5 @@ These values were not checked against a primary source and are not in the tables
 
 The vitamins and minerals screen reached from Today compares the day with this table
 ([vitamins-and-minerals.md](vitamins-and-minerals.md)). Upper-limit warnings in a supplement stack are planned. Wording
-follows the app's "no scores, no advice" rule: a value is labelled as a reference value with its kind, and the screen
+follows the app's "no scores, no advice" rule: a value is labeled as a reference value with its kind, and the screen
 states a comparison, not a recommendation.

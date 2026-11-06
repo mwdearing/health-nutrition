@@ -143,7 +143,7 @@ struct NutrientGapRowView: View {
                 Capsule().fill(TokenColors.track)
                 HStack(spacing: 0) {
                     Rectangle().fill(TokenColors.accent).frame(width: food)
-                    // Supplements are hatched on the accent fill, so the two parts differ without colour alone.
+                    // Supplements are hatched on the accent fill, so the two parts differ without color alone.
                     Rectangle().fill(TokenColors.accent)
                         .overlay(HatchLines().stroke(TokenColors.background, lineWidth: 1))
                         .frame(width: min(supplements, max(width - food, 0)))

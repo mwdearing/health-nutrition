@@ -1,7 +1,7 @@
 import XCTest
 @testable import NutritionCore
 
-/// The colour roles of the branded-hero layout: exact values, and the contrast each pairing needs.
+/// The color roles of the branded-hero layout: exact values, and the contrast each pairing needs.
 final class LayoutTokensTests: XCTestCase {
     private let expected: [(String, String, String)] = [
         ("page", "#F2F2F7", "#07222E"),

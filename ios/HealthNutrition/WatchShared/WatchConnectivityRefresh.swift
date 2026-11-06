@@ -24,7 +24,7 @@ enum WatchConnectivityRefresh {
             // Read and applied under the receiver's lock, so a newer context the delegate delivers in between is
             // never overwritten by this older read.
             receiver.receive(contextFrom: context)
-            // A cancelled task (the system is ending it) stops after the apply it just did.
+            // A canceled task (the system is ending it) stops after the apply it just did.
             guard pending, waits < maxChecks, !Task.isCancelled else { return }
             waits += 1
             await pause()

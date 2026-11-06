@@ -327,7 +327,7 @@ public enum NutritionFactsParser {
     /// A serving is stated as a count or an amount and its unit — "3 gummies", "2 capsules", "25 g" —
     /// and everything behind that on the same line is packaging print the label put there because the
     /// space was free: `LOT# : 260628007 Best`, a best-by date, the next field of a flattened panel.
-    /// The measure therefore ends where the measure ends, with a parenthesised weight behind it kept as
+    /// The measure therefore ends where the measure ends, with a parenthesized weight behind it kept as
     /// part of it ("1 cup (240mL)").
     ///
     /// A description that states no measure the registry carries has no such end, so the text runs to the
@@ -384,7 +384,7 @@ public enum NutritionFactsParser {
     }
 
     /// Where the measure a serving description states ends, or nil when it states none: after the
-    /// amount and the unit the registry carries, and after a parenthesised weight behind them.
+    /// amount and the unit the registry carries, and after a parenthesized weight behind them.
     ///
     /// An amount with no unit behind it is not one — "2/3 cup" is a fraction of a cup the registry does
     /// not carry, and stopping at the `2` would keep a third of what the label printed.

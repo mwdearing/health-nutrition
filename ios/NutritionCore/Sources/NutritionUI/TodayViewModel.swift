@@ -208,7 +208,7 @@ public final class TodayViewModel: ObservableObject {
     }
 
     /// The card rows: a nutrient with a known amount above zero today (a partial day's known sum counts), goal
-    /// nutrients first, then the rest; each group in `nutrientCardRanking` order, uncategorised ones alphabetically
+    /// nutrients first, then the rest; each group in `nutrientCardRanking` order, uncategorized ones alphabetically
     /// after; at most `nutrientCardLimit`.
     static func nutrientCardRows(goalBars: [GoalBarModel], progress: [NutrientProgressLine]) -> [GoalBarModel] {
         func progressLine(_ id: String) -> NutrientProgressLine? { progress.first { $0.nutrient == id } }
@@ -695,7 +695,7 @@ public final class TodayViewModel: ObservableObject {
         return true
     }
 
-    /// The water other apps logged to Apple Health today, in millilitres, added to Today's water the way their
+    /// The water other apps logged to Apple Health today, in milliliters, added to Today's water the way their
     /// nutrients are added to Today's lines. The read leaves out the samples this app wrote, so a drink logged here
     /// is never counted twice. A read that did not complete, or Health not connected, adds nothing.
     static func outsideWaterMilliliters(_ outside: HealthIntakeTotals.Outside) -> Decimal {

@@ -4,7 +4,7 @@
 A run is stale when it belongs to a pull request whose head has moved on or whose pull request is
 closed, when it is an older push run on the default branch than a newer run of the same workflow, or
 when it has waited in the queue past a ceiling. Only the CI workflows named in CANCELLABLE are touched:
-release, signing and manually dispatched runs are never cancelled here.
+release, signing and manually dispatched runs are never canceled here.
 
 The decision is a pure function (`select_stale`) so it can be tested without the network.
 """
@@ -100,7 +100,7 @@ def main() -> int:
     api = Api(repo, os.environ["GITHUB_TOKEN"])
     dry_run = os.environ.get("DRY_RUN") == "1"
     default_branch = os.environ.get("DEFAULT_BRANCH", "main")
-    # Forks are included: their runs are judged against their own head repository, never cancelled
+    # Forks are included: their runs are judged against their own head repository, never canceled
     # for lacking a same-repository branch.
     open_heads = {
         ((pr["head"].get("repo") or {}).get("full_name"), pr["head"]["ref"]): pr["head"]["sha"]
@@ -118,7 +118,7 @@ def main() -> int:
             continue
         try:
             api.request("POST", f"/actions/runs/{run['id']}/cancel")
-            print(f"cancelled {label}")
+            print(f"canceled {label}")
         except urllib.error.HTTPError as error:
             # A run that finished a moment ago answers 409; that is fine.
             print(f"skipped {label}: HTTP {error.code}")

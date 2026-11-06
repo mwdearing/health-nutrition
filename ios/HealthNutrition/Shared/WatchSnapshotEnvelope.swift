@@ -10,7 +10,7 @@ struct WatchSnapshotEnvelope: Codable, Equatable {
     static let maximumPayloadBytes = 4_096
 
     var schemaVersion: Int
-    /// Moves on every Erase all data on the phone; a context from before an erase can then be recognised.
+    /// Moves on every Erase all data on the phone; a context from before an erase can then be recognized.
     var eraseGeneration: Int
     /// The summary, or nil after an erase.
     var snapshot: WidgetSnapshot?

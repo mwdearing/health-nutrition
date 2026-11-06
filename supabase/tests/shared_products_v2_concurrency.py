@@ -98,7 +98,7 @@ def serialize(first_sql, second_sql, a, b):
     first.send("begin; " + first_sql + "; select 'FIRST_HELD';")
     first.marker('FIRST_HELD')
     second.send(second_sql + "; select 'SECOND_FINISHED';")
-    blocked(second)  # Demonstrates overlapping transactions, not sequential calls labelled as a race.
+    blocked(second)  # Demonstrates overlapping transactions, not sequential calls labeled as a race.
     first.send('commit;'); first_result = first.close()
     second.marker('SECOND_FINISHED'); second_result = second.close()
     return first_result, second_result

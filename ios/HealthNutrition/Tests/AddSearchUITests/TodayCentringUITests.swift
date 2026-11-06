@@ -1,9 +1,9 @@
 import XCTest
 
-/// The Today header (title and date) and the Food row are centred on the screen. Measured with the on-screen frames
+/// The Today header (title and date) and the Food row are centered on the screen. Measured with the on-screen frames
 /// XCUITest reports, on an empty Today, so it checks the layout the person sees without needing any goal saved.
 final class TodayCentringUITests: XCTestCase {
-    /// Points allowed between the centre of an element and the centre of the window.
+    /// Points allowed between the center of an element and the center of the window.
     private let tolerance: CGFloat = 1
 
     func testTheTitleDateAndFoodRowAreCentredOnTheScreen() throws {
