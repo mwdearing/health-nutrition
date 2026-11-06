@@ -279,6 +279,7 @@ public struct AddIntakeView: View {
                 PrimaryCapsule("Log") {
                     if self.model.save(now: self.now()) { self.onSaved() }
                 }
+                .disabled(model.hasSaved)
                 .accessibilityLabel("Log")
                 .accessibilityHint("Adds this entry to the Diary")
             }

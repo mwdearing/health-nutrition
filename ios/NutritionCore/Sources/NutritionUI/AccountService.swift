@@ -8,6 +8,8 @@ public protocol CommunityAccountServicing: Sendable {
     /// longer be renewed.
     func restore() async -> CommunitySession?
     func signInWithApple(idToken: String, nonce: String) async throws -> CommunitySession
+    /// Sign in with Apple, also passing Apple's authorization code so the server can later revoke the grant.
+    func signInWithApple(idToken: String, nonce: String, authorizationCode: String?) async throws -> CommunitySession
     func requestEmailCode(email: String) async throws
     func verifyEmailCode(email: String, code: String) async throws -> CommunitySession
     func signOut() async throws
@@ -28,6 +30,14 @@ extension CommunityClient: CommunityAccountServicing {
         try await auth.signInWithApple(idToken: idToken, nonce: nonce)
     }
 
+    public func signInWithApple(
+        idToken: String,
+        nonce: String,
+        authorizationCode: String?
+    ) async throws -> CommunitySession {
+        try await auth.signInWithApple(idToken: idToken, nonce: nonce, authorizationCode: authorizationCode)
+    }
+
     public func requestEmailCode(email: String) async throws {
         try await auth.requestEmailCode(email: email)
     }
@@ -42,5 +52,16 @@ extension CommunityClient: CommunityAccountServicing {
 
     public func discardLocalSession() async throws {
         try await auth.discardSession()
+    }
+}
+
+extension CommunityAccountServicing {
+    /// A service without a server handoff signs in without the code.
+    public func signInWithApple(
+        idToken: String,
+        nonce: String,
+        authorizationCode: String?
+    ) async throws -> CommunitySession {
+        try await signInWithApple(idToken: idToken, nonce: nonce)
     }
 }

@@ -52,6 +52,8 @@ struct TodayWidgetView: View {
                 Text(snapshot?.gaugeHeadline ?? "—")
             }
             .gaugeStyle(.accessoryCircularCapacity)
+            // With no summary the ring is dimmed, so it does not read as an empty day.
+            .opacity(snapshot?.energyFraction == nil ? 0.3 : 1)
             .accessibilityLabel(snapshot?.calorieSpoken ?? "Calories unknown")
             .privacySensitive()
         case .accessoryRectangular:

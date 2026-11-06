@@ -75,6 +75,32 @@ final class BoundedResponseOperation: NSObject, URLSessionDataDelegate, @uncheck
         self.maxBytes = maxBytes
     }
 
+    /// URLSession strips only `Authorization` and `Cookie` when a redirect leaves the origin, so the provider key
+    /// headers are dropped here unless the scheme, host and port all match the original request: a key sent to
+    /// the provider is never sent on over plain http or to another host or port.
+    static func strippingKeyOnCrossHostRedirect(_ redirected: URLRequest, from original: URLRequest?) -> URLRequest {
+        // An origin that cannot be read on either side counts as a different one: the key stays only when both match.
+        if let originalOrigin = origin(of: original?.url), origin(of: redirected.url) == originalOrigin {
+            return redirected
+        }
+        var request = redirected
+        // Matched without regard to case, so a header spelled another way is dropped on every platform.
+        for name in Array((request.allHTTPHeaderFields ?? [:]).keys) where credentialHeaders.contains(name.lowercased()) {
+            request.setValue(nil, forHTTPHeaderField: name)
+        }
+        return request
+    }
+
+    /// The headers the provider clients use to carry a key or a token: USDA `X-Api-Key`, and the community
+    /// service's `apikey` and `Authorization`.
+    private static let credentialHeaders = ["x-api-key", "apikey", "authorization"]
+
+    private static func origin(of url: URL?) -> String? {
+        guard let url, let scheme = url.scheme?.lowercased(), let host = url.host?.lowercased() else { return nil }
+        let port = url.port ?? (scheme == "https" ? 443 : 80)
+        return "\(scheme)://\(host):\(port)"
+    }
+
     // These policy callbacks are routed explicitly so an injected delegate observes the original
     // session identity. Response, data and completion callbacks stay with this bounded reader,
     // matching URLSession's async data(for:) behavior.
@@ -82,9 +108,15 @@ final class BoundedResponseOperation: NSObject, URLSessionDataDelegate, @uncheck
         _ session: URLSession,
         task: URLSessionTask,
         willPerformHTTPRedirection response: HTTPURLResponse,
-        newRequest request: URLRequest,
-        completionHandler: @escaping BoundedRedirectHandler
+        newRequest redirected: URLRequest,
+        completionHandler policyHandler: @escaping BoundedRedirectHandler
     ) {
+        let original = task.originalRequest
+        let request = Self.strippingKeyOnCrossHostRedirect(redirected, from: original)
+        // A forwarded delegate may return its own request; the headers are dropped from that one too.
+        let completionHandler: BoundedRedirectHandler = { chosen in
+            policyHandler(chosen.map { Self.strippingKeyOnCrossHostRedirect($0, from: original) })
+        }
         guard forwardingDelegate != nil else {
             completionHandler(request)
             return

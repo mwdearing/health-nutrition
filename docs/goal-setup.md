@@ -35,9 +35,11 @@ The calculator is `NutritionDomain/GoalEstimator.swift`. It is pure arithmetic i
   (light, 1 to 3 days a week), 1.55 (moderate, 3 to 5 days a week) or 1.725 (hard, 6 to 7 days a week).
 - Losing or gaining adds or takes away the pace times 7700 kcal per kilogram, spread over 7 days. The
   daily change is capped at 1000 kcal.
-- A maintenance estimate or loss never goes below 1500 kcal for a male or 1200 kcal for anyone else.
-  When the cap or a floor changes the number, the results say so. These are product guardrails for
-  estimated targets, not individualized medical advice.
+- A maintenance estimate or loss never goes below 1500 kcal for a male or 1200 kcal for anyone else. A
+  gain starts from the maintenance figure raised to that floor and adds its surplus on top, so a gain is
+  always above the maintenance target for the same answers. When the cap or a floor changes the number,
+  the results say so. These are product guardrails for estimated targets, not individualized medical
+  advice.
 - Energy is rounded to the nearest 10 kcal. Carbohydrate is 50% of energy at 4 kcal a gram, protein 20%
   at 4 kcal a gram, and fat 30% at 9 kcal a gram, each rounded to the nearest 5 g. Fiber is 14 g per 1000
   kcal, rounded to the nearest 1 g.
@@ -51,7 +53,7 @@ value rounds up and the most rounds down, so every number the sentence names is 
 
 Age, sex, height and weight are used only to compute the numbers. They are held in memory while the
 sheet is open, are never stored, logged or sent, and are cleared when the sheet closes. The first screen
-says so: "Your age, sex, height and current weight stay on this phone and are not saved. Your aim, pace and goal weight are saved on this phone with the targets you choose."
+says so: "Your age, sex, height and current weight stay on this device and are not saved. Your aim, pace and goal weight are saved on this device with the targets you choose."
 
 The targets a person saves are written through the same goal store the Goals screen uses, in the
 stored units (kcal for energy, grams for the rest). Saving replaces any target already set for those

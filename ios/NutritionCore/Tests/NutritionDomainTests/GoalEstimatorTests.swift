@@ -143,6 +143,20 @@ final class GoalEstimatorTests: XCTestCase {
         XCTAssertNil(target.adjustmentNote)
     }
 
+    func testGainStartsFromTheFlooredMaintenanceWhenRawEnergyIsUnderTheFloor() throws {
+        // Woman, 70, 150 cm, 45 kg, sedentary: daily 1051.8. Gain 0.1 kg a week adds 110, so 1161.8,
+        // which is under the 1200 floor. The gain starts from the floored 1200 and adds 110, so 1310.
+        let maintain = try estimate(profile(
+            sex: .female, age: 70, cm: 150, kg: 45, activity: .sedentary, aim: .maintain))
+        let gain = try estimate(profile(
+            sex: .female, age: 70, cm: 150, kg: 45, activity: .sedentary, aim: .gain,
+            weekly: Decimal(string: "0.1")!))
+        XCTAssertEqual(maintain.energyKcal, 1200)
+        XCTAssertGreaterThan(gain.energyKcal, maintain.energyKcal)
+        XCTAssertEqual(gain.energyKcal, 1310)
+        XCTAssertEqual(gain.adjustmentNote, GoalEstimator.floorNote)
+    }
+
     func testTheCapAndTheFloorTogetherJoinTheirNotes() throws {
         // Woman, 70, 150 cm, 45 kg, sedentary, losing 1.0 kg a week.
         // Daily 1051.8; the change 1100 is capped to 1000, leaving 51.8, below the 1200 floor, so 1200.

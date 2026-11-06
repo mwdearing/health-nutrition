@@ -57,8 +57,8 @@ public struct JournalView: View {
                 }
                 if model.isEmpty {
                     EmptyState(
-                        title: "Your journal is empty",
-                        message: "Everything you log is listed here by day.",
+                        title: model.emptyStateTitle,
+                        message: model.emptyStateMessage,
                         systemImage: "book",
                         actionTitle: onAdd == nil ? nil : AddIntakeAction.title,
                         action: onAdd)
@@ -125,6 +125,11 @@ public struct JournalView: View {
                 reloadingOnReturn = false
                 model.load(now: now())
                 jumpNotice = nil
+            }
+            // The week card also counts days only Apple Health states, so Health is read for all seven of its days, not
+            // just the days on screen.
+            .task(id: model.healthWeekTaskID(now: now())) {
+                await model.loadRecentHealthTotals(days: 7, now: now())
             }
             // A time-zone change while the app is open reloads the days in the new zone (#648).
             .task {

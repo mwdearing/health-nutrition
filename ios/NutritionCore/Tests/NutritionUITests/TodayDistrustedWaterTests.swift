@@ -150,6 +150,48 @@ final class TodayDistrustedWaterTests: XCTestCase {
         XCTAssertFalse(model.waterHasUnknown)
         XCTAssertEqual(model.waterFigureText, "400 mL")
     }
+
+    // MARK: - Health connected but its water query failed (#1294)
+
+    /// No goal: the journal's 200 mL is only part of the day, so the figure and spoken value say "at least".
+    func testAFailedHealthWaterQueryMakesTheNoGoalFigureAtLeastTheJournalsWater() throws {
+        let store = try makeStore()
+        try log(store, category: "water", componentID: "glass", amount: 200, share: nil)
+        let model = TodayViewModel(store: store, lookup: SuspectFacts(), timeZoneIdentifier: "UTC")
+        model.outsideIntake = .read(values: [:], readKeys: [])
+        model.load(now: now)
+        XCTAssertTrue(model.waterHasUnknown)
+        XCTAssertEqual(model.waterFigureText, "at least 200 mL")
+        XCTAssertEqual(model.waterAccessibilityValue, "at least 200 milliliters today")
+    }
+
+    /// A water query that completed, and Health not connected, leave the journal's figure exact.
+    func testACompletedOrAbsentHealthWaterReadLeavesTheFigureExact() throws {
+        let store = try makeStore()
+        try log(store, category: "water", componentID: "glass", amount: 200, share: nil)
+        let model = TodayViewModel(store: store, lookup: SuspectFacts(), timeZoneIdentifier: "UTC")
+        model.outsideIntake = .read(values: [:], readKeys: ["water"])
+        model.load(now: now)
+        XCTAssertFalse(model.waterHasUnknown)
+        XCTAssertEqual(model.waterFigureText, "200 mL")
+        model.outsideIntake = .notConnected
+        model.load(now: now)
+        XCTAssertFalse(model.waterHasUnknown)
+        XCTAssertEqual(model.waterFigureText, "200 mL")
+    }
+
+    /// With a water goal, the bar's note blames the Health read, not the person's entries.
+    func testAFailedHealthWaterQueryNotesTheHealthGapOnTheWaterBar() throws {
+        let store = try makeStore()
+        try log(store, category: "water", componentID: "glass", amount: 500, share: nil)
+        let goals = InMemoryGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "water", target: 2000, unit: .mL))
+        let model = TodayViewModel(store: store, goals: goals, lookup: SuspectFacts(), timeZoneIdentifier: "UTC")
+        model.outsideIntake = .read(values: ["protein": 10], readKeys: ["protein"])
+        model.load(now: now)
+        let bar = try XCTUnwrap(model.waterBar)
+        XCTAssertEqual(bar.reason, "Some data from the Health app can't be counted for water")
+    }
 }
 
 /// Answers a negative protein for the component named "suspect", which distrusts that entry; nothing else is known.

@@ -146,6 +146,8 @@ class JournalImportTestCase: XCTestCase {
         var root = try object(of: exportData(favorites: false))
         root["schema_version"] = 1
         root.removeValue(forKey: "goals")
+        root.removeValue(forKey: "medications")
+        root.removeValue(forKey: "medication_doses")
         root.removeValue(forKey: "saved_meals")
         root.removeValue(forKey: "kept_out_of_library")
         root.removeValue(forKey: "logged_units")
@@ -1098,7 +1100,7 @@ final class JournalImportTests: JournalImportTestCase {
         // The time zone is what says when an entry happened where the person was. An empty string, or a name
         // no calendar knows, would be stored as text and read back as a zone the app cannot use, so the file
         // is refused instead.
-        for identifier in ["", "Middle/Earth"] {
+        for identifier in ["", "Middle/Earth", "Factory", "localtime", "posixrules", "posix/America/Chicago", "right/UTC"] {
             var root = try object(of: try exportData(favorites: false))
             var intakes = try XCTUnwrap(root["intakes"] as? [[String: Any]])
             intakes[0]["time_zone"] = identifier

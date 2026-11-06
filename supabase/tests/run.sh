@@ -47,15 +47,18 @@ SQL
 done
 if [[ ${CATALOG_TEST_FOCUS:-} == boundedlegacy ]]; then
   psql_ -f - < supabase/tests/shared_products_v2_bounded_legacy.sql
+  psql_ -f - < supabase/tests/shared_products_v2_reviewed_representative.sql
   exit 0
 fi
 if [[ ${CATALOG_TEST_FOCUS:-} == bounded ]]; then
   psql_ -f - < supabase/tests/shared_products_v2_bounded_legacy.sql
+  psql_ -f - < supabase/tests/shared_products_v2_reviewed_representative.sql
   python3 supabase/tests/shared_products_v2_bounded.py "$engine" "$name"
   exit 0
 fi
 if [[ ${CATALOG_TEST_FOCUS:-} != upgrade ]]; then
 psql_ -f - < supabase/tests/shared_products_v2_resolution.sql
+psql_ -f - < supabase/tests/apple_grants_access.sql
 if [[ ${CATALOG_TEST_FOCUS:-} == resolution ]]; then
   python3 supabase/tests/shared_products_v2_resolution.py "$engine" "$name"
   exit 0
@@ -69,6 +72,7 @@ python3 supabase/tests/shared_products_v2_concurrency.py "$engine" "$name"
 python3 supabase/tests/shared_products_v2_resolution.py "$engine" "$name"
 if [[ -z ${CATALOG_TEST_FOCUS:-} ]]; then
   psql_ -f - < supabase/tests/shared_products_v2_bounded_legacy.sql
+  psql_ -f - < supabase/tests/shared_products_v2_reviewed_representative.sql
   python3 supabase/tests/shared_products_v2_bounded.py "$engine" "$name"
 fi
 fi

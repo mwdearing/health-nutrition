@@ -17,4 +17,11 @@ final class SaveConfirmationTests: XCTestCase {
         ]
         XCTAssertTrue(labels.allSatisfy { !$0.isEmpty })
     }
+
+    /// The approved wording for a saved product, pinned as a literal so a copy change is a deliberate test change.
+    func testProductSavedWordingIsPinned() {
+        XCTAssertEqual(SaveLabels.productSaved, "Product saved")
+        XCTAssertEqual(SaveLabels.productSaved(afterSharePromiseLost: false), "Product saved")
+        XCTAssertEqual(SaveLabels.productSaved(afterSharePromiseLost: true), "Saved on this device only; sharing isn't available right now")
+    }
 }

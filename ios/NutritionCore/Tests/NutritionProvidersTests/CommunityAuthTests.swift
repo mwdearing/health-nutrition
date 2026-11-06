@@ -26,6 +26,65 @@ final class CommunityAuthTests: XCTestCase {
         XCTAssertEqual(try store.load(), session)
     }
 
+    func testSignInWithAppleHandsTheAuthorizationCodeToTheServer() async throws {
+        let transport = FakeCommunityTransport([
+            .response(status: 200, body: tokenBody),
+            .response(status: 200, body: #"{"stored":true}"#),
+        ])
+        let auth = try makeAuth(transport: transport)
+
+        let session = try await auth.signInWithApple(
+            idToken: "test-apple-token", nonce: "test-nonce", authorizationCode: "test-auth-code"
+        )
+
+        XCTAssertEqual(transport.requests.count, 2)
+        let handoff = transport.requests[1]
+        XCTAssertEqual(handoff.httpMethod, "POST")
+        XCTAssertEqual(handoff.url?.path, "/functions/v1/apple-grant")
+        XCTAssertEqual(handoff.value(forHTTPHeaderField: "Authorization"), "Bearer \(session.accessToken)")
+        let body = try bodyJSON(handoff)
+        XCTAssertEqual(body["action"] as? String, "store")
+        XCTAssertEqual(body["authorization_code"] as? String, "test-auth-code")
+    }
+
+    func testAFailedAuthorizationCodeHandoffDoesNotFailSignIn() async throws {
+        let transport = FakeCommunityTransport([
+            .response(status: 200, body: tokenBody),
+            .response(status: 502, body: ""),
+        ])
+        let store = InMemoryCommunitySessionStore()
+        let auth = try makeAuth(transport: transport, store: store)
+
+        let session = try await auth.signInWithApple(
+            idToken: "test-apple-token", nonce: "test-nonce", authorizationCode: "test-auth-code"
+        )
+
+        XCTAssertEqual(try store.load(), session)
+    }
+
+    func testAFailedHandoffIsRetriedOnce() async throws {
+        let transport = FakeCommunityTransport([
+            .response(status: 200, body: tokenBody),
+            .response(status: 502, body: ""),
+            .response(status: 200, body: #"{"stored":true}"#),
+        ])
+        let auth = try makeAuth(transport: transport)
+
+        _ = try await auth.signInWithApple(idToken: "t", nonce: "n", authorizationCode: "c")
+
+        XCTAssertEqual(transport.requests.map { $0.url?.path },
+                       ["/auth/v1/token", "/functions/v1/apple-grant", "/functions/v1/apple-grant"])
+    }
+
+    func testSignInWithAppleWithoutACodeMakesNoHandoff() async throws {
+        let transport = FakeCommunityTransport([.response(status: 200, body: tokenBody)])
+        let auth = try makeAuth(transport: transport)
+
+        _ = try await auth.signInWithApple(idToken: "test-apple-token", nonce: "test-nonce")
+
+        XCTAssertEqual(transport.requests.count, 1)
+    }
+
     func testRequestEmailCodeSendsAddressAndCreatesAccount() async throws {
         let transport = FakeCommunityTransport([.response(status: 200, body: "{}")])
         let auth = try makeAuth(transport: transport)

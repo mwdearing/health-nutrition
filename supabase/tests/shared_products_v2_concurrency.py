@@ -493,14 +493,16 @@ def bridge_tests():
     assert submit(a,body)['current_state']=='rejected'
     sql(f'select catalog_v2.moderate({literal(pid)},false);')
     assert submit(a,body)['current_state']=='active'
-    # Optional owner payload survives account deletion, but its badge cannot transfer to custom facts.
+    # Optional owner payload survives account deletion, ranks first, and its badge cannot transfer to custom facts.
     if owner_installed:
         sql("select catalog.owner_approve_label("+legacy_args(name='Synthetic owner exact',protein=17)+",'reviewed');")
         pub=rpc(a,'get_catalog_product_v2',literal(pid))['product']
         legacy=next(g for g in [pub]+pub['alternatives'] if g['product'].get('content_type')=='legacy_label')
         assert legacy['verification']=={'status':'verified','source':'owner_reviewed'}
         assert legacy['product']['nutrients']['protein']==17
-        assert pub['verification']['status']=='shared_unverified', 'owner badge cannot transfer to custom representative'
+        # The approved snapshot is the representative; its badge still cannot transfer to any custom alternative.
+        assert pub['product']['content_type']=='legacy_label' and pub['verification']=={'status':'verified','source':'owner_reviewed'}
+        assert all(g['product'].get('content_type')=='legacy_label' or 'verification' not in g for g in pub['alternatives'])
         sql("select catalog.owner_reject_label('012345678905','per_serving','incorrect_label');")
         assert sql(identity(a)+"select count(*) from public.lookup_label_v2('012345678905');")=='0'
         assert all(g['product'].get('content_type')!='legacy_label' for g in [rpc(a,'get_catalog_product_v2',literal(pid))['product']]+rpc(a,'get_catalog_product_v2',literal(pid))['product']['alternatives'])
