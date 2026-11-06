@@ -168,16 +168,25 @@ end $test$;
 -- Before this migration the stored entry showed an unverified representative; restore that stored shape.
 update catalog_v2.entries set normalized_name='stale search name', publication=jsonb_set(publication,'{verification,status}','"unverified"')
  where product_id=current_setting('t.p4')::uuid;
+-- Entries already verified keep a reviewed first row (so the migration may leave them alone).
+do $verified$ begin
+ assert not exists(select 1 from catalog_v2.entries e where e.publication#>>'{verification,status}'='verified'
+  and not exists(select 1 from catalog_v2.public_rows(e.product_id) r where r.ordinal=1 and r.reviewed)),
+  'every verified entry shows a reviewed first row';
+end $verified$;
 do $refresh$ declare ids uuid[]; codes text[]; p uuid; begin
  select array_agg(e.product_id order by e.product_id) into ids from catalog_v2.entries e
-  where e.publication#>>'{verification,status}' is distinct from 'verified'
-   and exists(select 1 from catalog_v2.public_rows(e.product_id) r where r.reviewed);
- assert ids is not null and current_setting('t.p4')::uuid=any(ids), 'the stale entry is in the affected set';
+  where e.publication#>>'{verification,status}' is distinct from 'verified';
+ if ids is null then return; end if;
  select array_agg(distinct b.barcode) into codes from catalog_v2.barcode_bindings b where b.product_id=any(ids);
  perform catalog_v2.lock_identities(coalesce(codes,'{}'));
  perform catalog_v2.lock_products(ids);
- foreach p in array ids loop perform catalog_v2.refresh(p); end loop;
+ foreach p in array ids loop
+  if exists(select 1 from catalog_v2.public_rows(p) r where r.reviewed) then perform catalog_v2.refresh(p); end if;
+ end loop;
+ end $refresh$;
+do $after$ begin
  assert (select normalized_name from catalog_v2.entries where product_id=current_setting('t.p4')::uuid)=catalog_v2.search_name('Synthetic reviewed name granola'), 'the refresh rebuilt the stale search name';
-end $refresh$;
+end $after$;
 rollback;
 select 'REVIEWED REPRESENTATIVE OK';

@@ -33,17 +33,24 @@ $$;
 
 -- Stored search entries copy the representative's name. Rebuild those whose displayed representative is not the
 -- reviewed row that public_rows now ranks first, so the reviewed name becomes searchable again.
--- Like backfill_legacy, freeze the affected set first, take the complete identity advisory-lock set in one
--- globally ordered call, then the product row locks, and only then refresh. Per-product refreshes would take
--- identity keys in product order, which can deadlock with erase_account_labels. Refresh re-takes held locks.
+-- Entries already 'verified' are left alone on purpose: a verified entry shows an owner-reviewed row that, under the
+-- old order (support first), had the most support of every row, so it also has the most support among the reviewed
+-- rows and stays first under the new order (reviewed first, then support). The seeded test checks that every
+-- verified entry's first row is a reviewed one.
+-- Lock first, then decide. Every unverified entry's identities and product rows are locked in the global order
+-- (identity advisory locks in one ordered call, then product row locks), and only then is the reviewed condition
+-- evaluated, so a concurrent review or submission cannot change the answer between the choice and the refresh.
+-- Like backfill_legacy, this avoids per-product refreshes taking identity keys in product order, which can deadlock
+-- with erase_account_labels. Refresh re-takes held locks.
 do $refresh$ declare ids uuid[]; codes text[]; p uuid; begin
  select array_agg(e.product_id order by e.product_id) into ids from catalog_v2.entries e
-  where e.publication#>>'{verification,status}' is distinct from 'verified'
-   and exists(select 1 from catalog_v2.public_rows(e.product_id) r where r.reviewed);
+  where e.publication#>>'{verification,status}' is distinct from 'verified';
  if ids is null then return; end if;
  select array_agg(distinct b.barcode) into codes from catalog_v2.barcode_bindings b where b.product_id=any(ids);
  perform catalog_v2.lock_identities(coalesce(codes,'{}'));
  perform catalog_v2.lock_products(ids);
- foreach p in array ids loop perform catalog_v2.refresh(p); end loop;
+ foreach p in array ids loop
+  if exists(select 1 from catalog_v2.public_rows(p) r where r.reviewed) then perform catalog_v2.refresh(p); end if;
+ end loop;
 end $refresh$;
 commit;
