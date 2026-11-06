@@ -19,6 +19,8 @@ final class TypedAmountTests: XCTestCase {
         XCTAssertNil(AmountParser.parse(AmountParser.normalizedTyped("1,000", decimalSeparator: ",")))
         XCTAssertEqual(AmountParser.parseTyped("2,50", decimalSeparator: ","), Decimal(string: "2.5"))
         XCTAssertEqual(AmountParser.parseTyped("2,5", decimalSeparator: ","), Decimal(string: "2.5"))
+        // A sub-unit amount with a leading zero is a decimal, not a thousands group.
+        XCTAssertEqual(AmountParser.parseTyped("0,125", decimalSeparator: ","), Decimal(string: "0.125"))
     }
 
     func testACommaIsRefusedWhereTheRegionUsesAPoint() {

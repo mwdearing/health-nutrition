@@ -53,6 +53,7 @@ public enum AmountParser {
         // A comma then exactly three digits may be a thousands separator. Leave the comma in place so
         // `parse` refuses the text instead of reading it as a decimal.
         if let comma = trimmed.firstIndex(of: ","),
+            !trimmed.hasPrefix("0"),
             trimmed[trimmed.index(after: comma)...].count == 3,
             trimmed[trimmed.index(after: comma)...].allSatisfy({ $0.isASCII && $0.isNumber }) {
             return trimmed
