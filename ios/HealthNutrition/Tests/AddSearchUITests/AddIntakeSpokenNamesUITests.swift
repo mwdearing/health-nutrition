@@ -54,15 +54,10 @@ final class AddIntakeSpokenNamesUITests: XCTestCase {
     private func openTypedInEntryForm(_ app: XCUIApplication) throws {
         let getStarted = app.buttons["Get started"]
         if getStarted.waitForExistence(timeout: 5) { getStarted.tap() }
-        let addCandidates = app.buttons.matching(NSPredicate(format: "label == %@", "Add food, drink, or supplement"))
-        var add: XCUIElement?
-        _ = waitUntil(timeout: 20) {
-            add = addCandidates.allElementsBoundByIndex.first(where: { $0.exists && $0.isHittable })
-            return add != nil
-        }
-        try XCTUnwrap(add, "no hittable Add button on Today").tap()
-
+        // The shared opener waits for a hittable Add button and taps it again when a slow simulator drops the first
+        // tap, which otherwise leaves Add closed and "Type it in" never on screen.
         let typeIt = app.buttons["Type it in"]
+        guard openAddScreen(in: app, until: typeIt) else { return XCTFail("Add did not open to Type it in") }
         let typeItReady = waitUntil(timeout: 20) { typeIt.exists && typeIt.isHittable }
         guard typeItReady else { return XCTFail("Type it in is not tappable on Add") }
         typeIt.tap()
