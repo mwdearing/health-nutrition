@@ -126,16 +126,17 @@ enum WidgetFigure {
     /// A partial total (some water entries have no known amount) gets the same "+" as the macros: "1,000+ mL".
     static func water(_ milliliters: Double?, usUnits: Bool?, partial: Bool = false) -> String {
         let plus = partial ? "+" : ""
-        // A missing value is a dash with no marker; the marker only follows a number.
-        guard let milliliters, milliliters.isFinite else { return "—" }
         if usUnits == true {
+            // A missing value is a bare dash, as before; the marker only follows a number.
+            guard let milliliters, milliliters.isFinite else { return "—" }
             let ounces = milliliters / millilitersPerUSFluidOunce
             // A sip is still water: under half an ounce it reads "<1" rather than a rounded 0.
             if ounces > 0, ounces < 0.5 { return "<1" + plus + " fl oz" }
             guard let text = wholeNumber(ounces) else { return "—" }
             return text + plus + " fl oz"
         }
-        guard let text = wholeNumber(milliliters) else { return "—" }
+        // A missing value keeps its unit ("— mL"), as before, and never a marker.
+        guard let text = wholeNumber(milliliters) else { return "— mL" }
         return text + plus + " mL"
     }
 

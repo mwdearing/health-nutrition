@@ -39,7 +39,7 @@ final class WidgetSnapshotTests: XCTestCase {
         XCTAssertEqual(WidgetFigure.water(1_000, usUnits: false, partial: true), "1,000+ mL", "a partial metric total is marked")
         XCTAssertEqual(WidgetFigure.water(1_000, usUnits: true, partial: true), "34+ fl oz", "a partial US total is marked")
         XCTAssertEqual(WidgetFigure.water(10, usUnits: true, partial: true), "<1+ fl oz", "a partial sip is marked too")
-        XCTAssertEqual(WidgetFigure.water(nil, usUnits: false, partial: true), "—", "a missing value never shows a marker")
+        XCTAssertEqual(WidgetFigure.water(nil, usUnits: false, partial: true), "— mL", "a missing value never shows a marker")
         XCTAssertEqual(WidgetFigure.water(nil, usUnits: true, partial: true), "—", "a missing value never shows a marker")
         XCTAssertEqual(WidgetFigure.water(0, usUnits: true), "0 fl oz")
         XCTAssertEqual(WidgetFigure.water(10, usUnits: true), "<1 fl oz", "a sip is not zero")
