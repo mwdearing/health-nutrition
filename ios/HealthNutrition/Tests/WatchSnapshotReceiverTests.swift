@@ -133,4 +133,91 @@ final class WatchSnapshotReceiverTests: XCTestCase {
         receiver.receive(context: try context(generation: 0, snapshot: sample()))
         XCTAssertEqual(reloads, 0)
     }
+
+    // MARK: Watch Connectivity background refresh
+
+    func testRefreshAppliesThePendingContextAndReloadsBeforeReturning() async throws {
+        let (receiver, store) = makeReceiver()
+        let pending = try context(generation: 0, snapshot: sample())
+        await WatchConnectivityRefresh.run(
+            receiver: receiver, context: { pending }, hasContentPending: { false }, pause: {})
+        XCTAssertEqual(store.read()?.energyKcal, 1_050)
+        XCTAssertEqual(reloads, 1)
+    }
+
+    func testRefreshKeepsWaitingWhileContentIsPendingAndAppliesWhatArrives() async throws {
+        let (receiver, store) = makeReceiver()
+        var contexts = [try context(generation: 0, snapshot: sample())]
+        var pendingChecks = 2
+        await WatchConnectivityRefresh.run(
+            receiver: receiver, context: { contexts.last ?? [:] },
+            hasContentPending: {
+                pendingChecks -= 1
+                if pendingChecks == 0 {
+                    var newer = self.sample()
+                    newer.energyKcal = 1_900
+                    contexts.append((try? self.context(generation: 0, snapshot: newer)) ?? [:])
+                }
+                return pendingChecks > 0
+            }, pause: {})
+        XCTAssertEqual(pendingChecks, 0)
+        XCTAssertEqual(store.read()?.energyKcal, 1_900)
+    }
+
+    func testRefreshGivesUpWaitingAfterTheLimit() async throws {
+        let (receiver, _) = makeReceiver()
+        var pauses = 0
+        await WatchConnectivityRefresh.run(
+            receiver: receiver, context: { [:] }, hasContentPending: { true }, pause: { pauses += 1 }, maxChecks: 3)
+        XCTAssertEqual(pauses, 3)
+    }
+
+    func testRefreshIgnoresAnEmptyContextAndKeepsTheEraseOrdering() async throws {
+        let (receiver, store) = makeReceiver()
+        receiver.receive(context: try context(generation: 2, snapshot: nil))
+        reloads = 0
+        let older = try context(generation: 1, snapshot: sample())
+        await WatchConnectivityRefresh.run(
+            receiver: receiver, context: { [:] }, hasContentPending: { false }, pause: {})
+        XCTAssertEqual(reloads, 0)
+        await WatchConnectivityRefresh.run(
+            receiver: receiver, context: { older }, hasContentPending: { false }, pause: {})
+        XCTAssertEqual(store.read()?.hasEntries, false)
+        XCTAssertEqual(reloads, 0)
+    }
+
+    func testRefreshReadsTheContextUnderTheReceiverLockSoANewerDeliveryIsNotOverwritten() async throws {
+        let (receiver, store) = makeReceiver()
+        var newer = sample()
+        newer.energyKcal = 1_900
+        let newerContext = try context(generation: 0, snapshot: newer)
+        let olderContext = try context(generation: 0, snapshot: sample())
+        // The delegate delivers the newer context on another thread while the replay is reading the older one. The
+        // delivery has to wait for the replay's lock, so it is applied after it and the newer figures win.
+        let done = expectation(description: "delivered")
+        await WatchConnectivityRefresh.run(
+            receiver: receiver,
+            context: {
+                DispatchQueue.global().async {
+                    receiver.receive(context: newerContext)
+                    done.fulfill()
+                }
+                Thread.sleep(forTimeInterval: 0.2)
+                return olderContext
+            }, hasContentPending: { false }, pause: {})
+        await fulfillment(of: [done], timeout: 5)
+        XCTAssertEqual(store.read()?.energyKcal, 1_900)
+    }
+
+    func testRefreshStopsWaitingWhenTheTaskIsCancelled() async throws {
+        let (receiver, _) = makeReceiver()
+        var pauses = 0
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            await WatchConnectivityRefresh.run(
+                receiver: receiver, context: { [:] }, hasContentPending: { true }, pause: { pauses += 1 })
+        }
+        await task.value
+        XCTAssertEqual(pauses, 0)
+    }
 }

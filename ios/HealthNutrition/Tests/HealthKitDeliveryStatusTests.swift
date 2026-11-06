@@ -143,6 +143,8 @@ final class HealthKitDeliveryStatusTests: XCTestCase {
 
         XCTAssertNil(status.lastRunAt, "an automatic run must not start before every mapped type is asked")
         XCTAssertEqual(status.lastRunLines, [])
+        XCTAssertEqual(status.counts, .none, "an automatic run before Health is asked reads nothing from the journal")
+        status.refresh()
         XCTAssertEqual(status.counts.pending, 1, "the queue is left untouched, not drained")
         XCTAssertEqual(status.counts.suspended, 0, "nothing is parked for a request that has not happened")
         XCTAssertEqual(try services.journalStore.pendingOutbox().count, 1)

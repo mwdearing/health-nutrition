@@ -313,7 +313,9 @@ Text that is not a positive number is refused rather than rounded or guessed at.
 - **Water total** is the exact `Decimal` sum, in mL, of the volume components of intakes with category `water`. Other
   categories never contribute, whatever their unit. A component whose unit is not a volume is skipped and counted
   (`waterSkippedCount`), never treated as zero. So is a stored amount that is NaN or not above zero, checked before and
-  after conversion to mL.
+  after conversion to mL. Water other apps logged to Health is added when its query completed. When Health is
+  connected but the water query failed, the day's water is unknown on the Health side: with no water goal the figure
+  reads "at least" the known part (or "No data"), and a goal bar notes the Health gap.
 - **Invalid time zone**: a stored intake whose time zone identifier is not a valid time zone is left out of Today (no
   row, not in the water total or coverage) and counted in `skippedIntakeCount`, which is reset on each load. There is no
   fallback to the current time zone for stored intakes.
@@ -400,7 +402,8 @@ state of the app, not of the day.
 
 The reason line under a cannot-total bar says "N entries have no <nutrient> value" only where `CoverageLine`
 reports missing entries for that nutrient, and otherwise "Some entries can't be added up for <nutrient>" (a
-below-threshold bound, an unresolvable basis). For water it is the sentence about entries that are not a volume.
+below-threshold bound, an unresolvable basis). For water it is the sentence about entries that are not a volume, or, when only the Health side is short, the Health
+gap note ("Some data from the Health app can't be counted for water").
 
 ## Missing values line
 The Coverage section is gone from Today. `missingValuesSummary` is one line, "2 entries have no nutrition values",
