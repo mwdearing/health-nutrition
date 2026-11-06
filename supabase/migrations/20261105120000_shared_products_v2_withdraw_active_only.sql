@@ -54,7 +54,7 @@ begin
   if catalog_v2.suppressed(pid,body#>>'{product,basis}') then perform catalog_v2.fail('rejected'); end if;
  end if;
  select * into c from catalog_v2.contributions where product_id=pid and account_id=a for update;
- if c.revision::text is distinct from body->>'expected_server_revision' or (withdrawing and (c.revision is null or c.state<>'active')) then
+ if c.revision::text is distinct from body->>'expected_server_revision' then
   perform catalog_v2.fail('revision_conflict',jsonb_build_object('current_revision',c.revision::text,'current_state',catalog_v2.current_state(pid,c.state))); end if;
  if withdrawing then
   select r.content,r.source_name into content,source_name from catalog_v2.revisions r where r.revision=c.revision;
