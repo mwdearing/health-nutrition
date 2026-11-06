@@ -253,7 +253,7 @@ public struct NutrientKeyChoice: Identifiable, Equatable {
     nonisolated static func decimal(
         _ text: String, field: String, decimalSeparator: String? = Locale.current.decimalSeparator
     ) throws -> Decimal {
-        let trimmed = AmountParser.normalizedTyped(text.trimmingCharacters(in: .whitespacesAndNewlines), decimalSeparator: decimalSeparator)
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.range(of: "^[0-9]+(?:\\.[0-9]{1,6})?$", options: .regularExpression) != nil,
               let value = Decimal(string: trimmed, locale: Locale(identifier: "en_US_POSIX")), value <= 1_000_000_000 else {
             throw CustomProductFieldError(field: field, code: .invalidAmount)
