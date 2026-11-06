@@ -174,7 +174,7 @@ final class AppServices {
         // delivery pass is between its busy check and its Health write while the stores are emptied (#841).
         let healthKitDeliveryGate = DeliveryRunGate()
         connections = ConnectionsPrivacyViewModel(goals: goalStore,
-            store: journalStore, favorites: favoritesStore, savedMeals: savedMealStore,
+            store: journalStore, favorites: favoritesStore, savedMeals: savedMealStore, medications: medicationStore,
             appVersion: Self.appVersion,
             erasers: erasers,
             preferences: displayPreferences,

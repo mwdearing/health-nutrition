@@ -92,6 +92,23 @@ final class RecipeDetailViewModelTests: XCTestCase {
         XCTAssertNotNil(library.select(item, now: when))
     }
 
+    func testLoggingOnePortionSaysServingInTheSingular() throws {
+        let model = RecipeDetailViewModel(
+            version: uiSampleVersion(), journal: try makeJournal(), timeZoneIdentifier: "UTC", makeID: { self.intakeID })
+        XCTAssertTrue(model.logPortion(now: when))
+        XCTAssertEqual(model.logMessage, "Logged 1 serving of \(uiSampleVersion().title).")
+    }
+
+    func testLoggedMessageReadsTheParsedPortion() {
+        XCTAssertEqual(
+            RecipeDetailViewModel.loggedText(portion: Decimal(string: "1.0")!, unitText: "servings", title: "Oats"),
+            "Logged 1 serving of Oats.")
+        XCTAssertEqual(
+            RecipeDetailViewModel.loggedText(portion: 2, unitText: "servings", title: "Oats"), "Logged 2 servings of Oats.")
+        XCTAssertEqual(
+            RecipeDetailViewModel.loggedText(portion: 1, unitText: "g", title: "Oats"), "Logged 1 g of Oats.")
+    }
+
     func testCoverageLineTextHelper() {
         let line = RecipeCoverage(nutrientID: "protein", lacking: 1, total: 3)
         XCTAssertEqual(line.text(nutrientName: "protein"), "1 of 3 ingredients lack protein")

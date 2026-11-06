@@ -43,6 +43,8 @@ final class JournalImportDrinkShareTests: JournalImportTestCase {
         var root = try object(of: try exportedDrinkData())
         root["schema_version"] = 6
         root.removeValue(forKey: "goals")
+        root.removeValue(forKey: "medications")
+        root.removeValue(forKey: "medication_doses")
         let data = try JSONSerialization.data(withJSONObject: root)
         let target = try store(directory())
 
@@ -55,6 +57,8 @@ final class JournalImportDrinkShareTests: JournalImportTestCase {
         var root = try object(of: try exportedDrinkData())
         root["schema_version"] = 6
         root.removeValue(forKey: "goals")
+        root.removeValue(forKey: "medications")
+        root.removeValue(forKey: "medication_doses")
         func strip(_ value: Any) -> Any {
             if var dict = value as? [String: Any] {
                 dict.removeValue(forKey: "hydration_percent")

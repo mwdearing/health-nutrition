@@ -8,6 +8,7 @@ one-line-per-gap output.
 from __future__ import annotations
 
 import copy
+import importlib.util
 import plistlib
 import subprocess
 import sys
@@ -16,6 +17,10 @@ from pathlib import Path
 import pytest
 
 SCRIPT = Path(__file__).resolve().parents[1] / "check_privacy_manifest.py"
+_spec = importlib.util.spec_from_file_location("privacy_manifest_checker_under_test", SCRIPT)
+assert _spec is not None and _spec.loader is not None
+checker = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(checker)
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SHIPPED_MANIFEST = REPO_ROOT / "ios" / "HealthNutrition" / "Resources" / "PrivacyInfo.xcprivacy"
 
@@ -840,3 +845,250 @@ def test_an_external_package_product_in_the_app_does_not_break_the_scan(tmp_path
     )
     result = run(root)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_an_even_run_of_backslashes_does_not_consume_the_closing_quote() -> None:
+    # "\\" is a literal holding one backslash; the quote after it closes the literal, so the use after it is code.
+    found = checker.used_categories('let s = "\\\\"; let d = UserDefaults.standard\n')
+    assert [category for category, _ in found] == ["NSPrivacyAccessedAPICategoryUserDefaults"]
+
+
+def test_an_escaped_backslash_before_an_interpolation_leaves_the_interpolation_as_code() -> None:
+    found = checker.used_categories('let s = "\\\\\\(UserDefaults.standard)"\n')
+    assert [category for category, _ in found] == ["NSPrivacyAccessedAPICategoryUserDefaults"]
+
+
+def test_an_odd_run_of_backslashes_still_escapes_the_quote() -> None:
+    # "\\\"" is a backslash and a quote inside the literal, which goes on to the closing quote.
+    assert checker.used_categories('let s = "\\\\\\" UserDefaults"\n') == []
+
+
+def test_an_escaped_backslash_at_the_end_of_a_literal_does_not_hide_the_rest_of_the_line(tmp_path: Path) -> None:
+    line = 'func probe() { let sep = "\\\\"; let d = UserDefaults.standard; _ = (sep, d) }\n'
+    root = write_tree(
+        tmp_path, {"HealthNutrition/Sources/App.swift": line}, manifest=manifest_xml(declared=[BOOT_TIME])
+    )
+    result = run(root)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "NSPrivacyAccessedAPICategoryUserDefaults" in result.stdout
+
+
+EMBEDDED_PROJECT_YML = PROJECT_YML.replace(
+    "    dependencies:\n      - package: NutritionCore\n        product: NutritionCore\n",
+    "    dependencies:\n      - target: HealthNutritionWidgets\n      - target: HealthNutritionWatch\n"
+    "      - package: NutritionCore\n        product: NutritionCore\n",
+    1,
+).replace("      - path: Resources\n", "      - path: Resources\n      - path: Shared\n", 1) + """
+  HealthNutritionWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Widgets
+        excludes:
+          - Info.plist
+      - path: Shared
+
+  HealthNutritionWatch:
+    type: application
+    platform: watchOS
+    sources:
+      - path: Watch
+      - path: Shared
+    dependencies:
+      - target: HealthNutritionWatchWidgets
+
+  HealthNutritionWatchWidgets:
+    type: app-extension
+    platform: watchOS
+    sources:
+      - path: WatchWidgets
+      - path: Shared
+
+  HealthNutritionTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: HealthNutrition
+
+schemes:
+  HealthNutrition:
+    build:
+      targets:
+        HealthNutrition: all
+"""
+
+CLEAN_SWIFT = "import Foundation\n"
+USES_DEFAULTS = "import Foundation\nlet probe = UserDefaults(suiteName: \"group.x\")\n"
+
+
+def write_embedded_tree(
+    tmp_path: Path,
+    swift: dict[str, str],
+    *,
+    declared: dict[str, list[tuple[str, list[object]]]] | None = None,
+) -> Path:
+    """An app with a widget, a Watch app and a Watch widget, each with its own manifest."""
+    declared = declared or {}
+    root = write_tree(
+        tmp_path,
+        {
+            "HealthNutrition/Sources/App.swift": CLEAN_SWIFT,
+            "HealthNutrition/Shared/Snapshot.swift": CLEAN_SWIFT,
+            "HealthNutrition/Widgets/Today.swift": CLEAN_SWIFT,
+            "HealthNutrition/Watch/Watch.swift": CLEAN_SWIFT,
+            "HealthNutrition/WatchWidgets/Complication.swift": CLEAN_SWIFT,
+            "HealthNutrition/Tests/AppTests.swift": CLEAN_SWIFT,
+            **swift,
+        },
+        manifest=manifest_xml(declared=[BOOT_TIME, USER_DEFAULTS]),
+        project_yml=EMBEDDED_PROJECT_YML,
+    )
+    for folder in ("Widgets", "Watch", "WatchWidgets"):
+        manifest = manifest_xml(declared=declared.get(folder, []), collected=[])
+        (root / "HealthNutrition" / folder / "PrivacyInfo.xcprivacy").write_text(manifest, encoding="utf-8")
+    return root
+
+
+def test_the_embedded_fixture_tree_passes_when_every_manifest_matches(tmp_path: Path) -> None:
+    root = write_embedded_tree(tmp_path, {"HealthNutrition/Watch/Watch.swift": USES_DEFAULTS}, declared={"Watch": [USER_DEFAULTS]})
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_a_widget_source_using_user_defaults_needs_the_widget_manifest_to_declare_it(tmp_path: Path) -> None:
+    # The app manifest declares UserDefaults, which used to satisfy the check for the widget as well.
+    root = write_embedded_tree(tmp_path, {"HealthNutrition/Widgets/Today.swift": USES_DEFAULTS})
+    result = run(root)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "NSPrivacyAccessedAPICategoryUserDefaults" in result.stdout
+    assert "Widgets/Today.swift" in result.stdout
+    assert "Widgets/PrivacyInfo.xcprivacy" in result.stdout
+
+
+def test_a_shared_source_using_user_defaults_is_checked_against_each_bundle_that_compiles_it(tmp_path: Path) -> None:
+    root = write_embedded_tree(
+        tmp_path,
+        {"HealthNutrition/Shared/Snapshot.swift": USES_DEFAULTS},
+        declared={"Watch": [USER_DEFAULTS]},
+    )
+    result = run(root)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "Widgets/PrivacyInfo.xcprivacy" in result.stdout
+    assert "WatchWidgets/PrivacyInfo.xcprivacy" in result.stdout
+    assert "Watch/PrivacyInfo.xcprivacy" not in result.stdout.replace("WatchWidgets/PrivacyInfo", "")
+
+
+@pytest.mark.parametrize(
+    ("rel", "manifest_hint"),
+    [
+        ("HealthNutrition/Watch/Watch.swift", "Watch/PrivacyInfo.xcprivacy"),
+        ("HealthNutrition/WatchWidgets/Complication.swift", "WatchWidgets/PrivacyInfo.xcprivacy"),
+    ],
+)
+def test_watch_bundle_sources_are_scanned_against_their_own_manifest(
+    tmp_path: Path, rel: str, manifest_hint: str
+) -> None:
+    root = write_embedded_tree(tmp_path, {rel: USES_DEFAULTS})
+    result = run(root)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert manifest_hint in result.stdout
+
+
+def test_a_widget_file_timestamp_use_is_not_hidden_by_other_manifests(tmp_path: Path) -> None:
+    probe = 'import Foundation\nlet t = try? FileManager.default.attributesOfItem(atPath: "/")\n'
+    root = write_embedded_tree(tmp_path, {"HealthNutrition/Widgets/Today.swift": probe})
+    result = run(root)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "NSPrivacyAccessedAPICategoryFileTimestamp" in result.stdout
+
+
+def test_an_embedded_bundle_without_a_manifest_is_an_error(tmp_path: Path) -> None:
+    root = write_embedded_tree(tmp_path, {})
+    (root / "HealthNutrition" / "Widgets" / "PrivacyInfo.xcprivacy").unlink()
+    result = run(root)
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert "HealthNutritionWidgets" in result.stdout
+
+
+def test_an_embedded_manifest_with_tracking_on_fails(tmp_path: Path) -> None:
+    root = write_embedded_tree(tmp_path, {})
+    (root / "HealthNutrition" / "Widgets" / "PrivacyInfo.xcprivacy").write_text(
+        manifest_xml(tracking=True, declared=[], collected=[]), encoding="utf-8"
+    )
+    result = run(root)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "Widgets/PrivacyInfo.xcprivacy" in result.stdout
+
+
+def test_test_targets_and_unembedded_targets_are_not_bundles(tmp_path: Path) -> None:
+    root = write_embedded_tree(tmp_path, {"HealthNutrition/Tests/AppTests.swift": USES_DEFAULTS})
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_a_bundle_with_two_manifests_is_an_error(tmp_path: Path) -> None:
+    root = write_embedded_tree(tmp_path, {})
+    extra = root / "HealthNutrition" / "Widgets" / "Extra"
+    extra.mkdir()
+    (extra / "PrivacyInfo.xcprivacy").write_text(manifest_xml(declared=[], collected=[]), encoding="utf-8")
+    result = run(root)
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert "HealthNutritionWidgets" in result.stdout
+    assert "more than one" in result.stdout
+
+
+def test_a_watch_app_listed_before_the_ios_app_is_not_taken_for_the_app(tmp_path: Path) -> None:
+    marker = "\n  HealthNutritionWidgets:"
+    start = EMBEDDED_PROJECT_YML.index("  HealthNutrition:")
+    split = EMBEDDED_PROJECT_YML.index(marker)
+    watch_start = EMBEDDED_PROJECT_YML.index("\n  HealthNutritionWatch:")
+    tests_start = EMBEDDED_PROJECT_YML.index("\n  HealthNutritionTests:")
+    app_block = EMBEDDED_PROJECT_YML[start:split]
+    widgets_block = EMBEDDED_PROJECT_YML[split:watch_start]
+    watch_blocks = EMBEDDED_PROJECT_YML[watch_start:tests_start]
+    # Watch app and its widgets first, the iOS app last.
+    reordered = (
+        EMBEDDED_PROJECT_YML[:start] + watch_blocks.lstrip("\n") + widgets_block + "\n" + app_block
+        + EMBEDDED_PROJECT_YML[tests_start:]
+    )
+    assert reordered.index("HealthNutritionWatch:") < reordered.index("  HealthNutrition:")
+    root = write_embedded_tree(tmp_path, {})
+    (root / "HealthNutrition" / "project.yml").write_text(reordered, encoding="utf-8")
+    # The app declares UserDefaults and the Watch app (listed first) declares nothing; none of them uses it.
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "across 4 bundle(s)" in result.stdout
+
+
+def test_two_ios_application_targets_are_ambiguous(tmp_path: Path) -> None:
+    root = write_embedded_tree(tmp_path, {})
+    yml = (root / "HealthNutrition" / "project.yml").read_text(encoding="utf-8")
+    yml = yml.replace("    type: application\n    platform: watchOS", "    type: application\n    platform: iOS")
+    (root / "HealthNutrition" / "project.yml").write_text(yml, encoding="utf-8")
+    result = run(root)
+    assert result.returncode == 2, result.stdout + result.stderr
+
+
+def test_the_success_line_counts_each_category_once(tmp_path: Path) -> None:
+    root = write_embedded_tree(
+        tmp_path,
+        {"HealthNutrition/Shared/Snapshot.swift": USES_DEFAULTS},
+        declared={"Widgets": [USER_DEFAULTS], "Watch": [USER_DEFAULTS], "WatchWidgets": [USER_DEFAULTS]},
+    )
+    result = run(root)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "1 required-reason category/categories used and declared across 4 bundle(s)" in result.stdout
+
+
+def test_a_symlinked_privacy_manifest_leaving_the_checkout_is_refused(tmp_path: Path) -> None:
+    outside = tmp_path / "outside.xcprivacy"
+    outside.write_text(manifest_xml(declared=[], collected=[]), encoding="utf-8")
+    root = write_embedded_tree(tmp_path, {})
+    link = root / "HealthNutrition" / "Widgets" / "PrivacyInfo.xcprivacy"
+    link.unlink()
+    link.symlink_to(outside)
+    result = run(root)
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert "regular file" in result.stdout

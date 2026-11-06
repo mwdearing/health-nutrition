@@ -65,12 +65,28 @@ public struct ServingDefinition: Sendable, Hashable {
 
     /// The source's wording when it has one, otherwise the quantity with its unit. Empty when the
     /// source said nothing at all; an unusable definition is then not shown rather than faked.
+    ///
+    /// The quantity is exact: this text is part of the stored label basis ("per serving (10.25 g)") and of
+    /// the snapshot identity, and the per-serving scaling divides by the figure it names. `shownLabel` is
+    /// the rounded form for the screen.
     public var label: String {
         let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !trimmed.isEmpty { return trimmed }
         guard let quantity else { return "" }
         guard let unit else { return "\(quantity)" }
         return "\(quantity) \(unit.symbol)"
+    }
+
+    /// `label` as the screen shows it: a quantity rounded like any shown amount, since a converted serving can
+    /// carry dozens of digits. Never stored.
+    public var shownLabel: String {
+        let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !trimmed.isEmpty { return trimmed }
+        guard let quantity else { return "" }
+        let shown = DecimalFormatting.text(
+            DisplayRounding.rounded(quantity, fractionDigits: AmountDisplay.fractionDigits(for: quantity)))
+        guard let unit else { return shown }
+        return "\(shown) \(unit.symbol)"
     }
 
     public var isEmpty: Bool { label.isEmpty }
