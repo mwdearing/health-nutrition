@@ -17,15 +17,20 @@ final class SettingsPushKeepsExportUITests: XCTestCase {
         XCTAssertTrue(edit.waitForExistence(timeout: 15), "no Edit goals button on Today")
         edit.tap()
 
-        // Edit goals opens Settings with Daily goals already pushed; go back to the form itself.
-        let form = app.buttons["Export journal"]
-        if !form.waitForExistence(timeout: 5) { goBack(in: app) }
-        scrollTo(form, in: app)
-        XCTAssertTrue(form.exists, "no Export journal button in Settings\n\(app.debugDescription)")
-        form.tap()
+        // Edit goals may open Settings with Daily goals already pushed. The form is the screen whose navigation bar is
+        // titled Settings, so when it is not showing the person goes back to it.
+        let settings = app.navigationBars["Settings"]
+        XCTAssertTrue(app.navigationBars.firstMatch.waitForExistence(timeout: 15), "no Settings sheet after Edit goals")
+        if !settings.waitForExistence(timeout: 3) { goBack(in: app) }
+        XCTAssertTrue(settings.waitForExistence(timeout: 10), "the Settings form is not showing\n\(app.debugDescription)")
+
+        let export = app.buttons["Export journal"]
+        scroll(to: export, in: app, down: true)
+        XCTAssertTrue(export.exists, "no Export journal button in Settings\n\(app.debugDescription)")
+        export.tap()
 
         let share = shareButton(in: app)
-        scrollTo(share, in: app)
+        scroll(to: share, in: app, down: true)
         XCTAssertTrue(share.waitForExistence(timeout: 15), "no Share the export button after exporting\n\(app.debugDescription)")
         return app
     }
@@ -41,11 +46,12 @@ final class SettingsPushKeepsExportUITests: XCTestCase {
         back.tap()
     }
 
-    /// A form builds the rows near the screen, so a row below the fold is scrolled into view.
-    private func scrollTo(_ element: XCUIElement, in app: XCUIApplication) {
+    /// A form builds the rows near the screen, so a row off screen is scrolled into view: `down` reveals rows below the
+    /// ones showing, otherwise rows above them. Stops as soon as the element is hittable.
+    private func scroll(to element: XCUIElement, in app: XCUIApplication, down: Bool) {
         var swipes = 0
-        while !element.waitForExistence(timeout: 2), swipes < 8 {
-            app.swipeUp()
+        while !(element.exists && element.isHittable), swipes < 10 {
+            if down { app.swipeUp() } else { app.swipeDown() }
             swipes += 1
         }
     }
@@ -53,17 +59,16 @@ final class SettingsPushKeepsExportUITests: XCTestCase {
     func testOpeningDailyGoalsKeepsTheExport() throws {
         let app = try appWithAnExport()
 
-        // The Daily goals row sits at the top of the form.
-        for _ in 0..<8 where !app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Daily goals")).firstMatch.isHittable {
-            app.swipeDown()
-        }
+        // The Daily goals row sits at the top of the form, above the export rows.
         let goals = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Daily goals")).firstMatch
-        XCTAssertTrue(goals.waitForExistence(timeout: 10), "no Daily goals row in Settings")
+        scroll(to: goals, in: app, down: false)
+        XCTAssertTrue(goals.exists && goals.isHittable, "no Daily goals row in Settings\n\(app.debugDescription)")
         goals.tap()
         goBack(in: app)
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 10), "did not return to the Settings form")
 
         let share = shareButton(in: app)
-        scrollTo(share, in: app)
+        scroll(to: share, in: app, down: true)
         XCTAssertTrue(share.waitForExistence(timeout: 10),
                       "the export was deleted when Daily goals was pushed\n\(app.debugDescription)")
     }
@@ -71,15 +76,16 @@ final class SettingsPushKeepsExportUITests: XCTestCase {
     func testOpeningPrivacyKeepsTheExport() throws {
         let app = try appWithAnExport()
 
+        // The Privacy row sits above the export rows.
         let privacy = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Your journal stays on this device")).firstMatch
-        scrollTo(privacy, in: app)
-        for _ in 0..<8 where !privacy.isHittable { app.swipeUp() }
-        XCTAssertTrue(privacy.waitForExistence(timeout: 10), "no Privacy row in Settings")
+        scroll(to: privacy, in: app, down: false)
+        XCTAssertTrue(privacy.exists && privacy.isHittable, "no Privacy row in Settings\n\(app.debugDescription)")
         privacy.tap()
         goBack(in: app)
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 10), "did not return to the Settings form")
 
         let share = shareButton(in: app)
-        scrollTo(share, in: app)
+        scroll(to: share, in: app, down: true)
         XCTAssertTrue(share.waitForExistence(timeout: 10),
                       "the export was deleted when Privacy was pushed\n\(app.debugDescription)")
     }
