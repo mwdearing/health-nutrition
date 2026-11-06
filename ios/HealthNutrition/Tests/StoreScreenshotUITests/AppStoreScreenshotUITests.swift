@@ -254,18 +254,17 @@ final class AppStoreScreenshotUITests: XCTestCase {
         }
         if !day.waitForExistence(timeout: 5) { debugFail("no-day-\(daysAgo)", "no calendar day named \(dayName)"); return }
         day.tap()
-        // Picking a day usually closes the calendar. If it is still open, the date button closes it, then a tap outside;
-        // the form is touched again only once the calendar is gone, because a tap that lands while it closes is
-        // swallowed.
-        _ = pollUntil(timeout: 4, { !day.exists })
-        if day.exists, dateButton.exists, dateButton.isHittable {
-            dateButton.tap()
+        // Picking a day leaves the calendar open. A tap on the dimmed area outside it (the sheet's title bar, right of
+        // the title) closes it; the form is touched again only once the calendar is gone, because a tap that lands
+        // while it closes is swallowed.
+        _ = pollUntil(timeout: 2, { !day.exists })
+        var closeTries = 0
+        while day.exists && closeTries < 3 {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.12)).tap()
             _ = pollUntil(timeout: 4, { !day.exists })
+            closeTries += 1
         }
-        if day.exists {
-            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.02)).tap()
-            _ = pollUntil(timeout: 5, { !day.exists })
-        }
+        if day.exists { debugFail("calendar-stuck-\(daysAgo)", "the calendar did not close"); return }
         RunLoop.current.run(until: Date().addingTimeInterval(1))
     }
 
