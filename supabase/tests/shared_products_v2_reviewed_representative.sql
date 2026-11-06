@@ -162,5 +162,20 @@ do $test$ declare p uuid; rev bigint; begin
  assert public.get_catalog_product_v2(p)#>>'{product,support,distinct_accounts}'='2';
  assert (select normalized_name from catalog_v2.entries where product_id=p)=catalog_v2.search_name('Synthetic reviewed name granola');
 end $test$;
+-- The migration's one-time refresh: an entry whose stored search name predates the reviewed ranking is rebuilt.
+-- The block below is the migration's own, run here against seeded data because the migration itself runs on an
+-- empty database in this suite and returns at its first guard.
+update catalog_v2.entries set normalized_name='stale search name' where product_id=current_setting('t.p4')::uuid;
+do $refresh$ declare ids uuid[]; codes text[]; p uuid; begin
+ select array_agg(e.product_id order by e.product_id) into ids from catalog_v2.entries e
+  where e.publication#>>'{verification,status}' is distinct from 'verified'
+   and exists(select 1 from catalog_v2.public_rows(e.product_id) r where r.reviewed);
+ assert ids is not null and current_setting('t.p4')::uuid=any(ids), 'the stale entry is in the affected set';
+ select array_agg(distinct b.barcode) into codes from catalog_v2.barcode_bindings b where b.product_id=any(ids);
+ perform catalog_v2.lock_identities(coalesce(codes,'{}'));
+ perform catalog_v2.lock_products(ids);
+ foreach p in array ids loop perform catalog_v2.refresh(p); end loop;
+ assert (select normalized_name from catalog_v2.entries where product_id=current_setting('t.p4')::uuid)=catalog_v2.search_name('Synthetic reviewed name granola'), 'the refresh rebuilt the stale search name';
+end $refresh$;
 rollback;
 select 'REVIEWED REPRESENTATIVE OK';
