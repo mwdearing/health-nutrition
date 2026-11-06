@@ -8,7 +8,8 @@ some entries have no calories, Food reads "N+" (VoiceOver "at least N calories")
 Remaining reads "Up to N" ("up to N calories remaining"); the medium widget adds its note line. Burned never has a marker. The circular
 widget's ring is the share of the goal eaten and its centre is Food ("N+" on a partial day). The rectangular
 widgets (Lock Screen and Watch) show the calorie block only; the medium widget keeps protein, carbohydrate, fat and
-water beside it, and the Watch app lists them under it. With nothing logged it reads "Nothing logged today". Tapping it opens
+water beside it, and the Watch app lists them under it. With nothing logged it reads "Nothing logged today". A day with no entries but food or nutrient intake
+read from Apple Health (water alone does not count) counts as logged, as in the Diary, and shows its figures. Tapping it opens
 the app.
 
 - **What it reads.** Only a small summary file the app writes (`Shared/WidgetSnapshot.swift`): the day's
@@ -91,12 +92,16 @@ times; its timeline carries an entry at the next midnight that shows dashes.
 
 The receiver ignores an envelope below the highest erase generation it has applied (kept across launches), stores an
 empty day for the erase, and removes the stored summary for an unknown schema version, a malformed or an oversized
-payload so the widgets show dashes. Delivery is background and budgeted by the system: the complication updates after
-the phone app has run and the system has delivered, and the phone widget has the same limit.
+payload so the widgets show dashes. Delivery is background and budgeted by the system, and the phone widget has the
+same limit. The Watch app activates its Watch Connectivity session at launch from a process-wide object that no scene owns, and handles the
+`.backgroundTask(.watchConnectivity)` task: it applies the pending context, reloads the complication timelines, and
+returns once the session reports nothing more waiting (after a bounded wait), so a context sent while the Watch app is
+not running is meant to be applied when the system wakes it. The apply path is covered by unit tests; the wake-up itself
+is a system behavior that has not been checked on a device.
 
 Device check on a paired Apple Watch (signed build): the complication shows today's totals after the phone app opens
-once; locked Watch (confirm which figures show, then add the sentence to PRIVACY.md only if confirmed); after Erase all
-data on the phone the Watch reads "Nothing logged today", and with the Watch off during the erase it clears on
+once; with the Watch app closed, log on the phone and the complication updates without opening the Watch app; locked
+Watch (confirm which figures show, then add the sentence to PRIVACY.md only if confirmed); after Erase all data on the phone the Watch reads "Nothing logged today", and with the Watch off during the erase it clears on
 reconnect; airplane mode during a log, then back online, the figures catch up; after midnight with the phone app
 closed it shows dashes; unpair and re-pair leaves no stale data; a Watch app one schema version behind the phone
 shows dashes and does not crash.

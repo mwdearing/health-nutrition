@@ -59,8 +59,8 @@ public struct QuickAddView: View {
                 PrimaryCapsule("Log") {
                     if let token = self.model.save() { self.onSaved(token) }
                 }
-                .disabled(!model.canSave)
-                .opacity(model.canSave ? 1 : 0.5)
+                .disabled(!model.canSave || model.hasSaved)
+                .opacity(model.canSave && !model.hasSaved ? 1 : 0.5)
                 .accessibilityLabel("Log")
                 .accessibilityHint("Adds these amounts to the journal")
             }

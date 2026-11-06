@@ -51,21 +51,22 @@ do $test$ declare p uuid; result jsonb; public_revision text; raw_name text:=rep
  assert exists(select 1 from catalog_v2.legacy_revisions where product_id=p and revision::text=public_revision and content->>'name'=raw_name);
  assert (select product_name=raw_name from public.lookup_label_v2('78126404') where verification_source='owner_reviewed');
 end $test$;
--- A custom representative must not lend its facts/review to the separately attributed legacy alternative.
+-- The reviewed legacy snapshot stays the representative; a custom revision must not borrow its facts/review as an alternative.
 set local role authenticated;
 set local request.jwt.claim.sub='48000000-0000-4000-8000-000000000001';
 select public.acknowledge_catalog_consent_v2(2);
-do $test$ declare p uuid; result jsonb; alt jsonb; begin
+do $test$ declare p uuid; result jsonb; rep jsonb; alt jsonb; begin
  p:=(public.search_catalog_products_v2('Synthetic reviewed')#>>'{products,0,product_id}')::uuid;
  result:=public.submit_catalog_product_v2(jsonb_build_object('operation_id',gen_random_uuid(),'client_revision_id',gen_random_uuid(),
   'product_id',p,'expected_server_revision',null,'consent_version',2,'consent_generation','0',
   'product',jsonb_build_object('name','Synthetic custom representative','brand',null,'barcode','78126404','kind','food','basis','per_100_g','serving',null,'facts','[]'::jsonb)));
- assert result#>>'{publication,verification,status}'='shared_unverified';
- alt:=result#>'{publication,alternatives,0}';
- assert alt#>>'{product,name_display_trimmed}'='true' and alt#>>'{product,name}'='Synthetic reviewed legacy';
- assert alt#>>'{verification,source}'='owner_reviewed';
- assert alt#>>'{source,representative_revision}'=alt->>'representative_revision';
- assert (public.get_catalog_product_alternatives_v2(p,null,20)#>'{alternatives,0}')=alt;
+ rep:=result#>'{publication}';
+ assert rep#>>'{verification,status}'='verified';
+ assert rep#>>'{product,name_display_trimmed}'='true' and rep#>>'{product,name}'='Synthetic reviewed legacy';
+ assert rep#>>'{verification,source}'='owner_reviewed';
+ assert rep#>>'{source,representative_revision}'=rep->>'representative_revision';
+ alt:=public.get_catalog_product_alternatives_v2(p,null,20)#>'{alternatives,0}';
+ assert alt#>>'{product,name}'='Synthetic custom representative' and not alt?'verification';
  assert octet_length(result::text)<=262144;
 end $test$;
 reset role;
