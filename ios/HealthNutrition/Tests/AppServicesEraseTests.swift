@@ -404,6 +404,25 @@ final class CountingMedicationScheduler: ReminderScheduling, MedicationReminderS
     func cancel(medicationIDs: [UUID]) { lock.withLock { _cancelled += medicationIDs } }
 }
 
+/// A medication store whose reads can be switched to fail, for a log that cannot be read.
+final class FlakyMedicationStore: MedicationStore, @unchecked Sendable {
+    private let inner = InMemoryMedicationStore()
+    private let lock = NSLock()
+    private var _failing = false
+    var failing: Bool {
+        get { lock.withLock { _failing } }
+        set { lock.withLock { _failing = newValue } }
+    }
+    private struct Unreadable: Error {}
+    func medications() throws -> [Medication] { if failing { throw Unreadable() }; return try inner.medications() }
+    func allDoses() throws -> [MedicationDose] { if failing { throw Unreadable() }; return try inner.allDoses() }
+    func doses(of medicationID: UUID) throws -> [MedicationDose] { try inner.doses(of: medicationID) }
+    func saveMedication(_ medication: Medication) throws { try inner.saveMedication(medication) }
+    func removeMedication(id: UUID) throws { try inner.removeMedication(id: id) }
+    func saveDose(_ dose: MedicationDose) throws { try inner.saveDose(dose) }
+    func removeDose(id: UUID) throws { try inner.removeDose(id: id) }
+}
+
 @MainActor
 final class MedicationReminderFollowUpTests: XCTestCase {
     /// The erase removes the pending and delivered requests of every stored setting before it returns.
@@ -433,7 +452,7 @@ final class MedicationReminderFollowUpTests: XCTestCase {
     }
 
     private func controller(
-        _ scheduler: CountingMedicationScheduler, store: InMemoryMedicationStore, medication: Medication
+        _ scheduler: CountingMedicationScheduler, store: MedicationStore, medication: Medication
     ) throws -> (MedicationReminderController, InMemoryMedicationReminderStore) {
         try store.saveMedication(medication)
         try store.saveDose(MedicationDose(
@@ -473,10 +492,10 @@ final class MedicationReminderFollowUpTests: XCTestCase {
     /// A log that cannot be read keeps the settings and says why nothing is scheduled.
     func testAnUnreadableLogKeepsTheSettingsAndShowsAMessage() async throws {
         let scheduler = CountingMedicationScheduler()
-        let store = InMemoryMedicationStore()
+        let store = FlakyMedicationStore()
         let med = Medication(name: "Example weekly injection", unit: .mg, scheduleDays: 7)
         let (controller, reminderStore) = try controller(scheduler, store: store, medication: med)
-        store.failReads = true
+        store.failing = true
         await controller.sync()
         XCTAssertEqual(reminderStore.settings.count, 1)
         XCTAssertNotNil(controller.message)
