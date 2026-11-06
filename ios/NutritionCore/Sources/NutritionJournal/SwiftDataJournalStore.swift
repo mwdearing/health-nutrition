@@ -1103,7 +1103,7 @@ private struct StoredNutrient: Codable {
 /// already met by the two conformances above. Declaring the refinement says so at the type, so a caller
 /// building a `RelayDeliveryWorker` over this store is checked here rather than at the worker's own
 /// initializer.
-public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWrittenLedger, JournalSnapshotSource, JournalLibraryExclusions,
+public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalDeleteHold, HealthKitWrittenLedger, JournalSnapshotSource, JournalLibraryExclusions,
     JournalLoggedUnits,
     JournalTombstoneSource, RelayDeliveryStore, JournalRestoreTarget, JournalRestoreProgress, JournalErasing,
     JournalMealEditing,
@@ -2504,6 +2504,51 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, HealthKitWr
                 intakeID: row.intakeID, revision: row.revision, destination: destination,
                 desiredAction: action, state: state, isCurrent: row.isCurrent)
         }.sorted { ($0.revision, $0.destination.rawValue) < ($1.revision, $1.destination.rawValue) }
+    }
+
+    /// When the Undo window of an unacknowledged delete of this intake closes, or nil when no delete is being held.
+    ///
+    /// `pendingOutbox()` hides a delete for its Undo window, so a worker reading the queue sees an upsert whose
+    /// intake is already deleted and no delete beside it. This is how it tells that from a delete that was
+    /// delivered. Read under `writeLock` with the same cutoff as `pendingOutbox()`, so the two agree.
+    /// The instant is the store's own, not a worker's `now`: `pendingOutbox()` hides and offers the delete by the
+    /// same reading, and a different one would leave a delete neither hidden nor offered. `undoDelete` removes the
+    /// delete rows, so nothing is held after an Undo.
+    public func deleteHoldEnd(intakeID: String) throws -> Date? {
+        let context = ModelContext(try openContainer())
+        writeLock.lock()
+        defer { writeLock.unlock() }
+        let now = Date()
+        let deleteKind = OutboxKind.delete.rawValue
+        let rows = try context.fetch(FetchDescriptor<OutboxRecord>(
+            predicate: #Predicate<OutboxRecord> {
+                $0.intakeID == intakeID && $0.kindRaw == deleteKind && $0.acknowledgedAt == nil
+            }))
+        return rows.compactMap { $0.deletedAt?.addingTimeInterval(JournalUndo.deleteWindow) }
+            .filter { $0 > now }.max()
+    }
+
+    /// The intake's delivery state under writeLock, so the active check and the hold check see the same store and an
+    /// Undo cannot land between them (#1309).
+    public func deliveryState(intakeID: String) throws -> IntakeDeliveryState {
+        let container = try openContainer()
+        writeLock.lock()
+        defer { writeLock.unlock() }
+        if try Self.readActiveIntakes(container: container).contains(where: { $0.id == intakeID }) {
+            return .active
+        }
+        let context = ModelContext(container)
+        let now = Date()
+        let deleteKind = OutboxKind.delete.rawValue
+        let rows = try context.fetch(FetchDescriptor<OutboxRecord>(
+            predicate: #Predicate<OutboxRecord> {
+                $0.intakeID == intakeID && $0.kindRaw == deleteKind && $0.acknowledgedAt == nil
+            }))
+        if let until = rows.compactMap({ $0.deletedAt?.addingTimeInterval(JournalUndo.deleteWindow) })
+            .filter({ $0 > now }).max() {
+            return .held(until: until)
+        }
+        return .gone
     }
 
     /// Operations not yet acknowledged, oldest revision first, upsert before delete within a revision.

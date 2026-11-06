@@ -59,7 +59,7 @@ contain neither debug surface.
 - `Sources/BarcodeLookup.swift`: the adapter between the nutrition-data client and the lookup protocol
   the screens depend on. The screens never see the client or the source; this file fills in the
   attribution and serving definition that a licensed source requires.
-- `Resources/Assets.xcassets`: an `AccentColor` and a placeholder `AppIcon` (a single 1024-point image, the accent color with a plain mark) so a signed archive can be uploaded; replace it with the real icon when there is one.
+- `Resources/Assets.xcassets`: an `AccentColor` and the `AppIcon`, a single 1024-point image without transparency: a mint lowercase n with a white leaf on a dark teal background. The Watch app's `AppIcon` is the same image. Its vector source is `docs/app-icon.svg`; to change the icon, edit that file and render it again at 1024 by 1024 with no alpha channel.
 - `Tests/`: the app target's own XCTest bundle, hosted by the app so `@testable import HealthNutrition`
   works. See [Running the tests](#running-the-tests).
 

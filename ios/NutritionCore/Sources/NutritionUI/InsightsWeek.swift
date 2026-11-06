@@ -11,7 +11,10 @@ public struct InsightsWeek: Equatable {
         public let entryCount: Int
         /// Apple Health read a stated food or drink amount for the day, so the day is logged even with no entry.
         public var hasHealthIntake: Bool = false
-        public var isLogged: Bool { entryCount > 0 || hasHealthIntake }
+        /// The day holds a food or drink entry. Water and supplements do not make a logged day, the same rule as the
+        /// Diary's week card and the 30-day averages.
+        public var hasFoodEntry: Bool = false
+        public var isLogged: Bool { hasFoodEntry || hasHealthIntake }
     }
 
     public static let length = 7
@@ -19,7 +22,7 @@ public struct InsightsWeek: Equatable {
     public let days: [Day]
     public var loggedDays: Int { days.filter(\.isLogged).count }
     public var entryCount: Int { days.reduce(0) { $0 + $1.entryCount } }
-    /// Days with nothing logged: no entry and no Apple Health intake, so with `loggedDays` they make the whole window.
+    /// Days with nothing logged: no food or drink entry and no Apple Health intake, so with `loggedDays` they make the whole window.
     public var emptyDays: Int { days.count - loggedDays }
     public var hasAnyEntry: Bool { loggedDays > 0 }
 
@@ -42,10 +45,13 @@ public struct InsightsWeek: Equatable {
     public struct Entry: Equatable {
         public let occurredAt: Date
         public let timeZoneIdentifier: String
+        /// False for water and supplements: they are counted as entries but do not make the day logged.
+        public let countsAsLogged: Bool
 
-        public init(occurredAt: Date, timeZoneIdentifier: String) {
+        public init(occurredAt: Date, timeZoneIdentifier: String, countsAsLogged: Bool = true) {
             self.occurredAt = occurredAt
             self.timeZoneIdentifier = timeZoneIdentifier
+            self.countsAsLogged = countsAsLogged
         }
     }
 
@@ -71,16 +77,20 @@ public struct InsightsWeek: Equatable {
         // The Diary's yyyy-MM-dd keys as the same year-month-day numbers the entry counts use.
         let healthDayNumbers = Set(healthIntakeDayKeys.compactMap { Int($0.replacingOccurrences(of: "-", with: "")) })
         var keyCounts: [Int: Int] = [:]
+        var foodKeys: Set<Int> = []
         for entry in entries where entry.occurredAt <= now {
             var own = Calendar(identifier: .gregorian)
             own.timeZone = TimeZone(identifier: entry.timeZoneIdentifier) ?? zone
-            keyCounts[dayKey(own.dateComponents([.year, .month, .day], from: entry.occurredAt)), default: 0] += 1
+            let entryKey = dayKey(own.dateComponents([.year, .month, .day], from: entry.occurredAt))
+            keyCounts[entryKey, default: 0] += 1
+            if entry.countsAsLogged { foodKeys.insert(entryKey) }
         }
         var days: [Day] = []
         for offset in stride(from: length - 1, through: 0, by: -1) {
             guard let start = calendar.date(byAdding: .day, value: -offset, to: today) else { continue }
             let key = dayKey(calendar.dateComponents([.year, .month, .day], from: start))
             var day = Day(id: start, label: formatter.string(from: start), entryCount: keyCounts[key] ?? 0)
+            day.hasFoodEntry = foodKeys.contains(key)
             day.hasHealthIntake = healthDayNumbers.contains(key)
             days.append(day)
         }

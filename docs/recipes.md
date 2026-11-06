@@ -72,7 +72,7 @@ the journal and favorites files), and are never shared, synced or published.
 The app creates one `SwiftDataRecipeStore` at startup and opens the recipe list from a row in
 Library. The list, detail and editor screens share one navigation stack, so a recipe opens over the
 list and editing pushes a new version over the detail. A failed open of any store file closes the
-files already opened and names the one that failed on the startup failure screen.
+files already opened and names the one that failed on the startup failure screen. The screen has a Try again button that opens the stores again, so a busy or locked file does not need a force-quit.
 
 ## What the editor can change
 

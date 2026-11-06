@@ -130,6 +130,15 @@ the app does not link, are never scanned: a restricted API used only there does
 not ship and must not demand a declaration. A missing or unreadable
 `project.yml` or `Package.swift` is a usage error rather than a silent full scan.
 
+The scan runs once per bundle of the archive: the app, plus every application or
+app-extension target it embeds through `- target:` dependencies (the widget
+extension, the Watch app and, through it, the Watch widget extension). Each
+bundle's sources, including the shared directories it compiles, are checked
+against the `PrivacyInfo.xcprivacy` found in that bundle's own source directories,
+never against another bundle's manifest, because App Store Connect evaluates
+every bundle's manifest separately. An embedded bundle without a manifest is a
+usage error. The collected-data checks apply to the app's manifest only.
+
 ## Categories supported by the checker
 
 The checker recognizes the categories below. The first two are the only

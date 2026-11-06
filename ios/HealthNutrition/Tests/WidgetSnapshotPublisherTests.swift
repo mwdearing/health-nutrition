@@ -77,6 +77,24 @@ final class WidgetSnapshotPublisherTests: XCTestCase {
         XCTAssertNil(store.read(), "the launch-time publish also waits out an erase")
     }
 
+    // MARK: Health-only day
+
+    func testADayWithOnlyHealthIntakeHasEntriesAndKeepsItsEnergy() throws {
+        let today = try makeToday()
+        today.outsideIntake = .read(values: ["energy": 1500], readKeys: ["energy"])
+        today.load(now: loadedAt)
+        let snapshot = WidgetSnapshotPublisher.snapshot(from: today, now: loadedAt)
+        XCTAssertTrue(snapshot.hasEntries, "Health intake alone is a day with intake, the same rule the Diary uses")
+        XCTAssertEqual(snapshot.energyKcal, 1500)
+    }
+
+    func testADayWithNothingFromAnywhereHasNoEntries() throws {
+        let today = try makeToday()
+        today.outsideIntake = .read(values: [:], readKeys: ["energy"])
+        today.load(now: loadedAt)
+        XCTAssertFalse(WidgetSnapshotPublisher.snapshot(from: today, now: loadedAt).hasEntries)
+    }
+
     // MARK: Partial days
 
     private func line(

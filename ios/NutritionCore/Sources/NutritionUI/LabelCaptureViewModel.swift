@@ -1032,6 +1032,11 @@ public final class LabelCaptureViewModel: ObservableObject {
     /// a serving that was never stated is entered, not corrected.
     public var servingCanBeCorrected: Bool { !servingIsMissing && servingText != nil }
 
+    /// Whether the screen shows the serving's Correct control: whenever the serving can be corrected and
+    /// no edit is already open. It does not depend on the parser's flag, because a serving read cleanly,
+    /// confirmed or typed in is as easy to get wrong as a flagged one and scales every value.
+    public var offersServingCorrection: Bool { servingCanBeCorrected && !isEditingServing }
+
     /// Takes one serving as the user stated it.
     ///
     /// An amount with its unit is required, and a unit is required with it: a serving stated as a household
@@ -1281,6 +1286,9 @@ public final class LabelCaptureViewModel: ObservableObject {
         // lose the reason anyone scanned a supplement panel. The label's own words travel with it, so
         // a slug that does not spell back to them (`dha` -> `DHA`) still reads right.
         for row in additionalRows where row.value != .unknown && !row.isPending {
+            // An extra row never takes a key a named row already set, so it cannot overwrite what the
+            // person answered on that row.
+            if nutrients[row.key] != nil { continue }
             nutrients[row.key] = row.value
             displayNames[row.key] = row.name
         }

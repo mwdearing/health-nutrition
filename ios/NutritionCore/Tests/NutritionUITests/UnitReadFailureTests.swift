@@ -48,6 +48,22 @@ final class UnitReadFailureTests: XCTestCase {
         XCTAssertNil(model.waterBar)
     }
 
+    /// A failed read never shows the water total as 0: the figure and the spoken value say "No data" (#1216).
+    func testTodayWaterCardSaysNoDataNotZeroWhenTheReadFails() throws {
+        let store = try makeJournal()
+        store.failsUnitReads = false
+        let model = TodayViewModel(store: store, timeZoneIdentifier: "UTC")
+        model.load(now: now)
+        XCTAssertEqual(model.waterFigureText, "0 mL")
+
+        store.failsUnitReads = true
+        model.load(now: now)
+        XCTAssertEqual(model.errorMessage, "Could not read the journal.")
+        XCTAssertNil(model.waterBar)
+        XCTAssertEqual(model.waterFigureText, "No data")
+        XCTAssertEqual(model.waterAccessibilityValue, "No data")
+    }
+
     /// The journal's day reads the logged units with its entries; a failed read shows no day.
     func testJournalShowsNoDayWhenTheUnitReadFails() throws {
         let model = JournalViewModel(store: try makeJournal(), timeZoneIdentifier: "UTC")

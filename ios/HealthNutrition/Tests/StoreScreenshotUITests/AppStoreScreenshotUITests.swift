@@ -18,12 +18,12 @@ final class AppStoreScreenshotUITests: XCTestCase {
         addTeardownBlock { self.app.terminate() }
     }
 
-    func testCaptureTheStoreScreens() throws {
-        let getStarted = app.buttons["Get started"]
-        if getStarted.waitForExistence(timeout: 5) { getStarted.tap() }
-        // Precondition: a fresh install on Today with nothing logged, so the shots show only the seeded entries.
-        XCTAssertTrue(
-            element("todayDate").waitForExistence(timeout: 30), "the Today screen did not appear")
+    // The steps run in name order on one install, so each builds on the data the one before it left. A step that
+    // misses fails only itself; the capture step still saves whatever the app holds.
+
+    func test1_SeedMeals() throws {
+        try startOnToday()
+        // Precondition: a fresh install with nothing logged, so the shots show only the seeded entries.
         XCTAssertFalse(
             app.staticTexts["Breakfast bowl"].exists, "the app already holds the demo entries; use a fresh simulator")
 
@@ -35,6 +35,161 @@ final class AppStoreScreenshotUITests: XCTestCase {
         XCTAssertTrue(cancel.waitForExistence(timeout: 10), "no Cancel on the Add screen")
         cancel.tap()
         try goToToday()
+    }
+
+    /// Sets daily goals through the guided setup: maintain weight, then about, body and activity answers.
+    func test2_SetGoals() throws {
+        try startOnToday()
+        let edit = app.buttons["Edit goals"]
+        var scrolls = 0
+        while !(edit.exists && edit.isHittable) && scrolls < 4 {
+            app.swipeUp()
+            scrolls += 1
+        }
+        XCTAssertTrue(edit.exists && edit.isHittable, "no Edit goals link on Today")
+        edit.tap()
+        let goalsRow = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Daily goals")).firstMatch
+        if !goalsRow.waitForExistence(timeout: 15) { debugFail("settings-screen", "no Daily goals row in Settings") }
+        goalsRow.tap()
+        let help = app.buttons["Help me set my goals"]
+        if !help.waitForExistence(timeout: 15) { debugFail("goals-screen", "no guided goal setup") }
+        help.tap()
+
+        try tapChoice("Maintain my weight")
+        try next()
+        try tapChoice("Female")
+        try type("34", intoFieldStartingWith: "Age in years")
+        dismissKeyboard()
+        try next()
+        try type("5", intoFieldStartingWith: "Height in feet")
+        try type("9", intoFieldStartingWith: "Height in inches")
+        try type("158", intoFieldStartingWith: "Weight in pounds")
+        dismissKeyboard()
+        try next()
+        try tapChoice("Moderate exercise 3 to 5 days a week")
+        try next()
+        let save = app.buttons["Save goals"]
+        var saveScrolls = 0
+        while !(save.exists && save.isHittable) && saveScrolls < 4 {
+            app.swipeUp()
+            saveScrolls += 1
+        }
+        XCTAssertTrue(save.exists && save.isHittable, "no Save goals on the results step")
+        save.tap()
+        // Saving closes the guided setup and leaves the Goals screen, one step inside Settings.
+        let done = app.buttons["Done"]
+        if !done.waitForExistence(timeout: 5) {
+            let back = app.navigationBars.buttons.firstMatch
+            if back.waitForExistence(timeout: 10) { back.tap() }
+        }
+        if !done.waitForExistence(timeout: 15) { debugFail("after-goals-save", "Settings did not come back after saving the goals") }
+        done.tap()
+        try goToToday()
+    }
+
+    /// Logs water with the quick button on Today.
+    func test3_LogWater() throws {
+        try startOnToday()
+        let water = app.buttons["Add 8 fluid ounces of water"]
+        var scrolls = 0
+        while !(water.exists && water.isHittable) && scrolls < 4 {
+            app.swipeUp()
+            scrolls += 1
+        }
+        XCTAssertTrue(water.exists && water.isHittable, "no quick water button on Today")
+        for _ in 0..<3 {
+            water.tap()
+            RunLoop.current.run(until: Date().addingTimeInterval(1))
+        }
+    }
+
+    /// Logs a few entries on the days before, through the When date control, so Trends and the week have history.
+    func test4_History() throws {
+        try startOnToday()
+        try log("Oatmeal with banana", meal: "Breakfast", calories: "350", protein: "12", carbs: "62", fat: "7", daysAgo: 1)
+        try log("Turkey sandwich", meal: "Lunch", calories: "520", protein: "34", carbs: "48", fat: "16", daysAgo: 1)
+        try log("Salmon and vegetables", meal: "Dinner", calories: "640", protein: "42", carbs: "30", fat: "28", daysAgo: 2)
+        try log("Pasta and salad", meal: "Dinner", calories: "710", protein: "25", carbs: "96", fat: "22", daysAgo: 3)
+        let cancel = app.buttons["Cancel"]
+        if cancel.waitForExistence(timeout: 10) { cancel.tap() }
+    }
+
+    /// Makes a supplement product with vitamin and mineral facts through Create product. This step is being
+    /// built against the real screens: each step keeps a shot and the element tree when it cannot continue.
+    func test5_Supplement() throws {
+        try startOnToday()
+        try openAddHome()
+        let create = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Create product")).firstMatch
+        if !create.waitForExistence(timeout: 10) { debugFail("no-create-product", "no Create product on Add") }
+        var scrolls = 0
+        while !(create.exists && create.isHittable) && scrolls < 4 {
+            app.swipeUp()
+            scrolls += 1
+        }
+        create.tap()
+        XCTAssertTrue(app.navigationBars["Product editor"].waitForExistence(timeout: 15), "the product editor did not open")
+        try type("Daily multivitamin", intoFieldStartingWith: "Name")
+        dismissKeyboard()
+        try choose("Kind", option: "Supplement")
+        try choose("Facts are stated", option: "Per serving")
+        // Saving checks the serving, so a quantity is stated (the unit stays "serving").
+        try type("1", intoFieldStartingWith: "Product serving quantity")
+        dismissKeyboard()
+        // The first fact's menu opens tall, so its deep entry (Vitamin D) is reachable; later rows raise a keyboard that
+        // cuts the menu off, so they take entries near its top.
+        try addFact(nutrient: "Vitamin D", amount: "20", unit: "mcg")
+        try addFact(nutrient: "Calcium", amount: "200", unit: "mg")
+        let save = app.buttons["Save product on this device"]
+        var saveScrolls = 0
+        while !(save.exists && save.isHittable) && saveScrolls < 6 {
+            app.swipeUp()
+            saveScrolls += 1
+        }
+        if !(save.exists && save.isHittable) { debugFail("no-save-product", "no Save product button"); return }
+        save.tap()
+        if !pollUntil(timeout: 15, { !self.app.navigationBars["Product editor"].exists }) {
+            debugFail("after-save-product", "the product editor did not close after saving")
+            return
+        }
+        // The product now lives in the Library; this step is being built against the real screens.
+        try openAddHome()
+        let fromLibrary = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "From Library")).firstMatch
+        if !fromLibrary.waitForExistence(timeout: 10) { debugFail("no-from-library", "no From Library on Add"); return }
+        var libScrolls = 0
+        while !(fromLibrary.exists && fromLibrary.isHittable) && libScrolls < 4 {
+            app.swipeUp()
+            libScrolls += 1
+        }
+        fromLibrary.tap()
+        // The Library's Products list shows the product's sharing state, not a way to log it; the product search finds
+        // it on this device and opens its entry form.
+        let search = app.buttons["Search foods"]
+        if !search.waitForExistence(timeout: 10) { debugFail("no-search-foods", "no Search foods in the Library"); return }
+        search.tap()
+        let field = app.searchFields.firstMatch.exists ? app.searchFields.firstMatch : app.textFields.firstMatch
+        if !field.waitForExistence(timeout: 10) { debugFail("no-search-field", "no search field"); return }
+        field.tap()
+        app.typeText("Daily multivitamin")
+        let row = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Daily multivitamin")).firstMatch
+        if !row.waitForExistence(timeout: 15) { debugFail("no-search-result", "the saved product is not in the search results"); return }
+        row.tap()
+        // The entry form for the supplement shows what it adds; that is the Log supplement shot.
+        if !app.navigationBars["Log entry"].waitForExistence(timeout: 15) { debugFail("no-log-form", "the entry form did not open"); return }
+        // One serving is taken, so the form shows the amount and what it adds; Log needs an amount.
+        try type("1", intoFieldStartingWith: "Amount")
+        dismissKeyboard()
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        capture("5-log-supplement")
+        let logButton = app.buttons["Log"]
+        if !(logButton.waitForExistence(timeout: 10) && logButton.isHittable) { debugFail("no-log-button", "no Log button"); return }
+        logButton.tap()
+        // The Add screen stays open after a Log; leave it for Today.
+        let cancel = app.buttons["Cancel"]
+        if cancel.waitForExistence(timeout: 15) { cancel.tap() }
+    }
+
+    func test9_CaptureTheStoreScreens() throws {
+        try startOnToday()
         let hideChecklist = app.buttons["Hide checklist"]
         if hideChecklist.waitForExistence(timeout: 3) { hideChecklist.tap() }
         capture("1-today")
@@ -48,7 +203,16 @@ final class AppStoreScreenshotUITests: XCTestCase {
         XCTAssertTrue(
             app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Insights")).firstMatch.waitForExistence(timeout: 15),
             "the Trends screen did not load")
+        // Trends opens on a list of two reports; the shot is the Insights report, which holds the week's logging
+        // and the averages.
+        let insights = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Insights")).firstMatch
+        insights.tap()
+        XCTAssertTrue(app.navigationBars.buttons.firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(
+            app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "days logged")).firstMatch.waitForExistence(timeout: 15),
+            "the Insights report did not load")
         capture("3-trends")
+        app.navigationBars.buttons.firstMatch.tap()
 
         try goToToday()
         let gaps = app.buttons["Vitamins and minerals"]
@@ -59,19 +223,178 @@ final class AppStoreScreenshotUITests: XCTestCase {
         capture("4-nutrients")
         app.navigationBars.buttons.firstMatch.tap()
 
-        try goToToday()
+    }
+
+    // MARK: - Steps shared by the tests
+
+    /// Sets the entry's day to `daysAgo` days back with the When date control: the date pill opens a calendar and
+    /// the day is picked by its name.
+    private func chooseDay(daysAgo: Int) throws {
+        dismissKeyboard()
+        let target = Calendar.current.date(byAdding: .day, value: -daysAgo, to: Date()) ?? Date()
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US")
+        formatter.dateFormat = "EEEE, MMMM d"
+        let dayName = formatter.string(from: target)
+        var scrolls = 0
+        let picker = app.datePickers.firstMatch
+        while !(picker.exists && picker.isHittable) && scrolls < 4 {
+            app.swipeUp()
+            scrolls += 1
+        }
+        guard picker.exists else { debugFail("no-when-picker", "no When date control"); return }
+        let dateButton = picker.buttons.firstMatch
+        guard dateButton.exists else { debugFail("no-when-button", "no date button in the When control"); return }
+        dateButton.tap()
+        let day = app.buttons[dayName]
+        // Early in a month the day is in the month before the one the calendar opens on, so it pages back once.
+        if !day.waitForExistence(timeout: 5) {
+            let previousMonth = app.buttons["Previous Month"]
+            if previousMonth.exists && previousMonth.isHittable { previousMonth.tap() }
+        }
+        if !day.waitForExistence(timeout: 5) { debugFail("no-day-\(daysAgo)", "no calendar day named \(dayName)"); return }
+        day.tap()
+        // Picking a day leaves the calendar open. A tap on the dimmed area outside it (the sheet's title bar, right of
+        // the title) closes it; the form is touched again only once the calendar is gone, because a tap that lands
+        // while it closes is swallowed.
+        _ = pollUntil(timeout: 2, { !day.exists })
+        var closeTries = 0
+        while day.exists && closeTries < 3 {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.12)).tap()
+            _ = pollUntil(timeout: 4, { !day.exists })
+            closeTries += 1
+        }
+        if day.exists { debugFail("calendar-stuck-\(daysAgo)", "the calendar did not close"); return }
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+    }
+
+    /// Keeps a shot and the element tree under debug/, then fails the step.
+    private func debugFail(_ name: String, _ message: String) {
+        capture("debug-\(name)")
+        try? app.debugDescription.write(to: outputFile("debug-tree-\(name)", ext: "txt"), atomically: true, encoding: .utf8)
+        XCTFail(message)
+    }
+
+    private func startOnToday() throws {
+        let getStarted = app.buttons["Get started"]
+        if getStarted.waitForExistence(timeout: 5) { getStarted.tap() }
+        XCTAssertTrue(element("todayDate").waitForExistence(timeout: 30), "the Today screen did not appear")
+    }
+
+    /// Adds one stated fact to the product editor: the new row is the last one, so its menus are the last matches.
+    private func addFact(nutrient: String, amount: String, unit: String) throws {
+        let addFact = app.buttons["Add fact"]
+        var scrolls = 0
+        while !(addFact.exists && addFact.isHittable) && scrolls < 8 {
+            app.swipeUp()
+            scrolls += 1
+        }
+        if !(addFact.exists && addFact.isHittable) { debugFail("no-add-fact-\(nutrient)", "no Add fact button"); return }
+        addFact.tap()
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        try pickInLastRow("Nutrient", option: nutrient)
+        try pickInLastRow("Fact state", option: "Known amount")
+        let amountFields = app.textFields.matching(NSPredicate(format: "placeholderValue == %@", "Amount"))
+        if !pollUntil(timeout: 10, { amountFields.count > 0 }) { debugFail("no-amount-\(nutrient)", "no Amount field for \(nutrient)"); return }
+        let amountField = amountFields.allElementsBoundByIndex.last!
+        var fieldScrolls = 0
+        while !amountField.isHittable && fieldScrolls < 6 {
+            app.swipeUp()
+            fieldScrolls += 1
+        }
+        amountField.tap()
+        if !pollUntil(timeout: 5, { self.app.keyboards.count > 0 }) { debugFail("amount-no-focus-\(nutrient)", "the Amount field did not take focus"); return }
+        app.typeText(amount)
+        dismissKeyboard()
+        try pickInLastRow("Fact unit", option: unit)
+    }
+
+    /// Picks `option` in the menu whose label starts with `title`, taking the last such menu on screen.
+    private func pickInLastRow(_ title: String, option: String) throws {
+        let menus = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", title))
+        if !pollUntil(timeout: 10, { menus.count > 0 }) { debugFail("no-row-menu-\(title)", "no \(title) menu"); return }
+        let menu = menus.allElementsBoundByIndex.last!
+        var scrolls = 0
+        while !menu.isHittable && scrolls < 6 {
+            app.swipeUp()
+            scrolls += 1
+        }
+        // A new fact row can take focus in its display name, which raises a keyboard over the menu, so the keyboard is
+        // put down first, more than once if needed.
+        var tries = 0
+        while app.keyboards.count > 0 && tries < 3 {
+            dismissKeyboard()
+            tries += 1
+        }
+        menu.tap()
+        let choice = app.buttons[option]
+        // A long menu lists only the rows near the top until it is scrolled, so it is dragged up until the option
+        // shows (a swipe on the app can miss the menu, so the drag starts inside it).
+        // The menu takes a moment to open, and a drag that starts before then would close it again.
+        _ = pollUntil(timeout: 4, { choice.exists && choice.isHittable })
+        var menuScrolls = 0
+        while !(choice.exists && choice.isHittable) && menuScrolls < 10 {
+            let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.55))
+            let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.3))
+            from.press(forDuration: 0.1, thenDragTo: to)
+            menuScrolls += 1
+        }
+        if !(choice.exists && choice.isHittable) {
+            debugFail("no-row-option-\(title)-\(option)", "no \(option) in the \(title) menu")
+            return
+        }
+        choice.tap()
+    }
+
+    private func openAddHome() throws {
+        if app.buttons["Amounts only"].exists { return }
         let add = app.buttons.matching(NSPredicate(format: "label == %@", "Add food, drink, or supplement"))
-        XCTAssertTrue(pollUntil(timeout: 30, { add.allElementsBoundByIndex.contains { $0.exists && $0.isHittable } }))
+        XCTAssertTrue(
+            pollUntil(timeout: 30, { add.allElementsBoundByIndex.contains { $0.exists && $0.isHittable } }),
+            "no hittable Add button")
         add.allElementsBoundByIndex.first(where: { $0.exists && $0.isHittable })?.tap()
-        XCTAssertTrue(app.navigationBars["Add"].waitForExistence(timeout: 15), "the Add screen did not open")
-        capture("5-add")
+        XCTAssertTrue(app.buttons["Amounts only"].waitForExistence(timeout: 20), "the Add screen did not open")
+    }
+
+    /// Picks `option` in the menu picker whose label starts with `title`.
+    private func choose(_ title: String, option: String) throws {
+        let menu = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", title)).firstMatch
+        var scrolls = 0
+        while !(menu.exists && menu.isHittable) && scrolls < 6 {
+            app.swipeUp()
+            scrolls += 1
+        }
+        if !(menu.exists && menu.isHittable) { debugFail("no-menu-\(title)", "no \(title) menu"); return }
+        menu.tap()
+        let choice = app.buttons[option]
+        if !choice.waitForExistence(timeout: 5) { debugFail("no-option-\(title)", "no \(option) in the \(title) menu"); return }
+        choice.tap()
+    }
+
+    private func tapChoice(_ title: String) throws {
+        let choice = app.buttons[title]
+        var scrolls = 0
+        while !(choice.exists && choice.isHittable) && scrolls < 4 {
+            app.swipeUp()
+            scrolls += 1
+        }
+        XCTAssertTrue(choice.exists && choice.isHittable, "no choice named \(title)")
+        choice.tap()
+    }
+
+    private func next() throws {
+        let next = app.buttons["Next"]
+        XCTAssertTrue(pollUntil(timeout: 10, { next.exists && next.isHittable && next.isEnabled }), "Next is not available")
+        next.tap()
     }
 
     // MARK: - Seeding
 
     /// Logs one entry through Add, "Amounts only". After a Log the Add screen stays open (its Recent list now holds
     /// the entry), so the next entry starts from there; the first one opens Add from Today.
-    private func log(_ name: String, meal: String, calories: String, protein: String, carbs: String, fat: String) throws {
+    private func log(
+        _ name: String, meal: String, calories: String, protein: String, carbs: String, fat: String, daysAgo: Int = 0
+    ) throws {
         if !app.buttons["Amounts only"].exists {
             let add = app.buttons.matching(NSPredicate(format: "label == %@", "Add food, drink, or supplement"))
             if !pollUntil(timeout: 30, { add.allElementsBoundByIndex.contains { $0.exists && $0.isHittable } }) {
@@ -103,21 +426,38 @@ final class AppStoreScreenshotUITests: XCTestCase {
         try type(protein, intoFieldStartingWith: "Protein")
         try type(carbs, intoFieldStartingWith: "Carbs")
         try type(name, intoFieldStartingWith: "Name")
+        if daysAgo > 0 { try chooseDay(daysAgo: daysAgo) }
 
         let logButton = app.buttons["Log"]
         XCTAssertTrue(logButton.waitForExistence(timeout: 10), "no Log button")
         dismissKeyboard()
+        // A tap that lands while the keyboard or a popover is still animating away is swallowed, so Log is tapped only
+        // once the keyboard is gone, the form has held still for a moment, and the button can be hit.
+        _ = pollUntil(timeout: 5, { self.app.keyboards.count == 0 })
+        RunLoop.current.run(until: Date().addingTimeInterval(1.5))
+        if !pollUntil(timeout: 10, { logButton.exists && logButton.isHittable }) {
+            debugFail("log-not-tappable-\(name)", "Log cannot be tapped")
+        }
         XCTAssertTrue(logButton.isEnabled, "Log is disabled after the amounts were typed")
         logButton.tap()
-        XCTAssertTrue(
-            pollUntil(timeout: 20, { !self.app.navigationBars["Amounts only"].exists }), "the sheet did not close after Log")
+        if !pollUntil(timeout: 20, { !self.app.navigationBars["Amounts only"].exists }) {
+            debugFail("log-did-not-close-\(name)", "the sheet did not close after Log")
+        }
         XCTAssertTrue(
             app.buttons["Amounts only"].waitForExistence(timeout: 20), "the Add screen did not come back after Log")
     }
 
-    private func type(_ text: String, intoFieldStartingWith prefix: String) throws {
-        let field = app.textFields.matching(NSPredicate(format: "label BEGINSWITH %@ OR identifier BEGINSWITH %@", prefix, prefix))
+    private func type(_ text: String, intoFieldStartingWith prefix: String, required: Bool = true) throws {
+        // Some fields carry only a placeholder (the product editor's), so the placeholder is matched too.
+        let field = app.textFields.matching(NSPredicate(
+            format: "label BEGINSWITH %@ OR identifier BEGINSWITH %@ OR placeholderValue BEGINSWITH %@", prefix, prefix, prefix))
             .firstMatch
+        // A field above the fold is reached by scrolling back up first.
+        var upScrolls = 0
+        while !field.exists && upScrolls < 3 {
+            app.swipeDown()
+            upScrolls += 1
+        }
         // The keyboard and the Log bar cover the lower fields, so the keyboard goes down and the form scrolls
         // until the field sits clear of the bottom bar before it is tapped.
         dismissKeyboard()
@@ -127,7 +467,10 @@ final class AppStoreScreenshotUITests: XCTestCase {
             app.swipeUp()
             scrolls += 1
         }
-        XCTAssertTrue(field.waitForExistence(timeout: 10), "no field named \(prefix)")
+        if !field.waitForExistence(timeout: 10) {
+            if required { debugFail("no-field-\(prefix)", "no field named \(prefix)") }
+            return
+        }
         // A tap that lands while the sheet is still sliding up is lost, so it is repeated while no keyboard shows.
         var attempts = 0
         repeat {
@@ -135,6 +478,7 @@ final class AppStoreScreenshotUITests: XCTestCase {
             attempts += 1
         } while !pollUntil(timeout: 3, { self.app.keyboards.count > 0 }) && attempts < 4
         if !pollUntil(timeout: 10, { self.app.keyboards.count > 0 }) {
+            if !required { return }
             capture("debug-\(prefix)-no-focus")
             let tree = XCTAttachment(string: app.debugDescription)
             tree.lifetime = .keepAlways
@@ -148,6 +492,12 @@ final class AppStoreScreenshotUITests: XCTestCase {
     /// entry would land under Other and the store shot would show the wrong meal.
     private func chooseMealOnAddHome(_ meal: String, entry: String) {
         let menu = app.buttons.matching(NSPredicate(format: "label CONTAINS[c] %@ OR label == %@", "meal", "None")).firstMatch
+        // With entries in Recent the Add screen can open scrolled; the meal menu is at its top.
+        var upScrolls = 0
+        while !(menu.exists && menu.isHittable) && upScrolls < 3 {
+            app.swipeDown()
+            upScrolls += 1
+        }
         guard menu.waitForExistence(timeout: 5), menu.isHittable else {
             try? app.debugDescription.write(
                 to: outputFile("debug-tree-no-meal-menu-\(entry)", ext: "txt"), atomically: true,
@@ -173,9 +523,26 @@ final class AppStoreScreenshotUITests: XCTestCase {
 
     private func dismissKeyboard() {
         guard app.keyboards.count > 0 else { return }
-        let done = app.buttons["Done"]
-        if done.exists && done.isHittable { done.tap() } else { app.navigationBars.staticTexts.firstMatch.tap() }
-        _ = pollUntil(timeout: 5, { self.app.keyboards.count == 0 })
+        // The number pads put a Done in the toolbar (more than one element can carry it), so the first one that can
+        // be tapped is used; a title tap is the fallback.
+        // Only a Done in the lower half belongs to the keyboard; the Settings sheet's own Done is at the top.
+        let lowerHalf = app.windows.firstMatch.frame.height * 0.4
+        if let done = app.buttons.matching(NSPredicate(format: "label == %@", "Done")).allElementsBoundByIndex
+            .first(where: { $0.exists && $0.isHittable && $0.frame.minY > lowerHalf })
+        {
+            done.tap()
+        } else if app.keyboards.buttons["return"].exists {
+            app.keyboards.buttons["return"].tap()
+        } else {
+            app.navigationBars.staticTexts.firstMatch.tap()
+        }
+        if !pollUntil(timeout: 3, { self.app.keyboards.count == 0 }) {
+            // Dragging the keyboard down closes it the way a person would.
+            let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.72))
+            let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.99))
+            from.press(forDuration: 0.1, thenDragTo: to)
+            _ = pollUntil(timeout: 3, { self.app.keyboards.count == 0 })
+        }
     }
 
     // MARK: - Navigation and capture

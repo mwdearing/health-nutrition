@@ -466,7 +466,7 @@ public final class EntryDetailViewModel: ObservableObject {
                         componentID: item.componentID, name: item.name, amount: amount, unit: item.unit,
                         hydrationPercent: stored))
                 } else {
-                    errors[item.componentID] = "Enter an amount greater than zero, using digits and a point."
+                    errors[item.componentID] = AddIntakeViewModel.amountMessage
                 }
             }
             // A drink's water share is the one the edit screen shows, on its volume components only.
@@ -758,9 +758,25 @@ public final class EntryDetailViewModel: ObservableObject {
             return "Recipe · \(product.name)"
         case IntakeContextFactCatalog.quickAddOrigin:
             return "Quick add · amounts typed in"
+        case Self.customOrigin:
+            return "Custom product · values \(product.labelBasis)"
         default:
-            return "Barcode lookup · values \(product.labelBasis)"
+            return "\(Self.lookupInput(for: product)) · values \(product.labelBasis)"
         }
+    }
+
+    /// The origin a product made or imported in Create product is stored under (`CustomProductMapping.snapshot`).
+    static let customOrigin = "custom"
+
+    /// The origin Open Food Facts products are stored under.
+    static let openFoodFactsOrigin = "open-food-facts"
+
+    /// What the Input row calls a looked-up product: a food search pick without a barcode (USDA) is not called a
+    /// barcode lookup. An Open Food Facts product carries its barcode whether it was scanned or picked by name, and
+    /// the snapshot does not record which, so the row names the source and does not claim how it was found.
+    private static func lookupInput(for product: ProductDefinition) -> String {
+        if (product.barcode ?? "").isEmpty { return "Food search" }
+        return product.catalogOrigin == openFoodFactsOrigin ? "Open Food Facts" : "Barcode lookup"
     }
 
     /// The rows under "Where this came from", in order. Only what the snapshot stores is shown: a label
@@ -787,8 +803,14 @@ public final class EntryDetailViewModel: ObservableObject {
             }
         case IntakeContextFactCatalog.quickAddOrigin:
             rows.append(SourceDetailRow(label: "Input", value: "Quick add"))
+        case Self.customOrigin:
+            // The catalog version of a custom product is its revision id, which tells the reader nothing.
+            rows.append(SourceDetailRow(label: "Input", value: "Custom product"))
+            if !product.labelBasis.isEmpty {
+                rows.append(SourceDetailRow(label: "Basis", value: product.labelBasis))
+            }
         default:
-            rows.append(SourceDetailRow(label: "Input", value: "Barcode lookup"))
+            rows.append(SourceDetailRow(label: "Input", value: lookupInput(for: product)))
             if let barcode = product.barcode, !barcode.isEmpty {
                 rows.append(SourceDetailRow(label: "Barcode", value: barcode))
             }

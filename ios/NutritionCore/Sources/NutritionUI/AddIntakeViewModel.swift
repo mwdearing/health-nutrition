@@ -138,6 +138,13 @@ public final class AddIntakeViewModel: ObservableObject {
     public nonisolated let formID = UUID()
     @Published public private(set) var customProduct: CustomProductRevision?
     public var isCustomProduct: Bool { customProduct != nil }
+
+    /// Whether the Brand field is offered: a looked-up, captured, stored or custom product keeps a brand, a
+    /// typed food has nowhere to keep one. It reads the product, never the field's own text, so clearing the
+    /// brand to retype it does not remove the field.
+    public var showsBrandField: Bool {
+        lookedUp != nil || labelValues != nil || storedProduct != nil || customProduct != nil
+    }
     @Published public var name: String = "" {
         didSet { editedFields.insert(.name) }
     }
@@ -385,7 +392,7 @@ public final class AddIntakeViewModel: ObservableObject {
 
     public var servingHint: String? {
         guard let serving, !serving.isEmpty else { return nil }
-        return "1 serving = \(serving.label)"
+        return "1 serving = \(serving.shownLabel)"
     }
 
     public var attributionTitle: String? { attribution?.text }
@@ -420,7 +427,7 @@ public final class AddIntakeViewModel: ObservableObject {
 
     /// The sentence beside Save when a tap of it was refused, because the fields it names carry their errors.
     public static let fixFieldsMessage = "Fix the fields marked above."
-    private static let amountMessage = "Enter an amount greater than zero, using digits and a point."
+    static let amountMessage = "Enter an amount greater than zero, such as 150 or 2.5."
 
     /// Why the name will not save, whether or not its field shows that yet.
     public var nameError: String? { typedName.isEmpty ? "Enter a name." : nil }
@@ -962,16 +969,25 @@ public final class AddIntakeViewModel: ObservableObject {
             return
         }
         isPrefilling = true
-        amountText = DecimalFormatting.text(display.quantity)
+        amountText = DecimalFormatting.text(Self.shownServing(display.quantity))
         unit = display.unit
         isPrefilling = false
         servingCount = "1"
         // The opened amount is the serving, so emptying the Servings field later clears it.
         amountFromServings = true
-        // Saved as the exact serving the source gave, so the rounded figure shown never restates it.
+        // Saved as the exact serving the source gave, in metric, so the rounded figure shown never restates it.
         if let servingOption, let shown = AmountParser.parseTyped(amountText) {
-            prefillBacking = (shown, display.unit, servingOption.quantity ?? shown, servingOption.unit ?? display.unit)
+            let stored = Self.storedMetric(
+                amount: servingOption.quantity ?? shown, unit: servingOption.unit ?? display.unit)
+            prefillBacking = (shown, display.unit, stored.amount, stored.unit)
         }
+    }
+
+    /// A serving figure as the Amount field shows it: rounded the way a stored amount is read, so a converted
+    /// serving never opens as a 38-digit quotient. The exact figure stays in `prefillBacking`.
+    private static func shownServing(_ value: Decimal) -> Decimal {
+        let rounded = DisplayRounding.rounded(value, fractionDigits: AmountDisplay.fractionDigits(for: value))
+        return rounded > 0 || value <= 0 ? rounded : value
     }
 
     /// The serving in the person's mass unit: ounces under US units, grams under metric. The amount that
@@ -1006,12 +1022,13 @@ public final class AddIntakeViewModel: ObservableObject {
         // ("", "0", "0.", "0.0", "0,") is still being typed and leaves the amount alone; commitServingCount
         // settles it when the edit commits.
         guard let count = AmountParser.parseTyped(text, decimalSeparator: countDecimalSeparator) else { return }
-        amountText = DecimalFormatting.text(count * display.quantity)
+        amountText = DecimalFormatting.text(Self.shownServing(count * display.quantity))
         amountFromServings = true
         unit = display.unit
         if let servingOption, let quantity = servingOption.quantity, let servingUnit = servingOption.unit,
            let shown = AmountParser.parseTyped(amountText) {
-            prefillBacking = (shown, display.unit, count * quantity, servingUnit)
+            let stored = Self.storedMetric(amount: count * quantity, unit: servingUnit)
+            prefillBacking = (shown, display.unit, stored.amount, stored.unit)
         }
     }
 
@@ -1045,13 +1062,14 @@ public final class AddIntakeViewModel: ObservableObject {
               let display = servingInDisplayUnit else { return }
         isSettingServings = true
         defer { isSettingServings = false }
-        amountText = DecimalFormatting.text(count * display.quantity)
+        amountText = DecimalFormatting.text(Self.shownServing(count * display.quantity))
         amountFromServings = true
         unit = display.unit
         // The same exact-backing rule setServingCount applies, so a settled count saves the stored serving, not a rounded figure.
         if let servingOption, let quantity = servingOption.quantity, let servingUnit = servingOption.unit,
            let shown = AmountParser.parseTyped(amountText, decimalSeparator: countDecimalSeparator) {
-            prefillBacking = (shown, display.unit, count * quantity, servingUnit)
+            let stored = Self.storedMetric(amount: count * quantity, unit: servingUnit)
+            prefillBacking = (shown, display.unit, stored.amount, stored.unit)
         }
     }
 
@@ -1059,7 +1077,13 @@ public final class AddIntakeViewModel: ObservableObject {
     /// mass or the values are not per 100 g; per-serving values are not scaled here.
     public var amountPreview: AmountPreview? {
         if let basis = lookupBasis ?? lookedUp?.basis {
-            return AmountPreview.make(nutrients: prefilledNutrients, basis: basis, amountText: amountText, unit: unit)
+            var exact: (amount: Decimal, unit: MeasureUnit)?
+            if let backing = prefillBacking, let typed = AmountParser.parseTyped(amountText),
+               backing.shownAmount == typed, backing.shownUnit == unit {
+                exact = (backing.storedAmount, backing.storedUnit)
+            }
+            return AmountPreview.make(
+                nutrients: prefilledNutrients, basis: basis, amountText: amountText, unit: unit, exact: exact)
         }
         guard let labelBasis = capturedLabelBasis else { return nil }
         return capturedPreview(labelBasis: labelBasis)
@@ -1069,10 +1093,18 @@ public final class AddIntakeViewModel: ObservableObject {
     /// save path do: IntakeContextSnapshotBasis's scaling factor for the stored label basis and the amount typed.
     /// Only a mass amount is scaled, so a volume or count amount shows no preview.
     private func capturedPreview(labelBasis: String) -> AmountPreview? {
-        guard let amount = AmountParser.parseTyped(amountText), unit.dimension == .mass,
-              let converted = try? Quantity(value: amount, unit: unit).converted(to: .g)
-        else { return nil }
-        let component = IntakeComponent(componentID: "preview", name: name, amount: amount, unit: unit)
+        guard let typed = AmountParser.parseTyped(amountText), unit.dimension == .mass else { return nil }
+        // A serving shown rounded and left alone is previewed from the exact quantity saving stores, the same
+        // backing `amountPreview` and the "This adds" lines read, so the three never disagree.
+        var amount = typed
+        var amountUnit = unit
+        if let backing = prefillBacking, backing.shownAmount == typed, backing.shownUnit == unit,
+           backing.storedUnit.dimension == .mass {
+            amount = backing.storedAmount
+            amountUnit = backing.storedUnit
+        }
+        guard let converted = try? Quantity(value: amount, unit: amountUnit).converted(to: .g) else { return nil }
+        let component = IntakeComponent(componentID: "preview", name: name, amount: amount, unit: amountUnit)
         guard let factor = DailyTotalsBuilder.scalingFactor(labelBasis: labelBasis, logged: [component]) else {
             return nil
         }

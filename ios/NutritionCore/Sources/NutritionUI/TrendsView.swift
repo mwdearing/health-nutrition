@@ -36,7 +36,9 @@ public struct InsightsHost: View {
         InsightsLoadState.resolve(
             errorMessage: journal.errorMessage, loadCount: journal.loadCount, skippedCount: journal.skippedCount,
             entries: journal.sections.flatMap(\.rows).map {
-                InsightsWeek.Entry(occurredAt: $0.occurredAt, timeZoneIdentifier: $0.timeZoneIdentifier)
+                InsightsWeek.Entry(
+                    occurredAt: $0.occurredAt, timeZoneIdentifier: $0.timeZoneIdentifier,
+                    countsAsLogged: JournalViewModel.hasFoodEntries([$0]))
             },
             days: averageDays,
             averageNutrients: Self.averagedNutrients, now: now(), zone: zone(),

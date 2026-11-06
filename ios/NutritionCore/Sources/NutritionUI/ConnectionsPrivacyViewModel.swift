@@ -286,7 +286,11 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
     /// What the quick-water field refuses, in the words a person can act on. It names no unit, because
     /// the field's own label says which one the amount is read in.
     public static let quickWaterInvalidMessage =
-        "Enter a water amount above zero, using digits and a point."
+        "Enter a water amount above zero, such as 250 or 2.5."
+    /// The line under the share button once an export is written, agreeing with the count.
+    public static func exportedText(count: Int) -> String {
+        count == 1 ? "Exported 1 entry." : "Exported \(count) entries."
+    }
     public static let quickWaterTitle = "Quick-add water amount"
     public static let unitsSectionTitle = "Units"
     public static let unitSystemTitle = "Show amounts in"
@@ -1176,8 +1180,11 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
 
     /// Returns the screen's import state to empty, so a later attempt does not read as part of an earlier
     /// one.
+    ///
+    /// A restore that is still running keeps `isImporting`, so its progress stays and "Restore from an export" stays
+    /// off until the last one publishes (the same rule `canExport` follows).
     public func clearImport() {
-        isImporting = false
+        isImporting = activeImportCompletions > 0
         importState = .idle
         importSummary = nil
         importMessage = nil

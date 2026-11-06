@@ -32,7 +32,7 @@ struct AddServingControls: View {
                     .decimalAmountKeyboard()
                     .focused(focus)
                 }
-                Text("1 serving = \(serving.label)")
+                Text("1 serving = \(serving.shownLabel)")
                     .font(.footnote)
                     .foregroundStyle(TokenColors.textSecondary)
                 if let preview = model.amountPreview {
@@ -56,7 +56,7 @@ struct AddServingControls: View {
         HStack {
             Text(name)
             Spacer()
-            Text(value.map { unit.isEmpty ? DecimalFormatting.text($0) : "\(DecimalFormatting.text($0)) \(unit)" } ?? "Unknown")
+            Text(AmountPreview.rowText(value, unit: unit))
                 .foregroundStyle(TokenColors.textSecondary)
         }
         .accessibilityElement(children: .combine)

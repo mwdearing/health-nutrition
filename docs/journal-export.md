@@ -336,7 +336,7 @@ refuses by its version, before reading anything, with a message that says the fi
 - Data leaves the app only through the system share sheet or a file exporter the person opens, and only
   because they asked. Nothing is shared on a timer or in the background.
 - Deleting the app deletes its store; the temporary export file is removed from disk when the export is
-  cleared, when the screen is left (`onDisappear` calls `clearExport()`), when an export attempt fails, and
+  cleared, when Settings is left (not when Privacy, Licenses or Daily goals is opened over it; the form and the sheet's dismissal call `clearExport()`), when an export attempt fails, and
   when a new export replaces it in another second. At most one copy of the journal is ever left in the
   temporary directory.
 - Apple Health and HealthRelay appear under **Settings > Connections** as disabled rows with
