@@ -8,6 +8,7 @@ import SwiftUI
 public struct WeightTrendChart: View {
     private let points: [WeightChartPoint]
     private let markers: [DoseDayMarker]
+    @ScaledMetric(relativeTo: .body) private var chartHeight: CGFloat = 120
 
     /// Creates the chart from the window's daily averages and the dose-day markers.
     public init(points: [WeightChartPoint], markers: [DoseDayMarker]) {
@@ -37,7 +38,7 @@ public struct WeightTrendChart: View {
         }
         .environment(\.calendar, Self.axisCalendar)
         .environment(\.timeZone, Self.axisCalendar.timeZone)
-        .frame(height: 120)
+        .frame(height: chartHeight)
         .accessibilityLabel(BodyActivityViewModel.weightChartLabel)
     }
 
