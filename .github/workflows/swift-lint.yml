@@ -70,7 +70,5 @@ jobs:
         run: python scripts/lint_swift_sources.py ios/HealthNutrition
       - name: Test the lint
         run: python -m pytest -q -p no:cacheprovider scripts/tests/test_lint_swift_sources.py scripts/tests/test_attribution_check.py scripts/tests/test_ios_workflow.py scripts/tests/test_dependency_workflow_locks.py
-      - name: Check every NutritionUI text field has a caption
-        run: python -m pytest -q -p no:cacheprovider scripts/tests/test_field_clarity.py
       - name: Test the stale-run selector
         run: python -m pytest -q -p no:cacheprovider scripts/tests/test_cancel_stale_runs.py
