@@ -397,16 +397,11 @@ public struct BodyActivityCard: View {
     }
 
     public var body: some View {
-        Card {
+        ContentCard {
             VStack(alignment: .leading, spacing: DesignSpacing.m) {
-                HStack {
-                    Image(systemName: "figure.walk")
-                        .foregroundStyle(TokenColors.accent)
-                        .accessibilityHidden(true)
-                    Text(BodyActivityViewModel.title)
-                        .font(.headline)
-                        .foregroundStyle(TokenColors.textPrimary)
-                    Spacer(minLength: DesignSpacing.s)
+                HStack(spacing: DesignSpacing.s) {
+                    IconWell(systemName: "figure.walk", size: .small)
+                    SectionHeader(BodyActivityViewModel.title)
                 }
                 content
             }
