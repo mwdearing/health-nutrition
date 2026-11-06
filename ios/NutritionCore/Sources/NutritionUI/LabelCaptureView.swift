@@ -172,12 +172,12 @@ public struct LabelCaptureView: View {
                     Text(model.servingPrompt ?? "")
                         .font(.footnote)
                         .foregroundStyle(TokenColors.error)
-                    Button("Confirm serving size") { model.confirmServing() }
+                    Button(LabelReviewButton.confirmServing.title) { model.confirmServing() }
                         .font(.body)
                         .buttonStyle(.borderless)
-                        .accessibilityLabel("Confirm the serving size")
+                        .accessibilityLabel(LabelReviewButton.confirmServing.spoken)
                 }
-                if model.servingNeedsReview {
+                if model.offersServingCorrection {
                     correctServingControl
                 }
                 if model.isEditingServing {
@@ -191,7 +191,7 @@ public struct LabelCaptureView: View {
     /// no serving to correct, which is the same rule the nutrient rows follow.
     @ViewBuilder
     private var correctServingControl: some View {
-        if model.servingCanBeCorrected {
+        if model.offersServingCorrection {
             Button("Correct") { model.beginServingCorrection() }
                 .font(.body)
                 .buttonStyle(.borderless)
@@ -204,10 +204,8 @@ public struct LabelCaptureView: View {
     /// because "30" or "a biscuit" would leave the values below exactly as unscalable as they were.
     private var servingEntry: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(model.servingPrompt ?? "")
-                .font(.footnote)
-                .foregroundStyle(TokenColors.error)
-                .accessibilityLabel(model.servingPrompt ?? "")
+            // The question is not repeated here: the section above shows it while the serving is missing
+            // or flagged, and a clean serving has none.
             // No decimal keypad here: the answer is an amount with its unit, so the keyboard has to
             // offer the letters that spell the unit.
             LabeledField("One serving", spokenTitle: true) { focus in
@@ -226,7 +224,8 @@ public struct LabelCaptureView: View {
                     .foregroundStyle(TokenColors.error)
                     .accessibilityLabel(message)
             }
-            Button(model.servingIsMissing ? "Use this serving" : "Save this serving") {
+            let useServing = LabelReviewButton.useServing(missing: model.servingIsMissing)
+            Button(useServing.title) {
                 let accepted =
                     model.servingIsMissing
                     ? model.enterServingSize(text: servingDraft)
@@ -238,18 +237,18 @@ public struct LabelCaptureView: View {
             }
             .font(.body)
             .buttonStyle(.borderless)
-            .accessibilityLabel("Use this serving size")
+            .accessibilityLabel(useServing.spoken)
             .accessibilityHint("Keeps the values per serving, with this serving written down")
             if model.isEditingServing {
                 // While a printed serving is being corrected the values cannot be used, so the edit has a way
                 // out that keeps the serving as printed.
-                Button("Cancel") {
+                Button(LabelReviewButton.cancelServingCorrection.title) {
                     servingDraft = ""
                     model.endServingCorrection()
                 }
                 .font(.body)
                 .buttonStyle(.borderless)
-                .accessibilityLabel("Keep the printed serving size")
+                .accessibilityLabel(LabelReviewButton.cancelServingCorrection.spoken)
             }
         }
     }
@@ -341,7 +340,10 @@ public struct LabelCaptureView: View {
                 Button("Keep photo \(row.frameIndex)") { model.confirm(row.key) }
                     .font(.body)
                     .buttonStyle(.borderless)
-                    .accessibilityLabel("Keep \(row.valueText) for \(row.name), from photo \(row.frameIndex)")
+                    .accessibilityLabel(
+                        LabelReviewButton.keepPhoto(
+                            frameIndex: row.frameIndex, valueText: row.valueText, rowName: row.name
+                        ).spoken)
                 ForEach(row.candidates) { candidate in
                     candidateRow(
                         candidate,
@@ -368,7 +370,10 @@ public struct LabelCaptureView: View {
             Button("Keep \(value)") { keep() }
                 .font(.body)
                 .buttonStyle(.borderless)
-                .accessibilityLabel("Keep \(value) for \(rowName), from photo \(candidate.frameIndex)")
+                .accessibilityLabel(
+                    LabelReviewButton.keepReading(
+                        valueText: value, rowName: rowName, frameIndex: candidate.frameIndex
+                    ).spoken)
         }
     }
 
@@ -472,7 +477,9 @@ public struct LabelCaptureView: View {
                     .font(.body)
                     .buttonStyle(.borderless)
                     .accessibilityLabel(
-                        "Keep \(row.valueText) for \(row.name), from photo \(row.frameIndex)")
+                        LabelReviewButton.keepPhoto(
+                            frameIndex: row.frameIndex, valueText: row.valueText, rowName: row.name
+                        ).spoken)
                 ForEach(row.candidates) { candidate in
                     candidateRow(
                         candidate,
@@ -564,7 +571,7 @@ public struct LabelCaptureView: View {
                 }
                 .font(.body)
                 .buttonStyle(.borderless)
-                .accessibilityLabel("Stop correcting \(row.name)")
+                .accessibilityLabel(LabelReviewButton.cancelCorrection(rowName: row.name).spoken)
             }
         }
     }
@@ -665,7 +672,7 @@ public struct LabelCaptureView: View {
                 }
                 .font(.body)
                 .buttonStyle(.borderless)
-                .accessibilityLabel("Stop correcting \(row.name)")
+                .accessibilityLabel(LabelReviewButton.cancelCorrection(rowName: row.name).spoken)
             }
         }
     }
@@ -753,5 +760,37 @@ private extension View {
         #else
         self
         #endif
+    }
+}
+
+/// A button on the label review screen: the title it shows, and the name VoiceOver and Voice Control use.
+/// The spoken name always starts with the title, so saying the words on screen reaches the button (WCAG
+/// 2.5.3); anything extra follows it.
+struct LabelReviewButton {
+    let title: String
+    let spoken: String
+
+    static let confirmServing = LabelReviewButton(title: "Confirm serving size", spoken: "Confirm serving size")
+
+    static func useServing(missing: Bool) -> LabelReviewButton {
+        let title = missing ? "Use this serving" : "Save this serving"
+        return LabelReviewButton(title: title, spoken: title)
+    }
+
+    static let cancelServingCorrection = LabelReviewButton(
+        title: "Cancel", spoken: "Cancel, keep the printed serving size")
+
+    static func cancelCorrection(rowName: String) -> LabelReviewButton {
+        LabelReviewButton(title: "Cancel", spoken: "Cancel, stop correcting \(rowName)")
+    }
+
+    static func keepPhoto(frameIndex: Int, valueText: String, rowName: String) -> LabelReviewButton {
+        LabelReviewButton(
+            title: "Keep photo \(frameIndex)", spoken: "Keep photo \(frameIndex), \(valueText) for \(rowName)")
+    }
+
+    static func keepReading(valueText: String, rowName: String, frameIndex: Int) -> LabelReviewButton {
+        LabelReviewButton(
+            title: "Keep \(valueText)", spoken: "Keep \(valueText) for \(rowName), from photo \(frameIndex)")
     }
 }

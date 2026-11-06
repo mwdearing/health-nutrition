@@ -68,6 +68,47 @@ final class ZoneChangeReloadTests: XCTestCase {
         XCTAssertEqual(journal.todaySection?.id, "2026-10-20", "today follows Tokyo after the gap change")
     }
 
+    /// The unfixed half of #648: Today follows a day, zone or clock change while the app stays open.
+    func testADayChangeMovesTodayToTheNewDate() async throws {
+        let store = try makeStore()
+        let today = TodayViewModel(store: store, timeZoneIdentifier: "UTC")
+        today.load(now: now)
+        let subtitleBefore = today.dateSubtitle
+        let later = now.addingTimeInterval(86_400)
+        let changes = AsyncStream<Void> { continuation in
+            continuation.yield(())
+            continuation.finish()
+        }
+        await today.runDayChangeReloads({ changes }, now: { later })
+        XCTAssertEqual(today.lastLoadedAt, later, "the change reloaded Today at the new time")
+        XCTAssertNotEqual(today.dateSubtitle, subtitleBefore, "the date under the title moved to the next day")
+    }
+
+    /// A day change drops the previous day's Health readings and asks the app to read Health again.
+    func testADayChangeClearsHealthReadingsAndAsksForAFreshRead() async throws {
+        let store = try makeStore()
+        let today = TodayViewModel(store: store, timeZoneIdentifier: "UTC")
+        today.activeEnergyKcal = 450
+        today.outsideIntake = .read(values: ["water": 500], readKeys: ["water"])
+        var asked = 0
+        var readingsWhenAsked: (Decimal?, HealthIntakeTotals.Outside)?
+        today.onDayChange = {
+            asked += 1
+            readingsWhenAsked = (today.activeEnergyKcal, today.outsideIntake)
+        }
+        let later = now.addingTimeInterval(86_400)
+        let changes = AsyncStream<Void> { continuation in
+            continuation.yield(())
+            continuation.finish()
+        }
+        await today.runDayChangeReloads({ changes }, now: { later })
+        XCTAssertNil(today.activeEnergyKcal, "yesterday's active energy is dropped")
+        XCTAssertEqual(today.outsideIntake, .notConnected, "yesterday's Health intake is dropped")
+        XCTAssertEqual(asked, 1, "the change asked for a fresh Health read, and the first load did not")
+        XCTAssertNil(readingsWhenAsked?.0)
+        XCTAssertEqual(readingsWhenAsked?.1, .notConnected)
+    }
+
     private final class StartCounter { var count = 0 }
 
     /// #654: a stream that throws is started again, so a later zone change still reloads the Diary.
