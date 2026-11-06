@@ -12,11 +12,11 @@ final class CalorieSummaryFiguresTests: XCTestCase {
     }
 
     func testNothingLoggedWithAGoalShowsDashesNotZero() {
-        XCTAssertEqual(figures(goal: 2000, food: nil), .init(remaining: "—", food: "—", burned: nil))
+        XCTAssertEqual(figures(goal: 2000, food: nil), .init(remaining: "—", caption: "Calories remaining", food: "—", burned: nil))
     }
 
     func testNothingLoggedWithoutAGoalShowsOnlyFoodAsADash() {
-        XCTAssertEqual(figures(goal: nil, food: nil), .init(remaining: nil, food: "—", burned: nil))
+        XCTAssertEqual(figures(goal: nil, food: nil), .init(remaining: nil, caption: "Calories remaining", food: "—", burned: nil))
     }
 
     func testLoggedFoodWithAGoalShowsRemainingFoodAndBurned() {
@@ -32,6 +32,26 @@ final class CalorieSummaryFiguresTests: XCTestCase {
     }
 
     func testLoggedFoodWithoutAGoalShowsFoodAndNoRemaining() {
-        XCTAssertEqual(figures(goal: nil, food: 500), .init(remaining: nil, food: "500", burned: nil))
+        XCTAssertEqual(figures(goal: nil, food: 500), .init(remaining: nil, caption: "Calories remaining", food: "500", burned: nil))
+    }
+
+    func testOverGoalShowsAPositiveFigureUnderCaloriesOverGoal() {
+        let result = figures(goal: 2000, food: 2150)
+        XCTAssertEqual(result.remaining, "150")
+        XCTAssertEqual(result.caption, "Calories over goal")
+    }
+
+    func testPartialDayWithSomethingLeftReadsUpTo() {
+        let calories = CalorieRemaining.make(
+            goal: 2000, food: 500, partial: true, missingCount: 1, burned: nil, energyLabel: "Energy")
+        let result = NourishTodayHeader.summaryFigures(calories)
+        XCTAssertEqual(result.remaining, "Up to 1,500")
+        XCTAssertEqual(result.caption, "Calories remaining")
+    }
+
+    func testExactlyZeroIsNotOverGoal() {
+        let result = figures(goal: 2000, food: 2000)
+        XCTAssertEqual(result.remaining, "0")
+        XCTAssertEqual(result.caption, "Calories remaining")
     }
 }
