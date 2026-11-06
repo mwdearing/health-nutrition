@@ -132,6 +132,9 @@ final class AppStoreScreenshotUITests: XCTestCase {
         dismissKeyboard()
         try choose("Kind", option: "Supplement")
         try choose("Facts are stated", option: "Per serving")
+        // Saving checks the serving, so a quantity is stated (the unit stays "serving").
+        try type("1", intoFieldStartingWith: "Product serving quantity")
+        dismissKeyboard()
         // The first fact's menu opens tall, so its deep entry (Vitamin D) is reachable; later rows raise a keyboard that
         // cuts the menu off, so they take entries near its top.
         try addFact(nutrient: "Vitamin D", amount: "20", unit: "mcg")
@@ -144,8 +147,22 @@ final class AppStoreScreenshotUITests: XCTestCase {
         }
         if !(save.exists && save.isHittable) { debugFail("no-save-product", "no Save product button"); return }
         save.tap()
+        if !pollUntil(timeout: 15, { !self.app.navigationBars["Product editor"].exists }) {
+            debugFail("after-save-product", "the product editor did not close after saving")
+            return
+        }
+        // The product now lives in the Library; this step is being built against the real screens.
+        try openAddHome()
+        let fromLibrary = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "From Library")).firstMatch
+        if !fromLibrary.waitForExistence(timeout: 10) { debugFail("no-from-library", "no From Library on Add"); return }
+        var libScrolls = 0
+        while !(fromLibrary.exists && fromLibrary.isHittable) && libScrolls < 4 {
+            app.swipeUp()
+            libScrolls += 1
+        }
+        fromLibrary.tap()
         RunLoop.current.run(until: Date().addingTimeInterval(2))
-        debugFail("after-save-product", "learning what follows saving the product")
+        debugFail("library-picker", "learning the Library picker")
     }
 
     func test9_CaptureTheStoreScreens() throws {
