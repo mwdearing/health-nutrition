@@ -146,6 +146,8 @@ class JournalImportTestCase: XCTestCase {
         var root = try object(of: exportData(favorites: false))
         root["schema_version"] = 1
         root.removeValue(forKey: "goals")
+        root.removeValue(forKey: "medications")
+        root.removeValue(forKey: "medication_doses")
         root.removeValue(forKey: "saved_meals")
         root.removeValue(forKey: "kept_out_of_library")
         root.removeValue(forKey: "logged_units")

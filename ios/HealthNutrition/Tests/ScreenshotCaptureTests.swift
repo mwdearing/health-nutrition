@@ -459,7 +459,7 @@ final class ScreenshotCaptureTests: XCTestCase {
 
     func testStartupFailureView() throws {
         try capture("StartupFailureView") {
-            StartupFailureView(message: "The journal store file could not be opened.")
+            StartupFailureView(message: "The journal store file could not be opened.", onRetry: {})
         }
     }
 

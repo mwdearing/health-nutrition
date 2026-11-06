@@ -1,4 +1,5 @@
 import Foundation
+import NutritionDomain
 import XCTest
 @testable import NutritionJournal
 
@@ -81,5 +82,38 @@ final class JournalImportLimitsTests: JournalImportTestCase {
 
         XCTAssertTrue(try journal.activeIntakes().isEmpty)
         XCTAssertTrue(try favoritesStore.list().isEmpty)
+    }
+
+    func testMedicationDosesCountTowardTheAggregateCapAndAreRefusedBeforeAnyWrite() throws {
+        let target = try directory()
+        let journal = try store(target)
+        let medications = try SwiftDataMedicationStore(url: target.appendingPathComponent("medications.store"))
+        addTeardownBlock { medications.close() }
+        let vial = Medication(
+            id: UUID(uuidString: "0A000000-0000-4000-8000-000000000001")!, name: "Example vial", unit: .mg)
+        let doses = (1...3).map { number in
+            MedicationDose(
+                id: UUID(uuidString: "0D000000-0000-4000-8000-00000000000\(number)")!, medicationID: vial.id,
+                takenAt: Date(timeIntervalSince1970: TimeInterval(1_776_000_000 + number * 86_400)),
+                timeZoneIdentifier: "UTC", amount: 2, unit: .mg)
+        }
+        let data = try JournalExporter.encode(
+            JournalExport(
+                exportedAt: Date(timeIntervalSince1970: 1_777_000_000), appVersion: "test", intakes: [],
+                tombstones: [], favorites: [], goals: [],
+                medications: [JournalExportMedication(medication: vial)],
+                medicationDoses: doses.map { JournalExportMedicationDose(dose: $0) }))
+
+        // One medication and three doses are four elements, so a budget of three refuses the whole file.
+        XCTAssertThrowsError(
+            try JournalImporter.importExport(
+                data, into: journal, favorites: try favorites(target), medications: medications,
+                limits: JournalImportLimits(maxImportBytes: data.count, maxAggregateElements: 3))
+        ) { error in
+            XCTAssertEqual(error as? JournalImportError, .tooLarge)
+        }
+
+        XCTAssertTrue(try medications.medications().isEmpty)
+        XCTAssertTrue(try medications.allDoses().isEmpty)
     }
 }
