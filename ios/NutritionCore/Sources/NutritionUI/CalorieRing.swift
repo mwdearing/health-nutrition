@@ -78,7 +78,8 @@ public struct CalorieRing<Center: View>: View {
     public var body: some View {
         ZStack {
             ring
-                .frame(width: diameter, height: diameter)
+                .frame(maxWidth: diameter, maxHeight: diameter)
+                .aspectRatio(1, contentMode: .fit)
                 .accessibilityHidden(true)
             center
         }
