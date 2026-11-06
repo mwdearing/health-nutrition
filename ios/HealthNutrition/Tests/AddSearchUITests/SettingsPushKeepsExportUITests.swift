@@ -20,8 +20,7 @@ final class SettingsPushKeepsExportUITests: XCTestCase {
         // Edit goals may open Settings with Daily goals already pushed. The form is the screen whose navigation bar is
         // titled Settings, so when it is not showing the person goes back to it.
         let settings = app.navigationBars["Settings"]
-        XCTAssertTrue(app.navigationBars.firstMatch.waitForExistence(timeout: 15), "no Settings sheet after Edit goals")
-        if !settings.waitForExistence(timeout: 3) { goBack(in: app) }
+        if !settings.waitForExistence(timeout: 15) { goBack(from: "Daily goals", in: app) }
         XCTAssertTrue(settings.waitForExistence(timeout: 10), "the Settings form is not showing\n\(app.debugDescription)")
 
         let export = app.buttons["Export journal"]
@@ -39,10 +38,14 @@ final class SettingsPushKeepsExportUITests: XCTestCase {
         app.buttons["Share the export"]
     }
 
-    /// Taps the back button of the pushed screen (the first button in the navigation bar).
-    private func goBack(in app: XCUIApplication) {
-        let back = app.navigationBars.buttons.element(boundBy: 0)
-        XCTAssertTrue(back.waitForExistence(timeout: 10), "no back button on the pushed screen")
+    /// Waits for the pushed screen's navigation bar, titled `title`, and taps its back button: the bar's first button that
+    /// is not Done (the pushed screen carries the sheet's Done too). A push that did not happen fails here, with the
+    /// sheet still open, rather than dismissing Settings.
+    private func goBack(from title: String, in app: XCUIApplication) {
+        let bar = app.navigationBars[title]
+        XCTAssertTrue(bar.waitForExistence(timeout: 10), "\(title) is not showing\n\(app.debugDescription)")
+        let back = bar.buttons.matching(NSPredicate(format: "label != %@", "Done")).element(boundBy: 0)
+        XCTAssertTrue(back.waitForExistence(timeout: 10), "no back button on \(title)")
         back.tap()
     }
 
@@ -64,7 +67,7 @@ final class SettingsPushKeepsExportUITests: XCTestCase {
         scroll(to: goals, in: app, down: false)
         XCTAssertTrue(goals.exists && goals.isHittable, "no Daily goals row in Settings\n\(app.debugDescription)")
         goals.tap()
-        goBack(in: app)
+        goBack(from: "Daily goals", in: app)
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 10), "did not return to the Settings form")
 
         let share = shareButton(in: app)
@@ -81,7 +84,7 @@ final class SettingsPushKeepsExportUITests: XCTestCase {
         scroll(to: privacy, in: app, down: false)
         XCTAssertTrue(privacy.exists && privacy.isHittable, "no Privacy row in Settings\n\(app.debugDescription)")
         privacy.tap()
-        goBack(in: app)
+        goBack(from: "Privacy", in: app)
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 10), "did not return to the Settings form")
 
         let share = shareButton(in: app)
