@@ -36,6 +36,8 @@ public struct JournalImportLimits: Sendable, Equatable {
         try consume(root["kept_out_of_library"], from: &remaining)
         try consume(root["logged_units"], from: &remaining)
         try consume(root["goals"], from: &remaining)
+        try consume(root["medications"], from: &remaining)
+        try consume(root["medication_doses"], from: &remaining)
 
         guard let intakes = root["intakes"] as? [Any] else { return }
         for intakeItem in intakes {
