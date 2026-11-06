@@ -53,13 +53,20 @@ public final class RecipeListViewModel: ObservableObject {
             items = result.recipes.map {
                 RecipeListItem(
                     id: $0.recipeID, title: $0.title, versionNumber: $0.number,
-                    detail: "Version \($0.number), \($0.ingredients.count) ingredients")
+                    detail: "Version \($0.number), \(Self.ingredientCountText($0.ingredients.count))")
             }
             skippedMessage = Self.skippedText(result.skippedCount)
             errorMessage = nil
         } catch {
+            // Rows from an earlier load are not kept under the error: they may be what failed to read.
+            items = []
+            skippedMessage = nil
             errorMessage = "Could not read the recipes."
         }
+    }
+
+    static func ingredientCountText(_ count: Int) -> String {
+        count == 1 ? "1 ingredient" : "\(count) ingredients"
     }
 
     /// Hides the recipe; every stored version stays on the device.
