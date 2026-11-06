@@ -70,7 +70,7 @@ final class DiaryHealthTotalsTests: XCTestCase {
 
         model.outsideIntakeByDay[key] = .read(values: ["energy": 620], readKeys: ["energy"])
         model.load(now: now)
-        XCTAssertEqual(model.sections.first { $0.id == key }?.energyText, "620 Calories")
+        XCTAssertEqual(model.sections.first { $0.id == key }?.energyText, "620 calories")
     }
 
     /// A goal bar in the day header counts what another app logged to Health that day.
@@ -104,7 +104,7 @@ final class DiaryHealthTotalsTests: XCTestCase {
         model.healthDayReader = { _, _ in HealthDayRead(.read(values: ["energy": 620], readKeys: ["energy"])) }
         await model.loadHealthTotals(forDayKey: otherKey, now: now)
         model.load(now: now)
-        XCTAssertEqual(model.sections.first { $0.id == otherKey }?.energyText, "620 Calories")
+        XCTAssertEqual(model.sections.first { $0.id == otherKey }?.energyText, "620 calories")
         XCTAssertNil(model.sections.first { $0.id == key }?.energyText)
     }
 
@@ -152,7 +152,7 @@ final class DiaryHealthTotalsTests: XCTestCase {
         }
         model.load(now: now)
         await model.loadHealthTotals(forDayKey: key, now: now)
-        XCTAssertEqual(model.sections.first { $0.id == key }?.energyText, "620 Calories")
+        XCTAssertEqual(model.sections.first { $0.id == key }?.energyText, "620 calories")
         let day = try XCTUnwrap(JournalViewModel.dayInterval(forKey: key, zone: TimeZone(identifier: "UTC")!))
         XCTAssertEqual(asked.first?.0, day.start, "the read starts at the day's start in the Diary's zone")
     }
@@ -188,7 +188,7 @@ final class DiaryHealthTotalsTests: XCTestCase {
         connected = true
         await model.loadHealthTotals(forDayKey: key, now: tomorrow)
         XCTAssertEqual(reads, 2)
-        XCTAssertEqual(model.sections.first { $0.id == key }?.energyText, "620 Calories")
+        XCTAssertEqual(model.sections.first { $0.id == key }?.energyText, "620 calories")
     }
 
     /// A day across a daylight-saving change is that day in the zone: 23 hours when the clocks go forward.
@@ -223,7 +223,7 @@ final class DiaryHealthTotalsTests: XCTestCase {
         let (model, key) = try foodDay(lookup: UnknownNutrientFacts())
         model.outsideIntakeByDay[key] = .read(values: ["energy": 620], readKeys: ["energy"])
         model.load(now: now)
-        XCTAssertNotEqual(model.sections.first { $0.id == key }?.energyText, "620 Calories")
+        XCTAssertNotEqual(model.sections.first { $0.id == key }?.energyText, "620 calories")
     }
 
     /// A Health read that did not complete leaves the journal's known energy showing, not blank.
@@ -231,7 +231,7 @@ final class DiaryHealthTotalsTests: XCTestCase {
         let (model, key) = try foodDay(lookup: EnergyFacts())
         model.outsideIntakeByDay[key] = .read(values: [:], readKeys: [])
         model.load(now: now)
-        XCTAssertEqual(model.sections.first { $0.id == key }?.energyText, "100 Calories")
+        XCTAssertEqual(model.sections.first { $0.id == key }?.energyText, "100 calories")
     }
 
     /// A day read while it was today is read again in full once it is past, so later Health entries count.
@@ -318,7 +318,7 @@ final class DiaryHealthTotalsTests: XCTestCase {
         await model.loadHealthTotals(forDayKey: key, now: now)
         releaseFirst?.resume()
         await first.value
-        XCTAssertEqual(model.sections.first { $0.id == key }?.energyText, "620 Calories")
+        XCTAssertEqual(model.sections.first { $0.id == key }?.energyText, "620 calories")
     }
 
     /// Erase all data forgets every day's Health figures, and a read still running then is dropped.
@@ -425,7 +425,7 @@ final class DiaryHealthTotalsTests: XCTestCase {
         model.load(now: now)
         let tomorrow = now.addingTimeInterval(86_400)
         await model.loadHealthTotals(forDayKey: key, now: tomorrow)
-        XCTAssertEqual(model.sections.first { $0.id == key }?.energyText, "620 Calories")
+        XCTAssertEqual(model.sections.first { $0.id == key }?.energyText, "620 calories")
         let taskID = model.healthReadTaskID(forDayKey: key)
 
         model.healthAccessChanged(now: now)

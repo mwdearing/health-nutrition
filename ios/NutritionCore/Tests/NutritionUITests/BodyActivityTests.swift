@@ -112,10 +112,10 @@ final class BodyActivityTests: XCTestCase {
         let model = BodyActivityViewModel(reader: reader, unitSystem: { system })
         await model.load(now: now)
 
-        XCTAssertEqual(model.outsideText, "From other apps: 620 Calories, 48 g protein, 16 fl oz water")
+        XCTAssertEqual(model.outsideText, "From other apps: 620 calories, 48 g protein, 16 fl oz water")
 
         system = .metric
-        XCTAssertEqual(model.outsideText, "From other apps: 620 Calories, 48 g protein, 473 mL water")
+        XCTAssertEqual(model.outsideText, "From other apps: 620 calories, 48 g protein, 473 mL water")
     }
 
     func testAFailedOutsideReadSaysSoRatherThanShowingNothing() async {
