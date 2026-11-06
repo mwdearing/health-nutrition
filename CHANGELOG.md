@@ -4,6 +4,8 @@ Recent changes to the Health Nutrition iOS app. The newest entry is first. This 
 
 ## Unreleased
 
+- **#1316**: the privacy statement says Health readings are not uploaded but totals can show on widgets and a paired Apple Watch. The in-app summary names USDA FoodData Central and the Health nutrition reads. Closes #1286.
+- **#1311**: vitamins and minerals "today" and Week use the Diary's today, with entries in their own zone. Apple Health totals count toward the supplement list's upper-limit check. The source line lists the food, supplement and Apple Health parts. Closes #1291, #1292, #1293.
 - **#1309**: an Apple Health or relay write for an entry deleted inside its 10-second Undo window is held, not settled, so Undo restores an entry that still gets written. Closes #1284.
 - **#1320**: USDA servings are stored in grams and shown in ounces only for display, rounded, with previews and saves using the exact grams. Source lines say "Food search", "Open Food Facts" and "Custom product". Singular wording, clearer amount errors, and the Brand field stays while it is cleared. Closes #1285, #1289.
 - **#1324**: the custom product editor accepts the region's decimal comma and shows plain-sentence field errors. Closes #1288.
@@ -31,13 +33,6 @@ Recent changes to the Health Nutrition iOS app. The newest entry is first. This 
 - **#347**: Week view on vitamins and minerals. Each nutrient averages over its own logged days. Upper limits are checked day by day. Entries bucket by their own local date.
 - **#345**: reference values are offered as goals. A row shows the RDA for the person's sex and age band, with a Use action. Goals fields follow the store unless the person has typed in them.
 - **#350**: pregnancy and breastfeeding reference values for women aged 19 to 50. Phosphorus pregnancy upper limit is 3,500 mg.
-
-## Open fix PRs (not merged)
-
-From the security, bug and usability review of 2026-11-05. Each line moves under Unreleased when its PR merges, and is dropped if the PR closes unmerged.
-
-- **#1316**: the privacy statement says Health readings are not uploaded but totals can show on widgets and a paired Apple Watch. The in-app summary names USDA FoodData Central and the Health nutrition reads. Closes #1286.
-- **#1311**: vitamins and minerals "today" and Week use the Diary's today, with entries in their own zone. Apple Health totals count toward the supplement list's upper-limit check. The source line lists the food, supplement and Apple Health parts. Closes #1291, #1292, #1293.
 
 ## Versions
 
