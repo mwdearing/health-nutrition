@@ -27,12 +27,13 @@ public struct MedicationTodayTileContent: Equatable {
     }
 
     /// One line per medication row, each giving the name and its standing: the schedule standing when there is
-    /// one, otherwise the days since the last dose, otherwise the time of the last dose.
+    /// one, otherwise the last-dose line, which says what its day and time are. The bare days-since text is not used: "Today"
+    /// or "3 days since" alone reads as an instruction or an unfinished phrase.
     /// - Parameter rows: The medication rows to describe, in the order given.
     /// - Returns: One line for each row. No row is left out.
     public static func lines(for rows: [MedicationRow]) -> [String] {
         rows.map { row in
-            let standing = row.statusText ?? row.daysSinceText ?? row.lastDoseText
+            let standing = row.statusText ?? row.lastDoseText
             return "\(row.name): \(standing)"
         }
     }
