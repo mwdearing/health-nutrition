@@ -1,8 +1,7 @@
 # Medication log
 
-Status: the list, add, log and archive screens exist. Settings has the switch (off by default), and the
+Status: the list, add, log, archive and history screens and the Today tile exist, and the log is in the journal export. Settings has the switch (off by default), and the
 Library shows a Medication log row once it is on. Dose days show on the weight chart while the log is on.
-Not yet: export.
 
 The medication log keeps the medications a person names and the doses they type. The person
 names each medication and types every dose field. The log never suggests, checks or changes a
@@ -40,6 +39,11 @@ dose, and it holds no list of drugs, dose ranges, titration steps or advice.
   zone. Back on the list, a changed history withdraws Undo.
 
 The injection site is saved with the dose and is never shown in the list, trends or charts.
+
+## Notice
+
+The log states what it is: "This log keeps what you enter. It does not give medical advice or suggest doses." The text is one constant in the app and shows as a footnote on the
+Medication log screen, under the list, and beside the Settings switch.
 
 ## Rules
 
@@ -116,6 +120,10 @@ be opened, its rows cannot be deleted or its checkpoint fails, the erase replace
 checkpoint only when SQLite finds it damaged, as above, and the store opens an empty log. Otherwise
 the file is kept and the erase reports the failure.
 
-## Not yet
+## Export and restore
 
-- Export.
+The journal export (version 9) carries every medication, archived ones included, and every dose. Restoring an
+export adds the medications and doses in the file that are not on this device, including ones deleted since the file
+was made: a restore keeps no record of deletions. It never replaces a medication or dose the device holds, and a
+file medication whose name or id the device holds under another name is left out with its doses. The restore screen
+says so under its button. Detail: [journal-export.md](journal-export.md).

@@ -67,7 +67,7 @@ final class MedicationTodayTileTests: XCTestCase {
             "Example cream: No dose logged yet",
             "Example due: Due today",
             "Example late: Overdue by 1 day",
-            "Example vial: Today",
+            "Example vial: Last dose 2.5 mL on Apr 15, 2026 at 9:36 AM",
             "Example weekly injection: Next by your schedule: Apr 21, 2026",
         ])
     }
@@ -119,7 +119,7 @@ final class MedicationTodayTileTests: XCTestCase {
         let text = (content?.lines ?? []).joined(separator: " ") + " " + (content?.accessibilityText ?? "")
         XCTAssertFalse(text.contains("Example site"))
         XCTAssertFalse(text.contains("Example note"))
-        XCTAssertEqual(content?.lines, ["Example vial: 1 day since"])
+        XCTAssertEqual(content?.lines, ["Example vial: Last dose 2.5 mL on Apr 14, 2026 at 12:00 PM"])
     }
 
     func testTheSpokenTextNamesTheTileAndReadsEveryLine() {
@@ -127,7 +127,7 @@ final class MedicationTodayTileTests: XCTestCase {
         let store = InMemoryMedicationStore(medications: [medication], doses: [dose(of: medication, daysAgo: 0.1)])
         XCTAssertEqual(
             MedicationTodayTileContent.make(from: makeModel(store))?.accessibilityText,
-            "Medications, Example vial: Today")
+            "Medications, Example vial: Last dose 2.5 mL on Apr 15, 2026 at 9:36 AM")
     }
 
     func testTheTileFollowsTheSwitch() {

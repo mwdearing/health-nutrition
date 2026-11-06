@@ -50,6 +50,37 @@ begin
  assert jsonb_array_length(public.search_catalog_products_v2('percent%_\\')->'products')=2;
  assert jsonb_array_length(public.search_catalog_products_v2('percentAA')->'products')=0;
 end $$;
+-- Withdrawing an already withdrawn contribution is a revision conflict and writes nothing.
+-- The writer tables are not readable by the API role, so row counts are taken as the owner role.
+do $$
+declare first jsonb; removed jsonb;
+begin
+ first := public.submit_catalog_product_v2(jsonb_build_object('operation_id',gen_random_uuid(),'client_revision_id',gen_random_uuid(),'product_id',null,'expected_server_revision',null,'consent_version',2,'consent_generation','1','product',jsonb_build_object('name','Synthetic repeat withdraw','brand',null,'barcode',null,'kind','food','basis','per_serving','serving',null,'facts','[]'::jsonb)));
+ removed := public.withdraw_catalog_product_v2(jsonb_build_object('operation_id',gen_random_uuid(),'client_revision_id',gen_random_uuid(),'product_id',first->>'product_id','expected_server_revision',first->>'current_revision'));
+ assert removed->>'current_state'='withdrawn';
+ perform set_config('t.pid',first->>'product_id',true);
+ perform set_config('t.rev',removed->>'current_revision',true);
+ perform set_config('t.own',public.get_my_catalog_contribution_v2((first->>'product_id')::uuid)::text,true);
+end $$;
 reset role;
+select set_config('t.counts',(select count(*)||'/'||(select count(*) from catalog_v2.receipts) from catalog_v2.revisions),true);
+set local role authenticated;
+do $$
+declare detail text;
+begin
+ begin
+  perform public.withdraw_catalog_product_v2(jsonb_build_object('operation_id',gen_random_uuid(),'client_revision_id',gen_random_uuid(),'product_id',current_setting('t.pid'),'expected_server_revision',current_setting('t.rev')));
+  raise exception 'repeat withdrawal accepted' using errcode='XX999';
+ exception when sqlstate 'P0001' then
+  get stacked diagnostics detail=pg_exception_detail;
+  assert detail::jsonb->>'code'='revision_conflict', 'repeat withdrawal must be revision_conflict';
+  assert detail::jsonb->>'current_state'='withdrawn' and detail::jsonb->>'current_revision'=current_setting('t.rev'), detail;
+ end;
+ assert public.get_my_catalog_contribution_v2(current_setting('t.pid')::uuid)=current_setting('t.own')::jsonb, 'repeat withdrawal changed own state';
+end $$;
+reset role;
+do $$ begin
+ assert (select count(*)||'/'||(select count(*) from catalog_v2.receipts) from catalog_v2.revisions)=current_setting('t.counts'), 'repeat withdrawal wrote revision or receipt rows';
+end $$;
 rollback;
 select 'SHARED PRODUCTS V2 SQL OK';

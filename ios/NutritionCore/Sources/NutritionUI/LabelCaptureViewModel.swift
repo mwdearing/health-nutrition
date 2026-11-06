@@ -1032,6 +1032,11 @@ public final class LabelCaptureViewModel: ObservableObject {
     /// a serving that was never stated is entered, not corrected.
     public var servingCanBeCorrected: Bool { !servingIsMissing && servingText != nil }
 
+    /// Whether the screen shows the serving's Correct control: whenever the serving can be corrected and
+    /// no edit is already open. It does not depend on the parser's flag, because a serving read cleanly,
+    /// confirmed or typed in is as easy to get wrong as a flagged one and scales every value.
+    public var offersServingCorrection: Bool { servingCanBeCorrected && !isEditingServing }
+
     /// Takes one serving as the user stated it.
     ///
     /// An amount with its unit is required, and a unit is required with it: a serving stated as a household

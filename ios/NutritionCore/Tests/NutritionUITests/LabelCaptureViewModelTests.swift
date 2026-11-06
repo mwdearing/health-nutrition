@@ -463,6 +463,36 @@ final class LabelCaptureViewModelTests: XCTestCase {
         XCTAssertEqual(model.makeProduct()?.labelBasis, "per serving (30 g)")
     }
 
+    /// The Correct control follows `servingCanBeCorrected`, not the parser's flag: a serving read cleanly,
+    /// confirmed, or typed in for a panel that had none is still the user's to change.
+    func testServingCorrectionIsOfferedWhateverTheFlagSays() {
+        let model = makeModel()
+        model.load(lines: ["Nutrition Facts", "Serving size 1 cup (240mL)", "Calories 180", "Protein 8g 16%"])
+        XCTAssertFalse(model.servingNeedsReview)
+        XCTAssertTrue(model.offersServingCorrection)
+
+        model.beginServingCorrection()
+        XCTAssertFalse(model.offersServingCorrection, "no second control while the edit is open")
+        model.endServingCorrection()
+
+        let flagged = makeModel()
+        flagged.load(lines: panelWithFlaggedRow)
+        flagged.confirmServing()
+        XCTAssertTrue(flagged.offersServingCorrection)
+    }
+
+    func testATypedServingCanBeCorrectedAgain() {
+        let model = makeModel()
+        model.load(lines: ["Nutrition Facts", "Calories 180", "Protein 8g 16%"])
+        XCTAssertTrue(model.servingIsMissing)
+        XCTAssertFalse(model.offersServingCorrection)
+
+        XCTAssertTrue(model.enterServingSize(text: "300 g"))
+        XCTAssertTrue(model.offersServingCorrection)
+        XCTAssertTrue(model.correctServingSize(text: "30 g"))
+        XCTAssertEqual(model.servingQuantity, Quantity(value: Decimal(30), unit: .g))
+    }
+
     func testCorrectingAServingSizeWantsAnAmountWithItsUnit() {
         let model = makeModel()
         model.load(lines: panelWithFlaggedRow)

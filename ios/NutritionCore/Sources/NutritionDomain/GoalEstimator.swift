@@ -168,8 +168,14 @@ public enum GoalEstimator {
         if profile.aim == .justTrack { return nil }
         try validate(profile)
 
+        let floor = profile.sex == .male ? lossFloorMaleKcal : lossFloorOtherKcal
         var energy = dailyEnergy(profile)
         var notes: [String] = []
+        if profile.aim == .gain, energy < floor {
+            // A gain starts from the floored maintenance figure, so it always sits above the maintain target.
+            energy = floor
+            notes.append(floorNote)
+        }
         if profile.aim == .lose || profile.aim == .gain {
             var change = profile.weeklyChangeKilograms * kcalPerKilogram / 7
             if change > dailyChangeCapKcal {
@@ -178,12 +184,9 @@ public enum GoalEstimator {
             }
             energy = profile.aim == .lose ? energy - change : energy + change
         }
-        if profile.aim == .lose || profile.aim == .maintain {
-            let floor = profile.sex == .male ? lossFloorMaleKcal : lossFloorOtherKcal
-            if energy < floor {
-                energy = floor
-                notes.append(floorNote)
-            }
+        if profile.aim != .gain, energy < floor {
+            energy = floor
+            notes.append(floorNote)
         }
 
         // Energy to the nearest 10 kcal. Every macro is worked from the rounded figure, so the grams and
