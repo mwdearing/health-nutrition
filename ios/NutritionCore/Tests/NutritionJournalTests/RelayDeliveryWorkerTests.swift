@@ -1888,6 +1888,34 @@ final class AlternatingLinkProvider: @unchecked Sendable {
         XCTAssertEqual(try pendingRelay(store), [])
     }
 
+    /// A delete inside its Undo window is hidden from the queue, so the upsert beside it cannot be called
+    /// superseded yet: Undo brings the entry back, and an acknowledged upsert is never sent.
+    func testAnUpsertIsKeptWhileItsDeleteIsInsideTheUndoWindowAndSentAfterAnUndo() async throws {
+        let (store, transport, worker) = try makeWorker()
+        try store.create(sampleIntake(), components: components(), product: nil, now: when)
+        let upsertID = try XCTUnwrap(relayOperation(store, kind: .upsert)?.operationID)
+        try store.delete(intakeID: intakeID, now: Date())
+        transport.answerEverythingAccepted()
+
+        let held = await worker.runOnce(now: Date())
+
+        guard case .notDue(let id, _) = try XCTUnwrap(held.first) else {
+            return XCTFail("an upsert whose delete is still held waits, got \(held)")
+        }
+        XCTAssertEqual(id, upsertID)
+        XCTAssertEqual(transport.sentOperationIDs, [])
+        XCTAssertEqual(try relayOperation(store, kind: .upsert)?.operationID, upsertID, "the row stays pending")
+
+        try store.undoDelete(intakeID: intakeID)
+        let outcomes = await worker.runOnce(now: Date())
+
+        guard case .delivered(let sentID, _, _) = try XCTUnwrap(outcomes.first) else {
+            return XCTFail("after the Undo the upsert is sent, got \(outcomes)")
+        }
+        XCTAssertEqual(sentID, upsertID)
+        XCTAssertEqual(try pendingRelay(store), [])
+    }
+
     /// A capabilities read that fails sends nothing: the batch limits are the receiver's own numbers, and a
     /// guess would produce the 413 this run exists to avoid.
     func testAFailedCapabilitiesReadSendsNothingAndReschedules() async throws {
