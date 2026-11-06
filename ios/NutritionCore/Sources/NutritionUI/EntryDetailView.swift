@@ -95,11 +95,11 @@ public struct EntryDetailView: View {
                     InlineNotice(message, tone: .failed)
                 }
                 .listRowInsets(EdgeInsets())
-                .listRowBackground(TokenColors.background)
+                .listRowBackground(TokenColors.page)
             }
             header
             Section {
-                Card {
+                ContentCard {
                     VStack(alignment: .leading, spacing: DesignSpacing.m) {
                         ForEach(model.components) { component in
                             amountRow(component)
@@ -145,7 +145,7 @@ public struct EntryDetailView: View {
                     }
                 }
                 .listRowInsets(EdgeInsets())
-                .listRowBackground(TokenColors.background)
+                .listRowBackground(TokenColors.page)
             }
             if !model.adds.isEmpty {
                 Section("This entry adds") {
@@ -299,7 +299,7 @@ public struct EntryDetailView: View {
             }
         }
         .scrollContentBackground(.hidden)
-        .background(TokenColors.background)
+        .background(TokenColors.page)
     }
 
     /// The header: the product's name, its brand when it has one, and a chip for a drink or a supplement.
