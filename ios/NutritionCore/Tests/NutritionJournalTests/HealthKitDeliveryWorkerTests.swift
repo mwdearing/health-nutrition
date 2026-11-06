@@ -699,10 +699,6 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
             real.close()
         }
 
-        func deleteHoldEnd(intakeID: String) throws -> Date? {
-            try real.deleteHoldEnd(intakeID: intakeID)
-        }
-
         func deliveryState(intakeID: String) throws -> IntakeDeliveryState {
             try real.deliveryState(intakeID: intakeID)
         }
@@ -783,11 +779,13 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
         try store.create(sampleIntake(), components: [component()], product: nil, now: when)
         let upsertID = try XCTUnwrap(healthKitOperation(store, kind: .upsert)?.operationID)
         try store.delete(intakeID: intakeID, now: Date())
-        XCTAssertNotNil(try store.deleteHoldEnd(intakeID: intakeID))
+        guard case .held = try store.deliveryState(intakeID: intakeID) else {
+            return XCTFail("a delete inside its Undo window holds the intake")
+        }
 
         try store.undoDelete(intakeID: intakeID)
 
-        XCTAssertNil(try store.deleteHoldEnd(intakeID: intakeID), "no delete row is left to hold")
+        XCTAssertEqual(try store.deliveryState(intakeID: intakeID), .active, "no delete row is left to hold")
         let outcomes = await worker.runOnce(now: Date())
         XCTAssertEqual(outcomes, [.delivered(operationID: upsertID, samples: 1)])
         XCTAssertEqual(writer.saveCalls, 1)
