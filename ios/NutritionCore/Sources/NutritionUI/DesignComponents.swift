@@ -7,6 +7,10 @@ public enum DesignSpacing {
     public static let s: CGFloat = 8
     public static let m: CGFloat = 14
     public static let l: CGFloat = 22
+    /// Padding inside a card.
+    public static let cardPadding: CGFloat = 16
+    /// Space between cards.
+    public static let cardGap: CGFloat = 12
     /// Room at the bottom of a scrolling screen for the floating Add button and the tab bar.
     public static let floatingClearance: CGFloat = 140
 }
@@ -15,6 +19,8 @@ public enum DesignSpacing {
 public enum DesignRadius {
     public static let card: CGFloat = 22
     public static let control: CGFloat = 12
+    /// Small tiles.
+    public static let tile: CGFloat = 18
 }
 
 /// A rounded container on the surface color, for content composed of more than standard rows.
