@@ -150,7 +150,7 @@ public struct TodayView: View {
         NavigationLink {
             NutrientGapsView(makeModel: { model.makeNutrientGaps() }, now: now)
         } label: {
-            Card {
+            ContentCard {
                 HStack {
                     Text("Vitamins and minerals")
                         .font(.headline)
@@ -176,40 +176,14 @@ public struct TodayView: View {
         }
     }
 
-    private var goalsCard: some View {
-        Card {
-            VStack(alignment: .leading, spacing: DesignSpacing.m) {
-                HStack {
-                    Text("Daily goals")
-                        .font(.headline)
-                        .foregroundStyle(TokenColors.textPrimary)
-                        .accessibilityAddTraits(.isHeader)
-                    Spacer(minLength: DesignSpacing.s)
-                    if let onEditGoals {
-                        Button("Edit goals") { onEditGoals() }
-                            .font(.subheadline)
-                            .foregroundStyle(TokenColors.accent)
-                            .frame(minHeight: 44)
-                            .contentShape(Rectangle())
-                            .accessibilityHint("Opens the daily goals")
-                    }
-                }
-                ForEach(model.goalBars) { bar in
-                    GoalBar(bar)
-                }
-            }
-        }
-    }
-
     private var waterCard: some View {
-        Card {
+        ContentCard {
             VStack(alignment: .leading, spacing: DesignSpacing.m) {
                 if let bar = model.waterBar {
                     GoalBar(bar)
                 } else {
                     HStack {
-                        Image(systemName: "drop.fill")
-                            .foregroundStyle(TokenColors.accent)
+                        IconWell(systemName: "drop.fill", size: .small)
                             .accessibilityHidden(true)
                         Text("Water")
                             .font(.headline)
@@ -335,7 +309,7 @@ public struct TodayView: View {
                 }
                 Spacer()
             }
-            Card {
+            ContentCard {
                 VStack(alignment: .leading, spacing: DesignSpacing.m) {
                     ForEach(section.rows) { row in
                         entryRow(row)
