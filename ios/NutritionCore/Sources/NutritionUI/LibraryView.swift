@@ -43,6 +43,7 @@ public struct LibraryView: View {
 
     public var body: some View {
         List {
+            Group {
             if onPick != nil {
                 pickSections
             } else {
@@ -52,10 +53,18 @@ public struct LibraryView: View {
                 if let onSearchProducts { Button("Search foods", action: onSearchProducts) }
                 if let onNewProduct { Button("Create product", action: onNewProduct) }
                 if let stack = model.supplementStack {
-                    NavigationLink("My supplements") { SupplementStackView(model: stack, now: now, onLogged: onAdded) }
+                    NavigationLink {
+                        SupplementStackView(model: stack, now: now, onLogged: onAdded)
+                    } label: {
+                        Label { Text("My supplements") } icon: { IconWell(systemName: "pills", size: .small) }
+                    }
                 }
                 if let medicationLog = model.medicationLog, medicationLog.isOn {
-                    NavigationLink("Medication log") { MedicationLogView(model: medicationLog) }
+                    NavigationLink {
+                        MedicationLogView(model: medicationLog)
+                    } label: {
+                        Label { Text("Medication log") } icon: { IconWell(systemName: "cross.case", size: .small) }
+                    }
                 }
                 Picker("Library segment", selection: $model.segment) {
                     ForEach(LibrarySegment.allCases) { segment in
@@ -68,9 +77,12 @@ public struct LibraryView: View {
             if let message = model.errorMessage {
                 Text(message).font(.footnote).foregroundStyle(TokenColors.error)
             }
+            }
+            .listRowBackground(TokenColors.card)
         }
+        .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
-        .background(TokenColors.background)
+        .background(TokenColors.page)
         .navigationTitle("Library")
         .onAppear { self.model.load() }
         .task { await model.observeProductStatus() }
