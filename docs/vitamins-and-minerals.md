@@ -30,8 +30,8 @@ there: the row reads "At least" and "Below the RDA so far".
 Each average is compared with the RDA or AI, so "Below the RDA" on the week means the daily average is
 below it. An upper limit is a daily limit, so it is checked day by day rather than against the average: a
 week is "Above the upper limit" when any logged day was certainly above it, and the row says on how many
-("Above the upper limit on 1 of 3 logged days."). Each entry's day is read in its own time zone, as on
-Today, and entries dated after today are left out.
+("Above the upper limit on 1 of 3 logged days."). Each entry's date is read in its own time zone and counted
+back from today's date in the current zone, as on Today, and entries dated after today are left out.
 
 ## Comparing with a group
 
@@ -49,7 +49,7 @@ Supplements, describing populations rather than the person, and not covering any
 ## How the day is added up
 
 Each of today's entries is summed on its own with `DailyTotalsBuilder`, so it contributes exactly what Today counts for it,
-and supplements are summed apart from food. The day is each entry's own local day, as on Today. An entry whose stored time
+and supplements are summed apart from food. The day is each entry's own-zone date, compared with today's date in the current zone, as on Today and the Diary. An entry whose stored time
 zone is not a valid one cannot be placed on a day: it is left out, and the screen says so ("1 entry has a time zone the
 app can't read and is left out, so these figures may be low.").
 
@@ -87,8 +87,9 @@ is one public function, `NutrientGaps.exceededLimit(intake:total:supplementTotal
 Food magnesium above 350 mg is therefore never shown as over a limit, and the folate limit reads "upper limit 1000 mcg
 of folic acid" because it is not in DFE.
 
-Each row also says where the amount came from ("Food 60 mg, supplements 500 mg", or "All from supplements"), how many
-entries do not state it, and the reference figures ("RDA 90 mg, upper limit 2000 mg", or "AI 120 mcg, no upper limit
+Each row also says where the amount came from when it has more than one part, naming every part above zero ("Food 60 mg,
+supplements 500 mg", "Supplements 50 mg, Apple Health 40 mg"), or "All from supplements" when food and Apple Health are
+both zero. It also says how many entries do not state it, and the reference figures ("RDA 90 mg, upper limit 2000 mg", or "AI 120 mcg, no upper limit
 set"). The bar shows food and supplements side by side against the reference; past it, the bar is full and a mark shows
 where the reference sits. The row is read by VoiceOver as one sentence.
 

@@ -60,9 +60,10 @@ one, and a one-tap **Taken** that logs it. Reached from the Library ("My supplem
 - **No notifications.** Supplement reminders are separate ([custom reminders](custom-reminders.md)).
 - **Upper limits.** With a reference group chosen on Vitamins and minerals, the list shows the day's
   nutrients that are above an upper limit, as the same rows, words and footer that screen shows: they are
-  built by the same code (`NutrientGapsViewModel.tallies`, `NutrientGapRow`, `NutrientGaps.exceededLimit`),
-  so the two screens never disagree. A limit is reported only when it is certainly exceeded: the whole
-  day for an all-sources limit, the supplement amount for the magnesium, niacin and vitamin E limits, and
+  built by the same code (`NutrientGapsViewModel.tallies`, `addingHealth`, `NutrientGapRow`,
+  `NutrientGaps.exceededLimit`), so the two screens never disagree. Today is read in the current time zone, and
+  today's Apple Health totals are added when Health is connected. A limit is reported only when it is certainly
+  exceeded: the whole day for an all-sources limit, the supplement amount for the magnesium, niacin and vitamin E limits, and
   never for folate or vitamin A, whose forms the journal cannot tell apart ([reference intakes](reference-intakes.md)).
   An item is marked "Above the upper limit today" for each of those nutrients its label states and the
   limit counts (any product for an all-sources limit, a supplement for the supplement limits). An item
