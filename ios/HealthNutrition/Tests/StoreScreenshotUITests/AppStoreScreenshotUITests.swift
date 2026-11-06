@@ -161,11 +161,17 @@ final class AppStoreScreenshotUITests: XCTestCase {
             libScrolls += 1
         }
         fromLibrary.tap()
-        let products = app.buttons["Products"]
-        if !products.waitForExistence(timeout: 10) { debugFail("no-products-tab", "no Products tab in the Library"); return }
-        products.tap()
-        let row = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Opens Daily multivitamin")).firstMatch
-        if !row.waitForExistence(timeout: 10) { debugFail("no-product-row", "the saved product is not in the Library"); return }
+        // The Library's Products list shows the product's sharing state, not a way to log it; the product search finds
+        // it on this device and opens its entry form.
+        let search = app.buttons["Search foods"]
+        if !search.waitForExistence(timeout: 10) { debugFail("no-search-foods", "no Search foods in the Library"); return }
+        search.tap()
+        let field = app.searchFields.firstMatch.exists ? app.searchFields.firstMatch : app.textFields.firstMatch
+        if !field.waitForExistence(timeout: 10) { debugFail("no-search-field", "no search field"); return }
+        field.tap()
+        app.typeText("Daily multivitamin")
+        let row = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Daily multivitamin")).firstMatch
+        if !row.waitForExistence(timeout: 15) { debugFail("no-search-result", "the saved product is not in the search results"); return }
         row.tap()
         // The entry form for the supplement shows what it adds; that is the Log supplement shot.
         if !app.navigationBars["Log entry"].waitForExistence(timeout: 15) { debugFail("no-log-form", "the entry form did not open"); return }
