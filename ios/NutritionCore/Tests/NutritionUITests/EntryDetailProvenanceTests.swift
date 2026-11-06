@@ -97,6 +97,20 @@ final class EntryDetailProvenanceTests: XCTestCase {
         XCTAssertEqual(EntryDetailViewModel.sourceLine(for: custom), "Custom product · values per 100 g")
     }
 
+    /// An Open Food Facts name-search pick carries its real barcode, and the snapshot cannot tell it from a scan, so
+    /// the Input row names the source instead of calling it a barcode lookup.
+    func testAnOpenFoodFactsProductWithABarcodeNamesItsSourceNotHowItWasFound() {
+        let pick = ProductDefinition(
+            snapshotID: "provenance-off", productID: "4006381333931", name: "Example oats",
+            barcode: "4006381333931", labelBasis: "per 100 g", catalogOrigin: "open-food-facts", catalogVersion: "unknown")
+        XCTAssertEqual(EntryDetailViewModel.sourceDetails(for: pick), [
+            SourceDetailRow(label: "Input", value: "Open Food Facts"),
+            SourceDetailRow(label: "Barcode", value: "4006381333931"),
+            SourceDetailRow(label: "Basis", value: "per 100 g"),
+        ])
+        XCTAssertEqual(EntryDetailViewModel.sourceLine(for: pick), "Open Food Facts · values per 100 g")
+    }
+
     func testProvenanceRowsForAFoodSearchPickAreNotCalledABarcodeLookup() {
         for origin in ["usda-fdc", "open-food-facts"] {
             let pick = ProductDefinition(

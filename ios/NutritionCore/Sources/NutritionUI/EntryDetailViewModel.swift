@@ -768,10 +768,15 @@ public final class EntryDetailViewModel: ObservableObject {
     /// The origin a product made or imported in Create product is stored under (`CustomProductMapping.snapshot`).
     static let customOrigin = "custom"
 
-    /// What the Input row calls a looked-up product: a food search pick (USDA, or Open Food Facts by name) has
-    /// no barcode, so it is not called a barcode lookup.
+    /// The origin Open Food Facts products are stored under.
+    static let openFoodFactsOrigin = "open-food-facts"
+
+    /// What the Input row calls a looked-up product: a food search pick without a barcode (USDA) is not called a
+    /// barcode lookup. An Open Food Facts product carries its barcode whether it was scanned or picked by name, and
+    /// the snapshot does not record which, so the row names the source and does not claim how it was found.
     private static func lookupInput(for product: ProductDefinition) -> String {
-        (product.barcode ?? "").isEmpty ? "Food search" : "Barcode lookup"
+        if (product.barcode ?? "").isEmpty { return "Food search" }
+        return product.catalogOrigin == openFoodFactsOrigin ? "Open Food Facts" : "Barcode lookup"
     }
 
     /// The rows under "Where this came from", in order. Only what the snapshot stores is shown: a label
