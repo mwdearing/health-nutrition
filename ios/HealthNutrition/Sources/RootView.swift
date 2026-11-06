@@ -119,96 +119,96 @@ struct RootView: View {
     var body: some View {
         TabView(selection: tabSelection) {
             Tab("Today", systemImage: "sun.max", value: AppTab.today) {
-            NavigationStack {
-                TodayView(
-                    model: services.today,
-                    onAddIntake: { startAddingIntake() },
-                    onEditGoals: { openSettings(goals: true) },
-                    // Today's rows are the same entries the Journal lists, so they open the same
-                    // entry screen: an entry logged late on the wrong day is corrected from where
-                    // it is noticed rather than only from the Journal tab.
-                    onSelect: { selectedIntakeID = $0 },
-                    onAddToMeal: { meal in self.startAddingIntake(meal: meal) },
-                    checklist: services.firstDayChecklist,
-                    onOpenUnits: { self.openSettings(goals: false) },
-                    bodyActivity: services.bodyActivity,
-                    supplementStack: services.supplementStack,
-                    onSupplementLogged: { reload() },
-                    medicationLog: services.medicationLog
-                )
-                .toolbar { settingsToolbar }
-                #if DEBUG
-                // One line, because a delivery that is parked or waiting for a person should be visible
-                // where the entries it belongs to are, not only on the debug tab. Debug builds only.
-                .safeAreaInset(edge: .bottom) {
-                    if !Self.isCapturingScreenshots {
-                        Text(healthKitDeliveryStatus.summaryLine)
-                            .font(.footnote)
-                            // Automatic runs no longer read the queue, so read it when the line appears.
-                            .onAppear { healthKitDeliveryStatus.refresh() }
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal)
+                NavigationStack {
+                    TodayView(
+                        model: services.today,
+                        onAddIntake: { startAddingIntake() },
+                        onEditGoals: { openSettings(goals: true) },
+                        // Today's rows are the same entries the Journal lists, so they open the same
+                        // entry screen: an entry logged late on the wrong day is corrected from where
+                        // it is noticed rather than only from the Journal tab.
+                        onSelect: { selectedIntakeID = $0 },
+                        onAddToMeal: { meal in self.startAddingIntake(meal: meal) },
+                        checklist: services.firstDayChecklist,
+                        onOpenUnits: { self.openSettings(goals: false) },
+                        bodyActivity: services.bodyActivity,
+                        supplementStack: services.supplementStack,
+                        onSupplementLogged: { reload() },
+                        medicationLog: services.medicationLog
+                    )
+                    .toolbar { settingsToolbar }
+                    #if DEBUG
+                    // One line, because a delivery that is parked or waiting for a person should be visible
+                    // where the entries it belongs to are, not only on the debug tab. Debug builds only.
+                    .safeAreaInset(edge: .bottom) {
+                        if !Self.isCapturingScreenshots {
+                            Text(healthKitDeliveryStatus.summaryLine)
+                                .font(.footnote)
+                                // Automatic runs no longer read the queue, so read it when the line appears.
+                                .onAppear { healthKitDeliveryStatus.refresh() }
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal)
+                        }
                     }
+                    #endif
                 }
-                #endif
-            }
-            // The save line sits inside each tab, so it rests above the tab bar and never covers it.
-            .saveConfirmationLine(saveNotice)
+                // The save line sits inside each tab, so it rests above the tab bar and never covers it.
+                .saveConfirmationLine(saveNotice)
             }
 
             Tab("Diary", systemImage: "book.closed", value: AppTab.journal) {
-            NavigationStack {
-                JournalView(
-                    model: services.journal, onSelect: { selectedIntakeID = $0 },
-                    onAddToMeal: { meal in self.startAddingIntake(meal: meal) })
-                    .toolbar { settingsToolbar }
-            }
-            .saveConfirmationLine(saveNotice)
+                NavigationStack {
+                    JournalView(
+                        model: services.journal, onSelect: { selectedIntakeID = $0 },
+                        onAddToMeal: { meal in self.startAddingIntake(meal: meal) })
+                        .toolbar { settingsToolbar }
+                }
+                .saveConfirmationLine(saveNotice)
             }
 
             // In a navigation stack like the other two tabs. Settings, goals and the privacy screen are
             // reached from the gear on every tab, not from here.
             Tab("Library", systemImage: "square.grid.2x2", value: AppTab.library) {
-            NavigationStack {
-                LibraryView(
-                    model: services.library, onAdded: { reload() }, onOpenRecipes: { openRecipes() },
-                    onOpen: { template in self.openAddDetails(prefilledFrom: template) },
-                    onProduct: { product in self.startProductDetails(product) },
-                    onEditProduct: { product in self.presentLibraryEditor(revision: product) },
-                    onLegacyProduct: { draft in self.presentLibraryEditor(legacy: draft) },
-                    onSearchProducts: { self.startProductSearch() },
-                    onNewProduct: { self.presentLibraryEditor() }
-                )
-                .navigationTitle("Library")
-                .toolbar { settingsToolbar }
-                // Editing from the Library opens the editor on its own, not inside the Add flow, so Cancel and Save return here.
-                .sheet(item: $libraryEditor, onDismiss: {
-                    // Details open only once the editor sheet has gone, so the two presentations do not collide.
-                    if let product = self.pendingLibraryDetails {
-                        self.pendingLibraryDetails = nil
-                        self.startProductDetails(product)
-                    }
-                }) { editor in
-                    LibraryProductEditorSheet(model: editor.model, sharing: services.library.productSharing) { product, openDetails in
-                        services.library.load()
-                        if openDetails { self.pendingLibraryDetails = product }
-                        self.saveNotice = SaveNotice(SaveLabels.productSaved(afterSharePromiseLost: editor.model.savedLocallyAfterSharePromise))
-                        self.libraryEditor = nil
+                NavigationStack {
+                    LibraryView(
+                        model: services.library, onAdded: { reload() }, onOpenRecipes: { openRecipes() },
+                        onOpen: { template in self.openAddDetails(prefilledFrom: template) },
+                        onProduct: { product in self.startProductDetails(product) },
+                        onEditProduct: { product in self.presentLibraryEditor(revision: product) },
+                        onLegacyProduct: { draft in self.presentLibraryEditor(legacy: draft) },
+                        onSearchProducts: { self.startProductSearch() },
+                        onNewProduct: { self.presentLibraryEditor() }
+                    )
+                    .navigationTitle("Library")
+                    .toolbar { settingsToolbar }
+                    // Editing from the Library opens the editor on its own, not inside the Add flow, so Cancel and Save return here.
+                    .sheet(item: $libraryEditor, onDismiss: {
+                        // Details open only once the editor sheet has gone, so the two presentations do not collide.
+                        if let product = self.pendingLibraryDetails {
+                            self.pendingLibraryDetails = nil
+                            self.startProductDetails(product)
+                        }
+                    }) { editor in
+                        LibraryProductEditorSheet(model: editor.model, sharing: services.library.productSharing) { product, openDetails in
+                            services.library.load()
+                            if openDetails { self.pendingLibraryDetails = product }
+                            self.saveNotice = SaveNotice(SaveLabels.productSaved(afterSharePromiseLost: editor.model.savedLocallyAfterSharePromise))
+                            self.libraryEditor = nil
+                        }
                     }
                 }
-            }
-            .saveConfirmationLine(saveNotice)
-            .sheet(isPresented: $recipeNavigation.showingRecipes) {
-                recipesSheet
-            }
+                .saveConfirmationLine(saveNotice)
+                .sheet(isPresented: $recipeNavigation.showingRecipes) {
+                    recipesSheet
+                }
             }
 
             Tab("Trends", systemImage: "chart.bar", value: AppTab.trends) {
-            NavigationStack {
-                TrendsView(today: services.today, journal: services.journal)
-                    .toolbar { settingsToolbar }
-            }
-            .saveConfirmationLine(saveNotice)
+                NavigationStack {
+                    TrendsView(today: services.today, journal: services.journal)
+                        .toolbar { settingsToolbar }
+                }
+                .saveConfirmationLine(saveNotice)
             }
 
             #if DEBUG
@@ -216,20 +216,20 @@ struct RootView: View {
             // HealthKit resolves a repeated sync identifier. Not in the screenshots.
             if Self.showsHealthKitTab {
                 Tab("HealthKit", systemImage: "waveform.path.ecg", value: AppTab.spike) {
-                NavigationStack {
-                    List {
-                        HealthKitDeliveryDebugSection(status: healthKitDeliveryStatus)
-                        HealthKitSpikeSteps(runner: healthKitSpike)
+                    NavigationStack {
+                        List {
+                            HealthKitDeliveryDebugSection(status: healthKitDeliveryStatus)
+                            HealthKitSpikeSteps(runner: healthKitSpike)
+                        }
+                        .navigationTitle("HealthKit")
                     }
-                    .navigationTitle("HealthKit")
-                }
                 }
             }
             #endif
 
             // Drawn apart from the other tabs by the system. Choosing it opens Add (see tabSelection).
             Tab(AddIntakeAction.title, systemImage: "plus", value: AppTab.add, role: .search) {
-                Color.clear
+                    Color.clear
             }
         }
         .saveFeedback(saveNotice)
