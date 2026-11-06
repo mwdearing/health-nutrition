@@ -121,14 +121,24 @@ private struct EditDoseSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("Amount", text: $amountText)
-                    #if os(iOS)
-                        .keyboardType(.decimalPad)
-                    #endif
+                    LabeledField("Amount", spokenTitle: true) { focus in
+                        TextField(text: $amountText, prompt: Text("For example, 5")) { Text("Amount") }
+                            .labelsHidden()
+                            .focused(focus)
+                        #if os(iOS)
+                            .keyboardType(.decimalPad)
+                        #endif
+                    }
                     // A dose is logged once it has been taken, so the time stops at now, or at the stored time when the
                     // clock or zone moved since it was logged.
                     DatePicker("Time taken", selection: $takenAt, in: ...max(Date(), storedTakenAt))
-                    TextField("Note (optional)", text: $noteText)
+                    LabeledField("Note (optional)", spokenTitle: true) { focus in
+                        TextField(text: $noteText, prompt: Text("For example, after breakfast")) {
+                            Text("Note (optional)")
+                        }
+                        .labelsHidden()
+                        .focused(focus)
+                    }
                 }
                 if let errorText {
                     InlineNotice(errorText, tone: .failed)
