@@ -61,8 +61,10 @@ enum SupplementShortcut {
         let parts = calendar.dateComponents([.hour, .minute], from: now)
         let current = (parts.hour ?? 0) * 60 + (parts.minute ?? 0)
         return times.min { first, second in
-            let a = abs(first.hour * 60 + first.minute - current)
-            let b = abs(second.hour * 60 + second.minute - current)
+            let rawA = abs(first.hour * 60 + first.minute - current)
+            let rawB = abs(second.hour * 60 + second.minute - current)
+            let a = min(rawA, 1440 - rawA)
+            let b = min(rawB, 1440 - rawB)
             if a != b { return a < b }
             return first.hour * 60 + first.minute < second.hour * 60 + second.minute
         }
