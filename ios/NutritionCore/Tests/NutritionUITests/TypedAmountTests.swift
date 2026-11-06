@@ -29,6 +29,8 @@ final class TypedAmountTests: XCTestCase {
         XCTAssertTrue(AmountParser.isThousandsForm("1,000", decimalSeparator: ","))
         XCTAssertTrue(AmountParser.isThousandsForm("2,500", decimalSeparator: ","))
         XCTAssertFalse(AmountParser.isThousandsForm("0,125", decimalSeparator: ","))
+        XCTAssertFalse(AmountParser.isThousandsForm(",125", decimalSeparator: ","))
+        XCTAssertEqual(AmountParser.parseTyped(",125", decimalSeparator: ","), Decimal(string: "0.125"))
         XCTAssertFalse(AmountParser.isThousandsForm("2,50", decimalSeparator: ","))
         XCTAssertFalse(AmountParser.isThousandsForm("1,000", decimalSeparator: "."))
     }

@@ -62,7 +62,9 @@ public enum AmountParser {
         _ text: String, decimalSeparator: String? = Locale.current.decimalSeparator
     ) -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
-        guard decimalSeparator == ",", !trimmed.contains("."), !trimmed.hasPrefix("0"),
+        // The integer part must start with 1 to 9: an empty one (",125") or a leading zero is not grouping.
+        guard decimalSeparator == ",", !trimmed.contains("."),
+            let first = trimmed.first, ("1"..."9").contains(first),
             trimmed.filter({ $0 == "," }).count == 1, let comma = trimmed.firstIndex(of: ",")
         else { return false }
         let after = trimmed[trimmed.index(after: comma)...]
