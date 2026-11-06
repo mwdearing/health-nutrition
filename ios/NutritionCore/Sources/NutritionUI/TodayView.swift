@@ -115,7 +115,6 @@ public struct TodayView: View {
             }
             .padding(.horizontal, DesignSpacing.m)
             .padding(.vertical, DesignSpacing.s)
-            .padding(.bottom, DesignSpacing.floatingClearance)
         }
         .background(TokenColors.background)
         // The screen name stays the navigation title, so VoiceOver and the back button keep "Today". The bar draws no
