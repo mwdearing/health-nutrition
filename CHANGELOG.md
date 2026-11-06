@@ -4,6 +4,7 @@ Recent changes to the Health Nutrition iOS app. The newest entry is first. This 
 
 ## Unreleased
 
+- **#1308**: CI runs four Python test suites that no workflow ran before. The medication add, dose and edit fields have labels. Closes #1301.
 - **#1307**: label scan no longer reads Polyunsaturated, Monounsaturated or Unsaturated Fat, or Soluble or Insoluble Fiber, as the total row. "Total Carbohydrates", "Carbohydrates" and "Total Sugar" are recognised. An extra row cannot overwrite a nutrient the person already answered. Closes #1283.
 - **#1306**: the privacy manifest check scans each embedded bundle (app, widget extension, Watch app, Watch widget extension) against its own `PrivacyInfo.xcprivacy`, and an escaped backslash no longer hides the rest of a line. Closes #1302.
 - **#1304**: a weight-gain plan starts from the floored maintenance figure (1500 kcal male, 1200 otherwise) and adds its surplus, so a gain target is always above maintain for the same answers. Closes #1298.
@@ -37,7 +38,6 @@ From the security, bug and usability review of 2026-11-05. Each line moves under
 - **#1311**: vitamins and minerals "today" and Week use the Diary's today, with entries in their own zone. Apple Health totals count toward the supplement list's upper-limit check. The source line lists the food, supplement and Apple Health parts. Closes #1291, #1292, #1293.
 - **#1310**: an owner-reviewed shared product ranks ahead of unreviewed groups as the representative and in alternatives, whatever the support. Stored search entries are rebuilt to match. Closes #1282.
 - **#1309**: an Apple Health or relay write for an entry deleted inside its 10-second Undo window is held, not settled, so Undo restores an entry that still gets written. Closes #1284.
-- **#1308**: CI runs four Python test suites that no workflow ran before. The medication add, dose and edit fields have labels. Closes #1301.
 
 ## Versions
 
