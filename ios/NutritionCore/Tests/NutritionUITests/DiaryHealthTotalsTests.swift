@@ -87,7 +87,7 @@ final class DiaryHealthTotalsTests: XCTestCase {
     }
 
     /// Health read for one day never changes another day's header, while it does change its own day's.
-    func testHealthForOneDayLeavesOtherDaysJournalOnly() throws {
+    func testHealthForOneDayLeavesOtherDaysJournalOnly() async throws {
         let journal = try makeJournal()
         let yesterday = now.addingTimeInterval(-86_400)
         for occurredAt in [yesterday, now] {
