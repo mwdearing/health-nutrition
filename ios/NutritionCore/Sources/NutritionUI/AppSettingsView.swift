@@ -313,9 +313,12 @@ private struct SettingsContent: View {
             self.importPickedFile($0)
         }
         .onDisappear {
+            // A file read still running stops whenever the form goes, pushed over or not: the sheet can close
+            // from a pushed screen, and nothing else could cancel the read then. There is no result yet to lose.
+            if self.isReadingImport { self.cancelFileImport() }
             // A screen pushed over this form (Privacy, Licenses, Daily goals) also disappears it. That must not
-            // delete the export, cancel a read or wipe the import result; only leaving Settings does. A sheet
-            // dismissed from inside a pushed screen never reaches here, so the host clears on dismissal too.
+            // delete the export or wipe a finished import result; only leaving Settings does. A sheet dismissed
+            // from inside a pushed screen never reaches here, so the host clears on dismissal too.
             guard !(self.showingGoals || self.showingPrivacy || self.showingLicenses) else { return }
             self.cancelFileImport()
             self.connections.clearExport()
