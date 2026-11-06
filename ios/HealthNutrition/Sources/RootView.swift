@@ -73,6 +73,10 @@ struct RootView: View {
     /// The design-system screenshots run a debug build with `SCREENSHOT_DIR` set. They leave out the
     /// debug-only HealthKit tab and delivery line so the pictures show the app's own screens.
     private static let isCapturingScreenshots = ProcessInfo.processInfo.environment["SCREENSHOT_DIR"] != nil
+    /// The debug tab is opt-in (`SHOW_HEALTHKIT_TAB` set): with it, the tab bar holds six items and the system
+    /// moves the Add tab behind a More button, which the UI tests and the screenshots must not see.
+    private static let showsHealthKitTab = !isCapturingScreenshots
+        && ProcessInfo.processInfo.environment["SHOW_HEALTHKIT_TAB"] != nil
     // One runner for the app's lifetime, so the transcript survives tab switches. It is handed the
     // same delivery status the debug section shows, so a request made here reaches the real writer.
     @State private var healthKitSpike: HealthKitSpikeRunner
@@ -210,7 +214,7 @@ struct RootView: View {
             #if DEBUG
             // Debug builds only: the real HealthKit delivery driver, then the spike that measured how
             // HealthKit resolves a repeated sync identifier. Not in the screenshots.
-            if !Self.isCapturingScreenshots {
+            if Self.showsHealthKitTab {
                 Tab("HealthKit", systemImage: "waveform.path.ecg", value: AppTab.spike) {
                 NavigationStack {
                     List {
