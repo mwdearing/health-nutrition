@@ -112,7 +112,6 @@ final class WidgetSnapshotPublisher {
         let carbohydrate = total("carbohydrate", in: .g)
         let fat = total("fat", in: .g)
         // Water is partial when a distrusted entry has no known amount, the same "at least" case as the macros.
-        if today.waterHasUnknown { partial.append("water") }
         let calories = Self.calorieFigures(today.calorieRemaining)
         return WidgetSnapshot(
             generatedAt: now, hasEntries: !today.rows.isEmpty, energyKcal: energy,
