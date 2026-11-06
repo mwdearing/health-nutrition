@@ -98,6 +98,25 @@ final class GoalBarTests: XCTestCase {
             model.reason, "2 water entries have a unit that is not a volume and are not counted.")
     }
 
+    func testGoalBarWaterWithAHealthGapUsesTheHealthNote() {
+        let partial = NutrientProgressLine(
+            nutrient: "water", amount: .unknown, goal: goal("water", 2000, .mL), isPartial: true,
+            knownSum: .known(250, .mL), healthGap: true)
+        let model = GoalBarModel.make(line: partial, hasEntries: true, missingCount: 0)
+        XCTAssertEqual(model.reason, "Some data from the Health app can't be counted for water")
+    }
+
+    func testGoalBarWaterWithSkippedEntriesAndAHealthGapSaysBoth() {
+        let partial = NutrientProgressLine(
+            nutrient: "water", amount: .unknown, goal: goal("water", 2000, .mL), isPartial: true,
+            knownSum: .known(250, .mL), healthGap: true)
+        let model = GoalBarModel.make(line: partial, hasEntries: true, missingCount: 0, skippedWaterCount: 2)
+        XCTAssertEqual(
+            model.reason,
+            "2 water entries have a unit that is not a volume and are not counted. "
+                + "Some data from the Health app can't be counted for water.")
+    }
+
     func testGoalBarNothingLoggedDiffersFromAKnownZero() {
         let goalled = goal("protein", Decimal(60), .g)
         let nothing = GoalBarModel.make(

@@ -56,6 +56,7 @@ if [[ ${CATALOG_TEST_FOCUS:-} == bounded ]]; then
 fi
 if [[ ${CATALOG_TEST_FOCUS:-} != upgrade ]]; then
 psql_ -f - < supabase/tests/shared_products_v2_resolution.sql
+psql_ -f - < supabase/tests/apple_grants_access.sql
 if [[ ${CATALOG_TEST_FOCUS:-} == resolution ]]; then
   python3 supabase/tests/shared_products_v2_resolution.py "$engine" "$name"
   exit 0

@@ -1324,7 +1324,7 @@ public struct RelayDeliveryWorker: Sendable {
             return outcome
         case .staleRevision:
             let outcome = RelayDeliveryOutcome.superseded(
-                operationID: item.operationID, detail: response.detail)
+                operationID: item.operationID, detail: Self.cappedReceiverText(response.detail))
             if case .outbox(let operation) = item.origin {
                 return acknowledge(operation, now: now, outcome: outcome)
             }
@@ -1336,12 +1336,12 @@ public struct RelayDeliveryWorker: Sendable {
             return await park(
                 item,
                 reason: "the receiver reported a \(response.result.reasonText): "
-                    + (response.detail ?? "no detail"),
+                    + (Self.cappedReceiverText(response.detail) ?? "no detail"),
                 now: now)
         case .retryableFailure:
             return await retry(
                 item, reason: "the receiver reported a retryable failure: "
-                    + (response.detail ?? "no detail"),
+                    + (Self.cappedReceiverText(response.detail) ?? "no detail"),
                 now: now)
         }
     }
@@ -1352,7 +1352,22 @@ public struct RelayDeliveryWorker: Sendable {
     /// that is not the document this module expects.
     private static func errorText(in body: Data) -> String? {
         guard let payload = try? IntakeContextJSONReader.read(body) else { return nil }
-        return payload.string("error")
+        return cappedReceiverText(payload.string("error"))
+    }
+
+    /// The longest receiver text kept in a reason a person reads. What the receiver sends is stored and shown,
+    /// so a long or hostile reply is cut here rather than carried whole.
+    static let receiverTextLimit = 200
+
+    /// The receiver's text cut to `receiverTextLimit` Unicode scalars, or nil when it sent none.
+    static func cappedReceiverText(_ text: String?) -> String? {
+        guard let text else { return nil }
+        // Counted in Unicode scalars, not characters: one character can be an endless run of combining marks.
+        let scalars = text.unicodeScalars
+        guard scalars.count > receiverTextLimit else { return text }
+        var cut = String.UnicodeScalarView()
+        cut.append(contentsOf: scalars.prefix(receiverTextLimit))
+        return String(cut) + "…"
     }
 
     // MARK: - Recording

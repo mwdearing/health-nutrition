@@ -245,6 +245,8 @@ public final class AddIntakeViewModel: ObservableObject {
     }
     /// Whether a tap of Save has been made on this form. Once it has, every field that is wrong shows its error.
     @Published public private(set) var hasAttemptedSave = false
+    /// True once this draft has been written. A second tap on Log, before the sheet is gone, writes nothing.
+    @Published public private(set) var hasSaved = false
     /// The fields edited so far, and the fields focus has left since. An error shows under a field once
     /// both are true, so a person is not told a field is wrong while they are still typing in it.
     private var editedFields: Set<AddIntakeField> = []
@@ -1102,6 +1104,7 @@ public final class AddIntakeViewModel: ObservableObject {
     /// Validates and writes one intake. Invalid input sets field errors and writes nothing.
     @discardableResult
     public func save(now: Date) -> Bool {
+        guard !hasSaved else { return false }
         hasAttemptedSave = true
         commitServingCount()
         let trimmedName = typedName
@@ -1146,6 +1149,7 @@ public final class AddIntakeViewModel: ObservableObject {
             saveError = "Could not save the entry."
             return false
         }
+        hasSaved = true
         submitLabelIfShared()
         return true
     }

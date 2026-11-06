@@ -449,6 +449,37 @@ final class RelayDeliveryWorkerTests: XCTestCase {
         XCTAssertFalse(retried, "a refusal the encoder repeats on every attempt is not retried: \(second)")
     }
 
+    /// What the receiver says is stored and shown, so a long reply is cut instead of carried whole.
+    func testALongReceiverDetailIsCutInTheReason() async throws {
+        let (store, transport, worker) = try makeWorker()
+        try store.create(sampleIntake(), components: components(), product: nil, now: when)
+        transport.answer(.init(
+            results: [.permanentFailure], detail: String(repeating: "x", count: 5_000)))
+
+        let outcomes = await worker.runOnce(now: when)
+
+        guard case .needsAttention(_, let reason) = try XCTUnwrap(outcomes.first) else {
+            return XCTFail("a permanent failure must not be retried, got \(outcomes)")
+        }
+        XCTAssertLessThan(reason.count, 400, "the receiver's 5,000 characters are cut")
+        XCTAssertTrue(reason.hasSuffix("…"), reason)
+    }
+
+    /// One character can be thousands of combining marks, so the cut counts scalars, not characters.
+    func testACombiningMarkRunIsCutByScalarsNotCharacters() async throws {
+        let (store, transport, worker) = try makeWorker()
+        try store.create(sampleIntake(), components: components(), product: nil, now: when)
+        transport.answer(.init(
+            results: [.permanentFailure], detail: "e" + String(repeating: "\u{0301}", count: 5_000)))
+
+        let outcomes = await worker.runOnce(now: when)
+
+        guard case .needsAttention(_, let reason) = try XCTUnwrap(outcomes.first) else {
+            return XCTFail("a permanent failure must not be retried, got \(outcomes)")
+        }
+        XCTAssertLessThan(reason.unicodeScalars.count, 400, "5,001 scalars in one character are cut")
+    }
+
     /// `retryable_failure` is the receiver's own word for "send the same bytes again", so the operation goes
     /// back on the backoff rather than being parked.
     func testARetryableFailureResultSchedulesABackoff() async throws {

@@ -1,5 +1,6 @@
 import Foundation
 import NutritionDomain
+import SQLite3
 import SwiftData
 
 /// One stored medication. The identifier is kept as its UUID text and the unit as its raw value, so a row a
@@ -63,8 +64,8 @@ final class MedicationDoseRecord {
 }
 
 /// The first and only schema of the medication store file. Its two models are the medication and dose rows above.
-/// No app code opens this store file yet (the app wiring lands with the screens slice), so no released build has
-/// created one, and the version 1.0.0 shape is amended in place with no migration.
+/// Version 1.0.0 was amended in place before app code opened the file; any later change needs a new schema version
+/// and a migration stage.
 enum MedicationSchemaV1: VersionedSchema {
     static var versionIdentifier: Schema.Version { Schema.Version(1, 0, 0) }
     static var models: [any PersistentModel.Type] { [MedicationRecord.self, MedicationDoseRecord.self] }
@@ -96,6 +97,21 @@ public final class SwiftDataMedicationStore: MedicationStore, JournalErasing, @u
     /// Opens or creates the store file at `url`. Throws when the file cannot be opened or its schema cannot be migrated.
     public convenience init(url: URL) throws {
         try self.init(url: url, fileOperations: .systemOperations(opening: Self.makeContainer))
+    }
+
+    /// Opens the store file at `url` if it can be opened now, and never throws. When it cannot, the store starts
+    /// unopened: each later call tries the open again, and `eraseAll()` replaces the file it could not open.
+    public convenience init(retryingOpenAt url: URL) {
+        self.init(retryingOpenAt: url, fileOperations: .systemOperations(opening: Self.makeContainer))
+    }
+
+    /// The store at `url` that does not throw on open, with the file steps an erase takes, so a test can make each one
+    /// fail. A file that cannot be opened leaves the store unopened, and the next call tries the open again.
+    init(retryingOpenAt url: URL, fileOperations: StoreFileOperations) {
+        storeURL = url
+        self.fileOperations = fileOperations
+        container = try? fileOperations.openContainer(url)
+        reopenPending = container == nil
     }
 
     /// The store at `url`, with the file steps an erase takes, so a test can make each one fail.
@@ -137,7 +153,7 @@ public final class SwiftDataMedicationStore: MedicationStore, JournalErasing, @u
     /// Every stored medication in the store's order. A row that cannot be read fails the whole read.
     public func medications() throws -> [Medication] {
         let context = ModelContext(try openContainer())
-        let rows = try context.fetch(FetchDescriptor<MedicationRecord>())
+        let rows = try context.fetch(FetchDescriptor<MedicationRecord>()).filter { !Self.isReceipt($0) }
         return MedicationListOrder.medications(try rows.map { try Self.decode($0) })
     }
 
@@ -164,7 +180,7 @@ public final class SwiftDataMedicationStore: MedicationStore, JournalErasing, @u
         let key = medication.id.uuidString
         let name = medication.name.lowercased()
         let rows = try context.fetch(FetchDescriptor<MedicationRecord>())
-        if rows.contains(where: { $0.id != key && $0.name.lowercased() == name }) {
+        if rows.contains(where: { !Self.isReceipt($0) && $0.id != key && $0.name.lowercased() == name }) {
             throw MedicationStoreError.duplicateName
         }
         // The old row for this identifier goes in the same save as the new one, so a replace is never half-applied.
@@ -234,28 +250,427 @@ public final class SwiftDataMedicationStore: MedicationStore, JournalErasing, @u
         try context.save()
     }
 
+    /// A restore receipt is a row of the medication table under a prefix no medication identifier can start with, so it is
+    /// written in the same store, erased with the medications, and every read above and below skips it.
+    private static let receiptPrefix = "restore-receipt:"
+
+    /// Whether a medication-table row is a restore receipt rather than a medication.
+    private static func isReceipt(_ row: MedicationRecord) -> Bool {
+        row.id.hasPrefix(receiptPrefix)
+    }
+
+    /// One medication as a receipt holds it. Its unit is the raw value, so it reads back the way the store writes it.
+    private struct ReceiptMedication: Codable {
+        let id: String
+        let name: String
+        let unit: String
+        let scheduleDays: Int?
+        let isArchived: Bool
+    }
+
+    /// One dose as a receipt holds it. The amount is exact decimal text and the instant is the exact date.
+    private struct ReceiptDose: Codable {
+        let id: String
+        let medicationID: String
+        let takenAt: Date
+        let timeZone: String
+        let amount: String
+        let unit: String
+        let site: String?
+        let note: String?
+    }
+
+    /// The rows a restore still has to write, and the done flag. `writtenMedications` and `writtenDoses` are every row
+    /// this restore wrote, from any run, so an undo can remove exactly those.
+    private struct ReceiptPayload: Codable {
+        let done: Bool
+        let medications: [ReceiptMedication]
+        let doses: [ReceiptDose]
+        let writtenMedications: [ReceiptMedication]
+        let writtenDoses: [ReceiptDose]
+    }
+
+    private static func receiptMedication(_ medication: Medication) -> ReceiptMedication {
+        ReceiptMedication(
+            id: medication.id.uuidString, name: medication.name, unit: medication.unit.rawValue,
+            scheduleDays: medication.scheduleDays, isArchived: medication.isArchived)
+    }
+
+    private static func receiptDose(_ dose: MedicationDose) -> ReceiptDose {
+        ReceiptDose(
+            id: dose.id.uuidString, medicationID: dose.medicationID.uuidString, takenAt: dose.takenAt,
+            timeZone: dose.timeZoneIdentifier, amount: DecimalText.encode(dose.amount), unit: dose.unit.rawValue,
+            site: dose.site, note: dose.note)
+    }
+
+    private static func restoredMedication(_ entry: ReceiptMedication) throws -> Medication {
+        guard let id = UUID(uuidString: entry.id), let unit = MedicationUnit(rawValue: entry.unit) else {
+            throw MedicationStoreError.unreadableReceipt
+        }
+        return Medication(
+            id: id, name: entry.name, unit: unit, scheduleDays: entry.scheduleDays, isArchived: entry.isArchived)
+    }
+
+    private static func restoredDose(_ entry: ReceiptDose) throws -> MedicationDose {
+        guard let id = UUID(uuidString: entry.id), let medicationID = UUID(uuidString: entry.medicationID),
+              let unit = MedicationUnit(rawValue: entry.unit), DecimalText.isValidDecimalText(entry.amount),
+              let amount = DecimalText.decode(entry.amount)
+        else {
+            throw MedicationStoreError.unreadableReceipt
+        }
+        return MedicationDose(
+            id: id, medicationID: medicationID, takenAt: entry.takenAt, timeZoneIdentifier: entry.timeZone,
+            amount: amount, unit: unit, site: entry.site, note: entry.note)
+    }
+
+    private static func encodeReceipt(_ payload: ReceiptPayload) throws -> String {
+        String(decoding: try JSONEncoder().encode(payload), as: UTF8.self)
+    }
+
+    /// A receipt whose text does not decode throws `MedicationStoreError.unreadableReceipt`, so the caller can tell it from
+    /// a store that failed. `removeMedicationRestoreReceipt` never decodes, so such a receipt can always be removed.
+    private static func decodeReceipt(_ text: String) throws -> ReceiptPayload {
+        do { return try JSONDecoder().decode(ReceiptPayload.self, from: Data(text.utf8)) } catch {
+            throw MedicationStoreError.unreadableReceipt
+        }
+    }
+
+    /// The receipt row for `receipt`, or nil when none is stored. The caller holds writeLock for a write.
+    private static func receiptRow(_ context: ModelContext, _ receipt: String) throws -> MedicationRecord? {
+        let id = receiptPrefix + receipt
+        return try context.fetch(FetchDescriptor<MedicationRecord>(
+            predicate: #Predicate<MedicationRecord> { $0.id == id })).first
+    }
+
+    /// Records the rows a restore is about to write, replacing any receipt already stored under the same name, in one save.
+    public func recordMedicationRestoreReceipt(_ receipt: String, planned: MedicationRestoreSet) throws {
+        writeLock.lock()
+        defer { writeLock.unlock() }
+        let context = ModelContext(try openContainer())
+        let text = try Self.encodeReceipt(ReceiptPayload(
+            done: false, medications: planned.medications.map(Self.receiptMedication),
+            doses: planned.doses.map(Self.receiptDose), writtenMedications: [], writtenDoses: []))
+        let id = Self.receiptPrefix + receipt
+        for old in try context.fetch(FetchDescriptor<MedicationRecord>(
+            predicate: #Predicate<MedicationRecord> { $0.id == id })) {
+            context.delete(old)
+        }
+        context.insert(MedicationRecord(id: id, name: text, unitText: "", scheduleDays: nil, isArchived: false))
+        try context.save()
+    }
+
+    /// The rows a restore recorded and has not written yet. Nil when no receipt is stored under this name.
+    public func medicationRestoreReceipt(_ receipt: String) throws -> MedicationRestoreSet? {
+        let context = ModelContext(try openContainer())
+        guard let row = try Self.receiptRow(context, receipt) else { return nil }
+        let payload = try Self.decodeReceipt(row.name)
+        return MedicationRestoreSet(
+            medications: try payload.medications.map(Self.restoredMedication),
+            doses: try payload.doses.map(Self.restoredDose))
+    }
+
+    /// Removes the receipt. A receipt that is not stored is not an error.
+    public func removeMedicationRestoreReceipt(_ receipt: String) throws {
+        writeLock.lock()
+        defer { writeLock.unlock() }
+        let context = ModelContext(try openContainer())
+        if let row = try Self.receiptRow(context, receipt) { context.delete(row) }
+        try context.save()
+    }
+
+    /// Whether the receipt's rows were all written. Nil when no receipt is stored under this name.
+    public func medicationRestoreReceiptDone(_ receipt: String) throws -> Bool? {
+        let context = ModelContext(try openContainer())
+        guard let row = try Self.receiptRow(context, receipt) else { return nil }
+        return try Self.decodeReceipt(row.name).done
+    }
+
+    /// Marks the receipt done in one save. A receipt that still lists a row to write is not done, so it is refused, and a
+    /// receipt that is not stored is refused as a store that lost it.
+    public func markMedicationRestoreReceiptDone(_ receipt: String) throws {
+        writeLock.lock()
+        defer { writeLock.unlock() }
+        let context = ModelContext(try openContainer())
+        guard let row = try Self.receiptRow(context, receipt) else {
+            throw JournalImportError.corrupt("the medication restore receipt is missing")
+        }
+        let payload = try Self.decodeReceipt(row.name)
+        guard payload.medications.isEmpty, payload.doses.isEmpty else {
+            throw JournalImportError.corrupt("the medication restore has rows still to write")
+        }
+        row.name = try Self.encodeReceipt(ReceiptPayload(
+            done: true, medications: [], doses: [], writtenMedications: payload.writtenMedications,
+            writtenDoses: payload.writtenDoses))
+        try context.save()
+    }
+
+    /// Writes one restored medication and drops it from the receipt in one save. A medication is written only when no
+    /// medication holds its identifier or, ignoring case, its name, so a restore never overwrites the person's own.
+    public func writeRestoredMedication(_ medication: Medication, receipt: String) throws -> Bool {
+        try medication.validate()
+        writeLock.lock()
+        defer { writeLock.unlock() }
+        let context = ModelContext(try openContainer())
+        guard let receiptRow = try Self.receiptRow(context, receipt) else {
+            throw JournalImportError.corrupt("the medication restore receipt is missing")
+        }
+        let payload = try Self.decodeReceipt(receiptRow.name)
+        let key = medication.id.uuidString
+        let name = medication.name.lowercased()
+        let held = try context.fetch(FetchDescriptor<MedicationRecord>()).contains { row in
+            !Self.isReceipt(row) && (row.id == key || row.name.lowercased() == name)
+        }
+        let written = !held
+        if written {
+            context.insert(MedicationRecord(
+                id: key, name: medication.name, unitText: medication.unit.rawValue,
+                scheduleDays: medication.scheduleDays, isArchived: medication.isArchived))
+        }
+        let entry = Self.receiptMedication(medication)
+        receiptRow.name = try Self.encodeReceipt(ReceiptPayload(
+            done: payload.done, medications: payload.medications.filter { $0.id != key },
+            doses: payload.doses,
+            writtenMedications: written ? payload.writtenMedications + [entry] : payload.writtenMedications,
+            writtenDoses: payload.writtenDoses))
+        try context.save()
+        return written
+    }
+
+    /// Writes one restored dose and drops it from the receipt in one save. A dose is written only when no dose holds its
+    /// identifier and its medication is stored under `medicationName`, ignoring case. It keeps its own unit, which a dose
+    /// logged before its medication's unit changed does not share with the medication.
+    public func writeRestoredDose(_ dose: MedicationDose, medicationName: String, receipt: String) throws -> Bool {
+        try dose.validate()
+        writeLock.lock()
+        defer { writeLock.unlock() }
+        let context = ModelContext(try openContainer())
+        guard let receiptRow = try Self.receiptRow(context, receipt) else {
+            throw JournalImportError.corrupt("the medication restore receipt is missing")
+        }
+        let payload = try Self.decodeReceipt(receiptRow.name)
+        let key = dose.id.uuidString
+        let medicationKey = dose.medicationID.uuidString
+        let doseHeld = try !context.fetch(FetchDescriptor<MedicationDoseRecord>(
+            predicate: #Predicate<MedicationDoseRecord> { $0.id == key })).isEmpty
+        let medication = try context.fetch(FetchDescriptor<MedicationRecord>(
+            predicate: #Predicate<MedicationRecord> { $0.id == medicationKey })).first
+        let written = !doseHeld && medication.map { $0.name.lowercased() == medicationName.lowercased() } == true
+        if written {
+            context.insert(MedicationDoseRecord(
+                id: key, medicationID: medicationKey, takenAt: dose.takenAt,
+                timeZoneIdentifier: dose.timeZoneIdentifier, amountText: DecimalText.encode(dose.amount),
+                unitText: dose.unit.rawValue, site: dose.site, note: dose.note))
+        }
+        let entry = Self.receiptDose(dose)
+        receiptRow.name = try Self.encodeReceipt(ReceiptPayload(
+            done: payload.done, medications: payload.medications,
+            doses: payload.doses.filter { $0.id != key },
+            writtenMedications: payload.writtenMedications,
+            writtenDoses: written ? payload.writtenDoses + [entry] : payload.writtenDoses))
+        try context.save()
+        return written
+    }
+
+    /// Writes a batch of restored doses and drops them from the receipt in one save. The receipt is decoded and encoded once
+    /// for the batch, so a restore of many doses rewrites it once per batch, not once per dose. Each dose is written only
+    /// under the rules `writeRestoredDose` keeps.
+    public func writeRestoredDoses(_ doses: [MedicationDose], medicationNames: [UUID: String], receipt: String) throws -> Int {
+        for dose in doses { try dose.validate() }
+        writeLock.lock()
+        defer { writeLock.unlock() }
+        let context = ModelContext(try openContainer())
+        guard let receiptRow = try Self.receiptRow(context, receipt) else {
+            throw JournalImportError.corrupt("the medication restore receipt is missing")
+        }
+        let payload = try Self.decodeReceipt(receiptRow.name)
+        var heldDoseIDs = Set(try context.fetch(FetchDescriptor<MedicationDoseRecord>()).map(\.id))
+        let storedNames = Dictionary(
+            try context.fetch(FetchDescriptor<MedicationRecord>()).filter { !Self.isReceipt($0) }
+                .map { ($0.id, $0.name.lowercased()) },
+            uniquingKeysWith: { first, _ in first })
+        var batchIDs = Set<String>()
+        var written: [ReceiptDose] = []
+        for dose in doses {
+            let key = dose.id.uuidString
+            batchIDs.insert(key)
+            guard !heldDoseIDs.contains(key), let name = medicationNames[dose.medicationID],
+                  storedNames[dose.medicationID.uuidString] == name.lowercased()
+            else { continue }
+            heldDoseIDs.insert(key)
+            context.insert(MedicationDoseRecord(
+                id: key, medicationID: dose.medicationID.uuidString, takenAt: dose.takenAt,
+                timeZoneIdentifier: dose.timeZoneIdentifier, amountText: DecimalText.encode(dose.amount),
+                unitText: dose.unit.rawValue, site: dose.site, note: dose.note))
+            written.append(Self.receiptDose(dose))
+        }
+        receiptRow.name = try Self.encodeReceipt(ReceiptPayload(
+            done: payload.done, medications: payload.medications,
+            doses: payload.doses.filter { !batchIDs.contains($0.id) },
+            writtenMedications: payload.writtenMedications,
+            writtenDoses: payload.writtenDoses + written))
+        try context.save()
+        return written.count
+    }
+
+    /// Every row the restore under this receipt wrote, from any run. Empty when no receipt is stored under this name.
+    public func medicationRestoreWritten(_ receipt: String) throws -> MedicationRestoreSet {
+        let context = ModelContext(try openContainer())
+        guard let row = try Self.receiptRow(context, receipt) else { return MedicationRestoreSet() }
+        let payload = try Self.decodeReceipt(row.name)
+        return MedicationRestoreSet(
+            medications: try payload.writtenMedications.map(Self.restoredMedication),
+            doses: try payload.writtenDoses.map(Self.restoredDose))
+    }
+
+    /// Removes the restored dose only while the store holds exactly that dose, and moves it back to the receipt's rows to
+    /// write, all in one save under writeLock, so no write lands between the check and the removal. A dose already
+    /// gone counts as undone and only leaves the receipt's written rows: it is not queued again, so a retry does not
+    /// bring back a dose the person deleted.
+    public func undoRestoredDose(_ dose: MedicationDose, receipt: String?) throws -> Bool {
+        writeLock.lock()
+        defer { writeLock.unlock() }
+        let context = ModelContext(try openContainer())
+        let key = dose.id.uuidString
+        var removed = false
+        if let row = try context.fetch(FetchDescriptor<MedicationDoseRecord>(
+            predicate: #Predicate<MedicationDoseRecord> { $0.id == key })).first {
+            // A dose the person has changed is theirs now: it stays, and the receipt still names it as written.
+            guard try Self.decode(row) == dose else { return false }
+            context.delete(row)
+            removed = true
+        }
+        if let receipt, let receiptRow = try Self.receiptRow(context, receipt) {
+            let payload = try Self.decodeReceipt(receiptRow.name)
+            let requeue = removed && !payload.doses.contains { $0.id == key }
+            receiptRow.name = try Self.encodeReceipt(ReceiptPayload(
+                done: removed ? false : payload.done, medications: payload.medications,
+                doses: requeue ? payload.doses + [Self.receiptDose(dose)] : payload.doses,
+                writtenMedications: payload.writtenMedications,
+                writtenDoses: payload.writtenDoses.filter { $0.id != key }))
+        }
+        try context.save()
+        return true
+    }
+
+    /// Removes the restored medication only while it is stored unchanged and holds no dose, and moves it back to the
+    /// receipt's rows to write, all in one save under writeLock. `removeMedication` would remove its doses too, so it is
+    /// not used here: a dose the person logged after the check would go with it. A medication already gone is not
+    /// queued again, as for a dose.
+    public func undoRestoredMedication(_ medication: Medication, receipt: String?) throws -> Bool {
+        writeLock.lock()
+        defer { writeLock.unlock() }
+        let context = ModelContext(try openContainer())
+        let key = medication.id.uuidString
+        var removed = false
+        if let row = try context.fetch(FetchDescriptor<MedicationRecord>(
+            predicate: #Predicate<MedicationRecord> { $0.id == key })).first {
+            guard try Self.decode(row) == medication else { return false }
+            let holdsDose = try !context.fetch(FetchDescriptor<MedicationDoseRecord>(
+                predicate: #Predicate<MedicationDoseRecord> { $0.medicationID == key })).isEmpty
+            guard !holdsDose else { return false }
+            context.delete(row)
+            removed = true
+        }
+        if let receipt, let receiptRow = try Self.receiptRow(context, receipt) {
+            let payload = try Self.decodeReceipt(receiptRow.name)
+            let requeue = removed && !payload.medications.contains { $0.id == key }
+            receiptRow.name = try Self.encodeReceipt(ReceiptPayload(
+                done: removed ? false : payload.done,
+                medications: requeue ? [Self.receiptMedication(medication)] + payload.medications : payload.medications,
+                doses: payload.doses,
+                writtenMedications: payload.writtenMedications.filter { $0.id != key },
+                writtenDoses: payload.writtenDoses))
+        }
+        try context.save()
+        return true
+    }
+
     /// Removes every medication and every dose. The rows are deleted one at a time in one save, and then the store file
     /// is replaced with an empty one. The store stays open afterwards.
+    ///
+    /// A closed store throws `MedicationStoreError.closed` and removes nothing. When the file cannot be opened, its rows
+    /// cannot be deleted, or its checkpoint fails, the file is replaced without a checkpoint only when SQLite finds it
+    /// damaged (see `storeFileIsDamaged(at:)` and `StoreFileOperations.isDamaged`). A file that failed for another
+    /// reason, such as a locked or busy file, is kept and the error is thrown.
     public func eraseAll() throws {
         writeLock.lock()
         defer { writeLock.unlock() }
+        // The opened container is held only inside deleteRows, so no reference to it outlives the call into the file
+        // replacement below, which removes the files under it and opens a new store at the same path.
         do {
-            let context = ModelContext(try openContainer())
+            try deleteRows()
+        } catch MedicationStoreError.closed {
+            throw MedicationStoreError.closed
+        } catch {
+            try replaceIfDamaged(after: error)
+            return
+        }
+        // The rows are gone from every read, but the file keeps their bytes until SQLite reuses the pages, so the file
+        // is replaced too, as the goal store's erase does. When the rows could not be deleted, the replacement removes
+        // them with the file.
+        do {
+            try replaceFiles()
+        } catch StoreFileError.checkpointFailed {
+            try replaceIfDamaged(after: StoreFileError.checkpointFailed)
+        }
+    }
+
+    /// Opens the store and deletes every row, and throws only when the store cannot be opened. A row that the
+    /// opened store cannot fetch, delete or save, such as one written outside the app with a required field
+    /// missing, does not stop the erase: the caller then replaces the file, checkpoint first, which removes it.
+    /// The caller holds writeLock.
+    private func deleteRows() throws {
+        let context = ModelContext(try openContainer())
+        do {
             for row in try context.fetch(FetchDescriptor<MedicationDoseRecord>()) { context.delete(row) }
             for row in try context.fetch(FetchDescriptor<MedicationRecord>()) { context.delete(row) }
             try context.save()
+        } catch {
+            context.rollback()
         }
-        // The rows are gone from every read, but the file keeps their bytes until SQLite reuses the pages, so the file
-        // is replaced too, as the goal store's erase does.
-        try replaceFiles()
+    }
+
+    /// Replaces the store file without a checkpoint when SQLite finds it damaged, and otherwise throws `error`, so a
+    /// file that failed for a passing reason is never removed. The caller holds writeLock.
+    private func replaceIfDamaged(after error: Error) throws {
+        guard fileOperations.isDamaged(storeURL) else { throw error }
+        try replaceFiles(checkpointing: false)
+    }
+
+    /// Whether SQLite finds the file at `url` damaged: it cannot be read as a database, or its quick integrity check
+    /// reports a fault. A missing file, or one that cannot be checked for another reason (busy, locked, no
+    /// permission), is not damaged.
+    static func storeFileIsDamaged(at url: URL) -> Bool {
+        guard FileManager.default.fileExists(atPath: url.path) else { return false }
+        var database: OpaquePointer?
+        defer { sqlite3_close(database) }
+        let opened = sqlite3_open_v2(url.path, &database, SQLITE_OPEN_READWRITE, nil)
+        guard opened == SQLITE_OK else { return isDamageCode(opened) }
+        sqlite3_busy_timeout(database, 2_000)
+        var statement: OpaquePointer?
+        defer { sqlite3_finalize(statement) }
+        let prepared = sqlite3_prepare_v2(database, "PRAGMA quick_check", -1, &statement, nil)
+        guard prepared == SQLITE_OK else { return isDamageCode(prepared) }
+        let stepped = sqlite3_step(statement)
+        guard stepped == SQLITE_ROW else { return isDamageCode(stepped) }
+        guard let text = sqlite3_column_text(statement, 0) else { return true }
+        return String(cString: text) != "ok"
+    }
+
+    /// Whether an SQLite result code says the file is damaged rather than unavailable for a moment. Internal so a test
+    /// can check each code without a damaged file.
+    static func isDamageCode(_ code: Int32) -> Bool {
+        let primary = code & 0xFF
+        return primary == SQLITE_CORRUPT || primary == SQLITE_NOTADB
     }
 
     /// Replaces the store file with an empty one. The caller holds writeLock, so no write lands between the row delete
-    /// and the file removal. A failed step is thrown; a failed reopen is retried by the next call.
-    private func replaceFiles() throws {
+    /// and the file removal. A failed step is thrown; a failed reopen is retried by the next call. `checkpointing` is
+    /// passed to `StoreFileOperations.replaceStoreFiles(at:checkpointing:)`.
+    private func replaceFiles(checkpointing: Bool = true) throws {
         try lock.withLock {
             container = nil
-            let result = fileOperations.replaceStoreFiles(at: storeURL)
+            let result = fileOperations.replaceStoreFiles(at: storeURL, checkpointing: checkpointing)
             container = result.container
             reopenPending = result.container == nil
             if let error = result.error { throw error }
@@ -316,6 +731,16 @@ public final class SwiftDataMedicationStore: MedicationStore, JournalErasing, @u
         }
         if let name { row.name = name }
         if let unitText { row.unitText = unitText }
+        try context.save()
+    }
+
+    /// Rewrites a stored restore receipt into text no build can decode, as a file damaged between two runs would hold.
+    func writeUnreadableReceiptForTesting(_ receipt: String) throws {
+        let context = ModelContext(try openContainer())
+        guard let row = try Self.receiptRow(context, receipt) else {
+            throw MedicationStoreError.corruptRecord(Self.receiptPrefix + receipt)
+        }
+        row.name = "not a receipt"
         try context.save()
     }
 

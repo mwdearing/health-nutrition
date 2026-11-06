@@ -106,6 +106,32 @@ final class LogSupplementShortcutTests: XCTestCase {
             SupplementShortcut.nearestOpenTime(in: [morning, evening], to: date(hour: 11), calendar: utc), morning)
     }
 
+    func testJustAfterMidnightDoesNotReachBackToTonightsLateSlot() {
+        let lateEvening = ReminderTime(hour: 23, minute: 0)
+        XCTAssertEqual(
+            SupplementShortcut.nearestOpenTime(in: [lateEvening, morning], to: date(hour: 0, minute: 10), calendar: utc),
+            morning)
+    }
+
+    func testTheDistanceDoesNotWrapPastMidnight() {
+        let noon = ReminderTime(hour: 12, minute: 0)
+        let lateNight = ReminderTime(hour: 23, minute: 50)
+        XCTAssertEqual(
+            SupplementShortcut.nearestOpenTime(in: [lateNight, noon], to: date(hour: 0, minute: 10), calendar: utc), noon)
+    }
+
+    func testAShortcutRunJustAfterMidnightMarksTodaysMorningSlotNotTonightsLateOne() {
+        let lateEvening = ReminderTime(hour: 23, minute: 0)
+        let stack = FakeStack(
+            items: [ShortcutSupplement(id: "a", title: "Creatine", openTimes: [morning, lateEvening])])
+        let outcome = SupplementShortcut.log(
+            favoriteID: "a", now: date(hour: 0, minute: 10), stack: stack, calendar: utc)
+        XCTAssertTrue(outcome.logged)
+        XCTAssertEqual(stack.taken.count, 1)
+        XCTAssertEqual(stack.taken[0].time, morning)
+        XCTAssertNotEqual(stack.taken[0].time, lateEvening)
+    }
+
     func testATieGoesToTheEarlierTimeAndAnEmptyListToNil() {
         XCTAssertEqual(
             SupplementShortcut.nearestOpenTime(in: [evening, morning], to: date(hour: 14), calendar: utc), morning)

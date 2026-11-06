@@ -351,4 +351,220 @@ final class JournalWeekSummaryTests: XCTestCase {
 
         XCTAssertEqual(model.weekSummary?.headline, "Nothing logged this week.")
     }
+
+    // MARK: Apple Health
+
+    private func dayKey(_ back: Int) -> String {
+        JournalViewModel.dayKey(daysBack(back), zone: TimeZone(identifier: "UTC") ?? .current)
+    }
+
+    private func healthProtein(_ grams: Decimal) -> HealthIntakeTotals.Outside {
+        .read(values: ["protein": grams], readKeys: ["protein"])
+    }
+
+    /// Two days with nothing in the journal but protein in Apple Health read as logged, with Health's average: (40 + 50) / 2.
+    func testDaysOnlyHealthStatesCountAsLoggedWithHealthsAverage() throws {
+        let journal = try makeJournalStore()
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        try logWater(journal, daysBack: 0)
+
+        let model = makeModel(journal, goals: goals)
+        model.outsideIntakeByDay = [dayKey(1): healthProtein(40), dayKey(2): healthProtein(50)]
+        model.load(now: weekNow)
+
+        XCTAssertEqual(model.weekSummary?.headline, "Logged 2 of 7 days")
+        XCTAssertEqual(model.weekSummary?.goalLines, ["Protein: average 45 g a day against 60 g"])
+    }
+
+    /// A journal day gets Health's amount added: 13 g logged here plus 7 g from another app is 20 g.
+    func testHealthsAmountIsAddedToAJournalDay() throws {
+        let journal = try makeJournalStore()
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        try logProtein(journal, daysBack: 0, 13)
+
+        let model = makeModel(journal, goals: goals)
+        model.outsideIntakeByDay = [dayKey(0): healthProtein(7)]
+        model.load(now: weekNow)
+
+        XCTAssertEqual(model.weekSummary?.headline, "Logged 1 of 7 days")
+        XCTAssertEqual(model.weekSummary?.goalLines, ["Protein: average 20 g a day against 60 g"])
+    }
+
+    /// Water alone, an empty answer and a read that failed state no intake, so none of them makes a logged day.
+    func testHealthThatStatesNoIntakeDoesNotMakeALoggedDay() throws {
+        let journal = try makeJournalStore()
+        try logWater(journal, daysBack: 0)
+
+        let model = makeModel(journal)
+        model.outsideIntakeByDay = [
+            dayKey(1): .read(values: ["water": 500], readKeys: ["water"]),
+            dayKey(2): .read(values: [:], readKeys: ["protein"]),
+            dayKey(3): .read(values: [:], readKeys: []),
+            dayKey(4): .notConnected,
+        ]
+        model.load(now: weekNow)
+
+        XCTAssertEqual(model.weekSummary?.headline, "Nothing logged this week.")
+    }
+
+    /// A Health-only day whose query for the goal's nutrient failed cannot be totaled: it counts as logged, and is counted
+    /// in the parenthetical rather than averaged as zero.
+    func testAHealthOnlyDayWhoseNutrientQueryFailedCannotBeTotaled() throws {
+        let journal = try makeJournalStore()
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        try logProtein(journal, daysBack: 0, 13)
+
+        let model = makeModel(journal, goals: goals)
+        model.outsideIntakeByDay = [dayKey(1): .read(values: ["energy": 500], readKeys: ["energy"])]
+        model.load(now: weekNow)
+
+        XCTAssertEqual(model.weekSummary?.headline, "Logged 2 of 7 days")
+        XCTAssertEqual(
+            model.weekSummary?.goalLines, ["Protein: average 13 g a day against 60 g (1 day could not be totaled)"])
+    }
+
+    /// A Health-only day stated by another nutrient, whose protein query succeeded with no samples, is a known zero for
+    /// protein: it averages in as 0 g, it is not left out.
+    func testAHealthOnlyDayWithNoProteinSamplesAveragesAsZero() throws {
+        let journal = try makeJournalStore()
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        try logProtein(journal, daysBack: 0, 30)
+
+        let model = makeModel(journal, goals: goals)
+        model.outsideIntakeByDay = [dayKey(1): .read(values: ["energy": 500], readKeys: ["energy", "protein"])]
+        model.load(now: weekNow)
+
+        XCTAssertEqual(model.weekSummary?.goalLines, ["Protein: average 15 g a day against 60 g"])
+    }
+
+    /// A day with only a water entry in the journal that Health's intake logs, whose protein query succeeded with no
+    /// samples, is a known zero for protein too.
+    func testAWaterOnlyJournalDayWithHealthIntakeAveragesAsZero() throws {
+        let journal = try makeJournalStore()
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        try logWater(journal, daysBack: 0)
+        try logProtein(journal, daysBack: 2, 30)
+
+        let model = makeModel(journal, goals: goals)
+        model.outsideIntakeByDay = [dayKey(0): .read(values: ["energy": 500], readKeys: ["energy", "protein"])]
+        model.load(now: weekNow)
+
+        XCTAssertEqual(model.weekSummary?.headline, "Logged 2 of 7 days")
+        XCTAssertEqual(model.weekSummary?.goalLines, ["Protein: average 15 g a day against 60 g"])
+    }
+
+    /// A journal value the totals cannot add up (protein stated in international units) is not nothing: Health's protein
+    /// does not stand in for the day, which is counted as one that could not be totaled.
+    func testAJournalValueInAnotherKindOfUnitIsNotReplacedByHealth() throws {
+        let journal = try makeJournalStore()
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        try logProtein(journal, daysBack: 0, 30)
+        try logProduct(journal, daysBack: 1, nutrients: ["protein": .known(Decimal(10), .iu)])
+
+        let model = makeModel(journal, goals: goals)
+        model.outsideIntakeByDay = [dayKey(1): healthProtein(40)]
+        model.load(now: weekNow)
+
+        XCTAssertEqual(
+            model.weekSummary?.goalLines, ["Protein: average 30 g a day against 60 g (1 day could not be totaled)"])
+    }
+
+    /// The partial subtotal of a nutrient some of whose samples could not be read is not a stated intake.
+    func testAPartiallyReadNutrientDoesNotMakeALoggedDay() throws {
+        let journal = try makeJournalStore()
+        try logWater(journal, daysBack: 0)
+
+        let model = makeModel(journal)
+        model.outsideIntakeByDay = [dayKey(1): .read(values: ["protein": 20], readKeys: [])]
+        model.load(now: weekNow)
+
+        XCTAssertEqual(model.weekSummary?.headline, "Nothing logged this week.")
+    }
+
+    /// An entry dated later than now has not happened, so it does not stand in the way of Health's intake for that day:
+    /// today counts as logged by Health alone, and the later entry's protein is not averaged in.
+    func testAnEntryLaterThanNowDoesNotHideHealthIntakeForThatDay() throws {
+        let journal = try makeJournalStore()
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        let later = weekNow.addingTimeInterval(6 * 3600)
+        try journal.create(
+            Intake(id: UUID().uuidString.lowercased(), category: "food", occurredAt: later, timeZoneIdentifier: "UTC"),
+            components: [IntakeComponent(componentID: "later", name: "Later", amount: Decimal(100), unit: .g)],
+            product: nil, now: later)
+
+        let model = makeModel(journal, goals: goals)
+        model.outsideIntakeByDay = [dayKey(0): healthProtein(40)]
+        model.load(now: weekNow)
+
+        XCTAssertEqual(model.weekSummary?.headline, "Logged 1 of 7 days")
+        XCTAssertEqual(model.weekSummary?.goalLines, ["Protein: average 40 g a day against 60 g"])
+    }
+
+    /// A journal with no entries at all still has a week card when Apple Health states intake for days of the week, and
+    /// the empty state's wording stops claiming the journal holds nothing next to it.
+    func testAnEmptyJournalWithHealthIntakeShowsTheWeekCard() throws {
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        let model = makeModel(try makeJournalStore(), goals: goals)
+        model.outsideIntakeByDay = [dayKey(1): healthProtein(40), dayKey(2): healthProtein(50)]
+        model.load(now: weekNow)
+
+        XCTAssertEqual(model.weekSummary?.headline, "Logged 2 of 7 days")
+        XCTAssertEqual(model.weekSummary?.goalLines, ["Protein: average 45 g a day against 60 g"])
+        XCTAssertEqual(model.emptyStateTitle, "No entries in this journal yet")
+        XCTAssertEqual(
+            model.emptyStateMessage,
+            "The week above counts days from Apple Health. Everything you log here is listed by day.")
+    }
+
+    /// With Health not connected, or stating no intake, an empty journal shows its empty state alone, as before.
+    func testAnEmptyJournalWithoutHealthIntakeShowsOnlyTheEmptyState() throws {
+        let model = makeModel(try makeJournalStore())
+        model.outsideIntakeByDay = [dayKey(1): .read(values: ["water": 500], readKeys: ["water"]), dayKey(2): .notConnected]
+        model.load(now: weekNow)
+
+        XCTAssertNil(model.weekSummary)
+        XCTAssertEqual(model.emptyStateTitle, "Your journal is empty")
+        XCTAssertEqual(model.emptyStateMessage, "Everything you log is listed here by day.")
+    }
+
+    /// The week card reads Health for all seven days, not only the days on screen, and rebuilds from it.
+    func testTheWeekReadAsksHealthForSevenDaysAndRebuildsTheCard() async throws {
+        let journal = try makeJournalStore()
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        try logWater(journal, daysBack: 0)
+
+        let model = makeModel(journal, goals: goals)
+        var asked = 0
+        model.healthDayReader = { _, _ in
+            asked += 1
+            return HealthDayRead(.read(values: ["protein": 30], readKeys: ["protein"]))
+        }
+        model.load(now: weekNow)
+        await model.loadRecentHealthTotals(days: 7, now: weekNow)
+
+        XCTAssertEqual(asked, 7)
+        XCTAssertEqual(model.weekSummary?.headline, "Logged 7 of 7 days")
+        XCTAssertEqual(model.weekSummary?.goalLines, ["Protein: average 30 g a day against 60 g"])
+    }
+
+    /// With Health not connected the card is exactly what it was.
+    func testWithHealthNotConnectedTheCardIsUnchanged() async throws {
+        let journal = try makeJournalStore()
+        try logProtein(journal, daysBack: 0, 13)
+
+        let model = makeModel(journal)
+        model.load(now: weekNow)
+        await model.loadRecentHealthTotals(days: 7, now: weekNow)
+
+        XCTAssertEqual(model.weekSummary?.headline, "Logged 1 of 7 days")
+    }
 }

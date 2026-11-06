@@ -30,6 +30,14 @@ final class CommunitySessionStoreTests: XCTestCase {
         XCTAssertNil(try store.load())
     }
 
+    func testKeychainSaveUpdatesInPlaceAndAddsOnlyWhenNothingIsStored() throws {
+        XCTAssertEqual(try KeychainCommunitySessionStore.saveStep(afterUpdate: errSecSuccess), .saved)
+        XCTAssertEqual(try KeychainCommunitySessionStore.saveStep(afterUpdate: errSecItemNotFound), .add)
+        XCTAssertThrowsError(try KeychainCommunitySessionStore.saveStep(afterUpdate: errSecAuthFailed)) { error in
+            XCTAssertEqual(error as? CommunityError, .storage)
+        }
+    }
+
     func testKeychainClearAcceptsOnlySuccessAndItemNotFound() throws {
         XCTAssertNoThrow(try KeychainCommunitySessionStore.validateDeleteStatus(errSecSuccess))
         XCTAssertNoThrow(try KeychainCommunitySessionStore.validateDeleteStatus(errSecItemNotFound))

@@ -8,8 +8,12 @@ public struct MedicationLogView: View {
     @ObservedObject var model: MedicationLogViewModel
     @Environment(\.scenePhase) private var scenePhase
     @State private var isAdding = false
+    /// Whether the Clear the medication log confirmation is showing.
+    @State private var isConfirmingClear = false
     /// The row whose Log a dose sheet is open; nil while no sheet is open.
     @State private var loggingRow: MedicationRow?
+    /// The identifier of the medication whose history is pushed; nil while none is open.
+    @State private var historyMedicationID: UUID?
 
     /// - Parameter model: the medication log this screen reads and changes.
     public init(model: MedicationLogViewModel) {
@@ -36,7 +40,14 @@ public struct MedicationLogView: View {
                         .swipeActions(edge: .trailing) {
                             Button("Archive") { self.model.setArchived(row.id, archived: true) }
                         }
+                        .swipeActions(edge: .leading) {
+                            Button("History") { self.historyMedicationID = row.id }
+                        }
                 }
+            } footer: {
+                Text(MedicationLogViewModel.notice)
+                    .font(.footnote)
+                    .foregroundStyle(TokenColors.textSecondary)
             }
             if !model.archivedRows.isEmpty {
                 Section("Archived") {
@@ -45,16 +56,35 @@ public struct MedicationLogView: View {
                             .swipeActions(edge: .trailing) {
                                 Button("Unarchive") { self.model.setArchived(row.id, archived: false) }
                             }
+                            .swipeActions(edge: .leading) {
+                                Button("History") { self.historyMedicationID = row.id }
+                            }
                     }
                 }
             }
             if let message = model.errorMessage {
                 InlineNotice(message, tone: .failed)
             }
+            if let notice = model.clearNotice {
+                Text(notice)
+                    .font(.footnote)
+                    .foregroundStyle(TokenColors.textSecondary)
+            }
+            if model.canClear {
+                Section {
+                    Button("Clear the medication log", role: .destructive) { self.isConfirmingClear = true }
+                }
+            }
         }
         .scrollContentBackground(.hidden)
         .background(TokenColors.background)
         .navigationTitle("Medication log")
+        .confirmationDialog("Clear the medication log?", isPresented: $isConfirmingClear, titleVisibility: .visible) {
+            Button("Clear the log", role: .destructive) { self.model.clearLog() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes every medication and dose in the log on this device. It cannot be undone.")
+        }
         .onAppear { self.model.load() }
         // Back from the background, possibly on a later day: "Today", "Due today" and the days since are read again.
         .onChange(of: scenePhase) { _, phase in
@@ -65,6 +95,11 @@ public struct MedicationLogView: View {
         }
         .sheet(item: $loggingRow) { row in
             LogDoseSheet(model: model, row: row)
+        }
+        .navigationDestination(item: $historyMedicationID) { medicationID in
+            MedicationHistoryView(
+                model: model.historyModel(for: medicationID),
+                onClose: { changed in if changed { self.model.historyChanged() } })
         }
     }
 }
@@ -110,16 +145,26 @@ private struct AddMedicationSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("Name", text: $name)
+                    LabeledField("Name", spokenTitle: true) { focus in
+                        TextField(text: $name, prompt: Text("For example, Vitamin D")) { Text("Name") }
+                            .labelsHidden()
+                            .focused(focus)
+                    }
                     Picker("Unit", selection: $unit) {
                         ForEach(MedicationUnit.allCases, id: \.self) { option in
                             Text(option.rawValue).tag(option)
                         }
                     }
-                    TextField("Every how many days", text: $scheduleText)
-                    #if os(iOS)
-                        .keyboardType(.numberPad)
-                    #endif
+                    LabeledField("Every how many days", spokenTitle: true) { focus in
+                        TextField(text: $scheduleText, prompt: Text("For example, 7")) {
+                            Text("Every how many days")
+                        }
+                        .labelsHidden()
+                        .focused(focus)
+                        #if os(iOS)
+                            .keyboardType(.numberPad)
+                        #endif
+                    }
                 }
                 if let errorText {
                     InlineNotice(errorText, tone: .failed)
@@ -154,24 +199,42 @@ private struct LogDoseSheet: View {
     @State private var siteText = ""
     @State private var noteText = ""
     @State private var errorText: String?
+    /// Set before the dose is saved and kept after it succeeds, so a tap during the dismissal saves nothing.
+    @State private var saveGate = OneShotSave()
 
     var body: some View {
         NavigationStack {
             Form {
                 Section(row.name) {
-                    HStack {
-                        TextField("Amount", text: $amountText)
-                        #if os(iOS)
-                            .keyboardType(.decimalPad)
-                        #endif
-                        Text(row.unitText).foregroundStyle(TokenColors.textSecondary)
+                    LabeledField("Amount in \(row.unitText)") { focus in
+                        HStack {
+                            TextField(text: $amountText, prompt: Text("For example, 5")) { Text("Amount in \(row.unitText)") }
+                                .labelsHidden()
+                                .focused(focus)
+                            #if os(iOS)
+                                .keyboardType(.decimalPad)
+                            #endif
+                            Text(row.unitText).foregroundStyle(TokenColors.textSecondary)
+                        }
                     }
                     // A dose is logged once it has been taken, so the time stops at now.
                     DatePicker("Time taken", selection: $takenAt, in: ...Date())
                 }
                 Section {
-                    TextField("Injection site (optional)", text: $siteText)
-                    TextField("Note (optional)", text: $noteText)
+                    LabeledField("Injection site (optional)", spokenTitle: true) { focus in
+                        TextField(text: $siteText, prompt: Text("For example, left thigh")) {
+                            Text("Injection site (optional)")
+                        }
+                        .labelsHidden()
+                        .focused(focus)
+                    }
+                    LabeledField("Note (optional)", spokenTitle: true) { focus in
+                        TextField(text: $noteText, prompt: Text("For example, after breakfast")) {
+                            Text("Note (optional)")
+                        }
+                        .labelsHidden()
+                        .focused(focus)
+                    }
                 }
                 if let errorText {
                     InlineNotice(errorText, tone: .failed)
@@ -184,11 +247,14 @@ private struct LogDoseSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
+                        guard saveGate.begin() else { return }
                         errorText = model.logDose(
                             medicationID: row.id, amountText: amountText, takenAt: takenAt,
                             siteText: siteText, noteText: noteText)
+                        saveGate.finish(success: errorText == nil)
                         if errorText == nil { dismiss() }
                     }
+                    .disabled(saveGate.isLocked)
                 }
             }
         }
