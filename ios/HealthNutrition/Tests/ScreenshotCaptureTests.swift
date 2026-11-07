@@ -762,4 +762,60 @@ private struct ScreenshotProductService: CommunityProductServicing {
             NavigationStack { List { SupplementsTodayTile(model: stack, now: { Date() }) } }
         }
     }
+
+    /// A medication store on a throwaway file, with two invented medications and a few doses.
+    private func makeSeededMedicationStore() throws -> (store: SwiftDataMedicationStore, weekly: Medication) {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HealthNutritionScreenshots", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let store = try SwiftDataMedicationStore(url: directory.appendingPathComponent("medications.store"))
+        let weekly = Medication(name: "Weekly pen", unit: .mg, scheduleDays: 7)
+        let morning = Medication(name: "Morning tablet", unit: .mg, scheduleDays: 1)
+        try store.saveMedication(weekly)
+        try store.saveMedication(morning)
+        let zone = TimeZone.current.identifier
+        for (days, amount) in [(2, Decimal(string: "2.5")!), (9, Decimal(string: "2.5")!), (16, Decimal(2))] {
+            try store.saveDose(MedicationDose(
+                medicationID: weekly.id, takenAt: Date().addingTimeInterval(-86_400 * Double(days)),
+                timeZoneIdentifier: zone, amount: amount, unit: .mg, site: nil, note: days == 9 ? "After breakfast" : nil))
+        }
+        try store.saveDose(MedicationDose(
+            medicationID: morning.id, takenAt: Date().addingTimeInterval(-3_600), timeZoneIdentifier: zone,
+            amount: 10, unit: .mg, site: nil, note: nil))
+        return (store, weekly)
+    }
+
+    func testMedicationLogView() throws {
+        let seeded = try makeSeededMedicationStore()
+        let model = MedicationLogViewModel(store: seeded.store, preferences: InMemoryDisplayPreferences())
+        model.load()
+        XCTAssertFalse(model.rows.isEmpty, "The medication log is empty, so the capture would show nothing")
+        try capture("MedicationLogView") {
+            NavigationStack { MedicationLogView(model: model) }
+        }
+    }
+
+    func testMedicationHistoryView() throws {
+        let seeded = try makeSeededMedicationStore()
+        let model = MedicationHistoryViewModel(store: seeded.store, medicationID: seeded.weekly.id)
+        model.load()
+        XCTAssertFalse(model.rows.isEmpty, "The medication history is empty, so the capture would show nothing")
+        try capture("MedicationHistoryView") {
+            NavigationStack { MedicationHistoryView(model: model, onClose: { _ in }) }
+        }
+    }
+
+    func testHeroCard() throws {
+        try capture("HeroCard") {
+            ScrollView {
+                HeroCard {
+                    Text("Today").font(.headline)
+                    Text("1,240 left").font(.title2.bold()).fontDesign(.rounded).monospacedDigit()
+                }
+                .padding()
+            }
+        }
+    }
 }

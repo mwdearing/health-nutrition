@@ -21,24 +21,6 @@ public enum DesignRadius {
     public static let tile: CGFloat = 18
 }
 
-/// A rounded container on the surface color, for content composed of more than standard rows.
-public struct Card<Content: View>: View {
-    private let content: Content
-
-    public init(@ViewBuilder content: () -> Content) {
-        self.content = content()
-    }
-
-    public var body: some View {
-        content
-            .padding(DesignSpacing.m)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                TokenColors.surface,
-                in: RoundedRectangle(cornerRadius: DesignRadius.card, style: .continuous))
-    }
-}
-
 /// A text input with a caption that stays above it, the input in a box, and any error under the box.
 ///
 /// The caption says what the field is for and never goes away: a placeholder vanishes as soon as something
