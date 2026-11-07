@@ -18,6 +18,11 @@ final class CalorieWordingTests: XCTestCase {
         XCTAssertEqual(energyCaption(1), "1 calorie")
     }
 
+    func testAnActiveEnergyOfOneCalorieIsSingular() {
+        XCTAssertEqual(BodyActivityViewModel.calorieWord("1"), "calorie")
+        XCTAssertEqual(BodyActivityViewModel.calorieWord("250"), "calories")
+    }
+
     private func totals(kcal: Decimal) -> DailyTotals {
         let total = NutrientTotal(
             value: .known(kcal, .kcal),
