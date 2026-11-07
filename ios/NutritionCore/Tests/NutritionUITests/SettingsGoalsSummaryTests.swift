@@ -30,6 +30,13 @@ final class SettingsGoalsSummaryTests: XCTestCase {
         XCTAssertEqual(some.capsuleTitle, "Edit goals")
     }
 
+    func testASavedPlanWithNoEnergyGoalStillSaysEditGoals() {
+        let summary = SettingsGoalsSummary(
+            energyGoal: nil, energyUnit: .kcal, goalsSetText: "None set", plan: plan(.maintain), unitSystem: .metric)
+        XCTAssertEqual(summary.planLine, "Keep your weight")
+        XCTAssertEqual(summary.capsuleTitle, "Edit goals")
+    }
+
     func testThePlanLineOnlyWithAPlan() {
         func line(_ plan: WeightPlan?) -> String? {
             SettingsGoalsSummary(
