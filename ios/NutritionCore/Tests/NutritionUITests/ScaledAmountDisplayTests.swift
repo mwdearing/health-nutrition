@@ -139,7 +139,7 @@ final class ScaledAmountDisplayTests: XCTestCase {
         let totals = try dayTotals()
         XCTAssertEqual(line(totals, "carbohydrate", goal: 250).text, "Carbohydrate 1 g of 250 g")
         XCTAssertEqual(line(totals, "sodium").text, "Sodium 30 mg")
-        XCTAssertEqual(JournalViewModel.energyText(totals: totals), "10 Calories")
+        XCTAssertEqual(JournalViewModel.energyText(totals: totals), "10 calories")
     }
 
     // MARK: A scaled label value

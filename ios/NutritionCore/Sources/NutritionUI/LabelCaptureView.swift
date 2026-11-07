@@ -75,7 +75,7 @@ public struct LabelCaptureView: View {
             actions
         }
         .scrollContentBackground(.hidden)
-        .background(TokenColors.background)
+        .background(TokenColors.page)
         .navigationTitle("Check the label")
         .saveConfirmation(saveNotice)
     }

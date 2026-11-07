@@ -267,7 +267,7 @@ public final class BodyActivityViewModel: ObservableObject {
     }
 
     public var activeEnergyText: String? {
-        readings.activeEnergyKcal.map { "\(Self.whole($0)) Calories active" }
+        readings.activeEnergyKcal.map { "\(Self.whole($0)) \(Self.calorieWord(Self.whole($0))) active" }
     }
 
     public var weightText: String? {
@@ -295,7 +295,7 @@ public final class BodyActivityViewModel: ObservableObject {
         func completed(_ key: String) -> Decimal? {
             readings.outsideReadKeys.contains(key) ? readings.outsideNutrients[key] : nil
         }
-        if let energy = completed("energy") { parts.append("\(Self.whole(energy)) Calories") }
+        if let energy = completed("energy") { parts.append("\(Self.whole(energy)) \(Self.calorieWord(Self.whole(energy)))") }
         if let protein = completed("protein") { parts.append("\(Self.whole(protein)) g protein") }
         if let water = completed("water") {
             if unitSystem() == .usCustomary {
@@ -376,6 +376,9 @@ public final class BodyActivityViewModel: ObservableObject {
     static func whole(_ value: Decimal) -> String {
         value.formatted(.number.precision(.fractionLength(0)))
     }
+
+    /// "calorie" for exactly one, "calories" otherwise (lowercase inside a phrase, #516).
+    static func calorieWord(_ whole: String) -> String { whole == "1" ? "calorie" : "calories" }
 
     static func oneDecimal(_ value: Decimal) -> String {
         value.formatted(.number.precision(.fractionLength(0...1)))
