@@ -69,9 +69,13 @@ final class AddSearchRowUITests: XCTestCase {
         XCTAssertTrue(name.waitForExistence(timeout: 20), "the details form has no Name field")
         name.tap()
         name.typeText(entryName)
+        // Return puts the Name keyboard away, so it cannot cover the Amount field in a sheet that sits lower than a full-screen cover.
+        name.typeText("\n")
         let amount = app.textFields["Amount"]
         XCTAssertTrue(amount.waitForExistence(timeout: 10), "the details form has no Amount field")
         amount.tap()
+        XCTAssertTrue((amount.value(forKey: "hasKeyboardFocus") as? Bool) == true,
+                      "Amount did not get keyboard focus. amount=\(amount.frame) keyboard=\(app.keyboards.firstMatch.exists ? "\(app.keyboards.firstMatch.frame)" : "none")")
         amount.typeText("2")
         // The decimal keypad has no Return key; its Done button puts it away so Log is not covered.
         let done = app.buttons["Done"]
