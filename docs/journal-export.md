@@ -325,8 +325,8 @@ version 2 document outright instead of importing it with the kind quietly droppe
 
 Version 3 also settles which builds can read a new export (#142). The `gummy` and `piece` units arrived
 without a version change, so a build that reads version 2 but predates them refused such a file partway
-through, as a corrupt amount. Every export is now version 3, which a build that reads only versions 1 and 2
-refuses by its version, before reading anything, with a message that says the file is newer than the app.
+through, as a corrupt amount. From then on an export was version 3 or later, and a build that reads only versions 1 and 2
+refuses it by its version, before reading anything, with a message that says the file is newer than the app.
 
 ## Privacy
 - The export is **local and user-initiated**. Nothing is uploaded, and no network call is involved: the
