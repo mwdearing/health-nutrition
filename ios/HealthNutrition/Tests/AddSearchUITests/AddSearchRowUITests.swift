@@ -94,11 +94,13 @@ final class AddSearchRowUITests: XCTestCase {
         // Push the Recent row, then come back.
         let recent = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", entryName)).firstMatch
         XCTAssertTrue(recent.waitForExistence(timeout: 10), "the logged entry is not under Recent on the search screen")
-        // The search field holds focus here, so the keyboard is still settling when the row is first hittable: a tap
-        // that lands then can be lost (CI runs 42183257060 and 42021259997). The row is tapped once it is hittable, and
-        // once more only while the details form has not opened, so a form that opened late is not opened twice.
+        // The search field holds focus here, so its keyboard covers the lower rows and a tap on the Recent row can land
+        // on the keyboard instead (CI runs 42183257060, 42021259997 and 42327033984, where the row was not hittable). The
+        // keyboard is put away first; the row is tapped once it is hittable, and once more only while the details form
+        // has not opened, so a form that opened late is not opened twice.
         let detailsBar = app.navigationBars["Log entry"]
-        XCTAssertTrue(pollUntil(timeout: 15, { recent.exists && recent.isHittable }), "the Recent row is not hittable")
+        putKeyboardAway(in: app)
+        XCTAssertTrue(pollUntil(timeout: 15, { recent.exists && recent.isHittable }), "the Recent row is not hittable\n\(app.debugDescription)")
         recent.tap()
         if !detailsBar.waitForExistence(timeout: 8), recent.exists, recent.isHittable { recent.tap() }
         XCTAssertTrue(detailsBar.waitForExistence(timeout: 20), "tapping the Recent row did not open the details form")
@@ -143,6 +145,20 @@ final class AddSearchRowUITests: XCTestCase {
         XCTAssertTrue(confirm.waitForExistence(timeout: 10), "teardown: the delete confirmation did not appear")
         confirm.tap()
         XCTAssertTrue(row.waitForNonExistence(timeout: 10), "teardown: the logged entry is still on Today")
+    }
+
+    /// Puts the software keyboard away through its own key, or by dragging the list down, and waits for it to go.
+    private func putKeyboardAway(in app: XCUIApplication) {
+        guard app.keyboards.count > 0 else { return }
+        for name in ["Search", "search", "Return", "return", "Done"] {
+            let key = app.keyboards.buttons[name]
+            if key.exists && key.isHittable {
+                key.tap()
+                break
+            }
+        }
+        if app.keyboards.count > 0 { app.swipeDown() }
+        _ = pollUntil(timeout: 5, { app.keyboards.count == 0 })
     }
 
     /// Taps the hittable "Add food, drink, or supplement" button; two share the label and only one can be tapped.
