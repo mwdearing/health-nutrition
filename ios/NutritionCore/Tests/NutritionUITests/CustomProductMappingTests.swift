@@ -107,6 +107,13 @@ final class CustomProductMappingTests: XCTestCase {
         XCTAssertEqual(staged.facts.first { $0.key == "fat" }?.value, .known(2, .g), "fat is grams")
     }
 
+    /// Every key the validator accepts has a stated unit, so the two tables cannot drift apart (#1371 review P2).
+    func testEveryValidatedLegacyKeyHasAStatedUnit() {
+        for key in Set(CustomProductValidation.standardDimensions.keys).union(["salt"]) {
+            XCTAssertNotNil(CustomProductMapping.legacyUnits[key], "\(key) is accepted by validation but has no legacy unit")
+        }
+    }
+
     func testNameOnlyAndEveryFactStateRemainMissingOrExplicit() throws {
         let facts: [ProductFact] = [
             ProductFact(key: "protein", displayName: "Protein", value: .known(0, .g)),
