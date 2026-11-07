@@ -141,6 +141,7 @@ struct TodayWidgetView: View {
                 // Food and Burned stay as before; the ring's label above already speaks them.
                 WidgetFoodBurned(snapshot: snapshot, vertical: true)
                     .foregroundStyle(Color("heroSecondaryText"))
+                    .privacySensitive()
                     .accessibilityHidden(true)
             }
         }
