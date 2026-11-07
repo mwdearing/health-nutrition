@@ -273,7 +273,7 @@ public final class LibraryViewModel: ObservableObject {
     /// The saved meals Search foods offers to log. Set once by the app; nil leaves them out.
     public var savedMeals: SavedMealsModel? {
         didSet {
-            savedMealsObservation = savedMeals?.$meals.sink { [weak self] _ in self?.refreshSavedMealCards() }
+            savedMealsObservation = savedMeals?.$meals.sink { [weak self] meals in self?.refreshSavedMealCards(meals) }
         }
     }
     /// The Library's saved meals row, read again whenever the saved meals change.
@@ -341,7 +341,12 @@ public final class LibraryViewModel: ObservableObject {
 
     /// Builds the row's cards from the saved meals as they stand now.
     public func refreshSavedMealCards() {
-        let meals = savedMeals?.meals ?? []
+        refreshSavedMealCards(savedMeals?.meals ?? [])
+    }
+
+    /// Builds the cards from `meals`. The saved meals model publishes before it stores the new list, so a change
+    /// the sink reports must be read from the value it passes, not from the model.
+    public func refreshSavedMealCards(_ meals: [SavedMeal]) {
         savedMealCards = SavedMealCards.make(meals, calories: { SavedMealCards.kilocalories(of: $0, store: store) })
     }
 

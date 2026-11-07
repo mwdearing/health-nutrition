@@ -47,6 +47,32 @@ final class SavedMealCardsTests: XCTestCase {
         XCTAssertFalse(SavedMealCards.isShown(inPickMode: true, mealCount: 2, searchText: ""))
     }
 
+    /// A save shows on the cards at once: the cards follow the value the saved meals model just published, not the
+    /// one it held before.
+    func testSavingAMealUpdatesTheCardsImmediately() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let journal = try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
+        let suite = "saved-meal-cards-sink-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+        let entry = Intake(
+            id: UUID().uuidString.lowercased(), category: "food", occurredAt: now, timeZoneIdentifier: "UTC", meal: "breakfast")
+        try journal.create(
+            entry, components: [IntakeComponent(componentID: "oats", name: "Oats", amount: 40, unit: .g)],
+            product: nil, now: now)
+        let model = SavedMealsModel(store: UserDefaultsSavedMealStore(defaults: defaults), journal: journal, timeZoneIdentifier: "UTC")
+        let library = LibraryViewModel(store: journal)
+        library.savedMeals = model
+        XCTAssertTrue(library.savedMealCards.isEmpty)
+
+        XCTAssertTrue(model.save(name: "Usual breakfast", meal: .breakfast, intakes: [entry]))
+        XCTAssertEqual(library.savedMealCards.map(\.name), ["Usual breakfast"])
+        XCTAssertTrue(model.save(name: "Post-run shake", meal: nil, intakes: [entry]))
+        XCTAssertEqual(library.savedMealCards.map(\.name), ["Usual breakfast", "Post-run shake"])
+    }
+
     func testLoggingFromACardLogsEveryItemAndOffersUndo() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
