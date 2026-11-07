@@ -123,6 +123,8 @@ jobs:
         run: python scripts/check_privacy_manifest.py
       - name: Test the privacy manifest check
         run: python -m pytest -q -p no:cacheprovider scripts/tests/test_check_privacy_manifest.py
+      - name: Check the Diary redesign guard
+        run: python -m pytest -q -p no:cacheprovider scripts/tests/test_diary_redesign.py
       - name: Check privacy and restore documentation against behavior
         run: python -m pytest -q -p no:cacheprovider scripts/tests/test_privacy_documentation_consistency.py scripts/tests/test_journal_restore_import_race.py scripts/tests/test_journal_export_contract.py
       # The signed-upload workflow is manual-only and reviewer-gated; these tests pin that shape.

@@ -53,7 +53,7 @@ public struct JournalView: View {
                 if let week = model.weekSummary {
                     weekSummaryCard(week)
                         .listRowSeparator(.hidden)
-                        .listRowBackground(TokenColors.background)
+                        .listRowBackground(TokenColors.page)
                 }
                 if model.isEmpty {
                     EmptyState(
@@ -72,15 +72,15 @@ public struct JournalView: View {
                 }
                 if let skipped = model.skippedText {
                     InlineNotice(skipped, tone: .waiting)
-                        .listRowBackground(TokenColors.background)
+                        .listRowBackground(TokenColors.page)
                 }
                 if let goalsMessage = model.goalsErrorMessage {
                     InlineNotice(goalsMessage, tone: .failed)
-                        .listRowBackground(TokenColors.background)
+                        .listRowBackground(TokenColors.page)
                 }
                 if let message = model.errorMessage {
                     InlineNotice(message, tone: .failed)
-                        .listRowBackground(TokenColors.background)
+                        .listRowBackground(TokenColors.page)
                 }
             }
             // Outside the scrolling rows, so the sentence stays visible after the list scrolls to the day.
@@ -89,7 +89,7 @@ public struct JournalView: View {
                 if let notice = jumpNotice {
                     InlineNotice(notice, tone: .waiting)
                         .padding(DesignSpacing.m)
-                        .background(TokenColors.background)
+                        .background(TokenColors.page)
                 } else if let copied = model.copyNotice {
                     if model.canUndoCopy(now: now()) {
                         UndoToast(copied) { _ = model.undoCopy(now: now()) }
@@ -102,7 +102,7 @@ public struct JournalView: View {
                     } else {
                         InlineNotice(copied, tone: model.copyFailed ? .failed : .waiting)
                             .padding(DesignSpacing.m)
-                            .background(TokenColors.background)
+                            .background(TokenColors.page)
                     }
                 }
             }
@@ -117,8 +117,8 @@ public struct JournalView: View {
                 }
             }
             .scrollContentBackground(.hidden)
-            .background(TokenColors.background)
-            .navigationTitle("Journal")
+            .background(TokenColors.page)
+            .navigationTitle("Diary")
             .saveConfirmation(saveNotice)
             .onAppear {
                 reloadingOnReturn = false
@@ -263,21 +263,22 @@ public struct JournalView: View {
 
     /// The seven days ending today: a heading, the logged count, and one line per goal. It reads as one element.
     private func weekSummaryCard(_ week: JournalWeekSummary) -> some View {
-        Card {
+        HeroCard {
             VStack(alignment: .leading, spacing: DesignSpacing.s) {
                 Text("This week")
                     .font(.headline)
-                    .foregroundStyle(TokenColors.textPrimary)
+                    .foregroundStyle(TokenColors.heroText)
                     .accessibilityAddTraits(.isHeader)
                 Text(week.headline)
                     .font(.subheadline)
-                    .foregroundStyle(TokenColors.textPrimary)
+                    .foregroundStyle(TokenColors.heroText)
                 ForEach(Array(week.goalLines.enumerated()), id: \.offset) { _, line in
                     Text(line)
                         .font(.subheadline)
-                        .foregroundStyle(TokenColors.textSecondary)
+                        .foregroundStyle(TokenColors.heroSecondaryText)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .combine)
         }
     }
@@ -330,18 +331,19 @@ public struct JournalView: View {
     /// collapsed to one button that counts its entries until it is opened.
     private func daySection(_ section: JournalDaySection) -> some View {
         Section {
-            Card {
+            ContentCard {
                 dayHeader(section)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
             .listRowSeparator(.hidden)
-            .listRowBackground(TokenColors.background)
+            .listRowBackground(TokenColors.page)
             if section.isCollapsedByDefault {
                 toggleRow(section)
             }
             if model.isExpanded(section) {
                 // Each meal is its own row in its own card, so the List still lays out and recycles rows per meal.
                 ForEach(JournalViewModel.visibleMealGroups(JournalViewModel.diaryMealGroups(for: section.rows), sectionID: section.id, now: now(), zone: model.dayZone)) { group in
-                    Card {
+                    ContentCard {
                         VStack(alignment: .leading, spacing: DesignSpacing.m) {
                             mealHeader(group, in: section)
                             ForEach(group.rows) { row in
@@ -351,7 +353,7 @@ public struct JournalView: View {
                         }
                     }
                     .listRowSeparator(.hidden)
-                    .listRowBackground(TokenColors.background)
+                    .listRowBackground(TokenColors.page)
                 }
             }
         }
@@ -405,10 +407,7 @@ public struct JournalView: View {
     /// A meal's title and, on a past day, a button that copies just that meal to today.
     private func mealHeader(_ group: JournalMealGroup, in section: JournalDaySection) -> some View {
         HStack(spacing: DesignSpacing.s) {
-            Text(group.title)
-                .font(.subheadline)
-                .foregroundStyle(TokenColors.textSecondary)
-                .accessibilityAddTraits(.isHeader)
+            SectionHeader(group.title)
             Spacer(minLength: DesignSpacing.s)
             // Labeled buttons when they fit; icon-only when the row is too narrow for both.
             ViewThatFits(in: .horizontal) {
