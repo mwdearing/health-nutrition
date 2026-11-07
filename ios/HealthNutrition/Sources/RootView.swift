@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import SwiftUI
 import UIKit
@@ -50,6 +51,8 @@ struct RootView: View {
     @State private var productSearchModel: CommunityProductSearchViewModel?
     @State private var addIntakeModel: AddIntakeViewModel?
     @State private var confirmDiscardAdd = false
+    /// Live copy of the open Add form's `hasTypedInput`, so the sheet can refuse a swipe down while it holds input.
+    @State private var addFormHasTypedInput = false
     @State private var labelCapture: LabelCaptureViewModel?
     @StateObject private var addNavigation = AddNavigationModel()
     @State private var addFlowError: String?
@@ -398,9 +401,14 @@ struct RootView: View {
             .presentationDetents([.large])
             .presentationDragIndicator(.visible)
             // A swipe down closes an empty Add like Cancel; a form still on the stack with typed input refuses it.
-            // The lock lives in its own small view that observes the form, so typing never re-renders this screen.
-            .background { AddSwipeDownLock(navigation: self.addNavigation, intake: self.addIntakeModel) }
+            .interactiveDismissDisabled(!self.addNavigation.path.isEmpty && self.addFormHasTypedInput)
             .saveConfirmation(addNotice)
+            .onReceive(self.addIntakeModel?.objectWillChange.eraseToAnyPublisher() ?? Empty().eraseToAnyPublisher()) { _ in
+                DispatchQueue.main.async { self.addFormHasTypedInput = self.addIntakeModel?.hasTypedInput == true }
+            }
+            .onChange(of: self.addNavigation.path.count) { _, _ in
+                self.addFormHasTypedInput = self.addIntakeModel?.hasTypedInput == true
+            }
         }
     }
 
@@ -758,29 +766,5 @@ private struct LibraryProductEditorSheet: View {
         }
         // Typed input is not lost to a swipe-down; the form's Cancel asks first.
         .interactiveDismissDisabled(model.hasTypedInput)
-    }
-}
-
-/// Refuses a swipe down on the Add sheet while a form still on its stack holds typed input. It observes the stack and
-/// the form itself, so only this view updates as the person types.
-private struct AddSwipeDownLock: View {
-    @ObservedObject var navigation: AddNavigationModel
-    let intake: AddIntakeViewModel?
-
-    var body: some View {
-        if let intake {
-            Locked(navigation: navigation, intake: intake)
-        } else {
-            Color.clear
-        }
-    }
-
-    private struct Locked: View {
-        @ObservedObject var navigation: AddNavigationModel
-        @ObservedObject var intake: AddIntakeViewModel
-
-        var body: some View {
-            Color.clear.interactiveDismissDisabled(!navigation.path.isEmpty && intake.hasTypedInput)
-        }
     }
 }
