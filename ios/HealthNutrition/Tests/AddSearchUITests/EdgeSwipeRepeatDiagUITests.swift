@@ -19,7 +19,7 @@ final class EdgeSwipeRepeatDiagUITests: XCTestCase {
         if getStarted.waitForExistence(timeout: 5) { getStarted.tap() }
 
         var failures = 0
-        for pass in 1...8 {
+        for pass in 1...12 {
             let candidates = app.buttons.matching(NSPredicate(format: "label == %@", "Add food, drink, or supplement"))
             XCTAssertTrue(pollUntil(timeout: 20, { candidates.allElementsBoundByIndex.contains { $0.exists && $0.isHittable } }), "no Add button, pass \(pass)")
             candidates.allElementsBoundByIndex.first(where: { $0.exists && $0.isHittable })?.tap()
@@ -39,6 +39,16 @@ final class EdgeSwipeRepeatDiagUITests: XCTestCase {
             print("EDGEDIAG pass \(pass) after drag +10s: popped=\(popped) \(state(app))")
             if !popped {
                 failures += 1
+                // Is the gesture still enabled? The same drag again, with no other change.
+                start.press(forDuration: 0.1, thenDragTo: end, withVelocity: .fast, thenHoldForDuration: 0)
+                let again = typeIt.waitForExistence(timeout: 5)
+                print("EDGEDIAG pass \(pass) second identical drag: popped=\(again) \(state(app))")
+                if !again {
+                    // A slower drag.
+                    start.press(forDuration: 0.2, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0)
+                    let slow = typeIt.waitForExistence(timeout: 5)
+                    print("EDGEDIAG pass \(pass) slow drag: popped=\(slow) \(state(app))")
+                }
                 // Recover to a known place: the form's Back.
                 if formBack.exists && formBack.isHittable { formBack.tap() }
                 popped = typeIt.waitForExistence(timeout: 10)
@@ -52,7 +62,7 @@ final class EdgeSwipeRepeatDiagUITests: XCTestCase {
             _ = pollUntil(timeout: 5, { !app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Type it in")).firstMatch.exists })
             print("EDGEDIAG pass \(pass) after close: \(state(app))")
         }
-        print("EDGEDIAG failures=\(failures) of 8")
-        XCTAssertEqual(failures, 0, "the clean-form edge swipe failed \(failures) of 8 passes")
+        print("EDGEDIAG failures=\(failures) of 12")
+        XCTAssertEqual(failures, 0, "the clean-form edge swipe failed \(failures) of 12 passes")
     }
 }
