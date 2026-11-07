@@ -435,7 +435,7 @@ private struct SwipeToDeleteRow<Content: View>: View {
 
 /// The calorie figure beside a section's header. A whole calorie is singular; anything else is "Calories".
 @MainActor
-fileprivate func energyCaption(_ kcal: Decimal) -> String {
+func energyCaption(_ kcal: Decimal) -> String {
     let number = BodyActivityViewModel.whole(kcal)
-    return number == "1" ? "1 calorie" : "\(number) Calories"
+    return number == "1" ? "1 calorie" : "\(number) calories"
 }
