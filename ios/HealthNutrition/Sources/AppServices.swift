@@ -161,6 +161,19 @@ final class AppServices {
                 store: store, permissions: custom, scheduler: custom, erasures: reminderErasures)
             customReminderEraser = CustomReminderEraser(store: store, scheduler: custom, erasures: reminderErasures)
         }
+        // The medication reminders ride on the same system scheduler and the same erase stand-down.
+        var medicationReminderEraser: MedicationReminderEraser?
+        if let scheduling = Self.medicationReminderScheduling(of: reminderScheduler) {
+            let store = UserDefaultsMedicationReminderStore()
+            let controller = MedicationReminderController(
+                store: store, permissions: scheduling, scheduler: scheduling, medications: medicationStore,
+                preferences: displayPreferences, erasures: reminderErasures)
+            reminderController.medicationReminders = controller
+            medicationLog.reminders = controller
+            medicationReminderEraser = MedicationReminderEraser(
+                store: store, scheduler: scheduling, erasures: reminderErasures)
+        }
+        let medicationSweep = medicationReminderEraser
         // The order the stores are erased in, and so the order their failures are listed in. The widget eraser runs
         // first so no publish announced before the erase can land after it. The reminder readback is not in this
         // list: it runs after the stores.
@@ -168,6 +181,7 @@ final class AppServices {
             Self.eraseStores(
                 widgets: widgetSnapshotEraser, savedMeals: savedMealStore, supplements: supplementSchedules,
                 dailyReminders: reminderEraser, customReminders: customReminderEraser,
+                medicationReminders: medicationReminderEraser,
                 journal: journalStore, favorites: favoritesStore, recipes: recipeStore, goals: goalStore,
                 medications: medicationStore))
         // One gate for the Health delivery worker and Erase all data: the erase holds it while it runs, so no
@@ -200,7 +214,14 @@ final class AppServices {
                 guard let account else { return }
                 try await account.discardLocalSession()
             },
-            remindersStillPending: { await ReminderReadback.namesStillPending(in: SystemPendingReminderCenter()) },
+            remindersStillPending: {
+                // The medication sweep finishes first, so the readback never runs ahead of the removal; a sweep
+                // the system could not confirm is named as still there.
+                let confirmed = await medicationSweep?.finishRemoval() ?? true
+                var names = await ReminderReadback.namesStillPending(in: SystemPendingReminderCenter())
+                if !confirmed, !names.contains("medication reminders") { names.append("medication reminders") }
+                return names
+            },
             deliveryGate: healthKitDeliveryGate)
         let openFoodFacts = OpenFoodFactsProductLookup(
             client: OpenFoodFactsClient(appVersion: Self.appVersion))
@@ -360,10 +381,12 @@ final class AppServices {
     static func eraseStores(
         widgets: WidgetSnapshotEraser, savedMeals: UserDefaultsSavedMealStore,
         supplements: UserDefaultsSupplementStackStore, dailyReminders: ReminderEraser,
-        customReminders: CustomReminderEraser?, journal: SwiftDataJournalStore, favorites: SwiftDataFavoritesStore,
+        customReminders: CustomReminderEraser?, medicationReminders: MedicationReminderEraser? = nil,
+        journal: SwiftDataJournalStore, favorites: SwiftDataFavoritesStore,
         recipes: SwiftDataRecipeStore, goals: SwiftDataGoalStore, medications: SwiftDataMedicationStore
     ) -> ConnectionsPrivacyViewModel.EraseStores {
         let reminders: [JournalErasing] = [dailyReminders] + (customReminders.map { [$0] } ?? [])
+            + (medicationReminders.map { [$0] } ?? [])
         return ConnectionsPrivacyViewModel.EraseStores(
             widgets: widgets, savedMeals: savedMeals, supplements: supplements, reminders: reminders,
             journal: journal, favorites: favorites, recipes: recipes, goals: goals, medications: medications)
@@ -374,6 +397,13 @@ final class AppServices {
         of scheduler: ReminderScheduling
     ) -> (ReminderScheduling & CustomReminderScheduling)? {
         scheduler as? (ReminderScheduling & CustomReminderScheduling)
+    }
+
+    /// The medication-reminder side of a scheduler, when it takes them. The system scheduler does; a fake may not.
+    static func medicationReminderScheduling(
+        of scheduler: ReminderScheduling
+    ) -> (ReminderScheduling & MedicationReminderScheduling)? {
+        scheduler as? (ReminderScheduling & MedicationReminderScheduling)
     }
 
     /// Opens all five store files in `directory`, creating the directory and the files if needed.

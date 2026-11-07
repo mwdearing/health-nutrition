@@ -53,6 +53,9 @@ public final class MedicationLogViewModel: ObservableObject {
     /// Replaces the day read from the device calendar, so a test can stand for a day that cannot be read. Nil in the
     /// app, which reads the device calendar.
     private let dayOverride: (() -> CalendarDay?)?
+    /// The per-medication reminders, kept in step with the log after each change. Nil where the system does not
+    /// schedule them.
+    public var reminders: MedicationReminderController?
 
     /// The active medications, in the store's order.
     @Published public private(set) var rows: [MedicationRow] = []
@@ -98,6 +101,7 @@ public final class MedicationLogViewModel: ObservableObject {
         set {
             (preferences as? MedicationLogPreferences)?.setMedicationLogOn(newValue)
             objectWillChange.send()
+            syncReminders()
         }
     }
 
@@ -108,6 +112,13 @@ public final class MedicationLogViewModel: ObservableObject {
         undoText = nil
         errorMessage = nil
         load()
+        syncReminders()
+    }
+
+    /// Brings the medication reminders in line with the log. Never asks for permission.
+    func syncReminders() {
+        guard let reminders else { return }
+        Task { @MainActor in await reminders.sync() }
     }
 
     /// Forgets the Undo offer after a dose was edited or deleted in the history, because the dose the offer names may
@@ -116,11 +127,14 @@ public final class MedicationLogViewModel: ObservableObject {
         lastLoggedDoseID = nil
         undoText = nil
         load()
+        syncReminders()
     }
 
     /// A history view model for one medication, reading the same store with this view model's clock and zone.
     public func historyModel(for medicationID: UUID) -> MedicationHistoryViewModel {
-        MedicationHistoryViewModel(store: store, medicationID: medicationID, now: now, timeZone: timeZone)
+        let history = MedicationHistoryViewModel(store: store, medicationID: medicationID, now: now, timeZone: timeZone)
+        history.onLogChanged = { [weak self] in self?.syncReminders() }
+        return history
     }
 
     /// Reads the medications and doses and rebuilds the rows. A store read that fails leaves no rows, sets the message
@@ -201,6 +215,7 @@ public final class MedicationLogViewModel: ObservableObject {
             return Self.addMessage(for: error)
         }
         load()
+        syncReminders()
         return nil
     }
 
@@ -236,6 +251,7 @@ public final class MedicationLogViewModel: ObservableObject {
         lastLoggedDoseID = dose.id
         undoText = "Logged \(Self.doseAmountText(amount)) \(medication.unit.rawValue) of \(medication.name)"
         load()
+        syncReminders()
         return nil
     }
 
@@ -252,6 +268,7 @@ public final class MedicationLogViewModel: ObservableObject {
         lastLoggedDoseID = nil
         undoText = nil
         load()
+        syncReminders()
     }
 
     /// Archives or unarchives the medication, keeping its doses, and reloads. A failure sets the message.
@@ -270,6 +287,7 @@ public final class MedicationLogViewModel: ObservableObject {
             return
         }
         load()
+        syncReminders()
     }
 
     // MARK: - Building rows
