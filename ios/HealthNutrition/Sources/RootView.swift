@@ -274,7 +274,8 @@ struct RootView: View {
                     account: services.account, appleHealth: services.appleHealth,
                     medicationLog: services.medicationLog,
                     now: { Date() }, opensGoals: settingsOpensGoals,
-                    onShowWelcome: { self.welcomeAfterSettings = true; self.showingSettings = false }
+                    onShowWelcome: { self.welcomeAfterSettings = true; self.showingSettings = false },
+                    onShowGettingStarted: { self.services.displayPreferences.setChecklistHidden(false); self.services.firstDayChecklist.load() }
                 )
             }
         }

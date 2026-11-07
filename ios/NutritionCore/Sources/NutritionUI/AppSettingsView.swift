@@ -12,6 +12,7 @@ public struct AppSettingsView: View {
     private let now: () -> Date
     private let opensGoals: Bool
     private let onShowWelcome: (() -> Void)?
+    private let onShowGettingStarted: (() -> Void)?
 
     /// - Parameter medicationLog: the medication log whose switch sits under "Units and logging". Nil leaves the
     ///   switch out.
@@ -22,7 +23,8 @@ public struct AppSettingsView: View {
         appleHealth: AppleHealthConnectionViewModel? = nil,
         medicationLog: MedicationLogViewModel? = nil,
         now: @escaping () -> Date = { Date() }, opensGoals: Bool = false,
-        onShowWelcome: (() -> Void)? = nil
+        onShowWelcome: (() -> Void)? = nil,
+        onShowGettingStarted: (() -> Void)? = nil
     ) {
         self.goals = goals
         self.connections = connections
@@ -33,13 +35,15 @@ public struct AppSettingsView: View {
         self.now = now
         self.opensGoals = opensGoals
         self.onShowWelcome = onShowWelcome
+        self.onShowGettingStarted = onShowGettingStarted
     }
 
     public var body: some View {
         if let connections {
             SettingsContent(model: AppSettingsViewModel(connections: connections, goals: goals, reminders: reminders, account: account),
                             appleHealth: appleHealth, medicationLog: medicationLog,
-                            now: now, opensGoals: opensGoals, onShowWelcome: onShowWelcome)
+                            now: now, opensGoals: opensGoals, onShowWelcome: onShowWelcome,
+                            onShowGettingStarted: onShowGettingStarted)
         }
     }
 }
@@ -112,12 +116,14 @@ private struct SettingsContent: View {
     private let medicationLog: MedicationLogViewModel?
     private let now: () -> Date
     private let onShowWelcome: (() -> Void)?
+    private let onShowGettingStarted: (() -> Void)?
 
     init(
         model: AppSettingsViewModel, appleHealth: AppleHealthConnectionViewModel? = nil,
         medicationLog: MedicationLogViewModel? = nil,
         now: @escaping () -> Date, opensGoals: Bool,
-        onShowWelcome: (() -> Void)? = nil
+        onShowWelcome: (() -> Void)? = nil,
+        onShowGettingStarted: (() -> Void)? = nil
     ) {
         _model = StateObject(wrappedValue: model)
         self.appleHealth = appleHealth
@@ -125,6 +131,7 @@ private struct SettingsContent: View {
         _showingGoals = State(initialValue: opensGoals && model.goals != nil)
         self.now = now
         self.onShowWelcome = onShowWelcome
+        self.onShowGettingStarted = onShowGettingStarted
     }
 
     private var connections: ConnectionsPrivacyViewModel { model.connections }
@@ -259,6 +266,9 @@ private struct SettingsContent: View {
                 }
                 if let onShowWelcome {
                     Button("Show welcome again") { onShowWelcome() }
+                }
+                if let onShowGettingStarted {
+                    Button("Show getting started") { onShowGettingStarted() }
                 }
                 Button { self.showingLicenses = true } label: {
                     HStack(spacing: DesignSpacing.m) {
