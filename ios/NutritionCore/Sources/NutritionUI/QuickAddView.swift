@@ -78,7 +78,7 @@ public struct QuickAddView: View {
             }
             .labelsHidden()
             .font(.body)
-            .decimalKeypadOnly()
+            .decimalAmountKeyboard()
             .focused(focus)
         }
     }
