@@ -63,7 +63,8 @@ final class SavedMealCardsTests: XCTestCase {
             entry, components: [IntakeComponent(componentID: "oats", name: "Oats", amount: 40, unit: .g)],
             product: nil, now: now)
         let model = SavedMealsModel(store: UserDefaultsSavedMealStore(defaults: defaults), journal: journal, timeZoneIdentifier: "UTC")
-        let library = LibraryViewModel(store: journal)
+        let favorites = try SwiftDataFavoritesStore(url: directory.appendingPathComponent("favorites.store"))
+        let library = LibraryViewModel(store: journal, favorites: favorites)
         library.savedMeals = model
         XCTAssertTrue(library.savedMealCards.isEmpty)
 
