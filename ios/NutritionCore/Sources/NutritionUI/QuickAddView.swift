@@ -46,6 +46,8 @@ public struct QuickAddView: View {
             }
         }
         .navigationTitle("Amounts only")
+        // One Done key for the four amount fields (see decimalKeypadOnly).
+        .toolbar { KeyboardDoneToolbar() }
         .safeAreaInset(edge: .bottom) {
             VStack(alignment: .leading, spacing: DesignSpacing.s) {
                 if model.hasNoAmountTyped {
@@ -76,7 +78,7 @@ public struct QuickAddView: View {
             }
             .labelsHidden()
             .font(.body)
-            .decimalAmountKeyboard()
+            .decimalKeypadOnly()
             .focused(focus)
         }
     }
