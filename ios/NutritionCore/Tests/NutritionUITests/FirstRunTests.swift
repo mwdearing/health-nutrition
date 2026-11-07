@@ -209,6 +209,42 @@ final class FirstRunTests: XCTestCase {
         XCTAssertFalse(rebuilt.isVisible)
     }
 
+    func testShowAgainRestoresAHiddenIncompleteChecklistAndKeepsItShown() throws {
+        let journal = try makeJournalStore()
+        let goals = try makeGoalStore()
+        let suite = makeFirstRunSuite("checklist-show-again", self)
+        let preferences: DisplayPreferences & FirstRunPreferences = UserDefaultsDisplayPreferences(defaults: suite)
+        let model = FirstDayChecklistModel(store: journal, goals: goals, preferences: preferences)
+
+        model.load()
+        model.hide()
+        XCTAssertFalse(model.isVisible)
+
+        model.showAgain()
+        XCTAssertTrue(model.isVisible)
+        XCTAssertFalse(preferences.isChecklistHidden)
+
+        let rebuilt = FirstDayChecklistModel(store: journal, goals: goals, preferences: preferences)
+        rebuilt.load()
+        XCTAssertTrue(rebuilt.isVisible)
+    }
+
+    func testShowAgainKeepsACompletedChecklistHidden() throws {
+        let journal = try makeJournalStore()
+        let goals = try makeGoalStore()
+        let preferences: DisplayPreferences & FirstRunPreferences = InMemoryDisplayPreferences()
+        let model = FirstDayChecklistModel(store: journal, goals: goals, preferences: preferences)
+
+        try logOats(journal)
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        model.markUnitsReviewed()
+        model.load()
+        XCTAssertFalse(model.isVisible)
+
+        model.showAgain()
+        XCTAssertFalse(model.isVisible)
+    }
+
     // MARK: - Connect Apple Health
 
     /// Connected but never asked to read is not done: Settings still asks for the read, so the step does

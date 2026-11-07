@@ -275,7 +275,7 @@ struct RootView: View {
                     medicationLog: services.medicationLog,
                     now: { Date() }, opensGoals: settingsOpensGoals,
                     onShowWelcome: { self.welcomeAfterSettings = true; self.showingSettings = false },
-                    onShowGettingStarted: { self.services.displayPreferences.setChecklistHidden(false); self.services.firstDayChecklist.load() }
+                    onShowGettingStarted: { self.services.firstDayChecklist.showAgain() }
                 )
             }
         }
