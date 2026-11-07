@@ -51,6 +51,15 @@ public final class AppSettingsViewModel: ObservableObject {
         return count == 0 ? "None set" : "\(count) set"
     }
 
+    /// The lines of the goals card: the energy goal read from the Daily goals rows, and the saved weight plan.
+    var goalsSummary: SettingsGoalsSummary {
+        let energyText = goals?.rows.first { $0.nutrient == "energy" }?.targetText
+        let energy = energyText.flatMap { $0.split(separator: " ").first }.flatMap { Decimal(string: String($0), locale: Locale(identifier: "en_US")) }
+        let plan = (try? goals?.weightPlanStore?.weightPlan()) ?? nil
+        return SettingsGoalsSummary(
+            energyGoal: energy, energyUnit: .kcal, goalsSetText: goalsSetText, plan: plan, unitSystem: unitSystem)
+    }
+
     public var unitSystem: UnitSystem {
         get { connections.unitSystem }
         set { connections.unitSystem = newValue }
