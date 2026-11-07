@@ -56,8 +56,8 @@ holds the store's write lock while it fetches active intakes, their revisions an
 that, an entry deleted between two separate reads would appear in neither list and would silently vanish from
 the backup.
 
-`JournalExporter.decode(_:)` reads a document back and refuses any `schema_version` other than
-`currentSchemaVersion` with `JournalExportError.unsupportedSchemaVersion`, because a reader that does not
+`JournalExporter.decode(_:)` reads a document back and refuses any `schema_version` outside
+`readableSchemaVersions` (1 to the current version) with `JournalExportError.unsupportedSchemaVersion`, because a reader that does not
 know a newer version's semantics would otherwise hand back a document with fields it silently ignored.
 **Versions 1 to 9 are read**, so a backup taken before the kind, a revision's own time, saved meals, goals or the
 medication log existed still restores; `decode(_:)` reads the version off the document and hands it to the matching
@@ -267,7 +267,7 @@ erase replaces the journal.
 ## Fields
 | Field | Meaning |
 |---|---|
-| `schema_version` | Version of the schema this document follows. This build writes `8`; versions 1 to 7 are still read. |
+| `schema_version` | Version of the schema this document follows. This build writes `9`; versions 1 to 8 are still read. |
 | `exported_at` | When the export was made, ISO-8601 in UTC. |
 | `app_version` | Version of the app that wrote the file. |
 | `intakes` | Active intakes, sorted by id. Each one carries its time zone, category, meal, note, current revision number and every revision. |
