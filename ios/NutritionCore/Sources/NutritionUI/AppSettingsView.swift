@@ -13,6 +13,7 @@ public struct AppSettingsView: View {
     private let opensGoals: Bool
     private let onShowWelcome: (() -> Void)?
     private let onShowGettingStarted: (() -> Void)?
+    private let gettingStarted: FirstDayChecklistModel?
 
     /// - Parameter medicationLog: the medication log whose switch sits under "Units and logging". Nil leaves the
     ///   switch out.
@@ -24,7 +25,8 @@ public struct AppSettingsView: View {
         medicationLog: MedicationLogViewModel? = nil,
         now: @escaping () -> Date = { Date() }, opensGoals: Bool = false,
         onShowWelcome: (() -> Void)? = nil,
-        onShowGettingStarted: (() -> Void)? = nil
+        onShowGettingStarted: (() -> Void)? = nil,
+        gettingStarted: FirstDayChecklistModel? = nil
     ) {
         self.goals = goals
         self.connections = connections
@@ -36,6 +38,7 @@ public struct AppSettingsView: View {
         self.opensGoals = opensGoals
         self.onShowWelcome = onShowWelcome
         self.onShowGettingStarted = onShowGettingStarted
+        self.gettingStarted = gettingStarted
     }
 
     public var body: some View {
@@ -43,7 +46,7 @@ public struct AppSettingsView: View {
             SettingsContent(model: AppSettingsViewModel(connections: connections, goals: goals, reminders: reminders, account: account),
                             appleHealth: appleHealth, medicationLog: medicationLog,
                             now: now, opensGoals: opensGoals, onShowWelcome: onShowWelcome,
-                            onShowGettingStarted: onShowGettingStarted)
+                            onShowGettingStarted: onShowGettingStarted, gettingStarted: gettingStarted)
         }
     }
 }
@@ -117,13 +120,15 @@ private struct SettingsContent: View {
     private let now: () -> Date
     private let onShowWelcome: (() -> Void)?
     private let onShowGettingStarted: (() -> Void)?
+    private let gettingStarted: FirstDayChecklistModel?
 
     init(
         model: AppSettingsViewModel, appleHealth: AppleHealthConnectionViewModel? = nil,
         medicationLog: MedicationLogViewModel? = nil,
         now: @escaping () -> Date, opensGoals: Bool,
         onShowWelcome: (() -> Void)? = nil,
-        onShowGettingStarted: (() -> Void)? = nil
+        onShowGettingStarted: (() -> Void)? = nil,
+        gettingStarted: FirstDayChecklistModel? = nil
     ) {
         _model = StateObject(wrappedValue: model)
         self.appleHealth = appleHealth
@@ -132,6 +137,7 @@ private struct SettingsContent: View {
         self.now = now
         self.onShowWelcome = onShowWelcome
         self.onShowGettingStarted = onShowGettingStarted
+        self.gettingStarted = gettingStarted
     }
 
     private var connections: ConnectionsPrivacyViewModel { model.connections }
@@ -267,8 +273,8 @@ private struct SettingsContent: View {
                 if let onShowWelcome {
                     Button("Show welcome again") { onShowWelcome() }
                 }
-                if let onShowGettingStarted {
-                    Button("Show getting started") { onShowGettingStarted() }
+                if let gettingStarted {
+                    GettingStartedRow(model: gettingStarted, onClosed: onShowGettingStarted)
                 }
                 Button { self.showingLicenses = true } label: {
                     HStack(spacing: DesignSpacing.m) {
@@ -472,5 +478,21 @@ private struct SettingsContent: View {
         importReadToken = nil
         isReadingImport = false
         connections.clearImport()
+    }
+}
+
+/// The Settings row that brings the first-day checklist back. It shows only while the card is hidden and a
+/// real step is left, and it re-renders when the checklist changes (approved wording, #516).
+private struct GettingStartedRow: View {
+    @ObservedObject var model: FirstDayChecklistModel
+    let onClosed: (() -> Void)?
+
+    var body: some View {
+        if model.canShowAgain {
+            Button("Show getting started") {
+                model.showAgain()
+                onClosed?()
+            }
+        }
     }
 }

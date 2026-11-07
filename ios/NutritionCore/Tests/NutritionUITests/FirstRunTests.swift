@@ -217,6 +217,7 @@ final class FirstRunTests: XCTestCase {
         let model = FirstDayChecklistModel(store: journal, goals: goals, preferences: preferences)
 
         model.load()
+        XCTAssertFalse(model.canShowAgain, "a card that is already visible is not offered again")
         model.hide()
         XCTAssertFalse(model.isVisible)
 

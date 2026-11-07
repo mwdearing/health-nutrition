@@ -275,7 +275,8 @@ struct RootView: View {
                     medicationLog: services.medicationLog,
                     now: { Date() }, opensGoals: settingsOpensGoals,
                     onShowWelcome: { self.welcomeAfterSettings = true; self.showingSettings = false },
-                    onShowGettingStarted: self.services.firstDayChecklist.canShowAgain ? { self.services.firstDayChecklist.showAgain(); self.showingSettings = false } : nil
+                    onShowGettingStarted: { self.showingSettings = false },
+                    gettingStarted: self.services.firstDayChecklist
                 )
             }
         }
