@@ -97,8 +97,7 @@ final class AddSearchRowUITests: XCTestCase {
         // The search field holds focus here, so its keyboard can cover the Recent row and a tap on it land on the keyboard
         // instead (CI runs 42183257060, 42021259997 and 42327033984, where the row was not hittable). The keyboard stays up,
         // because the focus the push must clear is part of what this test covers: the list is scrolled until the row is
-        // hittable, the row is tapped, and tapped once more only while the details form has not opened, so a form that
-        // opened late is not opened twice.
+        // hittable, and the row is tapped once. There is no second tap, so a slow form can never be opened twice.
         let detailsBar = app.navigationBars["Log entry"]
         var swipes = 0
         while !(recent.exists && recent.isHittable) && swipes < 4 {
@@ -107,7 +106,6 @@ final class AddSearchRowUITests: XCTestCase {
         }
         XCTAssertTrue(pollUntil(timeout: 15, { recent.exists && recent.isHittable }), "the Recent row is not hittable\n\(app.debugDescription)")
         recent.tap()
-        if !detailsBar.waitForExistence(timeout: 8), recent.exists, recent.isHittable { recent.tap() }
         XCTAssertTrue(detailsBar.waitForExistence(timeout: 20), "tapping the Recent row did not open the details form")
         // The Recent row opens a prefilled form, so the form shows its own Back button and asks before discarding.
         let back = detailsBar.buttons["Back"]
