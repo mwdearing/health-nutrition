@@ -24,7 +24,7 @@ final class GoalsKeyboardDoneUITests: XCTestCase {
         // repeated every two seconds (a repeated query timed out while evaluating on a slow simulator, runs 41985033734
         // and 41959425049), and taps the Daily goals row only if the screen did not open.
         let goalsBar = app.navigationBars["Daily goals"]
-        if !goalsBar.waitForExistence(timeout: 10) {
+        if !(goalsBar.waitForExistence(timeout: 10) || field.exists) {
             let dailyGoals = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Daily goals")).firstMatch
             XCTAssertTrue(dailyGoals.waitForExistence(timeout: 15), "no Daily goals row in Settings")
             dailyGoals.tap()
