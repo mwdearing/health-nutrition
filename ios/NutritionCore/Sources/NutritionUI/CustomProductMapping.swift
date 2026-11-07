@@ -87,7 +87,7 @@ public enum CustomProductMapping {
         "energyKcal": .kcal,
         "fat": .g, "saturatedFat": .g, "transFat": .g, "carbohydrates": .g, "fiber": .g,
         "sugars": .g, "addedSugars": .g, "protein": .g, "salt": .g,
-        "cholesterol": .mg, "sodium": .mg, "calcium": .mg, "iron": .mg, "potassium": .mg,
+        "cholesterol": .g, "sodium": .mg, "calcium": .mg, "iron": .mg, "potassium": .mg,
         "vitaminD": .mcg,
     ]
 
