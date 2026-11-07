@@ -49,19 +49,6 @@ final class SettingsGoalsSummaryTests: XCTestCase {
         XCTAssertEqual(summary.planLine, "Lose 1 lb a week")
     }
 
-    /// A store that keeps goals and a plan, the way the app's store does.
-    private final class Store: GoalStore, WeightPlanStore, @unchecked Sendable {
-        let goalsStore = InMemoryGoalStore()
-        let planStore = InMemoryWeightPlanStore()
-        func goals() throws -> [NutrientGoal] { try goalsStore.goals() }
-        func goal(for nutrient: String) throws -> NutrientGoal? { try goalsStore.goal(for: nutrient) }
-        func setGoal(_ goal: NutrientGoal) throws { try goalsStore.setGoal(goal) }
-        func removeGoal(nutrient: String) throws { try goalsStore.removeGoal(nutrient: nutrient) }
-        func weightPlan() throws -> WeightPlan? { try planStore.weightPlan() }
-        func setWeightPlan(_ plan: WeightPlan) throws { try planStore.setWeightPlan(plan) }
-        func removeWeightPlan() throws { try planStore.removeWeightPlan() }
-    }
-
     @MainActor
     func testTheViewModelReadsTheStoredEnergyGoal() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -70,7 +57,7 @@ final class SettingsGoalsSummaryTests: XCTestCase {
         let connections = ConnectionsPrivacyViewModel(
             goals: InMemoryGoalStore(), store: try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store")),
             preferences: InMemoryDisplayPreferences())
-        let store = Store()
+        let store = try SwiftDataGoalStore(url: directory.appendingPathComponent("goals.store"))
         let goals = GoalsViewModel(store: store)
         let model = AppSettingsViewModel(connections: connections, goals: goals)
         model.load()
