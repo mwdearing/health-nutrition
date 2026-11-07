@@ -267,7 +267,7 @@ erase replaces the journal.
 ## Fields
 | Field | Meaning |
 |---|---|
-| `schema_version` | Version of the schema this document follows. This build writes `9` and also reads versions 1 to 8. |
+| `schema_version` | Version of the schema this document follows. This build writes `9` and reads versions 1 to 9. |
 | `exported_at` | When the export was made, ISO-8601 in UTC. |
 | `app_version` | Version of the app that wrote the file. |
 | `intakes` | Active intakes, sorted by id. Each one carries its time zone, category, meal, note, current revision number and every revision. |
