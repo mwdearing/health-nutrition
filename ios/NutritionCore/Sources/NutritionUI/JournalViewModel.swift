@@ -330,7 +330,7 @@ public final class JournalViewModel: ObservableObject {
     /// sections leave out (#539). Refreshed by every change to the sections, so no writer can leave them stale (#611).
     @Published public private(set) var arrowSectionIDs: [String] = []
     let locale: Locale
-    private let preferences: DisplayPreferences
+    let preferences: DisplayPreferences
 
     public init(
         store: JournalStore,
