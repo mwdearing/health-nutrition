@@ -81,19 +81,25 @@ public enum CustomProductMapping {
         return CustomProductRevision(localProductID: UUID(), revisionID: UUID(), content: imported, source: source, importVerification: evidence)
     }
 
-    /// The unit a legacy label fact is stored in. Milligram and microgram nutrients are not grams (#1175).
+    /// The unit each legacy label fact is stored in, the unit its label prints (#1175, #1371). Every key a legacy
+    /// label may carry is listed, so an unlisted key is refused rather than guessed as grams.
     static let legacyUnits: [String: MeasureUnit] = [
-        "energyKcal": .kcal, "sodium": .mg, "calcium": .mg, "iron": .mg, "potassium": .mg, "vitaminD": .mcg,
+        "energyKcal": .kcal,
+        "fat": .g, "saturatedFat": .g, "transFat": .g, "carbohydrates": .g, "fiber": .g,
+        "sugars": .g, "addedSugars": .g, "protein": .g, "salt": .g,
+        "cholesterol": .mg, "sodium": .mg, "calcium": .mg, "iron": .mg, "potassium": .mg,
+        "vitaminD": .mcg,
     ]
 
     public static func stagedDraft(from product: CommunityProduct) throws -> LegacyCustomProductDraft {
         guard case .legacyLabel(let label) = product.product else { throw CustomProductMappingError.requiresExplicitChoices }
         let facts = try label.nutrients.keys.sorted().map { key -> ProductFact in
-            guard let amount = label.nutrients[key], CustomProductValidation.standardDimensions[key] != nil || key == "salt" else {
+            guard let amount = label.nutrients[key], CustomProductValidation.standardDimensions[key] != nil || key == "salt",
+                  let unit = legacyUnits[key] else {
                 throw CustomProductMappingError.unsupportedLegacyFact
             }
             return ProductFact(key: key == "salt" ? "ingredient:salt" : key, displayName: key == "salt" ? "Salt" : NutrientNames.displayName(for: key),
-                value: .known(amount, legacyUnits[key] ?? .g))
+                value: .known(amount, unit))
         }
         let serving: ProductServing?
         if let value = label.serving {
