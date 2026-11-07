@@ -348,7 +348,7 @@ _IMPLEMENTED_BULLET = re.compile(
 def _bullet_text(sentence: str) -> str:
     """Wrap a bare sentence the way the document wraps its Implemented bullet.
 
-    The heading is emphasised and the body is not, exactly as the document does
+    The heading is emphasized and the body is not, exactly as the document does
     it, so the round trip through ``_implemented_bullet`` below exercises the
     same reading the document itself goes through rather than a shortcut.
     """
@@ -498,7 +498,7 @@ def test_an_unmarked_utf16_resource_starting_non_ascii_is_still_found(
     """Unmarked UTF-16 that does not *begin* with ASCII must still be found.
 
     The shape evidence used to be "a NUL in every second byte of the sample".
-    That holds only while the whole sample is U+0000–U+00FF. A localised
+    That holds only while the whole sample is U+0000–U+00FF. A localized
     resource that opens with a CJK character, an accented letter or an emoji has
     a non-zero high byte in its very first code unit, so the every-position
     requirement fails, the file falls back to UTF-8, and the token is never seen:
@@ -509,7 +509,7 @@ def test_an_unmarked_utf16_resource_starting_non_ascii_is_still_found(
         🍊 (emoji)         utf-16-be   None            False
 
     A shipped string beginning with a non-Latin character is ordinary for a
-    localised app, so both endiannesses and several leading scripts are pinned
+    localized app, so both endiannesses and several leading scripts are pinned
     here.
     """
     payload = '"goal" = "Goal";\n'
@@ -1435,7 +1435,7 @@ def _unmarked_utf16_encoding(raw: bytes) -> str | None:
 
     A single NUL is not the signal. Requiring one in *every* second byte — which
     this used to do — reads the sample's ASCII-ness as the evidence, and that
-    holds only while the sample is entirely U+0000–U+00FF. A localised resource
+    holds only while the sample is entirely U+0000–U+00FF. A localized resource
     that opens with `食`, `é` or an emoji has a non-zero high byte in its first
     code unit, so every-position fails, the file falls back to UTF-8, and a
     token in it hides. This has to survive non-ASCII leads.
@@ -1615,7 +1615,7 @@ def test_summary_does_not_assert_two_different_unverified_claims() -> None:
 
     Reads through the shared helpers, so the text is whole-bullet and stripped of
     inline emphasis: the document writes these terms as `**unverified**`, and a
-    literal-space pattern would miss an emphasised denial entirely.
+    literal-space pattern would miss an emphasized denial entirely.
     """
     text = _document()
     assert _summary_bullet_count(text, "unverified") == 1, (

@@ -670,7 +670,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             return false
         }
         // Then take the Health delivery gate, so no pass is between its busy check and its Health write while the
-        // stores are emptied (#841). A pass still running after the wait is not cancelled: the erase touches
+        // stores are emptied (#841). A pass still running after the wait is not canceled: the erase touches
         // nothing and offers Retry, as it does for an import.
         let erased: Bool
         let hold = await deliveryGate?.pause(upTo: deliveryWaitSeconds)
@@ -961,7 +961,7 @@ public final class ConnectionsPrivacyViewModel: ObservableObject {
             defer { gate.end() }
             // The restore holds the Health delivery gate while it writes, as the erase does (#982), so no pass is
             // between its busy check and its Health write while the journal is filled. A pass still running after
-            // the wait is not cancelled: nothing is imported, and the screen says so.
+            // the wait is not canceled: nothing is imported, and the screen says so.
             let hold = await deliveryGate?.pause(upTo: deliveryWaitSeconds)
             if deliveryGate != nil, hold == nil { return .failed(.healthDeliveryBusy) }
             let outcome: ImportOutcome

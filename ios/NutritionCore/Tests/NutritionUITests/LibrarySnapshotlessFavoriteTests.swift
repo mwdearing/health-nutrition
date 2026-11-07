@@ -53,6 +53,6 @@ final class LibrarySnapshotlessFavoriteTests: XCTestCase {
         let row = try favoriteRow(category: "food")
         XCTAssertEqual(row.kind, .food)
         XCTAssertFalse(row.detail.contains("tsp"), "a typed food has no spoon reading, got \(row.detail)")
-        XCTAssertTrue(row.detail.contains("mL"), "a typed food keeps its millilitres, got \(row.detail)")
+        XCTAssertTrue(row.detail.contains("mL"), "a typed food keeps its milliliters, got \(row.detail)")
     }
 }

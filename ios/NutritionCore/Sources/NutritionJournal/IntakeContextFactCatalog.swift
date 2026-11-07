@@ -235,7 +235,7 @@ public enum IntakeContextFactCatalog {
     /// is not a HealthRelay catalog code.
     ///
     /// Water is always `hydration` and lands in `HKQuantityTypeIdentifierDietaryWater`; every `dietary_<name>`
-    /// code lands in `HKQuantityTypeIdentifierDietary<Name>` with each part capitalised, so
+    /// code lands in `HKQuantityTypeIdentifierDietary<Name>` with each part capitalized, so
     /// `dietary_vitamin_b6` is `HKQuantityTypeIdentifierDietaryVitaminB6`. The encoder checks a link's
     /// `healthkit_type` against this, because a link that names another type would not join.
     public static func healthKitTypeIdentifier(forCode code: String) -> String? {

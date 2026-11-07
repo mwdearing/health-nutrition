@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// One macro: its label and figure above a thin bar in the macro's colour. One accessibility element, and the
-/// words carry the meaning, so colour is never the only cue.
+/// One macro: its label and figure above a thin bar in the macro's color. One accessibility element, and the
+/// words carry the meaning, so color is never the only cue.
 public struct MacroBar: View {
     private let model: GoalBarModel
     private let color: Color

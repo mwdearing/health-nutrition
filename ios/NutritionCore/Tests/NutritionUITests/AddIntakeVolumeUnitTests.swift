@@ -126,7 +126,7 @@ final class AddIntakeVolumeUnitTests: XCTestCase {
         XCTAssertEqual(component.amount, decimal("236.5882365"))
     }
 
-    /// A product labelled by mass is converted with the same catalog density a typed food uses.
+    /// A product labeled by mass is converted with the same catalog density a typed food uses.
     func testALookedUpMassLabelUsesTheCatalogDensity() throws {
         let store = try makeStore()
         let model = makeModel(store)

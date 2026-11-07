@@ -217,7 +217,7 @@ public enum ContractArithmetic {
         if Set([source.dimension, dest.dimension]) == Set(measurable) {
             guard let density else { throw Failure.missingDensity }
             guard density.isPositive else { throw Failure.invalidDensity }
-            // Density is grams per millilitre, applied in the canonical units; then the target's power of ten.
+            // Density is grams per milliliter, applied in the canonical units; then the target's power of ten.
             var canonical = try bounded(amount * exact(source.factorToCanonical ?? "1"))
             canonical = source.dimension == "mass" ? try quotient(canonical, density) : try bounded(canonical * density)
             return try bounded(canonical / exact(dest.factorToCanonical ?? "1"))

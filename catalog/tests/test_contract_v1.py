@@ -682,8 +682,8 @@ def convert(amount: Fraction, unit: str, target: str, registry, density: Fractio
             raise UnitError("missing_density")
         if density <= 0:
             raise UnitError("invalid_density")
-        # Density is grams per millilitre. The step is made in the canonical units, then the
-        # result takes the target unit's power of ten: grams divide by it, millilitres multiply.
+        # Density is grams per milliliter. The step is made in the canonical units, then the
+        # result takes the target unit's power of ten: grams divide by it, milliliters multiply.
         canonical = bounded(amount * exact(source["factor_to_canonical"]))
         if source["dimension"] == "mass":
             canonical = quotient(canonical, density)

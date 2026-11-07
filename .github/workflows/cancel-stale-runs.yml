@@ -3,7 +3,7 @@ name: Cancel stale runs
 # Clears CI runs that can no longer matter so they do not hold the macOS queue: pull request runs for a
 # head that has moved on or a pull request that closed, older default-branch push runs, and runs that
 # have waited in the queue for hours. Only the CI workflows listed in the script are touched; release and
-# signing runs are never cancelled. Runs from the base branch and executes nothing from a pull request.
+# signing runs are never canceled. Runs from the base branch and executes nothing from a pull request.
 on:
   schedule:
     - cron: "*/15 * * * *"
@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Only list the runs that would be cancelled"
+        description: "Only list the runs that would be canceled"
         type: boolean
         default: false
 

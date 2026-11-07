@@ -48,7 +48,7 @@ basis is `0.333...` of it. There are exactly three divisions in this contract:
 - scaling divides by the label basis: `value x consumed / basis`, multiplied
   first and divided once, last;
 - a mass to volume conversion divides by the density, in the canonical units
-  (grams by grams per millilitre, giving millilitres), before the target unit's
+  (grams by grams per milliliter, giving milliliters), before the target unit's
   power of ten is applied;
 - a mass or volume to count conversion divides by the portion amount, after the
   amount has been converted into the portion's unit.
@@ -137,7 +137,7 @@ The wire carries the unit symbols of `registry.v1.json` and no others: `g`,
 `mg`, `mcg`, `kg`, `mL`, `L`, `kcal`, `IU`, `serving`, `scoop`, `tablet`,
 `capsule`, `piece` and `gummy`. Each is a symbol the iOS `UnitRegistry` knows,
 spelled the same way, so a document that passes the schema always decodes in the
-app. A provider's `ug`, `ml`, `l` or `iu` is normalised by the importer before a
+app. A provider's `ug`, `ml`, `l` or `iu` is normalized by the importer before a
 record is published.
 
 Energy is stated in kcal. `kJ` is not a v1 unit: the app does not know it, and
@@ -164,7 +164,7 @@ Mass, volume, energy, count and international units are five different things.
 Adding or comparing across dimensions is an error, not a zero.
 
 Mass to volume, and volume to mass, need a density stated in grams per
-millilitre for that product. Without one the conversion is refused. A density of
+milliliter for that product. Without one the conversion is refused. A density of
 zero or less is refused as well.
 
 Count units (serving, scoop, tablet, capsule, piece, gummy) need a stated

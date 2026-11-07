@@ -77,7 +77,7 @@ public actor DeliveryRunGate {
     }
 
     /// Takes the gate for an erase, waiting at most `seconds` for a run that holds it. Returns nil, holding
-    /// nothing, when the run is still going then: the erase touches nothing and the run is not cancelled, because
+    /// nothing, when the run is still going then: the erase touches nothing and the run is not canceled, because
     /// a HealthKit write stopped halfway would leave the ledger out of step with Health.
     public func pause(upTo seconds: TimeInterval) async -> PauseHold? {
         let entered: Bool

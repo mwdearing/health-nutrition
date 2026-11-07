@@ -433,7 +433,7 @@ final class TodayTests: XCTestCase {
     }
 
     /// A supplement is left out of the count of the day's foods, on both sides of it: a multivitamin
-    /// states no fibre and no potassium because that is what a supplement is, and counting it would tell
+    /// states no fiber and no potassium because that is what a supplement is, and counting it would tell
     /// the reader their day is short of nutrients nobody was ever going to get from it. Its totals still
     /// count, so what it does state is not thrown away.
     func testASupplementIsLeftOutOfCoverageButStillCountsTowardTotals() throws {
@@ -456,11 +456,11 @@ final class TodayTests: XCTestCase {
             model.progress.first { $0.nutrient == "potassium" }?.amount, .known(Decimal(300), .mg))
         XCTAssertEqual(
             model.progress.first { $0.nutrient == "fiber" }?.amount, .unknown,
-            "nothing in the day stated fibre, and the supplement did not make that a zero")
+            "nothing in the day stated fiber, and the supplement did not make that a zero")
     }
 
     /// A day holding nothing but supplements has no food in it to report coverage about, and "0 of 0
-    /// foods lack fibre" says nothing about anybody's day, so no line is published for it.
+    /// foods lack fiber" says nothing about anybody's day, so no line is published for it.
     func testADayOfOnlySupplementsPublishesNoCoverageLine() throws {
         let store = try makeStore()
         _ = try addSupplement(store, name: "Sample daily multi", id: "multi", at: now)
