@@ -261,7 +261,12 @@ public final class AddIntakeViewModel: ObservableObject {
 
     /// What Save does beyond the Diary entry, shown above the Save button. A product from a barcode, a label or a
     /// search is also saved to Library > Products unless "Save to Library" is off; a typed-in or quick-add entry
-    /// is not. When Share labels is on, a captured label is also sent to the community catalog.
+    /// is not. When Share products with the community is on, a captured label is also sent to the community catalog.
+    /// The sentence that says a saved label is sent to the community catalog. It names the toggle as the
+    /// Account screen shows it (approved wording, #516).
+    public static let communityShareSentence =
+        "Share products with the community is on, so saving this label also sends its product name, brand, barcode, serving text and nutrient amounts to the community catalog."
+
     public var saveScopeMessage: String {
         let savedToProducts = canChooseLibrary && savesToLibrary
         var sentences = [savedToProducts
@@ -270,7 +275,7 @@ public final class AddIntakeViewModel: ObservableObject {
         // The same checks the save path uses to send a label, so the line promises only an upload that will happen.
         if prefilledFromCapture, labelValues != nil, storedProduct == nil, labelSubmitter != nil, isSharingAllowed(),
            communitySubmission() != nil {
-            sentences.append("Share labels is on, so saving this label also sends its product name, brand, barcode, serving text and nutrient amounts to the community catalog.")
+            sentences.append(Self.communityShareSentence)
         }
         return sentences.joined(separator: " ")
     }
