@@ -94,8 +94,13 @@ final class AddSearchRowUITests: XCTestCase {
         // Push the Recent row, then come back.
         let recent = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", entryName)).firstMatch
         XCTAssertTrue(recent.waitForExistence(timeout: 10), "the logged entry is not under Recent on the search screen")
-        recent.tap()
+        // The search field holds focus here, so the keyboard is still settling when the row is first hittable: a tap
+        // that lands then can be lost (CI runs 42183257060 and 42021259997). The row is tapped once it is hittable, and
+        // once more only while the details form has not opened, so a form that opened late is not opened twice.
         let detailsBar = app.navigationBars["Log entry"]
+        XCTAssertTrue(pollUntil(timeout: 15, { recent.exists && recent.isHittable }), "the Recent row is not hittable")
+        recent.tap()
+        if !detailsBar.waitForExistence(timeout: 8), recent.exists, recent.isHittable { recent.tap() }
         XCTAssertTrue(detailsBar.waitForExistence(timeout: 20), "tapping the Recent row did not open the details form")
         // The Recent row opens a prefilled form, so the form shows its own Back button and asks before discarding.
         let back = detailsBar.buttons["Back"]
