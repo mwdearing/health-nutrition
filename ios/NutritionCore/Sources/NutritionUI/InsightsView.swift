@@ -83,28 +83,29 @@ public struct InsightsView: View {
         count == 1 ? "1 entry" : "\(count) entries"
     }
 
-    /// The seven days as bars. Each bar keeps its spoken label; the chart as a whole reads as one summary.
+    /// The seven days as bars, plotted as ordered categories (one key per day) so no calendar maths can merge two
+    /// days. Each bar keeps its spoken label; the chart as a whole reads as one summary.
     private var weekChart: some View {
-        Chart(week.days) { day in
+        let keys = week.days.indices.map(String.init)
+        return Chart(Array(week.days.enumerated()), id: \.element.id) { index, day in
             BarMark(
-                x: .value("Day", day.id, unit: .day),
+                x: .value("Day", String(index)),
                 y: .value("Entries", day.entryCount)
             )
             .foregroundStyle(TokenColors.mint)
             .accessibilityLabel("\(day.label), \(Self.entriesText(day.entryCount))")
         }
+        .chartXScale(domain: keys)
         .chartXAxis {
-            AxisMarks(values: week.days.map(\.id)) { value in
+            AxisMarks(values: keys) { value in
                 AxisValueLabel {
-                    if let date = value.as(Date.self), let day = week.days.first(where: { WeightTrendChart.axisCalendar.isDate($0.id, inSameDayAs: date) }) {
-                        Text(day.label).font(.caption2)
+                    if let key = value.as(String.self), let index = Int(key), week.days.indices.contains(index) {
+                        Text(week.days[index].label).font(.caption2)
                     }
                 }
             }
         }
         .chartYAxis(.hidden)
-        .environment(\.calendar, WeightTrendChart.axisCalendar)
-        .environment(\.timeZone, WeightTrendChart.axisCalendar.timeZone)
         .frame(height: chartHeight)
         .accessibilityLabel(week.days.map { "\($0.label), \(Self.entriesText($0.entryCount))" }.joined(separator: ". "))
     }
