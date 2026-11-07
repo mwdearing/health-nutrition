@@ -58,6 +58,19 @@ public struct JournalMealGroup: Equatable, Identifiable {
     }
 }
 
+/// The three figures the Diary's week strip shows for a day, worded as the day's header words them.
+public struct JournalDayFigures: Equatable {
+    public let calories: String
+    public let protein: String
+    public let water: String
+
+    public init(calories: String, protein: String, water: String) {
+        self.calories = calories
+        self.protein = protein
+        self.water = water
+    }
+}
+
 public struct JournalDaySection: Equatable, Identifiable {
     /// Local day in the intakes' own time zone, as yyyy-MM-dd.
     public let id: String
@@ -79,11 +92,14 @@ public struct JournalDaySection: Equatable, Identifiable {
     public let isCollapsedByDefault: Bool
     /// "1 entry" or "9 entries".
     public let entryCountText: String
+    /// The day's calories, protein and water as the week strip shows them, built with the header's own builders.
+    public let stripFigures: JournalDayFigures
 
     public init(
         id: String, title: String, rows: [JournalRow], totals: DailyTotals, totalsText: String,
         mealGroups: [JournalMealGroup], headerBars: [GoalBarModel], energyText: String?,
-        isCollapsedByDefault: Bool, entryCountText: String
+        isCollapsedByDefault: Bool, entryCountText: String,
+        stripFigures: JournalDayFigures? = nil
     ) {
         self.id = id
         self.title = title
@@ -95,6 +111,9 @@ public struct JournalDaySection: Equatable, Identifiable {
         self.energyText = energyText
         self.isCollapsedByDefault = isCollapsedByDefault
         self.entryCountText = entryCountText
+        self.stripFigures = stripFigures ?? JournalDayFigures(
+            calories: JournalViewModel.nothingLoggedText, protein: JournalViewModel.nothingLoggedText,
+            water: JournalViewModel.nothingLoggedText)
     }
 }
 
@@ -310,7 +329,7 @@ public final class JournalViewModel: ObservableObject {
     /// The day keys the Diary arrows step through, in list order: today's empty day too, which the
     /// sections leave out (#539). Refreshed by every change to the sections, so no writer can leave them stale (#611).
     @Published public private(set) var arrowSectionIDs: [String] = []
-    private let locale: Locale
+    let locale: Locale
     private let preferences: DisplayPreferences
 
     public init(
@@ -470,7 +489,11 @@ public final class JournalViewModel: ObservableObject {
                         let zone = TimeZone(identifier: row.timeZoneIdentifier) ?? TimeZone.current
                         return Self.isMoreThanAWeekBefore(Self.dayKey(row.occurredAt, zone: zone), now: now, zone: zone)
                     },
-                    entryCountText: Self.entryCountText(rows.count))
+                    entryCountText: Self.entryCountText(rows.count),
+                    stripFigures: Self.stripFigures(
+                        totals: totals, goals: storedGoals, hasFoodEntries: Self.hasFoodEntries(rows),
+                        unitSystem: self.preferences.unitSystem, hidden: hiddenGoals,
+                        outside: self.outsideIntakeByDay[key] ?? .notConnected))
             }
             todaySection = built.first { $0.id == todayKey && $0.rows.isEmpty }
             sections = built.filter { !($0.id == todayKey && $0.rows.isEmpty) }
@@ -899,13 +922,25 @@ public final class JournalViewModel: ObservableObject {
         rows.contains { !$0.isWater && $0.countsAs != .supplement }
     }
 
-    /// The week summary for the loaded sections, or nil when the journal has no day at all. The window is
-    /// the seven days ending today in the journal's zone, today included; a later day is outside it.
-    static func makeWeekSummary(
-        sections: [JournalDaySection], now: Date, zone: TimeZone, goals: [NutrientGoal],
-        hidden: Set<String>, unitSystem: UnitSystem, displayNames: [String: String] = [:],
-        outsideByDay: [String: HealthIntakeTotals.Outside] = [:]
-    ) -> JournalWeekSummary? {
+    /// The days of the week window and which of them count as logged. The week summary counts them and the Diary's week
+    /// strip draws a dot on them, so the rule lives only here.
+    struct WeekLogged {
+        /// The seven day keys of the window, newest first.
+        let windowKeys: [String]
+        /// The sections that count as logged (food or drink, or a day Apple Health states intake for).
+        let logged: [JournalDaySection]
+        /// Days in the window that only Apple Health states intake for, with no section inside the window.
+        let healthOnlyKeys: [String]
+        /// Every logged day key of the window.
+        var loggedKeys: Set<String> { Set(logged.map(\.id)).union(healthOnlyKeys) }
+    }
+
+    /// The window is the seven days ending today in the journal's zone, today included; a later day is outside it.
+    /// Nil when the journal has no day at all and Health states no intake for a day in the window.
+    static func weekLogged(
+        sections: [JournalDaySection], now: Date, zone: TimeZone,
+        outsideByDay: [String: HealthIntakeTotals.Outside]
+    ) -> WeekLogged? {
         // The window is read by instant in the journal's zone: from the start of the day six days back to now.
         // An entry's own zone only decides which day section it sits in, so a trip across zones cannot move an
         // entry in or out of the week or make a section count twice.
@@ -932,6 +967,18 @@ public final class JournalViewModel: ObservableObject {
         // otherwise it shows its empty state alone.
         guard !sections.isEmpty || !healthOnlyKeys.isEmpty else { return nil }
         let logged = week.filter { hasFoodEntries($0.rows) || outsideByDay[$0.id]?.statesIntake == true }
+        return WeekLogged(windowKeys: windowKeys, logged: logged, healthOnlyKeys: healthOnlyKeys)
+    }
+
+    /// The week summary for the loaded sections, or nil when the journal has no day at all. The window is
+    /// the seven days ending today in the journal's zone, today included; a later day is outside it.
+    static func makeWeekSummary(
+        sections: [JournalDaySection], now: Date, zone: TimeZone, goals: [NutrientGoal],
+        hidden: Set<String>, unitSystem: UnitSystem, displayNames: [String: String] = [:],
+        outsideByDay: [String: HealthIntakeTotals.Outside] = [:]
+    ) -> JournalWeekSummary? {
+        guard let found = weekLogged(sections: sections, now: now, zone: zone, outsideByDay: outsideByDay) else { return nil }
+        let (logged, healthOnlyKeys) = (found.logged, found.healthOnlyKeys)
         let days: [WeekDay] = logged.map { WeekDay(totals: $0.totals, outside: outsideByDay[$0.id] ?? .notConnected) }
             + healthOnlyKeys.map { WeekDay(totals: nil, outside: outsideByDay[$0] ?? .notConnected) }
         guard !days.isEmpty else {
@@ -1062,23 +1109,53 @@ public final class JournalViewModel: ObservableObject {
         hidden: Set<String> = [], outside: HealthIntakeTotals.Outside = .notConnected
     ) -> [GoalBarModel] {
         goals.filter { $0.nutrient != DailyTotalsBuilder.waterKey && !hidden.contains($0.nutrient) }
-            .prefix(3).map { goal -> GoalBarModel in
-            let journalLine = NutrientProgressLine.make(
-                nutrient: goal.nutrient, total: totals.total(for: goal.nutrient), goal: goal,
-                knownSum: totals.knownSum(for: goal.nutrient), missingCount: totals.missingCount(for: goal.nutrient))
-            // A Health query that failed for this nutrient keeps the journal's own bar, as the energy figure keeps the
-            // journal's figure, rather than turning a known journal amount into "Can't total yet" (#1107, Mike 2026-10-31).
-            let line: NutrientProgressLine
-            if case .read(_, let readKeys) = outside,
-               !readKeys.contains(HealthKitWritePlanner.canonicalKey(for: goal.nutrient)) {
-                line = journalLine
-            } else {
-                line = HealthIntakeTotals.combine([journalLine], outside: outside).first ?? journalLine
+            .prefix(3).map { goal in
+                goalBar(
+                    nutrient: goal.nutrient, goal: goal, totals: totals, hasFoodEntries: hasFoodEntries,
+                    unitSystem: unitSystem, outside: outside)
             }
-            return GoalBarModel.make(
-                line: line, hasEntries: line.hasKnownAmount || hasFoodEntries, missingCount: line.missingCount,
-                unitSystem: unitSystem)
+    }
+
+    /// The bar for one nutrient of a day, with `goal` when one is stored. The day header and the week strip both build
+    /// their figures here, so the two cannot word a day differently.
+    static func goalBar(
+        nutrient: String, goal: NutrientGoal?, totals: DailyTotals, hasFoodEntries: Bool, unitSystem: UnitSystem,
+        outside: HealthIntakeTotals.Outside
+    ) -> GoalBarModel {
+        let journalLine = NutrientProgressLine.make(
+            nutrient: nutrient, total: totals.total(for: nutrient), goal: goal,
+            knownSum: totals.knownSum(for: nutrient), missingCount: totals.missingCount(for: nutrient))
+        // A Health query that failed for this nutrient keeps the journal's own bar, as the energy figure keeps the
+        // journal's figure, rather than turning a known journal amount into "Can't total yet" (#1107, Mike 2026-10-31).
+        let line: NutrientProgressLine
+        if case .read(_, let readKeys) = outside,
+           !readKeys.contains(HealthKitWritePlanner.canonicalKey(for: nutrient)) {
+            line = journalLine
+        } else {
+            line = HealthIntakeTotals.combine([journalLine], outside: outside).first ?? journalLine
         }
+        return GoalBarModel.make(
+            line: line, hasEntries: line.hasKnownAmount || hasFoodEntries, missingCount: line.missingCount,
+            unitSystem: unitSystem)
+    }
+
+    /// What a day with nothing to state reads, in the header's own words.
+    static let nothingLoggedText = "Nothing logged yet"
+
+    /// The strip's three figures for a day: the header's energy text, and the protein and water bars built as the
+    /// header builds its bars (water is not among the header's bars, so it is built here with the same builder).
+    static func stripFigures(
+        totals: DailyTotals, goals: [NutrientGoal], hasFoodEntries: Bool, unitSystem: UnitSystem,
+        hidden: Set<String>, outside: HealthIntakeTotals.Outside
+    ) -> JournalDayFigures {
+        func figure(_ nutrient: String) -> String {
+            goalBar(
+                nutrient: nutrient, goal: goals.first { $0.nutrient == nutrient }, totals: totals,
+                hasFoodEntries: hasFoodEntries, unitSystem: unitSystem, outside: outside).valueText
+        }
+        return JournalDayFigures(
+            calories: energyText(totals: totals, outside: outside) ?? (hasFoodEntries ? "No data" : nothingLoggedText),
+            protein: figure("protein"), water: figure(DailyTotalsBuilder.waterKey))
     }
 
     /// The day's energy as "1240 kcal", or nil when the day cannot total it. Never a zero for unknown. `outside` is
