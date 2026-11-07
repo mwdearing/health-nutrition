@@ -123,6 +123,9 @@ public struct DiaryWeekStrip: View {
 }
 
 extension JournalViewModel {
+    /// What a figure reads on a day logged only in Apple Health when Health states no value for it.
+    static let loggedInHealthText = "Logged in Apple Health"
+
     /// The strip for the week summary's seven days, or nil when the journal has no week card. `chosen` is a day key
     /// from the strip; nil, or a key outside the week, chooses today. The figures come from the chosen day's section, so
     /// they read exactly as its header does; a day with no section reads the header's empty wording.
@@ -152,7 +155,20 @@ extension JournalViewModel {
         let chosenID = chosen.flatMap { id in days.contains { $0.id == id } ? id : nil } ?? today.id
         let empty = JournalDayFigures(
             calories: Self.nothingLoggedText, protein: Self.nothingLoggedText, water: Self.nothingLoggedText)
-        let figures = diarySections.first { $0.id == chosenID }?.stripFigures ?? empty
+        let figures: JournalDayFigures
+        if let section = diarySections.first(where: { $0.id == chosenID }) {
+            figures = section.stripFigures
+        } else if let outside = outsideIntakeByDay[chosenID], outside.statesIntake {
+            // A day logged only through Apple Health has no section: show what Health states, and say where the rest is.
+            let fromHealth = Self.stripFigures(
+                totals: DailyTotals(totals: [:]), goals: [], hasFoodEntries: false,
+                unitSystem: preferences.unitSystem, hidden: [], outside: outside)
+            func fill(_ text: String) -> String { text == Self.nothingLoggedText ? Self.loggedInHealthText : text }
+            figures = JournalDayFigures(
+                calories: fill(fromHealth.calories), protein: fill(fromHealth.protein), water: fill(fromHealth.water))
+        } else {
+            figures = empty
+        }
         return DiaryWeekStripModel(days: days, chosenID: chosenID, figures: figures)
     }
 }
