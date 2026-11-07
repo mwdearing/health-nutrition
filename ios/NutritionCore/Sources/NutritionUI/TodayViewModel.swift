@@ -154,6 +154,13 @@ public final class TodayViewModel: ObservableObject {
     /// Says the calorie goal was raised by activity, and by how much; nil when it was not.
     @Published public private(set) var activityGoalNote: String?
     static let energyKey = "energy"
+
+    /// The calorie goal a stored target stands for. A target of zero is no goal (the default), so it reads as
+    /// unset and "Calories remaining" stays hidden rather than showing a negative figure (#1365 review).
+    static func energyGoal(_ stored: Decimal?) -> Decimal? {
+        guard let stored, stored > 0 else { return nil }
+        return stored
+    }
     /// The water bar, only where a water goal is set; without one the water card shows the total alone.
     @Published public private(set) var waterBar: GoalBarModel?
     /// The day's food, drink, and supplement entries grouped by meal: Breakfast, Lunch, Dinner, Snack, then Other for
@@ -439,7 +446,7 @@ public final class TodayViewModel: ObservableObject {
             // what Health reports burned so far. The stored goal is never changed.
             activityGoalNote = nil
             // The stored calorie target before activity is added, for "Calories remaining".
-            let storedEnergyTarget = storedGoals.first { $0.nutrient == Self.energyKey && $0.unit == .kcal }?.target
+            let storedEnergyTarget = Self.energyGoal(storedGoals.first { $0.nutrient == Self.energyKey && $0.unit == .kcal }?.target)
             if let bonus = activeEnergyKcal, bonus > 0,
                (preferences as? ActivityGoalPreferences)?.addsActiveEnergyToGoal == true,
                let index = storedGoals.firstIndex(where: { $0.nutrient == Self.energyKey && $0.unit == .kcal }) {

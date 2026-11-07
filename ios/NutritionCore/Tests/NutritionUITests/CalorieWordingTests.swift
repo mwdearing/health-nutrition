@@ -23,6 +23,13 @@ final class CalorieWordingTests: XCTestCase {
         XCTAssertEqual(BodyActivityViewModel.calorieWord("250"), "calories")
     }
 
+    func testAZeroEnergyGoalIsNoGoal() {
+        XCTAssertNil(TodayViewModel.energyGoal(nil))
+        XCTAssertNil(TodayViewModel.energyGoal(0))
+        XCTAssertNil(TodayViewModel.energyGoal(-5))
+        XCTAssertEqual(TodayViewModel.energyGoal(2000), 2000)
+    }
+
     private func totals(kcal: Decimal) -> DailyTotals {
         let total = NutrientTotal(
             value: .known(kcal, .kcal),
