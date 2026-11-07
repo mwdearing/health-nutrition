@@ -35,6 +35,14 @@ enum PopGateRegistry {
 
     /// Sets the stack's edge pop from the screen on top: off when a blocked gate belongs to it, on otherwise.
     static func evaluate(_ nav: UINavigationController) {
+        // Switching the recognizer off during a pan cancels the swipe, so a stack in transition (an interactive pop in
+        // progress included) is read again once the transition has finished, or been cancelled.
+        if let coordinator = nav.transitionCoordinator {
+            coordinator.animate(alongsideTransition: nil) { [weak nav] _ in
+                if let nav { evaluate(nav) }
+            }
+            return
+        }
         let top = nav.topViewController
         let blocked = (gates[ObjectIdentifier(nav)] ?? []).contains { box in
             guard let gate = box.gate, gate.blocked, let top else { return false }
