@@ -19,17 +19,24 @@ final class GoalsKeyboardDoneUITests: XCTestCase {
         // A goal target, found by its spoken name: other fields on the screen, such as a water container size, are
         // not goal targets.
         let field = app.textFields.matching(NSPredicate(format: "label BEGINSWITH %@", "Daily target for")).firstMatch
-        // Edit goals opens Settings; the goal targets are on the Daily goals screen behind its first row.
-        if !field.waitForExistence(timeout: 5) {
+        // Edit goals opens Settings with the Daily goals screen pushed over it, or on the Settings form itself. The test
+        // waits for the Daily goals screen by its navigation bar, one wait on a slow runner instead of a field query
+        // repeated every two seconds (a repeated query timed out while evaluating on a slow simulator, runs 41985033734
+        // and 41959425049), and taps the Daily goals row only if the screen did not open.
+        let goalsBar = app.navigationBars["Daily goals"]
+        if !(goalsBar.waitForExistence(timeout: 10) || field.exists) {
             let dailyGoals = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Daily goals")).firstMatch
-            XCTAssertTrue(dailyGoals.waitForExistence(timeout: 10), "no Daily goals row in Settings")
+            XCTAssertTrue(dailyGoals.waitForExistence(timeout: 15), "no Daily goals row in Settings")
             dailyGoals.tap()
+            XCTAssertTrue(goalsBar.waitForExistence(timeout: 20), "the Daily goals screen did not open")
         }
         // A list only builds the rows near the screen, so the goal rows are scrolled into view.
+        _ = field.waitForExistence(timeout: 15)
         var swipes = 0
-        while !field.waitForExistence(timeout: 2), swipes < 8 {
+        while !(field.exists && field.isHittable), swipes < 8 {
             app.swipeUp()
             swipes += 1
+            _ = field.waitForExistence(timeout: 3)
         }
         XCTAssertTrue(field.exists, "no goal target field on the Daily goals screen\n\(app.debugDescription)")
         // Settings has its own Done button, so the keyboard's is counted on top of the ones already on screen.
