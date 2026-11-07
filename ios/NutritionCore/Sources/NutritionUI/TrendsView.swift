@@ -1,5 +1,25 @@
 import SwiftUI
 
+extension InsightsAverages {
+    /// The Diary's days with what Health states for each, plus the days only Health knows (no Diary row, so no
+    /// section), which carry no journal totals (#1268). Insights and the Trends cards both read it, so they count
+    /// the same days.
+    @MainActor
+    static func days(from journal: JournalViewModel) -> [InsightsAverages.Day] {
+        let outside = journal.outsideIntakeByDay
+        var days = journal.sections.map {
+            InsightsAverages.Day(
+                key: $0.id, totals: $0.totals, isLogged: JournalViewModel.hasFoodEntries($0.rows),
+                outside: outside[$0.id] ?? .notConnected)
+        }
+        let known = Set(journal.sections.map(\.id))
+        for (key, read) in outside where !known.contains(key) {
+            days.append(InsightsAverages.Day(key: key, totals: DailyTotals(totals: [:]), isLogged: false, outside: read))
+        }
+        return days
+    }
+}
+
 /// Insights, loaded from the diary when it appears: the entries' times are read from the journal, so the
 /// summary is the same days the Diary shows.
 public struct InsightsHost: View {
@@ -16,21 +36,7 @@ public struct InsightsHost: View {
         self.zone = zone
     }
 
-    /// The Diary's days with what Health states for each, plus the days only Health knows (no Diary row, so no
-    /// section), which carry no journal totals (#1268).
-    private var averageDays: [InsightsAverages.Day] {
-        let outside = journal.outsideIntakeByDay
-        var days = journal.sections.map {
-            InsightsAverages.Day(
-                key: $0.id, totals: $0.totals, isLogged: JournalViewModel.hasFoodEntries($0.rows),
-                outside: outside[$0.id] ?? .notConnected)
-        }
-        let known = Set(journal.sections.map(\.id))
-        for (key, read) in outside where !known.contains(key) {
-            days.append(InsightsAverages.Day(key: key, totals: DailyTotals(totals: [:]), isLogged: false, outside: read))
-        }
-        return days
-    }
+    private var averageDays: [InsightsAverages.Day] { InsightsAverages.days(from: journal) }
 
     private var state: InsightsLoadState {
         InsightsLoadState.resolve(
@@ -78,19 +84,31 @@ public struct TrendsView: View {
     /// The vitamins row's detail. It says what the row compares, without repeating the title (#537).
     static let vitaminsDetail = "Compared with published reference values"
 
-    private let today: TodayViewModel
-    private let journal: JournalViewModel
+    @ObservedObject private var today: TodayViewModel
+    @ObservedObject private var journal: JournalViewModel
     private let now: () -> Date
+    private let zone: () -> TimeZone
 
-    public init(today: TodayViewModel, journal: JournalViewModel, now: @escaping () -> Date = { Date() }) {
+    public init(
+        today: TodayViewModel, journal: JournalViewModel, now: @escaping () -> Date = { Date() },
+        zone: @escaping () -> TimeZone = { TimeZone.current }
+    ) {
         self.today = today
         self.journal = journal
         self.now = now
+        self.zone = zone
+    }
+
+    private var summary: TrendsSummary {
+        TrendsSummary.make(
+            days: InsightsAverages.days(from: journal), goal: today.calorieRemaining.goal, now: now(), zone: zone())
     }
 
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: DesignSpacing.m) {
+                TrendsCaloriesCard(summary: summary)
+                TrendsMacrosCard(summary: summary)
                 row(
                     title: "Vitamins and minerals", detail: Self.vitaminsDetail,
                     systemImage: "leaf"
@@ -109,6 +127,8 @@ public struct TrendsView: View {
         }
         .background(TokenColors.page)
         .navigationTitle("Trends")
+        .onAppear { journal.load(now: now()) }
+        .task { await journal.loadRecentHealthTotals(days: InsightsAverages.windowDays, now: now()) }
     }
 
     private func row<Destination: View>(
