@@ -97,7 +97,7 @@ final class TrendsSummaryTests: XCTestCase {
     func testAPartialDayShowsAtLeast() {
         let healthOnlyWithJournalGap = InsightsAverages.Day(
             key: "2023-11-14", totals: DailyTotals(totals: [:]), isLogged: false,
-            outside: .read(values: ["energy": 1_000], readKeys: ["protein"]))
+            outside: .read(values: ["energy": 1_000, "protein": 10], readKeys: ["protein"]))
         let partial = make([day("2023-11-15", kcal: 2_000), healthOnlyWithJournalGap])
         XCTAssertTrue(partial.energyIsPartial)
         let insights = InsightsAverages.make(
