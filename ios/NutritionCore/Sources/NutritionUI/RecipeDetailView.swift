@@ -69,7 +69,7 @@ public struct RecipeDetailView: View {
             }
         }
         .scrollContentBackground(.hidden)
-        .background(TokenColors.background)
+        .background(TokenColors.page)
         .navigationTitle(model.version.title)
     }
 }

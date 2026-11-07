@@ -107,7 +107,7 @@ public struct TrendsView: View {
             .padding(.horizontal, DesignSpacing.m)
             .padding(.vertical, DesignSpacing.s)
         }
-        .background(TokenColors.background)
+        .background(TokenColors.page)
         .navigationTitle("Trends")
     }
 
@@ -117,10 +117,9 @@ public struct TrendsView: View {
         NavigationLink {
             destination()
         } label: {
-            Card {
+            ContentCard {
                 HStack(spacing: DesignSpacing.m) {
-                    Image(systemName: systemImage)
-                        .foregroundStyle(TokenColors.accent)
+                    IconWell(systemName: systemImage)
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: DesignSpacing.xs) {
                         Text(title).font(.headline).foregroundStyle(TokenColors.textPrimary)
@@ -134,5 +133,6 @@ public struct TrendsView: View {
             }
         }
         .buttonStyle(.plain)
+        .frame(minHeight: 44)
     }
 }

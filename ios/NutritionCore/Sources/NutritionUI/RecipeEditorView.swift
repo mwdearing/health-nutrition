@@ -85,7 +85,7 @@ public struct RecipeEditorView: View {
             }
         }
         .scrollContentBackground(.hidden)
-        .background(TokenColors.background)
+        .background(TokenColors.page)
         .navigationTitle("Recipe")
         // Changes are only at risk once the person has made them: a changed recipe asks before leaving.
         .navigationBarBackButtonHidden(model.hasTypedInput)

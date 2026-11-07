@@ -51,7 +51,7 @@ public struct CustomProductEditorView: View {
                     Text("Per serving").tag(Optional(ProductBasis.perServing))
                 }
                 LabeledField("Product serving quantity (optional)") { focus in
-                    TextField("Product serving quantity (optional)", text: $model.servingQuantity).decimalAmountKeyboard().focused(focus)
+                    TextField("Product serving quantity (optional)", text: $model.servingQuantity).decimalKeypadOnly().focused(focus)
                 }
                 Picker("Product serving unit", selection: $model.servingUnit) {
                     ForEach(CustomProductEditorViewModel.servingUnits, id: \.self) { Text($0.screenSymbol).tag($0) }
@@ -92,7 +92,7 @@ public struct CustomProductEditorView: View {
                         }
                         if fact.state == .known {
                             LabeledField("Amount") { focus in
-                                TextField("Amount", text: $fact.amount).decimalAmountKeyboard().focused(focus)
+                                TextField("Amount", text: $fact.amount).decimalKeypadOnly().focused(focus)
                             }
                         }
                         if fact.state == .known || fact.state == .belowReportingThreshold {
@@ -124,6 +124,8 @@ public struct CustomProductEditorView: View {
             }
             if let item = model.revision, let sharing { CustomProductSharingSection(item: item, model: sharing) }
         }
+        .scrollContentBackground(.hidden)
+        .background(TokenColors.page)
         .navigationTitle("Product editor")
         // Changes are only at risk once made: a changed product asks before leaving.
         .navigationBarBackButtonHidden(model.hasTypedInput)
@@ -134,6 +136,8 @@ public struct CustomProductEditorView: View {
                     if model.hasTypedInput { confirmDiscard = true } else { dismiss() }
                 }
             }
+            // One Done key for every amount field on this form (see decimalKeypadOnly).
+            KeyboardDoneToolbar()
         }
         .confirmationDialog("Discard changes?", isPresented: $confirmDiscard, titleVisibility: .visible) {
             Button("Discard", role: .destructive) { dismiss() }

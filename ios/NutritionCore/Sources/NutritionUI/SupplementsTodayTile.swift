@@ -26,11 +26,9 @@ struct SupplementsTodayTile: View {
         NavigationLink {
             SupplementStackView(model: model, now: now, onLogged: onLogged)
         } label: {
-            Card {
+            ContentCard {
                 HStack(spacing: DesignSpacing.m) {
-                    Image(systemName: "pills")
-                        .foregroundStyle(TokenColors.accent)
-                        .accessibilityHidden(true)
+                    IconWell(systemName: "pills")
                     VStack(alignment: .leading, spacing: DesignSpacing.xs) {
                         Text("Supplements")
                             .font(.headline)

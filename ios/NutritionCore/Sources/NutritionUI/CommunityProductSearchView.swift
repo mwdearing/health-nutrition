@@ -42,6 +42,7 @@ public struct CommunityProductSearchView: View {
     private let focusSearchOnAppear: Bool
     public var body: some View {
         List {
+            Group {
             Section {
                 LabeledField(Self.fieldLabel, focus: $searchFocused) { focus in
                     TextField(Self.fieldLabel, text: $query).focused(focus).submitLabel(.search)
@@ -129,7 +130,11 @@ public struct CommunityProductSearchView: View {
                 }
             }
             if let selectionError { Text(selectionError).foregroundStyle(TokenColors.error) }
+            }
+            .listRowBackground(TokenColors.card)
         }
+        .scrollContentBackground(.hidden)
+        .background(TokenColors.page)
         .sheet(isPresented: Binding(get: { model.inspectedProduct != nil }, set: { if !$0 { model.closeInspection() } })) {
             if let product = model.inspectedProduct {
                 NavigationStack {

@@ -4,8 +4,10 @@ These screens live in the SwiftPM library target `NutritionUI` (package `ios/Nut
 read live in `NutritionJournal`. The app target wires them together. Tests cover the view models only.
 
 ## Screens
-- **Today** (`TodayView`, `TodayViewModel`): the date, a calorie ring for energy, protein, carbohydrate and fat columns, a card of goal bars for any other tracked
-  nutrient (see "Goal bars" below) and an "Edit goals" link (`NourishTodayHeader`), a **Water** card with the total, the quick-add water
+- **Today** (`TodayView`, `TodayViewModel`): the date, then a teal hero (`NourishTodayHeader`) holding the calorie ring with the
+  remaining figure, the Food and Burned row and the protein, carbohydrate and fat bars. Over the goal the ring's centre says how far
+  over ("Calories over goal", never a negative figure). Below the hero, in content cards: the goal bars for any other tracked
+  nutrient (see "Goal bars" below), an "Edit goals" link, a **Water** card with the total, the quick-add water
   capsule and its undo, an **Other amount** capsule that opens a typed field with an Add button, then the day's food and drink entries grouped by meal (Breakfast, Lunch, Dinner, Snack, then
   Other), and one footer line when entries state no nutrition values. Each entry row opens that entry in the entry
   screen, so a row logged late on the wrong day is corrected where it is noticed. Add is the "Add food, drink, or supplement"
@@ -30,7 +32,7 @@ the design-system screenshots are captured. **Settings > About** has **Show welc
 once more; it changes no other setting. Erase all data clears the flag, so the welcome shows again on the next
 launch (not at once).
 
-**The checklist card** is titled "Getting started". It sits on Today above **Daily goals** while it is shown, and has
+**The checklist card** is titled "Getting started". It sits on Today below the hero while it is shown, and has
 four rows in this order:
 1. **Log your first food, drink, or supplement**: done when the journal holds at least one entry, on any day. Tapping it opens
    Add.

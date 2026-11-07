@@ -32,7 +32,7 @@ final class OutsideCardTextTests: XCTestCase {
         let text = await outsideText(for: BodyActivityReadings(
             outsideNutrients: ["energy": 620], outsideReadFailed: true, outsideRead: true,
             outsideReadKeys: ["energy"]))
-        XCTAssertEqual(text, "From other apps: 620 Calories")
+        XCTAssertEqual(text, "From other apps: 620 calories")
         XCTAssertFalse(text?.contains("could not be read") ?? true)
     }
 
@@ -46,7 +46,7 @@ final class OutsideCardTextTests: XCTestCase {
         let text = await outsideText(for: BodyActivityReadings(
             outsideNutrients: ["energy": 620, "protein": 10], outsideReadFailed: true, outsideRead: true,
             outsideReadKeys: ["energy"]))
-        XCTAssertEqual(text, "From other apps: 620 Calories")
+        XCTAssertEqual(text, "From other apps: 620 calories")
     }
 
     func testAnUnreadEnergyIsNotShown() async {
@@ -60,7 +60,7 @@ final class OutsideCardTextTests: XCTestCase {
         let text = await outsideText(for: BodyActivityReadings(
             outsideNutrients: ["energy": 620, "water": 473], outsideReadFailed: true, outsideRead: true,
             outsideReadKeys: ["energy"]))
-        XCTAssertEqual(text, "From other apps: 620 Calories")
+        XCTAssertEqual(text, "From other apps: 620 calories")
     }
 
     func testNothingReadShowsTheFailureLine() async {

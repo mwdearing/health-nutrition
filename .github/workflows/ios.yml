@@ -123,19 +123,29 @@ jobs:
         run: python scripts/check_privacy_manifest.py
       - name: Test the privacy manifest check
         run: python -m pytest -q -p no:cacheprovider scripts/tests/test_check_privacy_manifest.py
+      - name: Check the Diary redesign guard
+        run: python -m pytest -q -p no:cacheprovider scripts/tests/test_diary_redesign.py
       - name: Check privacy and restore documentation against behavior
         run: python -m pytest -q -p no:cacheprovider scripts/tests/test_privacy_documentation_consistency.py scripts/tests/test_journal_restore_import_race.py scripts/tests/test_journal_export_contract.py
+      - name: Check the Log redesign guard
+        run: python -m pytest -q -p no:cacheprovider scripts/tests/test_log_redesign.py
       # The signed-upload workflow is manual-only and reviewer-gated; these tests pin that shape.
       - name: Test the signed-upload workflow guardrails
         run: python -m pytest -q -p no:cacheprovider scripts/tests/test_signed_beta_workflow.py scripts/tests/test_signed_beta_archive_check.py scripts/tests/test_beta_schedule.py
+      - name: Check the Library redesign guard
+        run: python -m pytest -q -p no:cacheprovider scripts/tests/test_library_redesign.py
       - name: Test the project declarations
         run: python -m pytest -q -p no:cacheprovider scripts/tests/test_project_declarations.py
+      - name: Check the Trends redesign guard
+        run: python -m pytest -q -p no:cacheprovider scripts/tests/test_trends_redesign.py
       - name: Check the CI release build keeps its shape
         run: python -m pytest -q -p no:cacheprovider scripts/tests/test_ios_workflow.py
-      - name: Check the redesign guard for this step
+      - name: Check the Settings redesign guard
         run: python -m pytest -q -p no:cacheprovider scripts/tests/test_settings_redesign.py
       - name: Check the Add capsule sits above the tab bar
         run: python -m pytest -q -p no:cacheprovider scripts/tests/test_add_capsule_placement.py
+      - name: Check the Today redesign guard
+        run: python -m pytest -q -p no:cacheprovider scripts/tests/test_today_hero.py
       - name: Check the entitlements (HealthKit and Sign in with Apple)
         run: python -m pytest -q -p no:cacheprovider scripts/tests/test_entitlements.py
       - name: Check the account sheets sit on the Settings form

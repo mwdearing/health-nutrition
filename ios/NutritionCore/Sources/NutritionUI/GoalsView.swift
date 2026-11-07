@@ -62,6 +62,8 @@ public struct GoalsView: View {
         .scrollContentBackground(.hidden)
         .background(TokenColors.page)
         .navigationTitle("Daily goals")
+        // One Done key for every target field on this list (see decimalKeypadOnly).
+        .toolbar { KeyboardDoneToolbar() }
         .onAppear { self.model.load() }
         .saveConfirmation(saveNotice)
         .onChange(of: model.savedSerial) { _, _ in self.saveNotice = SaveNotice(SaveLabels.goalsSaved) }
@@ -100,7 +102,7 @@ public struct GoalsView: View {
                     set: { self.model.userEditedDraft($0, for: row.nutrient) }))
                     .font(.body)
                     .foregroundStyle(TokenColors.textPrimary)
-                    .decimalAmountKeyboard()
+                    .decimalKeypadOnly()
                     .focused($focusedNutrient, equals: row.nutrient)
                     .onSubmit { self.model.submitTarget(for: row.nutrient) }
                     .accessibilityLabel("Daily target for \(row.displayName)")
