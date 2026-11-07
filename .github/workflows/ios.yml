@@ -142,6 +142,8 @@ jobs:
         run: python -m pytest -q -p no:cacheprovider scripts/tests/test_ios_workflow.py
       - name: Check the Settings redesign guard
         run: python -m pytest -q -p no:cacheprovider scripts/tests/test_settings_redesign.py
+      - name: Check the Settings goals card guard
+        run: python -m pytest -q -p no:cacheprovider scripts/tests/test_settings_goals_card.py
       - name: Check the Add capsule sits above the tab bar
         run: python -m pytest -q -p no:cacheprovider scripts/tests/test_add_capsule_placement.py
       - name: Check the Today redesign guard
