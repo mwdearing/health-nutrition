@@ -145,7 +145,8 @@ struct WatchTodayView: View {
     }
 
     /// The remaining figure inside a ring with a caption saying what it is ("left" with a goal, "eaten" without);
-    /// the food and burned lines follow, and one spoken label covers them all.
+    /// the food and burned lines follow. One spoken label covers them all: the caption is visible only, because the
+    /// snapshot's own wording already says "calories remaining" or "Food, N calories".
     private func ring(for snapshot: WidgetSnapshot?) -> some View {
         let caption = snapshot?.remainingDisplay == nil ? "eaten" : "left"
         return VStack(alignment: .leading, spacing: 4) {
@@ -168,7 +169,7 @@ struct WatchTodayView: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(hidesFigures ? "Today's calories, hidden while locked"
-            : (snapshot?.calorieSpoken ?? "Calories unknown") + ", " + caption)
+            : (snapshot?.calorieSpoken ?? "Calories unknown"))
     }
 
     /// A coloured dot (a fill, never text) beside the macro's name and grams in the primary text colour.
