@@ -53,6 +53,16 @@ extension WidgetSnapshot {
     }
 }
 
+extension WidgetSnapshot {
+    /// Each macro's share of the three together, for the bar lengths (no goals are stored). Nil without any grams.
+    var macroShares: (protein: Double, carbohydrate: Double, fat: Double)? {
+        let grams = [proteinGrams, carbohydrateGrams, fatGrams].map { max($0 ?? 0, 0) }
+        let total = grams.reduce(0, +)
+        guard total > 0, total.isFinite else { return nil }
+        return (grams[0] / total, grams[1] / total, grams[2] / total)
+    }
+}
+
 /// Food and Burned, each with its icon, as Today shows them: a fork and knife for food, a flame for burned. Burned
 /// is left out when there is none; Food shows a dash when nothing is known.
 struct WidgetFoodBurned: View {

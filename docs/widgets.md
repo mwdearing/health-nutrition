@@ -64,6 +64,19 @@ reads "Nothing logged today"; after Erase all data also confirm the Lock Screen 
 figures; and confirm the summary file is excluded from a device backup (its resource value
 `isExcludedFromBackup` reads back true).
 
+
+## Look
+
+The Home Screen widgets sit on the deep teal hero background with white text and a secondary tint for captions. Remaining
+is the figure inside a ring (mint on a darker track, filled to the share of the goal eaten), with Food and Burned under
+it; the medium widget adds protein, carbohydrate and fat as bars filled in the macro colours (each bar shows that macro's
+share of the three, since no macro goals are stored) and water. The Lock Screen families keep the system rendering. The Watch app shows
+the title, the ring with Remaining, then the macros as white figures beside coloured dots (the colours are fills, never
+text), then water. Each ring and bar reads as one VoiceOver label, the same sentences as before. The widgets and the Watch app
+do not link the shared design package, so each target carries colour sets named after the design tokens (`hero`,
+`heroText`, `heroSecondaryText`, `heroTrack`, `RelayMint`, `macroProtein`, `macroCarbs`, `macroFat`; the Watch app needs the last
+five); `scripts/tests/test_widget_watch_colours.py` keeps them equal to the tokens in light and dark.
+
 ## Sending the summary to a paired Watch (phone side)
 
 The phone sends a paired Apple Watch the same summary the widgets read, in an envelope

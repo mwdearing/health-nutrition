@@ -209,6 +209,45 @@ final class FirstRunTests: XCTestCase {
         XCTAssertFalse(rebuilt.isVisible)
     }
 
+    func testShowAgainRestoresAHiddenIncompleteChecklistAndKeepsItShown() throws {
+        let journal = try makeJournalStore()
+        let goals = try makeGoalStore()
+        let suite = makeFirstRunSuite("checklist-show-again", self)
+        let preferences: DisplayPreferences & FirstRunPreferences = UserDefaultsDisplayPreferences(defaults: suite)
+        let model = FirstDayChecklistModel(store: journal, goals: goals, preferences: preferences)
+
+        model.load()
+        XCTAssertFalse(model.canShowAgain, "a card that is already visible is not offered again")
+        model.hide()
+        XCTAssertFalse(model.isVisible)
+
+        XCTAssertTrue(model.canShowAgain)
+        model.showAgain()
+        XCTAssertTrue(model.isVisible)
+        XCTAssertFalse(preferences.isChecklistHidden)
+
+        let rebuilt = FirstDayChecklistModel(store: journal, goals: goals, preferences: preferences)
+        rebuilt.load()
+        XCTAssertTrue(rebuilt.isVisible)
+    }
+
+    func testShowAgainKeepsACompletedChecklistHidden() throws {
+        let journal = try makeJournalStore()
+        let goals = try makeGoalStore()
+        let preferences: DisplayPreferences & FirstRunPreferences = InMemoryDisplayPreferences()
+        let model = FirstDayChecklistModel(store: journal, goals: goals, preferences: preferences)
+
+        try logOats(journal)
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        model.markUnitsReviewed()
+        model.load()
+        XCTAssertFalse(model.isVisible)
+
+        XCTAssertFalse(model.canShowAgain)
+        model.showAgain()
+        XCTAssertFalse(model.isVisible)
+    }
+
     // MARK: - Connect Apple Health
 
     /// Connected but never asked to read is not done: Settings still asks for the read, so the step does

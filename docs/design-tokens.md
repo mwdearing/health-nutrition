@@ -111,3 +111,13 @@ Checked pairs (light / dark ratio):
 - `track` and `accentTint` are kept in their own list (`NutritionTokens.design`) so the audited and semantic tables stay as approved.
 - The nine layout roles are kept in `NutritionTokens.layout`. Screens on the new layout use `page` and `card`; `background` and `surface` stay for anything not yet moved.
 - Do not add a token without a row in the table above and a passing contrast check.
+
+## Components
+
+- `ContentCard`: the rounded card every screen group sits in; `card` fill on `page`, `DesignRadius.card`, `DesignSpacing.cardPadding`.
+- `IconWell`: a rounded square holding a decorative symbol; `accentTint` fill, `accent` symbol.
+- `SectionHeader`: the heading above a group of cards, with an optional note; `textPrimary` and `textSecondary`.
+- `StatTile`: a small card with an icon, one figure and an optional bar; `DesignRadius.tile`, `track` and `accent` for the bar.
+- `HeroCard`: the deep teal card at the top of a screen; `hero` fill, `heroText` and `heroSecondaryText`, content drawn in the dark appearance.
+- `CalorieRing`: a ring that fills with the day's calories around the caller's content; `track` for the unfilled arc and `accent` for the fill, or `heroTrack` and mint on the hero.
+- `MacroBar`: one macro's label and figure above a thin bar in the macro's colour; `textSecondary` for the label, `track` behind the fill, and on the hero `heroTrack`, `heroText` and `heroSecondaryText`.

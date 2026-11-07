@@ -1,7 +1,7 @@
 import Foundation
 import SwiftUI
 
-/// A white card on the page in light mode and a teal card in dark. The older `Card` stays until every screen has moved.
+/// A white card on the page in light mode and a teal card in dark.
 public struct ContentCard<Content: View>: View {
     private let cornerRadius: CGFloat
     private let content: Content
