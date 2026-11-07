@@ -45,6 +45,8 @@ public struct QuickAddView: View {
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(TokenColors.page)
         .navigationTitle("Amounts only")
         // One Done key for the four amount fields (see decimalKeypadOnly).
         .toolbar { KeyboardDoneToolbar() }
@@ -67,7 +69,7 @@ public struct QuickAddView: View {
                 .accessibilityHint("Adds these amounts to the journal")
             }
             .padding(DesignSpacing.m)
-            .background(TokenColors.background)
+            .background(TokenColors.page)
         }
     }
 
