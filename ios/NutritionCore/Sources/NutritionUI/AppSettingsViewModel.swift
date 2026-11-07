@@ -47,17 +47,20 @@ public final class AppSettingsViewModel: ObservableObject {
 
     public func load() { goals?.load() }
 
+    private var goalsSetCount: Int { goals?.rows.filter { $0.targetText != nil }.count ?? 0 }
+
     public var goalsSetText: String {
-        let count = goals?.rows.filter { $0.targetText != nil }.count ?? 0
+        let count = goalsSetCount
         return count == 0 ? "None set" : "\(count) set"
     }
 
     /// The lines of the goals card: the stored energy goal (nil or zero counts as not set) and the saved weight plan.
     var goalsSummary: SettingsGoalsSummary {
-        let energy = (try? (goals?.weightPlanStore as? GoalStore)?.goal(for: "energy")) ?? nil
+        let energy = goals?.storedEnergyGoal
         let plan = (try? goals?.weightPlanStore?.weightPlan()) ?? nil
         return SettingsGoalsSummary(
             energyGoal: energy?.target, energyUnit: energy?.unit ?? .kcal, goalsSetText: goalsSetText,
+            anyGoalSet: goalsSetCount > 0,
             plan: plan, unitSystem: unitSystem)
     }
 

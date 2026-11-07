@@ -12,13 +12,17 @@ struct SettingsGoalsSummary: Equatable {
     let capsuleTitle: String
 
     /// - Parameter energyGoal: the stored daily energy goal; nil or zero means none is set.
-    init(energyGoal: Decimal?, energyUnit: MeasureUnit, goalsSetText: String, plan: WeightPlan?, unitSystem: UnitSystem) {
+    /// - Parameter anyGoalSet: whether any daily goal (not only energy) has a target.
+    init(
+        energyGoal: Decimal?, energyUnit: MeasureUnit, goalsSetText: String, anyGoalSet: Bool = false,
+        plan: WeightPlan?, unitSystem: UnitSystem
+    ) {
         if let energyGoal, energyGoal > 0 {
             energyLine = energyGoal.formatted(.number.precision(.fractionLength(0))) + " \(energyUnit == .kcal ? "Calories" : energyUnit.symbol) a day"
             capsuleTitle = "Edit goals"
         } else {
             energyLine = goalsSetText
-            capsuleTitle = goalsSetText == "None set" ? "Set your goals" : "Edit goals"
+            capsuleTitle = anyGoalSet || plan != nil ? "Edit goals" : "Set your goals"
         }
         planLine = Self.planLine(plan, unitSystem: unitSystem)
     }

@@ -25,7 +25,7 @@ final class SettingsGoalsSummaryTests: XCTestCase {
             XCTAssertEqual(none.capsuleTitle, "Set your goals")
         }
         let some = SettingsGoalsSummary(
-            energyGoal: nil, energyUnit: .kcal, goalsSetText: "3 set", plan: nil, unitSystem: .metric)
+            energyGoal: nil, energyUnit: .kcal, goalsSetText: "3 set", anyGoalSet: true, plan: nil, unitSystem: .metric)
         XCTAssertEqual(some.energyLine, "3 set")
         XCTAssertEqual(some.capsuleTitle, "Edit goals")
     }
