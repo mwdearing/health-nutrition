@@ -143,4 +143,20 @@ final class DiaryWeekStripModelTests: XCTestCase {
         let without = try XCTUnwrap(strip.days.first { $0.id == dayKey(2) })
         XCTAssertNotNil(without.jumpTarget.message, "an empty day goes to the closest day with a sentence")
     }
+
+    /// A day counted as logged only because Apple Health states intake never reads the empty wording.
+    func testAHealthOnlyLoggedDayNeverReadsNothingLoggedYet() throws {
+        let journal = try makeJournalStore()
+        try logFood(journal, daysBack: 0)
+        let model = makeModel(journal)
+        model.outsideIntakeByDay = [dayKey(5): .read(values: ["protein": 9], readKeys: ["protein"])]
+        model.load(now: stripNow)
+
+        let strip = try XCTUnwrap(model.weekStrip(chosen: dayKey(5), now: stripNow))
+        XCTAssertTrue(try XCTUnwrap(strip.days.first { $0.id == dayKey(5) }).isLogged)
+        for text in [strip.figures.calories, strip.figures.protein, strip.figures.water] {
+            XCTAssertNotEqual(text, "Nothing logged yet")
+            XCTAssertFalse(text.isEmpty)
+        }
+    }
 }
