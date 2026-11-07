@@ -807,6 +807,27 @@ private struct ScreenshotProductService: CommunityProductServicing {
         }
     }
 
+    func testSavedMealCardRow() throws {
+        let services = try makeSeededServices()
+        let meals = services.savedMeals
+        let cards = SavedMealCards.make(
+            [SavedMeal(id: "a", name: "Usual breakfast", meal: .breakfast, items: [
+                FavoriteTemplate(id: "a1", displayName: "Oats", category: "food", components: []),
+                FavoriteTemplate(id: "a2", displayName: "Milk", category: "food", components: [])]),
+             SavedMeal(id: "b", name: "Post-run shake", meal: nil, items: [
+                FavoriteTemplate(id: "b1", displayName: "Shake", category: "food", components: [])]),
+             SavedMeal(id: "c", name: "Lunch box", meal: .lunch, items: [
+                FavoriteTemplate(id: "c1", displayName: "Apple", category: "food", components: []),
+                FavoriteTemplate(id: "c2", displayName: "Bread", category: "food", components: [])])],
+            calories: { [Decimal(412), Decimal(1), Decimal(560)][["a", "b", "c"].firstIndex(of: $0.id) ?? 0] })
+        try capture("SavedMealCardRow") {
+            ScrollView {
+                SavedMealCardRow(cards: cards, savedMeals: meals, onAdded: {}).padding()
+            }
+            .background(TokenColors.page)
+        }
+    }
+
     func testHeroCard() throws {
         try capture("HeroCard") {
             ScrollView {

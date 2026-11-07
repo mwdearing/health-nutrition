@@ -271,7 +271,14 @@ public final class LibraryViewModel: ObservableObject {
     /// screen itself does not show them.
     @Published public private(set) var frequentItems: [LibraryItem] = []
     /// The saved meals Search foods offers to log. Set once by the app; nil leaves them out.
-    public var savedMeals: SavedMealsModel?
+    public var savedMeals: SavedMealsModel? {
+        didSet {
+            savedMealsObservation = savedMeals?.$meals.sink { [weak self] _ in self?.refreshSavedMealCards() }
+        }
+    }
+    /// The Library's saved meals row, read again whenever the saved meals change.
+    @Published public private(set) var savedMealCards: [SavedMealCard] = []
+    private var savedMealsObservation: AnyCancellable?
     @Published public private(set) var errorMessage: String?
     @Published public private(set) var standaloneProducts: [CustomProductRevision] = []
     @Published public var searchText = ""
@@ -332,7 +339,14 @@ public final class LibraryViewModel: ObservableObject {
         return "\(amounts) · \(meal)"
     }
 
+    /// Builds the row's cards from the saved meals as they stand now.
+    public func refreshSavedMealCards() {
+        let meals = savedMeals?.meals ?? []
+        savedMealCards = SavedMealCards.make(meals, calories: { SavedMealCards.kilocalories(of: $0, store: store) })
+    }
+
     public func load() {
+        savedMeals?.load()
         do {
             standaloneProducts = try productStore?.customProducts() ?? []
             let stored = try favorites.list()
