@@ -4,6 +4,11 @@ extension WidgetSnapshot {
     /// The figures as Today words them. A figure that is absent is nil, never "0": Remaining is hidden without a goal
     /// and Burned without a burned value. Over goal is a plain negative number.
     var remainingText: String? { WidgetFigure.groupedWholeNumber(remainingKcal) }
+
+    /// Over goal (remaining below zero) the figure is shown as a positive number under "Calories over goal".
+    var isOverGoal: Bool { (remainingKcal ?? 0) < 0 }
+    var remainingCaption: String { isOverGoal ? "Calories over goal" : "Calories remaining" }
+    var overGoalText: String? { WidgetFigure.groupedWholeNumber(remainingKcal.map { -$0 }) }
     var burnedText: String? { WidgetFigure.groupedWholeNumber(burnedKcal) }
 
     /// Food, "N+" on a day where some entries have no calories: the known part, which is at least that.
@@ -21,7 +26,8 @@ extension WidgetSnapshot {
 
     /// The Remaining figure as drawn: the number, or "Up to N" on a partial day with something left.
     var remainingDisplay: String? {
-        remainingText.map { remainingIsUpperBound ? "Up to \($0)" : $0 }
+        if isOverGoal { return overGoalText }
+        return remainingText.map { remainingIsUpperBound ? "Up to \($0)" : $0 }
     }
 
     /// The one figure a small gauge holds: Food ("N+" when partial). The ring is the share of the goal eaten, so its
@@ -30,13 +36,16 @@ extension WidgetSnapshot {
 
     /// Remaining for a single line of text: "up to N" on a partial day with something left, otherwise the number.
     var remainingInlineText: String? {
-        remainingText.map { remainingIsUpperBound ? "up to \($0)" : $0 }
+        if isOverGoal { return overGoalText }
+        return remainingText.map { remainingIsUpperBound ? "up to \($0)" : $0 }
     }
 
     /// What VoiceOver reads for the calorie block, in Today's order.
     var calorieSpoken: String {
         let parts = [
-            remainingText.map { (remainingIsUpperBound ? "up to " : "") + "\($0) calories remaining" },
+            isOverGoal
+                ? overGoalText.map { "\($0) calories over goal" }
+                : remainingText.map { (remainingIsUpperBound ? "up to " : "") + "\($0) calories remaining" },
             foodNumber.map { "Food, \(isPartial("energy") ? "at least " : "")\($0) calories" },
             burnedText.map { "Burned, \($0) calories" },
         ].compactMap { $0 }

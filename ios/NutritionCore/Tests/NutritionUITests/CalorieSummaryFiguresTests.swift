@@ -34,4 +34,16 @@ final class CalorieSummaryFiguresTests: XCTestCase {
     func testLoggedFoodWithoutAGoalShowsFoodAndNoRemaining() {
         XCTAssertEqual(figures(goal: nil, food: 500), .init(remaining: nil, food: "500", burned: nil))
     }
+
+    func testPartialDayWithSomethingLeftReadsUpTo() {
+        let calories = CalorieRemaining.make(
+            goal: 2000, food: 500, partial: true, missingCount: 1, burned: nil, energyLabel: "Energy")
+        XCTAssertEqual(NourishTodayHeader.summaryFigures(calories).remaining, "Up to 1,500")
+    }
+
+    func testOverGoalIsAPositiveFigureOnAPartialDayWithoutUpTo() {
+        let calories = CalorieRemaining.make(
+            goal: 2000, food: 2150, partial: true, missingCount: 1, burned: nil, energyLabel: "Energy")
+        XCTAssertEqual(NourishTodayHeader.summaryFigures(calories).remaining, "150")
+    }
 }

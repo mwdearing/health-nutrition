@@ -128,12 +128,13 @@ final class WidgetSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.gaugeHeadline, "800+")
         // Burned never gets a marker.
         XCTAssertEqual(snapshot.burnedText, "250")
-        // At or below zero while partial: a plain negative number, no marker.
+        // Over goal while partial: a positive figure under "Calories over goal", no marker.
         snapshot.remainingKcal = -150
         XCTAssertFalse(snapshot.remainingIsUpperBound)
-        XCTAssertEqual(snapshot.remainingDisplay, grouped(-150))
+        XCTAssertEqual(snapshot.remainingDisplay, grouped(150))
+        XCTAssertEqual(snapshot.remainingCaption, "Calories over goal")
         XCTAssertEqual(snapshot.gaugeHeadline, "800+")
-        XCTAssertTrue(snapshot.calorieSpoken.hasPrefix("\(grouped(-150)) calories remaining"))
+        XCTAssertTrue(snapshot.calorieSpoken.hasPrefix("\(grouped(150)) calories over goal"))
         snapshot.remainingKcal = 0
         XCTAssertFalse(snapshot.remainingIsUpperBound)
         // A whole day has no markers at all.
