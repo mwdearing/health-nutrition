@@ -148,6 +148,8 @@ jobs:
         run: python -m pytest -q -p no:cacheprovider scripts/tests/test_today_hero.py
       - name: Check the entitlements (HealthKit and Sign in with Apple)
         run: python -m pytest -q -p no:cacheprovider scripts/tests/test_entitlements.py
+      - name: Check the Widgets and Watch redesign guard
+        run: python -m pytest -q -p no:cacheprovider scripts/tests/test_widget_watch_colours.py
       - name: Check the account sheets sit on the Settings form
         run: python -m pytest -q -p no:cacheprovider scripts/tests/test_account_presentations.py
       - name: Check shared CI tool and image pins
