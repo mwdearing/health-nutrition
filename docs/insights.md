@@ -12,7 +12,7 @@ week" and show no figure or bar.
 
 - **Calories, daily average.** The average as a large figure, and how far it is from the daily calorie goal, always
   as a positive figure: "150 under goal", "150 over goal" or "On goal". Below it, one bar per day (today's bar is
-  marked and its day letter bold) and a dashed line at the goal labelled with its value. With no calorie goal (none
+  marked and its day letter bold) and a dashed line at the goal labelled with its value. When a counted day states only part of a figure, the figures read "at least", as Insights does. With no calorie goal (none
   set, or a goal of zero) there is no line and no difference. It is one VoiceOver element that reads the average, the
   difference and each day's figure; the chart height grows with the text size, up to a cap.
 - **Macros, daily average.** One bar split into protein, carbohydrate and fat by their share of the calories the

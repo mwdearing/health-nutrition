@@ -92,4 +92,22 @@ final class TrendsSummaryTests: XCTestCase {
         XCTAssertTrue(summary.bars.allSatisfy { $0.kcal == nil })
         XCTAssertEqual(TrendsSummary.emptyText, "Nothing logged this week")
     }
+
+    /// A day that states only part of a figure makes the average a minimum, as Insights says, and the cards agree.
+    func testAPartialDayShowsAtLeast() {
+        let healthOnlyWithJournalGap = InsightsAverages.Day(
+            key: "2023-11-14", totals: DailyTotals(totals: [:]), isLogged: false,
+            outside: .read(values: ["energy": 1_000], readKeys: []))
+        let partial = make([day("2023-11-15", kcal: 2_000), healthOnlyWithJournalGap])
+        XCTAssertTrue(partial.energyIsPartial)
+        let insights = InsightsAverages.make(
+            days: [day("2023-11-15", kcal: 2_000), healthOnlyWithJournalGap], nutrients: ["energy"], now: now,
+            zone: utc, window: 7)
+        XCTAssertTrue(insights.lines[0].text.contains("at least"), insights.lines[0].text)
+        XCTAssertEqual(TrendsSummary.gramsText(42, partial: true), "at least 42 g")
+        let whole = make([day("2023-11-15", kcal: 2_000, protein: 80)])
+        XCTAssertFalse(whole.energyIsPartial)
+        XCTAssertFalse(whole.proteinIsPartial)
+        XCTAssertEqual(TrendsSummary.gramsText(42), "42 g")
+    }
 }

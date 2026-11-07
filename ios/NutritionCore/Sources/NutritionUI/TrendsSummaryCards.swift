@@ -47,6 +47,11 @@ public struct TrendsSummary: Equatable {
     public let fatGrams: Decimal?
     /// The daily energy goal; nil when there is none (a goal of zero is no goal).
     public let goal: Decimal?
+    /// True when a counted day states only part of the figure, so Insights says "at least" and so do the cards.
+    public let energyIsPartial: Bool
+    public let proteinIsPartial: Bool
+    public let carbsArePartial: Bool
+    public let fatIsPartial: Bool
 
     public var hasData: Bool { averageKcal != nil }
 
@@ -74,7 +79,7 @@ public struct TrendsSummary: Equatable {
         days: [InsightsAverages.Day], goal: Decimal?, now: Date, zone: TimeZone, locale: Locale = .current
     ) -> TrendsSummary {
         let inWindow = InsightsAverages.daysInWindow(days, now: now, zone: zone, length: windowDays)
-        func average(_ nutrient: String, grams: Bool = false) -> Decimal? {
+        func average(_ nutrient: String, grams: Bool = false) -> (value: Decimal, partial: Bool)? {
             figure(nutrient, in: inWindow, unit: grams ? .g : .kcal)
         }
         let formatter = DateFormatter()
@@ -86,20 +91,28 @@ public struct TrendsSummary: Equatable {
             let key = formatter.string(from: day.id)
             let own = inWindow.filter { $0.key == key }
             return Bar(
-                id: index, label: day.label, kcal: figure("energy", in: own, unit: .kcal),
+                id: index, label: day.label, kcal: figure("energy", in: own, unit: .kcal)?.value,
                 isToday: index == week.days.count - 1)
         }
         let usableGoal = goal.flatMap { $0 > 0 ? $0 : nil }
+        let energy = average("energy")
+        let protein = average("protein", grams: true)
+        let carbs = average("carbohydrate", grams: true)
+        let fat = average("fat", grams: true)
         return TrendsSummary(
-            bars: bars, averageKcal: average("energy"), proteinGrams: average("protein", grams: true),
-            carbGrams: average("carbohydrate", grams: true), fatGrams: average("fat", grams: true), goal: usableGoal)
+            bars: bars, averageKcal: energy?.value, proteinGrams: protein?.value, carbGrams: carbs?.value,
+            fatGrams: fat?.value, goal: usableGoal, energyIsPartial: energy?.partial ?? false,
+            proteinIsPartial: protein?.partial ?? false, carbsArePartial: carbs?.partial ?? false,
+            fatIsPartial: fat?.partial ?? false)
     }
 
-    private static func figure(_ nutrient: String, in days: [InsightsAverages.Day], unit: MeasureUnit) -> Decimal? {
+    private static func figure(_ nutrient: String, in days: [InsightsAverages.Day], unit: MeasureUnit)
+        -> (value: Decimal, partial: Bool)?
+    {
         guard !days.isEmpty, let found = InsightsAverages.averageFigure(for: nutrient, in: days),
             let converted = try? Quantity(value: found.average, unit: found.unit).converted(to: unit).value
         else { return nil }
-        return converted
+        return (converted, found.partialDays > 0)
     }
 
     private static func whole(_ value: Decimal) -> Int {
@@ -115,9 +128,9 @@ public struct TrendsSummary: Equatable {
     static func figureText(_ value: Decimal) -> String { whole(value).formatted() }
 
     /// "42 g" for a gram figure.
-    static func gramsText(_ value: Decimal?) -> String {
+    static func gramsText(_ value: Decimal?, partial: Bool = false) -> String {
         guard let value else { return "–" }
-        return "\(whole(value).formatted()) g"
+        return "\(partial ? "at least " : "")\(whole(value).formatted()) g"
     }
 }
 
@@ -140,6 +153,11 @@ public struct TrendsCaloriesCard: View {
                     .foregroundStyle(TokenColors.heroSecondaryText)
                     .accessibilityAddTraits(.isHeader)
                 if let average = summary.averageKcal {
+                    if summary.energyIsPartial {
+                        Text("At least")
+                            .font(.subheadline)
+                            .foregroundStyle(TokenColors.heroSecondaryText)
+                    }
                     Text(TrendsSummary.figureText(average))
                         .font(.largeTitle.bold())
                         .fontDesign(.rounded)
@@ -209,7 +227,7 @@ public struct TrendsCaloriesCard: View {
 
     private var spokenLabel: String {
         guard let average = summary.averageKcal else { return "Calories, daily average. \(TrendsSummary.emptyText)" }
-        var parts = ["Calories, daily average, \(TrendsSummary.figureText(average)) calories"]
+        var parts = ["Calories, daily average, \(summary.energyIsPartial ? "at least " : "")\(TrendsSummary.figureText(average)) calories"]
         if let difference = summary.difference { parts.append(difference.text) }
         let days = summary.bars.map { bar in
             "\(bar.label), \(bar.kcal.map { "\(TrendsSummary.figureText($0)) calories" } ?? "nothing logged")"
@@ -237,9 +255,9 @@ public struct TrendsMacrosCard: View {
                 if let shares = summary.macroShares {
                     splitBar(shares)
                     HStack(alignment: .top, spacing: DesignSpacing.m) {
-                        legend("Protein", grams: summary.proteinGrams, color: TokenColors.macroProtein)
-                        legend("Carbs", grams: summary.carbGrams, color: TokenColors.macroCarbs)
-                        legend("Fat", grams: summary.fatGrams, color: TokenColors.macroFat)
+                        legend("Protein", grams: summary.proteinGrams, partial: summary.proteinIsPartial, color: TokenColors.macroProtein)
+                        legend("Carbs", grams: summary.carbGrams, partial: summary.carbsArePartial, color: TokenColors.macroCarbs)
+                        legend("Fat", grams: summary.fatGrams, partial: summary.fatIsPartial, color: TokenColors.macroFat)
                     }
                 } else {
                     Text(TrendsSummary.emptyText)
@@ -269,13 +287,13 @@ public struct TrendsMacrosCard: View {
         Rectangle().fill(color).frame(width: max(0, (width - 4) * share))
     }
 
-    private func legend(_ name: String, grams: Decimal?, color: Color) -> some View {
+    private func legend(_ name: String, grams: Decimal?, partial: Bool, color: Color) -> some View {
         VStack(alignment: .leading, spacing: DesignSpacing.xs) {
             HStack(spacing: DesignSpacing.xs) {
                 Circle().fill(color).frame(width: 8, height: 8).accessibilityHidden(true)
                 Text(name).font(.caption).foregroundStyle(TokenColors.textSecondary)
             }
-            Text(TrendsSummary.gramsText(grams))
+            Text(TrendsSummary.gramsText(grams, partial: partial))
                 .font(.subheadline.weight(.semibold))
                 .monospacedDigit()
                 .foregroundStyle(TokenColors.textPrimary)
@@ -285,7 +303,8 @@ public struct TrendsMacrosCard: View {
 
     private var spokenLabel: String {
         guard summary.macroShares != nil else { return "Macros, daily average. \(TrendsSummary.emptyText)" }
-        return "Macros, daily average. Protein, \(TrendsSummary.gramsText(summary.proteinGrams)). "
-            + "Carbs, \(TrendsSummary.gramsText(summary.carbGrams)). Fat, \(TrendsSummary.gramsText(summary.fatGrams))."
+        return "Macros, daily average. Protein, \(TrendsSummary.gramsText(summary.proteinGrams, partial: summary.proteinIsPartial)). "
+            + "Carbs, \(TrendsSummary.gramsText(summary.carbGrams, partial: summary.carbsArePartial)). "
+            + "Fat, \(TrendsSummary.gramsText(summary.fatGrams, partial: summary.fatIsPartial))."
     }
 }
