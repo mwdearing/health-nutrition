@@ -220,6 +220,7 @@ final class FirstRunTests: XCTestCase {
         model.hide()
         XCTAssertFalse(model.isVisible)
 
+        XCTAssertTrue(model.canShowAgain)
         model.showAgain()
         XCTAssertTrue(model.isVisible)
         XCTAssertFalse(preferences.isChecklistHidden)
@@ -241,6 +242,7 @@ final class FirstRunTests: XCTestCase {
         model.load()
         XCTAssertFalse(model.isVisible)
 
+        XCTAssertFalse(model.canShowAgain)
         model.showAgain()
         XCTAssertFalse(model.isVisible)
     }
