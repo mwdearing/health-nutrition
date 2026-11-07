@@ -103,8 +103,10 @@ final class ProductSaveConfirmationUITests: XCTestCase {
     /// the lookup falls back to any element containing the name.
     private func productRow(_ app: XCUIApplication) -> XCUIElement {
         // Library opens on the Favorites segment, where a new product does not appear. Products lists it.
+        // Tapped only while it is showing, hittable and not already selected: with a sheet over the Library the segment
+        // exists but cannot be tapped, and XCTest fails the tap itself (CI run 42174241593).
         let products = app.buttons["Products"]
-        if products.exists { products.tap() }
+        if products.exists && products.isHittable && !products.isSelected { products.tap() }
         let named = NSPredicate(format: "label CONTAINS %@", productName)
         let cell = app.cells.containing(named).firstMatch
         if cell.exists { return cell }
