@@ -313,8 +313,8 @@ already resolved is reused instead of being fetched again for every revision tha
 means requires a **new schema version** (a new `vN.schema.json`) and a new `currentSchemaVersion` in
 `JournalExport`. Readers of the older versions keep working, because a reader that does not know a field can
 ignore it and the old version keeps rejecting unknown fields through `additionalProperties: false`. This
-build **writes version 8 and reads versions 1 to 8**; `decode(_:)` refuses anything else by value
-rather than by shape, so a version 9 file is never half-understood.
+build **writes version 9 and reads versions 1 to 9**; `decode(_:)` refuses anything else by value
+rather than by shape, so a version 10 file is never half-understood.
 
 Adding the kind is what version 2 is, and it shows both halves of the rule. Reading version 1 is a decision
 in its own right: its documents carry no kind, and refusing them would take away the only backup a person
