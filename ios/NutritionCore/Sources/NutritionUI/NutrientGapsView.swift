@@ -45,6 +45,7 @@ public struct NutrientGapsView: View {
                         .foregroundStyle(TokenColors.textSecondary)
                 }
             }
+            .listRowBackground(TokenColors.card)
             if let message = model.errorMessage {
                 InlineNotice(message, tone: .failed)
             }
@@ -57,15 +58,17 @@ public struct NutrientGapsView: View {
                         NutrientGapRowView(row: row)
                     }
                 }
+                .listRowBackground(TokenColors.card)
             }
             Section {
                 Text(NutrientGapsCopy.footer)
                     .font(.footnote)
                     .foregroundStyle(TokenColors.textSecondary)
             }
+            .listRowBackground(TokenColors.card)
         }
         .scrollContentBackground(.hidden)
-        .background(TokenColors.background)
+                .background(TokenColors.page)
         .navigationTitle("Vitamins and minerals")
         .onAppear { model.load(now: now()) }
         .task(id: model.span) {

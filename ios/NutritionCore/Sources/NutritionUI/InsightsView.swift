@@ -1,3 +1,4 @@
+import Charts
 import SwiftUI
 
 /// Insights: a calm look at how consistently the week was logged, from the diary alone.
@@ -8,6 +9,9 @@ public struct InsightsView: View {
     private let week: InsightsWeek
     private let skippedCount: Int
     private let averages: InsightsAverages
+    @ScaledMetric(relativeTo: .body) private var scaledChartHeight: CGFloat = 120
+
+    private var chartHeight: CGFloat { min(scaledChartHeight, 120 * 1.6) }
 
     public init(
         week: InsightsWeek, skippedCount: Int = 0, averages: InsightsAverages = InsightsAverages(lines: [])
@@ -25,7 +29,7 @@ public struct InsightsView: View {
                         "\(skippedCount) \(skippedCount == 1 ? "entry" : "entries") can't be shown and \(skippedCount == 1 ? "is" : "are") not counted here.",
                         tone: .waiting)
                 }
-                Card {
+                ContentCard {
                     VStack(alignment: .leading, spacing: DesignSpacing.m) {
                         Text(week.hasAnyEntry ? week.headline : "Nothing logged this week")
                             .font(.title3.weight(.semibold))
@@ -34,31 +38,11 @@ public struct InsightsView: View {
                         Text("Based on your diary entries")
                             .font(.footnote)
                             .foregroundStyle(TokenColors.textSecondary)
-                        HStack(alignment: .bottom, spacing: DesignSpacing.s) {
-                            ForEach(week.days) { day in
-                                VStack(spacing: DesignSpacing.xs) {
-                                    ZStack(alignment: .bottom) {
-                                        Capsule().fill(TokenColors.track).frame(height: 96)
-                                        if day.entryCount > 0 {
-                                            Capsule()
-                                                .fill(TokenColors.accent)
-                                                .frame(height: max(8, 96 * week.barFraction(for: day)))
-                                        }
-                                    }
-                                    Text(day.label)
-                                        .font(.caption2)
-                                        .foregroundStyle(TokenColors.textSecondary)
-                                }
-                                .frame(maxWidth: .infinity)
-                                .accessibilityElement(children: .ignore)
-                                .accessibilityLabel(
-                                    "\(day.label), \(day.entryCount == 1 ? "1 entry" : "\(day.entryCount) entries")")
-                            }
-                        }
+                        weekChart
                     }
                 }
                 if !averages.lines.isEmpty {
-                    Card {
+                    ContentCard {
                         VStack(alignment: .leading, spacing: DesignSpacing.s) {
                             Text("Last 30 days")
                                 .font(.headline)
@@ -70,7 +54,7 @@ public struct InsightsView: View {
                         }
                     }
                 }
-                Card {
+                ContentCard {
                     VStack(alignment: .leading, spacing: DesignSpacing.s) {
                         Text("What this is based on")
                             .font(.headline)
@@ -91,7 +75,38 @@ public struct InsightsView: View {
             .padding(.horizontal, DesignSpacing.m)
             .padding(.vertical, DesignSpacing.s)
         }
-        .background(TokenColors.background)
+        .background(TokenColors.page)
         .navigationTitle("Insights")
+    }
+
+    private static func entriesText(_ count: Int) -> String {
+        count == 1 ? "1 entry" : "\(count) entries"
+    }
+
+    /// The seven days as bars, plotted as ordered categories (one key per day) so no calendar maths can merge two
+    /// days. Each bar keeps its spoken label; the chart as a whole reads as one summary.
+    private var weekChart: some View {
+        let keys = week.days.indices.map(String.init)
+        return Chart(Array(week.days.enumerated()), id: \.element.id) { index, day in
+            BarMark(
+                x: .value("Day", String(index)),
+                y: .value("Entries", day.entryCount)
+            )
+            .foregroundStyle(TokenColors.mint)
+            .accessibilityLabel("\(day.label), \(Self.entriesText(day.entryCount))")
+        }
+        .chartXScale(domain: keys)
+        .chartXAxis {
+            AxisMarks(values: keys) { value in
+                AxisValueLabel {
+                    if let key = value.as(String.self), let index = Int(key), week.days.indices.contains(index) {
+                        Text(week.days[index].label).font(.caption2)
+                    }
+                }
+            }
+        }
+        .chartYAxis(.hidden)
+        .frame(height: chartHeight)
+        .accessibilityLabel(week.days.map { "\($0.label), \(Self.entriesText($0.entryCount))" }.joined(separator: ". "))
     }
 }
