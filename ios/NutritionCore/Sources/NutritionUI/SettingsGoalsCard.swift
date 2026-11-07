@@ -33,8 +33,8 @@ struct SettingsGoalsSummary: Equatable {
         case .lose, .gain:
             guard let pace = plan.weeklyPaceKilograms else { return nil }
             let us = unitSystem == .usCustomary
-            let shown = us ? pace * BodyActivityViewModel.poundsPerKilogram : pace
-            let text = BodyActivityViewModel.twoDecimals(shown)
+            let shown = us ? pace * Decimal(string: "2.20462262185")! : pace
+            let text = shown.formatted(.number.precision(.fractionLength(0...2)))
             return (plan.aim == .lose ? "Lose " : "Gain ") + text + (us ? " lb" : " kg") + " a week"
         }
     }

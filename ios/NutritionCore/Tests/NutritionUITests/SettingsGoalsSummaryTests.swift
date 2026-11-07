@@ -1,5 +1,6 @@
 import Foundation
 import NutritionDomain
+import NutritionJournal
 import XCTest
 @testable import NutritionUI
 
@@ -46,5 +47,39 @@ final class SettingsGoalsSummaryTests: XCTestCase {
             energyGoal: 2000, energyUnit: .kcal, goalsSetText: "1 set",
             plan: plan(.lose, pace: Decimal(string: "0.45359237")!), unitSystem: .usCustomary)
         XCTAssertEqual(summary.planLine, "Lose 1 lb a week")
+    }
+
+    /// A store that keeps goals and a plan, the way the app's store does.
+    private final class Store: GoalStore, WeightPlanStore, @unchecked Sendable {
+        let goalsStore = InMemoryGoalStore()
+        let planStore = InMemoryWeightPlanStore()
+        func goals() throws -> [NutrientGoal] { try goalsStore.goals() }
+        func goal(for nutrient: String) throws -> NutrientGoal? { try goalsStore.goal(for: nutrient) }
+        func setGoal(_ goal: NutrientGoal) throws { try goalsStore.setGoal(goal) }
+        func removeGoal(nutrient: String) throws { try goalsStore.removeGoal(nutrient: nutrient) }
+        func weightPlan() throws -> WeightPlan? { try planStore.weightPlan() }
+        func setWeightPlan(_ plan: WeightPlan) throws { try planStore.setWeightPlan(plan) }
+        func removeWeightPlan() throws { try planStore.removeWeightPlan() }
+    }
+
+    @MainActor
+    func testTheViewModelReadsTheStoredEnergyGoal() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let connections = ConnectionsPrivacyViewModel(
+            goals: InMemoryGoalStore(), store: try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store")),
+            preferences: InMemoryDisplayPreferences())
+        let store = Store()
+        let goals = GoalsViewModel(store: store)
+        let model = AppSettingsViewModel(connections: connections, goals: goals)
+        model.load()
+        XCTAssertEqual(model.goalsSummary.energyLine, "None set")
+        try store.setGoal(NutrientGoal(nutrient: "energy", target: 2000, unit: .kcal))
+        model.load()
+        XCTAssertEqual(model.goalsSummary.energyLine, "2,000 Calories a day")
+        XCTAssertNil(model.goalsSummary.planLine)
+        try store.setWeightPlan(WeightPlan(aim: .maintain, goalKilograms: nil, weeklyPaceKilograms: nil))
+        XCTAssertEqual(model.goalsSummary.planLine, "Keep your weight")
     }
 }

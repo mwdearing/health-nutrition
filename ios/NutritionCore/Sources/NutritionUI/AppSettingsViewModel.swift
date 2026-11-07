@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import NutritionJournal
 
 /// Settings owns presentation only; the existing models retain every store operation.
 @MainActor
@@ -51,13 +52,13 @@ public final class AppSettingsViewModel: ObservableObject {
         return count == 0 ? "None set" : "\(count) set"
     }
 
-    /// The lines of the goals card: the energy goal read from the Daily goals rows, and the saved weight plan.
+    /// The lines of the goals card: the stored energy goal (nil or zero counts as not set) and the saved weight plan.
     var goalsSummary: SettingsGoalsSummary {
-        let energyText = goals?.rows.first { $0.nutrient == "energy" }?.targetText
-        let energy = energyText.flatMap { $0.split(separator: " ").first }.flatMap { Decimal(string: String($0), locale: Locale(identifier: "en_US")) }
+        let energy = (try? (goals?.weightPlanStore as? GoalStore)?.goal(for: "energy")) ?? nil
         let plan = (try? goals?.weightPlanStore?.weightPlan()) ?? nil
         return SettingsGoalsSummary(
-            energyGoal: energy, energyUnit: .kcal, goalsSetText: goalsSetText, plan: plan, unitSystem: unitSystem)
+            energyGoal: energy?.target, energyUnit: energy?.unit ?? .kcal, goalsSetText: goalsSetText,
+            plan: plan, unitSystem: unitSystem)
     }
 
     public var unitSystem: UnitSystem {
