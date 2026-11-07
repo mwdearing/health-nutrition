@@ -104,6 +104,15 @@ public final class FirstDayChecklistModel: ObservableObject {
         isVisible = false
     }
 
+    /// Whether Settings should offer to show the card again: only while one of the three real steps is left.
+    public var canShowAgain: Bool { !isVisible && items.prefix(3).contains { !$0.isDone } }
+
+    /// Shows the card again and keeps it shown for later launches. Settings uses this after a hide.
+    public func showAgain() {
+        preferences.setChecklistHidden(false)
+        load()
+    }
+
     /// Records that the units were looked at, then reads the steps again.
     public func markUnitsReviewed() {
         preferences.setHasReviewedUnits(true)
