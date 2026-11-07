@@ -47,7 +47,7 @@ goals switched off under **Show on Today** left out too (the same choice as the 
 
 ### Library look
 
-The Library, supplements, medication log, recipe and product screens sit on the page colour. Lists stay lists, with card-coloured rows, and forms use the same page colour. The segmented control and the "Search on this device" field are unchanged. The navigation rows (supplements, medication log) show their symbol in a small icon well. Labels, identifiers and swipe actions are unchanged.
+The Library, supplements, medication log, recipe and product screens sit on the page color. Lists stay lists, with card-colored rows, and forms use the same page color. The segmented control and the "Search on this device" field are unchanged. The navigation rows (supplements, medication log) show their symbol in a small icon well. Labels, identifiers and swipe actions are unchanged.
 
 ## Repeat semantics
 Repeat makes one `create` call for a NEW intake: new lowercase UUID, `occurredAt` is now, the current time zone, the same category and meal, the same components (names, amounts, units) and the same product snapshot if there was one. The original entry is not touched. The entry screen's "Log again" button makes this call; on success the screen closes. The Library's trailing Add makes the same call and stays on the Library, with Undo on offer.
@@ -67,7 +67,7 @@ keys and label aliases are excluded from "Also on the label", leaving only addit
 
 ## Favorites and recents
 - **Recents** are derived, not stored: the 20 most recent distinct active entries, distinct by product snapshot id **and the meal**, otherwise by category, component names and the meal.
-- **Favorites** are stored templates (display name, category, components as exact decimal text plus unit symbol, optional product snapshot id) in their own store file next to the journal file. A favorite is a copy, not a link, so deleting an entry never removes a favorite. A favorite or saved meal made from an entry that was kept out of Library still repeats into Library: the Save-to-Library choice does not carry over to favorites. This is current behaviour, documented rather than changed (#414); a change would need a new stored field and an export version bump.
+- **Favorites** are stored templates (display name, category, components as exact decimal text plus unit symbol, optional product snapshot id) in their own store file next to the journal file. A favorite is a copy, not a link, so deleting an entry never removes a favorite. A favorite or saved meal made from an entry that was kept out of Library still repeats into Library: the Save-to-Library choice does not carry over to favorites. This is current behavior, documented rather than changed (#414); a change would need a new stored field and an export version bump.
 
 ## Entry points
 Every tab (Today, Diary, Library, Trends) has a gear at the top right that opens **Settings**, and the same "Add food, drink, or supplement" capsule above the tab bar. Today's rows open the same entry screen the Journal opens, in a sheet with a navigation bar and a Close button. Settings (`AppSettingsView`) holds the way in to the daily goals and to the units, data and privacy screen, where the journal can be exported as versioned JSON: see [Journal export](journal-export.md). Today's "Edit goals" link opens Settings straight onto the goals. The Library no longer carries a Connections section, and Today no longer carries Journal and Library links. These are navigation callbacks only; the Today and Add view models keep their roles.
