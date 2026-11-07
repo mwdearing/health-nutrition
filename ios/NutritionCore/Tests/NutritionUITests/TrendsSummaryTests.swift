@@ -44,7 +44,12 @@ final class TrendsSummaryTests: XCTestCase {
         XCTAssertEqual(summary.averageKcal, 1_500)
         let insights = InsightsAverages.make(days: days, nutrients: ["energy"], now: now, zone: utc, window: 7)
         XCTAssertEqual(insights.lines.count, 1)
-        XCTAssertTrue(insights.lines[0].text.contains("1500"), insights.lines[0].text)
+        // Same days for the same window: the number Insights reads over 7 days is the number the card shows,
+        // compared as numbers so a grouping separator does not matter.
+        let words = insights.lines[0].text.split(separator: " ")
+        let figureWord = words.firstIndex(of: "average").map { words[$0 + 1] } ?? ""
+        let insightsAverage = Decimal(string: String(figureWord.filter(\.isNumber)))
+        XCTAssertEqual(insightsAverage, summary.averageKcal, insights.lines[0].text)
         XCTAssertEqual(summary.bars.count, 7)
         XCTAssertEqual(summary.bars.map(\.kcal), [nil, nil, nil, nil, nil, 1_000, 2_000])
         XCTAssertEqual(summary.bars.last?.isToday, true)

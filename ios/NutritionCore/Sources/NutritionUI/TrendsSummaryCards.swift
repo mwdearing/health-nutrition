@@ -4,8 +4,8 @@ import NutritionDomain
 import SwiftUI
 
 /// The figures behind the two Trends cards: the last seven local days ending today, averaged over exactly the
-/// days Insights counts for its averages (a day with a food or drink entry, or with intake Health states), so the
-/// two screens never disagree.
+/// days Insights counts for its averages (a day with a food or drink entry, or with intake Health states): the same
+/// days for the same window. Insights averages 30 days, the cards 7, so their figures can differ.
 public struct TrendsSummary: Equatable {
     public static let windowDays = InsightsWeek.length
     public static let emptyText = "Nothing logged this week"
@@ -152,6 +152,9 @@ public struct TrendsCaloriesCard: View {
                     .font(.subheadline)
                     .foregroundStyle(TokenColors.heroSecondaryText)
                     .accessibilityAddTraits(.isHeader)
+                Text("Last 7 days")
+                    .font(.caption)
+                    .foregroundStyle(TokenColors.heroSecondaryText)
                 if let average = summary.averageKcal {
                     if summary.energyIsPartial {
                         Text("At least")
@@ -227,7 +230,7 @@ public struct TrendsCaloriesCard: View {
 
     private var spokenLabel: String {
         guard let average = summary.averageKcal else { return "Calories, daily average. \(TrendsSummary.emptyText)" }
-        var parts = ["Calories, daily average, \(summary.energyIsPartial ? "at least " : "")\(TrendsSummary.figureText(average)) calories"]
+        var parts = ["Calories, daily average, last 7 days, \(summary.energyIsPartial ? "at least " : "")\(TrendsSummary.figureText(average)) calories"]
         if let difference = summary.difference { parts.append(difference.text) }
         let days = summary.bars.map { bar in
             "\(bar.label), \(bar.kcal.map { "\(TrendsSummary.figureText($0)) calories" } ?? "nothing logged")"
@@ -252,6 +255,9 @@ public struct TrendsMacrosCard: View {
                     .font(.headline)
                     .foregroundStyle(TokenColors.textPrimary)
                     .accessibilityAddTraits(.isHeader)
+                Text("Last 7 days")
+                    .font(.caption)
+                    .foregroundStyle(TokenColors.textSecondary)
                 if let shares = summary.macroShares {
                     splitBar(shares)
                     HStack(alignment: .top, spacing: DesignSpacing.m) {
@@ -303,7 +309,7 @@ public struct TrendsMacrosCard: View {
 
     private var spokenLabel: String {
         guard summary.macroShares != nil else { return "Macros, daily average. \(TrendsSummary.emptyText)" }
-        return "Macros, daily average. Protein, \(TrendsSummary.gramsText(summary.proteinGrams, partial: summary.proteinIsPartial)). "
+        return "Macros, daily average, last 7 days. Protein, \(TrendsSummary.gramsText(summary.proteinGrams, partial: summary.proteinIsPartial)). "
             + "Carbs, \(TrendsSummary.gramsText(summary.carbGrams, partial: summary.carbsArePartial)). "
             + "Fat, \(TrendsSummary.gramsText(summary.fatGrams, partial: summary.fatIsPartial))."
     }
