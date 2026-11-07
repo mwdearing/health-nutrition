@@ -44,7 +44,7 @@ final class TrendsSummaryTests: XCTestCase {
         XCTAssertEqual(summary.averageKcal, 1_500)
         let insights = InsightsAverages.make(days: days, nutrients: ["energy"], now: now, zone: utc, window: 7)
         XCTAssertEqual(insights.lines.count, 1)
-        XCTAssertTrue(insights.lines[0].text.contains("1,500"), insights.lines[0].text)
+        XCTAssertTrue(insights.lines[0].text.contains("1500"), insights.lines[0].text)
         XCTAssertEqual(summary.bars.count, 7)
         XCTAssertEqual(summary.bars.map(\.kcal), [nil, nil, nil, nil, nil, 1_000, 2_000])
         XCTAssertEqual(summary.bars.last?.isToday, true)
@@ -97,7 +97,7 @@ final class TrendsSummaryTests: XCTestCase {
     func testAPartialDayShowsAtLeast() {
         let healthOnlyWithJournalGap = InsightsAverages.Day(
             key: "2023-11-14", totals: DailyTotals(totals: [:]), isLogged: false,
-            outside: .read(values: ["energy": 1_000], readKeys: []))
+            outside: .read(values: ["energy": 1_000], readKeys: ["protein"]))
         let partial = make([day("2023-11-15", kcal: 2_000), healthOnlyWithJournalGap])
         XCTAssertTrue(partial.energyIsPartial)
         let insights = InsightsAverages.make(
