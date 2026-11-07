@@ -110,6 +110,13 @@ final class AddTypedInputSwipeUITests: XCTestCase {
 
         // The pop itself: back on Add, the Type it in tile is on screen again.
         let typeItAgain = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Type it in")).firstMatch
+        // XCTest's synthetic left-edge drag is occasionally not recognized as an edge pan: in repeat runs 1 of 12 and 2 of 8
+        // first drags left the form up with the gesture enabled, and the same drag again popped it at once (#930). So a
+        // form still on screen after the first drag gets one more identical drag. If the gate were wrongly switching the
+        // gesture off, both drags would fail and so would this test.
+        if !typeItAgain.waitForExistence(timeout: 3), app.navigationBars["Log entry"].exists {
+            start.press(forDuration: 0.1, thenDragTo: end, withVelocity: .fast, thenHoldForDuration: 0)
+        }
         if !typeItAgain.waitForExistence(timeout: 10) {
             XCTFail("a clean details form did not pop back to Add on an edge swipe. Element tree: \(app.debugDescription)")
         }
