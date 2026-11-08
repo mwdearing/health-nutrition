@@ -336,6 +336,14 @@ mL. The defaults are metric and 250 mL. `UserDefaultsDisplayPreferences` persist
 tests. The app builds one `UserDefaultsDisplayPreferences` in `AppServices` and passes it to every screen,
 so a change made on one screen is read by the next.
 
+Settings opens on a **goals card** on its hero row (`SettingsGoalsCard`, lines built by `SettingsGoalsSummary`).
+It shows "Daily goals", the daily energy goal as "<amount> Calories a day" when one is set (otherwise the earlier
+wording, "None set" or "<n> set"), and, only when a weight plan is saved, one plan line in the person's weight unit
+("Lose 1 lb a week", "Gain 0.25 kg a week" or "Keep your weight"). A mint capsule reads "Edit goals", or "Set your
+goals" when nothing is set. The whole card is one button that opens the Daily goals screen, and VoiceOver reads it
+as one element with the hint "Opens your goals". At the accessibility text sizes the capsule moves under the text.
+The card reads the stored goals and the saved weight plan and writes nothing.
+
 Where they are set: **Settings > Units and logging**, reached from the gear on every tab.
 `AppSettingsView` composes `AppSettingsViewModel` and the existing `ConnectionsPrivacyViewModel`.
 The segmented unit-system picker and inline quick-water field save on submit or focus loss, without a Save button. The field is **read in the preferred unit** —

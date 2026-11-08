@@ -146,16 +146,8 @@ private struct SettingsContent: View {
         Form {
             Section {
                 if model.goals != nil {
-                    Button { self.showingGoals = true } label: {
-                        HStack(spacing: DesignSpacing.m) {
-                            Text("Daily goals").foregroundStyle(TokenColors.heroText)
-                            Spacer()
-                            Text(model.goalsSetText).foregroundStyle(TokenColors.heroSecondaryText)
-                            Image(systemName: "chevron.right").foregroundStyle(TokenColors.heroSecondaryText)
-                                .accessibilityHidden(true)
-                        }
-                        .frame(minHeight: 44)
-                    }
+                    SettingsGoalsCard(summary: model.goalsSummary) { self.showingGoals = true }
+                    .accessibilityIdentifier("Daily goals")
                     .listRowBackground(TokenColors.hero)
                 }
             }
