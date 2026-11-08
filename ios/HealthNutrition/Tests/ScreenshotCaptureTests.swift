@@ -863,6 +863,24 @@ private struct ScreenshotProductService: CommunityProductServicing {
         }
     }
 
+    // The Diary's week strip on the "This week" hero: today holds the seeded entries and the six days before it are empty.
+    func testDiaryWeekStrip() throws {
+        let services = try makeSeededServices()
+        let now = Date()
+        services.journal.load(now: now)
+        let strip = try XCTUnwrap(services.journal.weekStrip(chosen: nil, now: now))
+        XCTAssertTrue(strip.days.contains { $0.isLogged }, "the seeded week needs a logged day")
+        XCTAssertTrue(strip.days.contains { !$0.isLogged }, "the seeded week needs an empty day")
+        try capture("DiaryWeekStrip") {
+            ScrollView {
+                HeroCard {
+                    DiaryWeekStrip(model: strip, onSelect: { _ in })
+                }
+                .padding()
+            }
+        }
+    }
+
     func testSavedMealCardRow() throws {
         let services = try makeSeededServices()
         let meals = services.savedMeals
