@@ -82,7 +82,8 @@ public actor CommunityAuth {
         let (data, response) = try await api.send(
             "/auth/v1/token",
             query: [URLQueryItem(name: "grant_type", value: "id_token")],
-            body: body
+            body: body,
+            keepReply: true
         )
         let session = try acceptAuthentication(data, response, startedAtIntent: startedAtIntent)
         if let authorizationCode, !authorizationCode.isEmpty {
@@ -114,7 +115,7 @@ public actor CommunityAuth {
         authenticationIntent += 1
         deletedOwners.removeAll()
         let startedAtIntent = authenticationIntent
-        let (data, response) = try await api.send("/auth/v1/verify", body: body)
+        let (data, response) = try await api.send("/auth/v1/verify", body: body, keepReply: true)
         return try acceptAuthentication(data, response, startedAtIntent: startedAtIntent)
     }
 
@@ -282,7 +283,8 @@ public actor CommunityAuth {
         // A session-replacement request remains valid across failures to invalidate an older token,
         // but a later auth attempt, logout, or unknown storage state fences it.
         guard startedAtIntent == authenticationIntent else { throw CommunityError.signedOut }
-        let session = try save(data, response)
+        // The server has issued this session, so a cancellation after the reply does not drop it.
+        let session = try save(data, response, honorCancellation: false)
         localCredentialsRevoked = false
         return session
     }
@@ -301,8 +303,13 @@ public actor CommunityAuth {
         return try save(data, response, expectedUserID: owner)
     }
 
-    private func save(_ data: Data, _ response: HTTPURLResponse, expectedUserID: String? = nil) throws -> CommunitySession {
-        try Task.checkCancellation()
+    private func save(
+        _ data: Data,
+        _ response: HTTPURLResponse,
+        expectedUserID: String? = nil,
+        honorCancellation: Bool = true
+    ) throws -> CommunitySession {
+        if honorCancellation { try Task.checkCancellation() }
         let reply = try CommunityAPI.decode(TokenReply.self, from: data, status: response.statusCode)
         let owner = AccountIdentity(reply.user.id)
         guard !deletedOwners.contains(owner) else { throw CommunityError.signedOut }

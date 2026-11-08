@@ -6,14 +6,17 @@ struct CommunityAPI: Sendable {
     let config: CommunityConfig
     let transport: CommunityTransport
 
-    /// Sends one request and returns the reply without checking its status.
+    /// Sends one request and returns the reply without checking its status. With `keepReply` the request runs to its
+    /// end even when the calling task is canceled, and a reply that arrives is returned: for a sign-in the server has
+    /// already issued a session and spent the one-time code, so dropping the reply would lose both.
     func raw(
         _ path: String,
         method: String = "POST",
         query: [URLQueryItem] = [],
         bearer: String? = nil,
         body: Data? = nil,
-        prefer: String? = nil
+        prefer: String? = nil,
+        keepReply: Bool = false
     ) async throws -> (Data, HTTPURLResponse) {
         guard var components = URLComponents(url: config.baseURL, resolvingAgainstBaseURL: false) else {
             throw CommunityError.notConfigured
@@ -40,8 +43,15 @@ struct CommunityAPI: Sendable {
         }
         do {
             try Task.checkCancellation()
-            let reply = try await transport.send(request)
-            try Task.checkCancellation()
+            let transport = transport
+            let reply: (Data, HTTPURLResponse)
+            if keepReply {
+                // A new task does not inherit the caller's cancellation.
+                reply = try await Task { try await transport.send(request) }.value
+            } else {
+                reply = try await transport.send(request)
+                try Task.checkCancellation()
+            }
             guard reply.0.count <= BoundedResponseLimits.community else {
                 throw BoundedResponseError.responseTooLarge
             }
@@ -63,9 +73,12 @@ struct CommunityAPI: Sendable {
         query: [URLQueryItem] = [],
         bearer: String? = nil,
         body: Data? = nil,
-        prefer: String? = nil
+        prefer: String? = nil,
+        keepReply: Bool = false
     ) async throws -> (Data, HTTPURLResponse) {
-        let (data, response) = try await raw(path, method: method, query: query, bearer: bearer, body: body, prefer: prefer)
+        let (data, response) = try await raw(
+            path, method: method, query: query, bearer: bearer, body: body, prefer: prefer, keepReply: keepReply
+        )
         guard (200..<300).contains(response.statusCode) else {
             throw CommunityError.from(status: response.statusCode, body: data)
         }
