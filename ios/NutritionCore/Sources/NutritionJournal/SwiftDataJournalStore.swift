@@ -1510,7 +1510,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalDele
                 guard let productRow = productRows.first else {
                     throw JournalError.corruptRecord("product")
                 }
-                product = Self.snapshot(from: productRow)
+                product = try Self.snapshot(from: productRow)
             }
             let number = current + 1
             record.meal = stored
@@ -1809,7 +1809,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalDele
                 kindRaw: product.kind.rawValue))
             return true
         }
-        let stored = snapshot(from: row)
+        let stored = try snapshot(from: row)
         guard stored.identity == product.identity else {
             throw JournalError.snapshotConflict(id)
         }
@@ -2402,7 +2402,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalDele
         let existing = try context.fetch(FetchDescriptor<ProductRecord>(
             predicate: #Predicate<ProductRecord> { $0.snapshotID == id }))
         if let row = existing.first {
-            let stored = snapshot(from: row)
+            let stored = try snapshot(from: row)
             if stored == product { return }
             guard stored.nutrients.isEmpty, stored.identity == product.identity else {
                 throw JournalError.snapshotConflict(id)
@@ -2579,7 +2579,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalDele
         let context = ModelContext(try openContainer())
         let rows = try context.fetch(FetchDescriptor<ProductRecord>(
             predicate: #Predicate<ProductRecord> { $0.snapshotID == snapshotID }))
-        return rows.first.map(Self.snapshot(from:))
+        return try rows.first.map { try Self.snapshot(from: $0) }
     }
 
     // MARK: Helpers
@@ -2665,8 +2665,13 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalDele
         }.sorted { ($0.occurredAt, $0.id) < ($1.occurredAt, $1.id) }
     }
 
-    private static func snapshot(from row: ProductRecord) -> ProductDefinition {
-        ProductDefinition(
+    private static func snapshot(from row: ProductRecord) throws -> ProductDefinition {
+        // A product whose stored nutrients cannot be read is an error, not a product with none: an empty map
+        // would add nothing to the day and would not mark it partial.
+        guard nutrientsReadable(row.nutrientsJSON) else {
+            throw JournalError.corruptRecord("product nutrients")
+        }
+        return ProductDefinition(
             snapshotID: row.snapshotID, productID: row.productID, name: row.name, brand: row.brand,
             barcode: row.barcode, labelBasis: row.labelBasis, catalogOrigin: row.catalogOrigin,
             catalogVersion: row.catalogVersion, kind: ProductKind(storedRawValue: row.kindRaw),
@@ -2704,6 +2709,14 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalDele
         encoder.outputFormatting = [.sortedKeys]
         guard let data = try? encoder.encode(stored) else { return "[]" }
         return String(decoding: data, as: UTF8.self)
+    }
+
+    /// True when the stored nutrient payload is absent or decodes. A payload that is present but does not decode
+    /// must not be read as a product with no nutrients.
+    static func nutrientsReadable(_ json: String?) -> Bool {
+        guard let json else { return true }
+        guard let data = json.data(using: .utf8) else { return false }
+        return (try? JSONDecoder().decode([StoredNutrient].self, from: data)) != nil
     }
 
     /// The printed names stored beside the values, keyed the same way. A payload written before the
