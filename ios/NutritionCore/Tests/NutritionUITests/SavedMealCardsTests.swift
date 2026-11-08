@@ -71,7 +71,8 @@ final class SavedMealCardsTests: XCTestCase {
         XCTAssertTrue(model.save(name: "Usual breakfast", meal: .breakfast, intakes: [entry]))
         XCTAssertEqual(library.savedMealCards.map(\.name), ["Usual breakfast"])
         XCTAssertTrue(model.save(name: "Post-run shake", meal: nil, intakes: [entry]))
-        XCTAssertEqual(library.savedMealCards.map(\.name), ["Usual breakfast", "Post-run shake"])
+        // The model lists the newest save first.
+        XCTAssertEqual(library.savedMealCards.map(\.name), ["Post-run shake", "Usual breakfast"])
     }
 
     func testLoggingFromACardLogsEveryItemAndOffersUndo() throws {
