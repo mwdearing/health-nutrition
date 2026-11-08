@@ -9,8 +9,8 @@ filled in.
 
 ## Add flow
 
-The shared **Add food, drink, or supplement** action opens Add home in a full-screen cover with one
-navigation stack and Cancel. **Add to Lunch** (and the other meal sections on Today) opens
+The shared **Add food, drink, or supplement** action opens Add home as a sheet at the large size with a grabber, one
+navigation stack and Cancel. A swipe down closes an Add with nothing typed like Cancel; while a form on the stack holds typed input the swipe is refused and Cancel asks "Discard this entry?". **Add to Lunch** (and the other meal sections on Today) opens
 the same home with that meal selected. None, Breakfast, Lunch, Dinner and Snack are explicit
 choices; the selected meal is carried into barcode, label, Library and typed Details.
 

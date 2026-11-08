@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import SwiftUI
 import UIKit
@@ -50,6 +51,8 @@ struct RootView: View {
     @State private var productSearchModel: CommunityProductSearchViewModel?
     @State private var addIntakeModel: AddIntakeViewModel?
     @State private var confirmDiscardAdd = false
+    /// Live copy of the open Add form's `hasTypedInput`, so the sheet can refuse a swipe down while it holds input.
+    @State private var addFormHasTypedInput = false
     @State private var labelCapture: LabelCaptureViewModel?
     @StateObject private var addNavigation = AddNavigationModel()
     @State private var addFlowError: String?
@@ -359,8 +362,9 @@ struct RootView: View {
         .onChange(of: todayModel.waterTotalMilliliters) { _, _ in
             deliverToHealthKit()
         }
-        .fullScreenCover(item: $addHome, onDismiss: {
-            self.addNavigation.reset(); self.reload()
+        .sheet(item: $addHome, onDismiss: {
+            // A swipe down ends Add here without finishAdding(); the same cleanup runs before Settings opens.
+            self.finishAdding()
             if self.settingsAfterAdding { self.settingsAfterAdding = false; self.openSettings(goals: false) }
         }) { home in
             NavigationStack(path: self.$addNavigation.path) {
@@ -399,7 +403,17 @@ struct RootView: View {
                     Button("Discard", role: .destructive) { self.finishAdding() }
                 }
             }
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+            // A swipe down closes an empty Add like Cancel; a form still on the stack with typed input refuses it.
+            .interactiveDismissDisabled(!self.addNavigation.path.isEmpty && self.addFormHasTypedInput)
             .saveConfirmation(addNotice)
+            .onReceive(self.addIntakeModel?.objectWillChange.eraseToAnyPublisher() ?? Empty().eraseToAnyPublisher()) { _ in
+                DispatchQueue.main.async { self.addFormHasTypedInput = self.addIntakeModel?.hasTypedInput == true }
+            }
+            .onChange(of: self.addNavigation.path.count) { _, _ in
+                self.addFormHasTypedInput = self.addIntakeModel?.hasTypedInput == true
+            }
         }
     }
 
@@ -495,7 +509,7 @@ struct RootView: View {
     }
 
     private func finishAdding() {
-        // The cover's own confirmation ends with the cover: it was already shown and announced there.
+        // The sheet's own confirmation ends with the sheet: it was already shown and announced there.
         self.addNotice = nil
         self.addNavigation.reset()
         self.addHome = nil
