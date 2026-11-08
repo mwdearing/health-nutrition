@@ -72,6 +72,11 @@ public struct LibraryView: View {
                     }
                 }
                 .pickerStyle(.segmented)
+                if onPick == nil, let savedMeals = model.savedMeals,
+                   SavedMealCards.isShown(inPickMode: false, mealCount: model.savedMealCards.count, searchText: model.searchText) {
+                    SavedMealCardRow(cards: model.savedMealCards, savedMeals: savedMeals, now: now, onAdded: onAdded)
+                        .listRowBackground(Color.clear).listRowInsets(EdgeInsets())
+                }
                 segmentContent
             }
             if let message = model.errorMessage {
@@ -86,9 +91,11 @@ public struct LibraryView: View {
         .onAppear { self.model.load() }
         .task { await model.observeProductStatus() }
         // The Undo window ends with this screen: its ten-second task is canceled with the toast.
-        .onDisappear { if self.onPick == nil { self.model.clearUndo() } }
+        .onDisappear { if self.onPick == nil { self.model.clearUndo(); self.model.savedMeals?.clearUndo() } }
         .safeAreaInset(edge: .bottom) {
             // Pick mode is Add's "From Library": a token from this screen must never show there.
+            VStack(spacing: 0) {
+            if onPick == nil, let savedMeals = model.savedMeals { SavedMealUndoBar(model: savedMeals) }
             if onPick == nil, let token = model.undoToken {
                 UndoToast(token.message) {
                     if self.model.undo(now: self.now()) { self.onAdded() }
@@ -99,6 +106,7 @@ public struct LibraryView: View {
                     do { try await Task.sleep(for: .seconds(10)) } catch { return }
                     self.model.expireUndo(token)
                 }
+            }
             }
         }
     }
