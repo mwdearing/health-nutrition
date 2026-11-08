@@ -1,6 +1,7 @@
 import SwiftUI
 
 #if canImport(UIKit)
+import ObjectiveC
 import UIKit
 
 /// Turns the edge swipe-back off while the screen on top of a navigation stack holds typed input. Hiding the Back
@@ -18,30 +19,39 @@ enum PopGateRegistry {
         init(_ gate: PopGateController) { self.gate = gate }
     }
 
-    private static var gates: [ObjectIdentifier: [Box]] = [:]
-    /// UIKit switches the recognizer back on itself as the stack changes, so a change made by anyone else is read
-    /// against the stack again.
-    private static var observers: [ObjectIdentifier: NSKeyValueObservation] = [:]
+    /// The state of one navigation controller. It is stored on that controller, so it is released with it: a
+    /// controller that goes away leaves nothing behind in a shared table (P2, registry never pruned).
+    private final class StackState {
+        var gates: [Box] = []
+        var observer: NSKeyValueObservation?
+    }
+
+    private static var stateKey: UInt8 = 0
+
+    private static func state(for nav: UINavigationController) -> StackState {
+        if let existing = objc_getAssociatedObject(nav, &stateKey) as? StackState { return existing }
+        let created = StackState()
+        objc_setAssociatedObject(nav, &stateKey, created, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        return created
+    }
 
     static func add(_ gate: PopGateController, to nav: UINavigationController) {
-        let key = ObjectIdentifier(nav)
-        var boxes = (gates[key] ?? []).filter { $0.gate != nil }
+        let stack = state(for: nav)
+        var boxes = stack.gates.filter { $0.gate != nil }
         if !boxes.contains(where: { $0.gate === gate }) { boxes.append(Box(gate)) }
-        gates[key] = boxes
-        if observers[key] == nil, let recognizer = nav.interactivePopGestureRecognizer {
-            observers[key] = recognizer.observe(\.isEnabled, options: [.new]) { [weak nav] _, _ in
+        stack.gates = boxes
+        // UIKit switches the recognizer back on itself as the stack changes, so a change made by anyone else is
+        // read against the stack again.
+        if stack.observer == nil, let recognizer = nav.interactivePopGestureRecognizer {
+            stack.observer = recognizer.observe(\.isEnabled, options: [.new]) { [weak nav] _, _ in
                 DispatchQueue.main.async { if let nav { PopGateRegistry.evaluate(nav) } }
             }
         }
     }
 
     static func remove(_ gate: PopGateController, from nav: UINavigationController) {
-        let key = ObjectIdentifier(nav)
-        gates[key] = (gates[key] ?? []).filter { $0.gate != nil && $0.gate !== gate }
-        if gates[key]?.isEmpty == true {
-            gates[key] = nil
-            observers[key] = nil
-        }
+        let stack = state(for: nav)
+        stack.gates = stack.gates.filter { $0.gate != nil && $0.gate !== gate }
     }
 
     /// Sets the stack's edge pop from the screen on top: off when a blocked gate belongs to it, on otherwise.
@@ -56,11 +66,15 @@ enum PopGateRegistry {
             return
         }
         let top = nav.topViewController
-        let blocked = (gates[ObjectIdentifier(nav)] ?? []).contains { box in
+        let blocked = state(for: nav).gates.contains { box in
             guard let gate = box.gate, gate.blocked, let top else { return false }
             return gate.belongs(to: top)
         }
-        nav.interactivePopGestureRecognizer?.isEnabled = !blocked
+        // Written only when it changes. Each write is observed and read again, so an unconditional write would
+        // re-enter here forever (P2, KVO loop).
+        if let recognizer = nav.interactivePopGestureRecognizer, recognizer.isEnabled == blocked {
+            recognizer.isEnabled = !blocked
+        }
     }
 }
 
