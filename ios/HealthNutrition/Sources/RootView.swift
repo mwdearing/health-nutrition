@@ -363,7 +363,8 @@ struct RootView: View {
             deliverToHealthKit()
         }
         .sheet(item: $addHome, onDismiss: {
-            self.addNavigation.reset(); self.reload()
+            // A swipe down ends Add here without finishAdding(); the same cleanup runs before Settings opens.
+            self.finishAdding()
             if self.settingsAfterAdding { self.settingsAfterAdding = false; self.openSettings(goals: false) }
         }) { home in
             NavigationStack(path: self.$addNavigation.path) {
@@ -508,7 +509,7 @@ struct RootView: View {
     }
 
     private func finishAdding() {
-        // The cover's own confirmation ends with the cover: it was already shown and announced there.
+        // The sheet's own confirmation ends with the sheet: it was already shown and announced there.
         self.addNotice = nil
         self.addNavigation.reset()
         self.addHome = nil
