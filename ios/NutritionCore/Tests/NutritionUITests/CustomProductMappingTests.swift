@@ -92,6 +92,28 @@ final class CustomProductMappingTests: XCTestCase {
         XCTAssertEqual(legacyDraft.facts.first?.displayName, "Vitamin D")
     }
 
+    /// Every legacy label fact is stored in the unit its label prints. Cholesterol is milligrams, not grams (#1371).
+    func testLegacyLabelFactsUseTheUnitTheirLabelPrints() throws {
+        let id = UUID()
+        let legacy = LegacyProductLabel(contentType: "legacy_label", name: "Synthetic", barcode: "0012345678905",
+            basis: .perServing, rawServingText: "one tablet", nutrients: [
+                "cholesterol": Decimal(string: "50")!, "fat": Decimal(string: "2")!, "salt": Decimal(string: "0.6")!,
+            ], legacySource: .community)
+        let product = CommunityProduct(productID: id, representativeRevision: "7", product: .legacyLabel(legacy),
+            source: ProductSourceDTO(productID: id, representativeRevision: "7", attribution: "Community"),
+            verification: ProductVerification(status: .sharedUnverified), support: ProductSupport(distinctAccounts: "1", verificationThreshold: "3"), missingFacts: false, alternatives: [])
+        let staged = try CustomProductMapping.stagedDraft(from: product)
+        XCTAssertEqual(staged.facts.first { $0.key == "cholesterol" }?.value, .known(50, .mg), "cholesterol is milligrams")
+        XCTAssertEqual(staged.facts.first { $0.key == "fat" }?.value, .known(2, .g), "fat is grams")
+    }
+
+    /// Every key the validator accepts has a stated unit, so the two tables cannot drift apart (#1371 review P2).
+    func testEveryValidatedLegacyKeyHasAStatedUnit() {
+        for key in Set(CustomProductValidation.standardDimensions.keys).union(["salt"]) {
+            XCTAssertNotNil(CustomProductMapping.legacyUnits[key], "\(key) is accepted by validation but has no legacy unit")
+        }
+    }
+
     func testNameOnlyAndEveryFactStateRemainMissingOrExplicit() throws {
         let facts: [ProductFact] = [
             ProductFact(key: "protein", displayName: "Protein", value: .known(0, .g)),
