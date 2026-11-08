@@ -37,6 +37,13 @@ private final class GatedCommunityTransport: CommunityTransport, @unchecked Send
 
 /// A sign-in the server has accepted must not be lost because the view that asked for it went away.
 final class CommunityAuthCancellationTests: XCTestCase {
+    private func makeGatedAuth(
+        _ transport: GatedCommunityTransport,
+        store: CommunitySessionStore = InMemoryCommunitySessionStore()
+    ) throws -> CommunityAuth {
+        CommunityAuth(config: try makeConfig(), transport: transport, store: store, now: { testNow })
+    }
+
     private func waitUntilStarted(_ transport: GatedCommunityTransport) async throws {
         for _ in 0..<500 where !transport.hasStarted { try await Task.sleep(nanoseconds: 10_000_000) }
         XCTAssertTrue(transport.hasStarted, "the request never reached the transport")
@@ -45,7 +52,7 @@ final class CommunityAuthCancellationTests: XCTestCase {
     func testAppleSignInCanceledMidRequestStillKeepsTheSession() async throws {
         let transport = GatedCommunityTransport()
         let store = InMemoryCommunitySessionStore()
-        let auth = try makeAuth(transport: transport, store: store)
+        let auth = try makeGatedAuth(transport, store: store)
 
         let task = Task { try await auth.signInWithApple(idToken: "test-apple-token", nonce: "test-nonce") }
         try await waitUntilStarted(transport)
@@ -60,7 +67,7 @@ final class CommunityAuthCancellationTests: XCTestCase {
     func testEmailCodeVerifyCanceledMidRequestStillKeepsTheSession() async throws {
         let transport = GatedCommunityTransport()
         let store = InMemoryCommunitySessionStore()
-        let auth = try makeAuth(transport: transport, store: store)
+        let auth = try makeGatedAuth(transport, store: store)
 
         let task = Task { try await auth.verifyEmailCode(email: "person@example.com", code: "123456") }
         try await waitUntilStarted(transport)
@@ -73,7 +80,7 @@ final class CommunityAuthCancellationTests: XCTestCase {
 
     func testEmailCodeRequestStillStopsWhenCanceled() async throws {
         let transport = GatedCommunityTransport()
-        let auth = try makeAuth(transport: transport)
+        let auth = try makeGatedAuth(transport)
 
         let task = Task { try await auth.requestEmailCode(email: "person@example.com") }
         try await waitUntilStarted(transport)
