@@ -20,7 +20,7 @@ enum PopGateRegistry {
     }
 
     /// The state of one navigation controller. It is stored on that controller, so it is released with it: a
-    /// controller that goes away leaves nothing behind in a shared table (P2, registry never pruned).
+    /// controller that goes away leaves nothing behind in a shared table.
     private final class StackState {
         var gates: [Box] = []
         var observer: NSKeyValueObservation?
@@ -71,7 +71,7 @@ enum PopGateRegistry {
             return gate.belongs(to: top)
         }
         // Written only when it changes. Each write is observed and read again, so an unconditional write would
-        // re-enter here forever (P2, KVO loop).
+        // re-enter here forever.
         if let recognizer = nav.interactivePopGestureRecognizer, recognizer.isEnabled == blocked {
             recognizer.isEnabled = !blocked
         }
