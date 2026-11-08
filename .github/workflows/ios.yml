@@ -142,6 +142,8 @@ jobs:
         run: python -m pytest -q -p no:cacheprovider scripts/tests/test_project_declarations.py
       - name: Check the Trends redesign guard
         run: python -m pytest -q -p no:cacheprovider scripts/tests/test_trends_redesign.py
+      - name: Check the Trends summary cards guard
+        run: python -m pytest -q -p no:cacheprovider scripts/tests/test_trends_summary_cards.py
       - name: Check the CI release build keeps its shape
         run: python -m pytest -q -p no:cacheprovider scripts/tests/test_ios_workflow.py
       - name: Check the Settings redesign guard

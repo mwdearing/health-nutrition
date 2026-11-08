@@ -648,6 +648,48 @@ private struct ScreenshotProductService: CommunityProductServicing {
         }
     }
 
+    /// Seven invented days, six of them logged, against a 2,100 calorie goal.
+    private func trendsSummaryForCapture() -> TrendsSummary {
+        func total(_ amount: Decimal, _ unit: MeasureUnit) -> NutrientTotal {
+            NutrientTotal(
+                value: .known(amount, unit),
+                coverage: Coverage(knownCount: 1, totalCount: 1, hasBelowReportingThreshold: false, hasUnknown: false))
+        }
+        let zone = TimeZone.current
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = zone
+        let now = calendar.startOfDay(for: Date()).addingTimeInterval(12 * 3_600)
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = zone
+        formatter.dateFormat = "yyyy-MM-dd"
+        let kcal: [Decimal] = [1_950, 2_240, 1_780, 2_060, 1_890, 2_310]
+        let days = kcal.enumerated().map { offset, energy -> InsightsAverages.Day in
+            let date = calendar.date(byAdding: .day, value: -offset, to: now) ?? now
+            return InsightsAverages.Day(
+                key: formatter.string(from: date),
+                totals: DailyTotals(totals: [
+                    "energy": total(energy, .kcal), "protein": total(energy / 20, .g),
+                    "carbohydrate": total(energy / 9, .g), "fat": total(energy / 32, .g),
+                ]))
+        }
+        return TrendsSummary.make(days: days, goal: 2_100, now: now, zone: zone)
+    }
+
+    func testTrendsCaloriesCard() throws {
+        let summary = trendsSummaryForCapture()
+        try capture("TrendsCaloriesCard") {
+            TrendsCaloriesCard(summary: summary).padding()
+        }
+    }
+
+    func testTrendsMacrosCard() throws {
+        let summary = trendsSummaryForCapture()
+        try capture("TrendsMacrosCard") {
+            TrendsMacrosCard(summary: summary).padding()
+        }
+    }
+
     func testInsightsHost() throws {
         let services = try makeSeededServices()
         services.journal.load(now: Date())
