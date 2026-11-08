@@ -28,8 +28,9 @@ def test_the_library_shows_the_row_only_outside_pick_mode() -> None:
     library = (UI / "LibraryView.swift").read_text()
     i = library.find("SavedMealCardRow(")
     assert i >= 0, "the Library shows the row"
-    before = library[max(0, i - 600): i]
-    assert "onPick == nil" in before or "onPick != nil" in library[:i], "never in pick mode"
+    guard = library.rfind("if ", 0, i)
+    assert guard >= 0 and i - guard < 300, "the row sits right inside an if"
+    assert "onPick == nil" in library[guard:i], "never in pick mode: the if right around the row checks onPick == nil"
     assert i > library.find(".pickerStyle(.segmented)") > 0, "the row sits under the segments"
 
 
