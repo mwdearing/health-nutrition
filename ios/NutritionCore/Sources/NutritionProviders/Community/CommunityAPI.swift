@@ -44,6 +44,7 @@ struct CommunityAPI: Sendable {
         do {
             try Task.checkCancellation()
             let transport = transport
+            let request = request
             let reply: (Data, HTTPURLResponse)
             if keepReply {
                 // A new task does not inherit the caller's cancellation.

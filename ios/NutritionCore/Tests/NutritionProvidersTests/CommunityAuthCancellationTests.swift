@@ -8,9 +8,12 @@ private final class GatedCommunityTransport: CommunityTransport, @unchecked Send
     private var continuation: CheckedContinuation<Void, Never>?
     private var released = false
     private(set) var started = false
+    private var recorded: [URLRequest] = []
+
+    var paths: [String] { lock.withLock { recorded.compactMap { $0.url?.path } } }
 
     func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
-        lock.withLock { started = true }
+        lock.withLock { started = true; recorded.append(request) }
         await withCheckedContinuation { (next: CheckedContinuation<Void, Never>) in
             let resume = lock.withLock { () -> Bool in
                 if released { return true }
@@ -62,6 +65,22 @@ final class CommunityAuthCancellationTests: XCTestCase {
         let session = try await task.value
         XCTAssertEqual(session.userID, testUserID)
         XCTAssertEqual(try store.load(), session, "a sign-in the server accepted was dropped on cancellation")
+    }
+
+    func testCanceledAppleSignInStillHandsTheAuthorizationCodeToTheServer() async throws {
+        let transport = GatedCommunityTransport()
+        let store = InMemoryCommunitySessionStore()
+        let auth = try makeGatedAuth(transport, store: store)
+
+        let task = Task {
+            try await auth.signInWithApple(idToken: "test-apple-token", nonce: "test-nonce", authorizationCode: "test-auth-code")
+        }
+        try await waitUntilStarted(transport)
+        task.cancel()
+        transport.release()
+
+        _ = try await task.value
+        XCTAssertEqual(transport.paths, ["/auth/v1/token", "/functions/v1/apple-grant"], "the single-use code was never handed off")
     }
 
     func testEmailCodeVerifyCanceledMidRequestStillKeepsTheSession() async throws {
