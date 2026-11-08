@@ -6,7 +6,7 @@ extension WidgetSnapshot {
     var remainingText: String? { WidgetFigure.groupedWholeNumber(remainingKcal) }
 
     /// Over goal (remaining below zero) the figure is shown as a positive number under "Calories over goal".
-    var isOverGoal: Bool { (remainingKcal ?? 0) < 0 }
+    var isOverGoal: Bool { (remainingKcal?.rounded() ?? 0) < 0 }
     var remainingCaption: String { isOverGoal ? "Calories over goal" : "Calories remaining" }
     var overGoalText: String? { WidgetFigure.groupedWholeNumber(remainingKcal.map { -$0 }) }
     var burnedText: String? { WidgetFigure.groupedWholeNumber(burnedKcal) }
