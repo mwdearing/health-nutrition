@@ -54,81 +54,17 @@ public struct InsightsAverages: Equatable {
     ///   - days: the Diary's days with their totals.
     ///   - nutrients: the nutrient keys to average, in the order to show them.
     ///   - now: the reference instant; the window is the 30 local days ending on its date in `zone`.
-    public static func make(days: [Day], nutrients: [String], now: Date, zone: TimeZone) -> InsightsAverages {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = zone
-        let today = calendar.startOfDay(for: now)
-        let inWindow = days.filter { day in
-            guard day.counts, let age = ageInDays(of: day.key, from: today, calendar: calendar) else { return false }
-            return age >= 0 && age < windowDays
-        }
+    public static func make(
+        days: [Day], nutrients: [String], now: Date, zone: TimeZone, window: Int = windowDays
+    ) -> InsightsAverages {
+        let inWindow = daysInWindow(days, now: now, zone: zone, length: window)
         var lines: [Line] = []
         for nutrient in nutrients {
-            var values: [Decimal] = []
-            var partialDays = 0
-            var unit: MeasureUnit?
-            for day in inWindow {
-                // A day with no food or drink entry contributes only Health's side: its water and supplement totals are not
-                // intake the average counts (#510).
-                let journal = day.isLogged ? day.totals : DailyTotals(totals: [:])
-                // A fully known day counts as it is. A partly logged day counts with the sum of its known entries,
-                // which is a minimum (#510). A day with nothing known for this nutrient is left out, never counted as
-                // 0.
-                var value: NutrientValue
-                var isPartial: Bool
-                if let total = journal.total(for: nutrient), case .known = total.value {
-                    value = total.value
-                    isPartial = false
-                } else if let sum = journal.knownSum(for: nutrient) {
-                    value = sum
-                    isPartial = true
-                } else {
-                    value = .unknown
-                    isPartial = false
-                }
-                // Health's side of the day, added as Today adds it: a completed query is a known amount (a known zero
-                // with no samples), a query that did not run leaves the figure at least, and not connected adds nothing.
-                switch healthSide(of: day.outside, for: nutrient) {
-                case .none:
-                    break
-                case .unread:
-                    isPartial = true
-                case .known(let healthAmount, let healthUnit, let complete):
-                    if !complete { isPartial = true }
-                    if case .known(let journalAmount, let journalUnit) = value {
-                        if journalUnit.symbol == healthUnit.symbol {
-                            value = .known(journalAmount + healthAmount, journalUnit)
-                        } else {
-                            // As Today does, an amount in another unit than Health's is never converted or added: Health's
-                            // positive amount stands alone as a minimum, and with nothing from Health the journal's figure
-                            // stands, also as a minimum.
-                            if healthAmount > 0 { value = .known(healthAmount, healthUnit) }
-                            isPartial = true
-                        }
-                    } else if healthAmount == 0 {
-                        // The journal states nothing for this nutrient and Health adds nothing: the day stays unknown, as
-                        // Today leaves it, and is left out of the average rather than counted as a zero.
-                        break
-                    } else {
-                        value = .known(healthAmount, healthUnit)
-                        // Entries that carry no value for the nutrient make Health's amount a minimum; with none, the
-                        // journal side is a complete nothing and Health's amount is the day.
-                        // A total the journal could not form (incompatible units, say) has incomplete coverage though no
-                        // entry is missing a value, so it counts the same.
-                        if journal.missingCount(for: nutrient) > 0
-                            || journal.total(for: nutrient)?.coverage.hasUnknown == true { isPartial = true }
-                    }
-                }
-                guard case .known(let amount, let amountUnit) = value else { continue }
-                let target = unit ?? amountUnit
-                guard let converted = try? Quantity(value: amount, unit: amountUnit).converted(to: target).value
-                else { continue }
-                unit = target
-                values.append(converted)
-                if isPartial { partialDays += 1 }
-            }
-            guard let unit, !values.isEmpty else { continue }
-            let average = values.reduce(Decimal(0), +) / Decimal(values.count)
+            guard let stat = averageFigure(for: nutrient, in: inWindow) else { continue }
+            let unit = stat.unit
+            let average = stat.average
+            let dayCount = stat.dayCount
+            let partialDays = stat.partialDays
             let shown = AmountDisplay.display(average, unit: unit, system: .metric)
             let rounded = DisplayRounding.rounded(
                 shown.amount, fractionDigits: AmountDisplay.fractionDigits(for: shown.amount))
@@ -136,13 +72,102 @@ public struct InsightsAverages: Equatable {
                 amount: rounded, unit: shown.unit,
                 isBelowSmallest: shown.isBelowSmallest || (rounded == 0 && average > 0))
             let name = NutrientNames.displayName(for: nutrient)
-            let dayCount = values.count == 1 ? "1 logged day" : "\(values.count) logged days"
+            let dayText = dayCount == 1 ? "1 logged day" : "\(dayCount) logged days"
             let text = partialDays > 0
-                ? "\(name): at least \(figure.text) a day over \(dayCount)"
-                : "\(name): average \(figure.text) a day over \(dayCount)"
+                ? "\(name): at least \(figure.text) a day over \(dayText)"
+                : "\(name): average \(figure.text) a day over \(dayText)"
             lines.append(Line(id: nutrient, text: text))
         }
         return InsightsAverages(lines: lines)
+    }
+
+    /// The days that count within the `length` local days ending on `now`'s date in `zone`.
+    static func daysInWindow(_ days: [Day], now: Date, zone: TimeZone, length: Int) -> [Day] {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = zone
+        let today = calendar.startOfDay(for: now)
+        return days.filter { day in
+            guard day.counts, let age = ageInDays(of: day.key, from: today, calendar: calendar) else { return false }
+            return age >= 0 && age < length
+        }
+    }
+
+    /// One nutrient's average over days already filtered by `daysInWindow`, in the canonical unit of its first
+    /// known day. Nil when no day states the nutrient.
+    struct Figure {
+        let average: Decimal
+        let unit: MeasureUnit
+        let dayCount: Int
+        let partialDays: Int
+    }
+
+    static func averageFigure(for nutrient: String, in inWindow: [Day]) -> Figure? {
+        var values: [Decimal] = []
+        var partialDays = 0
+        var unit: MeasureUnit?
+        for day in inWindow {
+            // A day with no food or drink entry contributes only Health's side: its water and supplement totals are not
+            // intake the average counts (#510).
+            let journal = day.isLogged ? day.totals : DailyTotals(totals: [:])
+            // A fully known day counts as it is. A partly logged day counts with the sum of its known entries,
+            // which is a minimum (#510). A day with nothing known for this nutrient is left out, never counted as
+            // 0.
+            var value: NutrientValue
+            var isPartial: Bool
+            if let total = journal.total(for: nutrient), case .known = total.value {
+                value = total.value
+                isPartial = false
+            } else if let sum = journal.knownSum(for: nutrient) {
+                value = sum
+                isPartial = true
+            } else {
+                value = .unknown
+                isPartial = false
+            }
+            // Health's side of the day, added as Today adds it: a completed query is a known amount (a known zero
+            // with no samples), a query that did not run leaves the figure at least, and not connected adds nothing.
+            switch healthSide(of: day.outside, for: nutrient) {
+            case .none:
+                break
+            case .unread:
+                isPartial = true
+            case .known(let healthAmount, let healthUnit, let complete):
+                if !complete { isPartial = true }
+                if case .known(let journalAmount, let journalUnit) = value {
+                    if journalUnit.symbol == healthUnit.symbol {
+                        value = .known(journalAmount + healthAmount, journalUnit)
+                    } else {
+                        // As Today does, an amount in another unit than Health's is never converted or added: Health's
+                        // positive amount stands alone as a minimum, and with nothing from Health the journal's figure
+                        // stands, also as a minimum.
+                        if healthAmount > 0 { value = .known(healthAmount, healthUnit) }
+                        isPartial = true
+                    }
+                } else if healthAmount == 0 {
+                    // The journal states nothing for this nutrient and Health adds nothing: the day stays unknown, as
+                    // Today leaves it, and is left out of the average rather than counted as a zero.
+                    break
+                } else {
+                    value = .known(healthAmount, healthUnit)
+                    // Entries that carry no value for the nutrient make Health's amount a minimum; with none, the
+                    // journal side is a complete nothing and Health's amount is the day.
+                    // A total the journal could not form (incompatible units, say) has incomplete coverage though no
+                    // entry is missing a value, so it counts the same.
+                    if journal.missingCount(for: nutrient) > 0
+                        || journal.total(for: nutrient)?.coverage.hasUnknown == true { isPartial = true }
+                }
+            }
+            guard case .known(let amount, let amountUnit) = value else { continue }
+            let target = unit ?? amountUnit
+            guard let converted = try? Quantity(value: amount, unit: amountUnit).converted(to: target).value
+            else { continue }
+            unit = target
+            values.append(converted)
+            if isPartial { partialDays += 1 }
+        }
+        guard let unit, !values.isEmpty else { return nil }
+        let average = values.reduce(Decimal(0), +) / Decimal(values.count)
+        return Figure(average: average, unit: unit, dayCount: values.count, partialDays: partialDays)
     }
 
     private enum HealthSide {
