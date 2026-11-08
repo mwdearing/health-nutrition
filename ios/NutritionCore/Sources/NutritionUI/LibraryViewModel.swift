@@ -397,9 +397,12 @@ public final class LibraryViewModel: ObservableObject {
             }
             let standaloneIDs = Set(standaloneProducts.map(\.localProductID))
             let legacyFoods = foods.filter { food in
-                guard let snapshotID = food.template.productSnapshotID,
-                      let product = try? store.product(snapshotID: snapshotID),
-                      let id = UUID(uuidString: product.productID) else { return true }
+                guard let snapshotID = food.template.productSnapshotID else { return true }
+                // A product that cannot be read is left out, not shown as a legacy row: showing it could repeat a
+                // standalone product that is already listed (#1221).
+                let product: ProductDefinition?
+                do { product = try store.product(snapshotID: snapshotID) } catch { return false }
+                guard let product, let id = UUID(uuidString: product.productID) else { return true }
                 return !standaloneIDs.contains(id)
             }
             func foodItem(_ food: RecentItem) -> LibraryItem {
