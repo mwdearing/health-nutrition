@@ -54,6 +54,9 @@ struct RootView: View {
     @StateObject private var addNavigation = AddNavigationModel()
     @State private var addFlowError: String?
     @State private var selectedIntakeID: String?
+    /// Links a Diary row to the entry sheet, so the sheet opens as a zoom from the row that was tapped.
+    @Namespace private var entryZoom
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Whether the settings sheet is up, and whether it opens straight onto the daily goals (Today's
     /// "Edit goals" link) rather than onto the settings list.
     @State private var showingSettings = false
@@ -160,7 +163,8 @@ struct RootView: View {
                 NavigationStack {
                     JournalView(
                         model: services.journal, onSelect: { selectedIntakeID = $0 },
-                        onAddToMeal: { meal in self.startAddingIntake(meal: meal) })
+                        onAddToMeal: { meal in self.startAddingIntake(meal: meal) },
+                        entryZoom: entryZoom)
                         .toolbar { settingsToolbar }
                 }
                 .saveConfirmationLine(saveNotice)
@@ -239,7 +243,7 @@ struct RootView: View {
         // Every way out of the entry reloads the screens behind it: Done and Close, and also a swipe down after
         // Log again or a partial Log on other days, which write entries without going through `onFinished`.
         .sheet(isPresented: detailSheetPresented, onDismiss: { self.reload() }) {
-            NavigationStack {
+            entrySheetContent {
                 if let intakeID = selectedIntakeID {
                     EntryDetailView(
                         model: EntryDetailViewModel(
@@ -674,6 +678,18 @@ struct RootView: View {
     /// Opens the recipes screen from a clean stack.
     private func openRecipes() {
         recipeNavigation.open()
+    }
+
+    /// The entry sheet's navigation stack. It zooms from the Diary row that was tapped (a row with no source opens as a
+    /// sheet normally), and keeps the standard presentation when Reduce Motion is on.
+    @ViewBuilder
+    private func entrySheetContent<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        let stack = NavigationStack { content() }
+        if reduceMotion {
+            stack
+        } else {
+            stack.navigationTransition(.zoom(sourceID: selectedIntakeID ?? "", in: entryZoom))
+        }
     }
 
     /// The journal row being edited, or nil when nothing is open.

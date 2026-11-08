@@ -10,6 +10,11 @@ public struct JournalView: View {
     private let onAdd: (() -> Void)?
     /// Opens the add flow on today with a meal chosen. Nil hides the add rows under empty meals.
     private let onAddToMeal: ((MealLabel) -> Void)?
+    /// The shell's zoom namespace. With it each entry row is the source the entry sheet zooms from; nil leaves the sheet's
+    /// default presentation.
+    private let entryZoom: Namespace.ID?
+    /// The day the week strip has chosen, by its yyyy-MM-dd key. Nil means today. Only a tap on the strip changes it.
+    @State private var stripChosenID: String?
     /// The day picked in the jump sheet, read when the sheet opens.
     @State private var pickedDay = Date()
     @State private var showingJumpSheet = false
@@ -37,8 +42,10 @@ public struct JournalView: View {
     public init(
         model: JournalViewModel, now: @escaping () -> Date = { Date() }, onSelect: @escaping (String) -> Void,
         onAdd: (() -> Void)? = nil,
-        onAddToMeal: ((MealLabel) -> Void)? = nil
+        onAddToMeal: ((MealLabel) -> Void)? = nil,
+        entryZoom: Namespace.ID? = nil
     ) {
+        self.entryZoom = entryZoom
         self.model = model
         self.now = now
         self.onSelect = onSelect
@@ -261,10 +268,26 @@ public struct JournalView: View {
         lastRevealedSection = target.sectionID ?? topVisibleID
     }
 
+    /// A tap on a day of the week strip: chooses it and jumps exactly as the arrows and the date sheet do.
+    private func selectStripDay(_ day: DiaryWeekStripModel.Day) {
+        stripChosenID = day.id
+        let target = model.jumpTarget(for: day.date, now: now())
+        model.reveal(target)
+        jumpNotice = target.message
+        jumpSection = target.sectionID
+        jumpSerial += 1
+        lastRequestedDay = day.date
+        lastRevealedSection = target.sectionID ?? topVisibleID
+    }
+
     /// The seven days ending today: a heading, the logged count, and one line per goal. It reads as one element.
     private func weekSummaryCard(_ week: JournalWeekSummary) -> some View {
         HeroCard {
             VStack(alignment: .leading, spacing: DesignSpacing.s) {
+                if let strip = model.weekStrip(chosen: stripChosenID, now: now()) {
+                    DiaryWeekStrip(model: strip, onSelect: selectStripDay)
+                        .padding(.bottom, DesignSpacing.s)
+                }
                 Text("This week")
                     .font(.headline)
                     .foregroundStyle(TokenColors.heroText)
@@ -479,6 +502,7 @@ public struct JournalView: View {
         .buttonStyle(.borderless)
         .accessibilityLabel(row.accessibilityText)
         .accessibilityHint("Opens the entry")
+        .modifier(EntryZoomSource(id: row.id, namespace: entryZoom))
     }
 
     /// One entry: what it was, how much of it, and which meal it was for, as the shared row. The meal
@@ -487,6 +511,21 @@ public struct JournalView: View {
     private func entryRow(_ row: JournalRow) -> some View {
         let detail = [row.detail, row.meal].compactMap { $0 }.joined(separator: " · ")
         return EntryRow(title: row.title, detail: detail, kind: row.kind, isWater: row.isWater)
+    }
+}
+
+/// Makes a Diary row the source of the entry sheet's zoom when the shell gave a namespace; otherwise it adds nothing.
+private struct EntryZoomSource: ViewModifier {
+    let id: String
+    let namespace: Namespace.ID?
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if let namespace {
+            content.matchedTransitionSource(id: id, in: namespace)
+        } else {
+            content
+        }
     }
 }
 
