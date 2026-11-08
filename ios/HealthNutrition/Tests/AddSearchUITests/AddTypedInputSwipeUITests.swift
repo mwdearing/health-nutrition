@@ -4,15 +4,6 @@ import XCTest
 /// form, drags from the left screen edge, and then checks that either the discard question is up or the
 /// form is still on screen with its typed text.
 final class AddTypedInputSwipeUITests: XCTestCase {
-    /// The typed-input edge swipe stays quarantined (#930); the clean-form edge swipe runs again so its root cause
-    /// can be measured on CI. Remove this override to run the typed-input test again.
-    override func setUpWithError() throws {
-        try super.setUpWithError()
-        if name.contains("testEdgeSwipeBackKeepsTypedDetailsOrAsksFirst") {
-            throw XCTSkip("Typed-input edge swipe is quarantined as flaky on CI (#930).")
-        }
-    }
-
     /// Ends the app after each test so a leftover app cannot carry its typed state into the next run.
     override func tearDownWithError() throws {
         XCUIApplication().terminate()
@@ -67,6 +58,16 @@ final class AddTypedInputSwipeUITests: XCTestCase {
         let outcomeDeadline = Date().addingTimeInterval(5)
         while Date() < outcomeDeadline, !discard.exists, bar.exists {
             RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        }
+        // XCTest's synthetic left-edge drag is sometimes not recognized as an edge pan (#930). A form still on screen with
+        // its text and no question has not been swiped at all, so the same drag is made once more. A pop that loses the
+        // text without asking still fails below.
+        if !discard.exists, bar.exists {
+            start.press(forDuration: 0.1, thenDragTo: end, withVelocity: .fast, thenHoldForDuration: 0)
+            let retryDeadline = Date().addingTimeInterval(5)
+            while Date() < retryDeadline, !discard.exists, bar.exists {
+                RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+            }
         }
         // Positive check: the question is up, or the form is still there with its typed text intact.
         let askedFirst = discard.exists
