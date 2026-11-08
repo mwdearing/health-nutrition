@@ -19,18 +19,29 @@ enum PopGateRegistry {
     }
 
     private static var gates: [ObjectIdentifier: [Box]] = [:]
+    /// UIKit switches the recognizer back on itself as the stack changes, so a change made by anyone else is read
+    /// against the stack again.
+    private static var observers: [ObjectIdentifier: NSKeyValueObservation] = [:]
 
     static func add(_ gate: PopGateController, to nav: UINavigationController) {
         let key = ObjectIdentifier(nav)
         var boxes = (gates[key] ?? []).filter { $0.gate != nil }
         if !boxes.contains(where: { $0.gate === gate }) { boxes.append(Box(gate)) }
         gates[key] = boxes
+        if observers[key] == nil, let recognizer = nav.interactivePopGestureRecognizer {
+            observers[key] = recognizer.observe(\.isEnabled, options: [.new]) { [weak nav] _, _ in
+                DispatchQueue.main.async { if let nav { PopGateRegistry.evaluate(nav) } }
+            }
+        }
     }
 
     static func remove(_ gate: PopGateController, from nav: UINavigationController) {
         let key = ObjectIdentifier(nav)
         gates[key] = (gates[key] ?? []).filter { $0.gate != nil && $0.gate !== gate }
-        if gates[key]?.isEmpty == true { gates[key] = nil }
+        if gates[key]?.isEmpty == true {
+            gates[key] = nil
+            observers[key] = nil
+        }
     }
 
     /// Sets the stack's edge pop from the screen on top: off when a blocked gate belongs to it, on otherwise.
