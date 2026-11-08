@@ -136,6 +136,8 @@ jobs:
         run: python -m pytest -q -p no:cacheprovider scripts/tests/test_signed_beta_workflow.py scripts/tests/test_signed_beta_archive_check.py scripts/tests/test_beta_schedule.py
       - name: Check the Library redesign guard
         run: python -m pytest -q -p no:cacheprovider scripts/tests/test_library_redesign.py
+      - name: Check the Library saved meals guard
+        run: python -m pytest -q -p no:cacheprovider scripts/tests/test_library_saved_meals.py
       - name: Test the project declarations
         run: python -m pytest -q -p no:cacheprovider scripts/tests/test_project_declarations.py
       - name: Check the Trends redesign guard
