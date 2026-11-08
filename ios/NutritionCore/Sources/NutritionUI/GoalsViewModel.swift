@@ -195,6 +195,8 @@ public final class GoalsViewModel: ObservableObject {
     /// The same store as a weight plan store, or nil when the store keeps no plan. Goal setup writes the
     /// plan through this, after the targets it saves with it.
     var weightPlanStore: (any WeightPlanStore)? { store as? WeightPlanStore }
+    /// The stored daily energy goal, read through this view model's own store; nil when none is stored or the read fails.
+    var storedEnergyGoal: NutrientGoal? { (try? store.goal(for: "energy")) ?? nil }
     /// The journal, read only to learn which compound keys its snapshots carry, so the screen can
     /// offer a goal for a nutrient a captured label states but the fixed list does not name.
     private let journal: (any JournalStore)?

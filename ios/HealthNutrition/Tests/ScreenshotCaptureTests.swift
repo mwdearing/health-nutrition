@@ -240,6 +240,20 @@ final class ScreenshotCaptureTests: XCTestCase {
         }
     }
 
+    func testSettingsGoalsCard() throws {
+        let services = try makeSeededServices()
+        try services.goalStore.setGoal(NutrientGoal(nutrient: "energy", target: 2000, unit: .kcal))
+        try services.goalStore.setWeightPlan(
+            WeightPlan(aim: .lose, goalKilograms: 70, weeklyPaceKilograms: Decimal(string: "0.45")!))
+        services.goals.load()
+        try capture("SettingsGoalsCard") {
+            SettingsGoalsCard(
+                summary: AppSettingsViewModel(connections: services.connections, goals: services.goals).goalsSummary,
+                action: {})
+                .padding().background(TokenColors.page)
+        }
+    }
+
     func testEntryDetailView() throws {
         let services = try makeSeededServices()
         try capture("EntryDetailView") {
