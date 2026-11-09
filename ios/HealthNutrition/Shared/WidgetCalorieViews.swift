@@ -39,7 +39,7 @@ extension WidgetSnapshot {
 
     /// Remaining for a single line of text: "up to N" on a partial day with something left, otherwise the number.
     var remainingInlineText: String? {
-        if isOverGoal { return overGoalText }
+        if isOverGoal { return overGoalText?.replacingOccurrences(of: "At least ", with: "at least ") }
         return remainingText.map { remainingIsUpperBound ? "up to \($0)" : $0 }
     }
 
