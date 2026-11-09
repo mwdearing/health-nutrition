@@ -88,6 +88,9 @@ public struct TrendsView: View {
     @ObservedObject private var journal: JournalViewModel
     private let now: () -> Date
     private let zone: () -> TimeZone
+    @State private var range: TrendsRange = .week
+    /// The most days of Health read so far; it grows with a wider range and never shrinks on a switch back.
+    @State private var healthDays = TrendsRange.week.healthReadDays
 
     public init(
         today: TodayViewModel, journal: JournalViewModel, now: @escaping () -> Date = { Date() },
@@ -101,12 +104,17 @@ public struct TrendsView: View {
 
     private var summary: TrendsSummary {
         TrendsSummary.make(
-            days: InsightsAverages.days(from: journal), goal: today.calorieRemaining.goal, now: now(), zone: zone())
+            days: InsightsAverages.days(from: journal), goal: today.calorieRemaining.goal, now: now(), zone: zone(),
+            range: range)
     }
 
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: DesignSpacing.m) {
+                Picker("Range", selection: $range) {
+                    ForEach(TrendsRange.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented)
                 TrendsCaloriesCard(summary: summary)
                 TrendsMacrosCard(summary: summary)
                 row(
@@ -128,7 +136,9 @@ public struct TrendsView: View {
         .background(TokenColors.page)
         .navigationTitle("Trends")
         .onAppear { journal.load(now: now()) }
-        .task { await journal.loadRecentHealthTotals(days: InsightsAverages.windowDays, now: now()) }
+        // Health knows days the Diary has none for, so the chosen range reads them, and reads again when it changes.
+        .onChange(of: range) { _, new in healthDays = max(healthDays, new.healthReadDays) }
+        .task(id: healthDays) { await journal.loadRecentHealthTotals(days: healthDays, now: now()) }
     }
 
     private func row<Destination: View>(
