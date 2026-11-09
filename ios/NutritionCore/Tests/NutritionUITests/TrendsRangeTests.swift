@@ -68,4 +68,11 @@ final class TrendsRangeTests: XCTestCase {
         XCTAssertEqual(TrendsRange.allCases.map(\.days), [7, 30, 182])
         XCTAssertEqual(TrendsRange.allCases.map(\.title), ["Week", "Month", "6 months"])
     }
+
+    func testTheHealthReadNeverShrinksBelowTheInsightsWindow() {
+        XCTAssertEqual(TrendsRange.week.healthReadDays, InsightsAverages.windowDays)
+        XCTAssertEqual(TrendsRange.month.healthReadDays, InsightsAverages.windowDays)
+        XCTAssertEqual(TrendsRange.sixMonths.healthReadDays, 182)
+        XCTAssertTrue(TrendsRange.allCases.allSatisfy { $0.healthReadDays >= InsightsAverages.windowDays })
+    }
 }

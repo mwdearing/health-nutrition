@@ -26,7 +26,9 @@ def test_a_range_type_with_three_cases() -> None:
 def test_the_summary_takes_a_range() -> None:
     text = (UI / "TrendsSummaryCards.swift").read_text()
     assert re.search(r"static func make\([^)]*range:\s*TrendsRange", text, re.S), "TrendsSummary.make takes a range"
-    cards = text[text.find("public struct TrendsCaloriesCard"):]
+    start = text.find("public struct TrendsCaloriesCard")
+    assert start >= 0, "TrendsCaloriesCard is still declared in TrendsSummaryCards.swift"
+    cards = text[start:]
     assert '"Last 7 days"' not in cards, "the cards read the range's title, not a fixed 7 days"
 
 
