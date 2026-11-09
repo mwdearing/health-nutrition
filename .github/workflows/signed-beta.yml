@@ -159,6 +159,7 @@ jobs:
           /usr/bin/openssl pkcs12 -in "$RUNNER_TEMP/signing.p12" -passin env:SIGNING_CERT_PASSWORD -noout > /dev/null 2>&1 || fail "SIGNING_CERT_PASSWORD does not open the stored certificate file"
           unwrap() { /usr/bin/openssl pkcs12 -in "$RUNNER_TEMP/signing.p12" -passin env:SIGNING_CERT_PASSWORD -nodes -out "$RUNNER_TEMP/signing.pem" > /dev/null 2>&1; }
           unwrap || { rm -f "$RUNNER_TEMP/signing.pem"; fail "the stored certificate file could not be unwrapped"; }
+          trap 'rm -f "$RUNNER_TEMP/signing.pem"' EXIT
           # The passphrase reaches openssl only through its environment, never argv. The PEM is removed after the import.
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN" > /dev/null 2>&1 || fail "the temporary keychain could not be created"
           security set-keychain-settings -lut 21600 "$KEYCHAIN" > /dev/null 2>&1
