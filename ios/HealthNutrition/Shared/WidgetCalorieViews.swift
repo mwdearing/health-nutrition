@@ -8,7 +8,10 @@ extension WidgetSnapshot {
     /// Over goal (remaining below zero) the figure is shown as a positive number under "Calories over goal".
     var isOverGoal: Bool { (remainingKcal?.rounded() ?? 0) < 0 }
     var remainingCaption: String { isOverGoal ? "Calories over goal" : "Calories remaining" }
-    var overGoalText: String? { WidgetFigure.groupedWholeNumber(remainingKcal.map { -$0 }) }
+    /// A partial day's over-goal figure is only what is known so far, so it reads "At least N" (as food does).
+    var overGoalText: String? {
+        WidgetFigure.groupedWholeNumber(remainingKcal.map { -$0 }).map { (isPartial("energy") ? "At least " : "") + $0 }
+    }
     var burnedText: String? { WidgetFigure.groupedWholeNumber(burnedKcal) }
 
     /// Food, "N+" on a day where some entries have no calories: the known part, which is at least that.
@@ -44,7 +47,7 @@ extension WidgetSnapshot {
     var calorieSpoken: String {
         let parts = [
             isOverGoal
-                ? overGoalText.map { "\($0) calories over goal" }
+                ? overGoalText.map { (isPartial("energy") ? "at least " : "") + "\($0) calories over goal" }
                 : remainingText.map { (remainingIsUpperBound ? "up to " : "") + "\($0) calories remaining" },
             foodNumber.map { "Food, \(isPartial("energy") ? "at least " : "")\($0) calories" },
             burnedText.map { "Burned, \($0) calories" },
@@ -104,7 +107,7 @@ struct WidgetCalorieSummary: View {
                     .minimumScaleFactor(0.7)
                     .lineLimit(1)
                     .privacySensitive()
-                Text("Calories remaining")
+                Text(remainingCaption)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

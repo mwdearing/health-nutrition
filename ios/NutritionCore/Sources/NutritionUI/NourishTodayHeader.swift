@@ -96,7 +96,7 @@ public struct NourishTodayHeader: View {
         let lead: String?
         if let remaining = calories.remaining {
             lead = isOverGoal(calories)
-                ? "\(BodyActivityViewModel.whole(-remaining)) calories over goal"
+                ? (calories.isPartial ? "at least " : "") + "\(BodyActivityViewModel.whole(-remaining)) calories over goal"
                 : (calories.isPartial && Self.roundsAboveZero(remaining) ? "up to " : "")
                     + "\(BodyActivityViewModel.whole(max(remaining, 0))) calories remaining"
         } else if calories.food == nil {
@@ -133,7 +133,9 @@ public struct NourishTodayHeader: View {
         if let value = calories.remaining {
             // A partial day with something left is an upper bound, so it reads "Up to N" as on the widgets.
             let upper = calories.isPartial && !isOverGoal(calories) && Self.roundsAboveZero(value) ? "Up to " : ""
-            remaining = upper + BodyActivityViewModel.whole(isOverGoal(calories) ? -value : max(value, 0))
+            // Over goal on a partial day is only what is known so far, so it reads "At least N".
+            let overPrefix = isOverGoal(calories) && calories.isPartial ? "At least " : ""
+            remaining = overPrefix + upper + BodyActivityViewModel.whole(isOverGoal(calories) ? -value : max(value, 0))
         } else if calories.goal != nil {
             remaining = "—"
         } else {
