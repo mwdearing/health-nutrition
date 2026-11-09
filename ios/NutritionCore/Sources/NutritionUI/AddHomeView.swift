@@ -25,13 +25,16 @@ public struct AddHomeView: View {
     private let onChanged: () -> Void
     /// Opens the details form for a Recent row (long-press or the Details action). Nothing is logged there.
     private let onOpen: ((RepeatTemplate) -> Void)?
+    /// Opens the saved meals; nil hides the Saved meal tile.
+    private let onSavedMeals: (() -> Void)?
     @State private var quickAdd: QuickAddViewModel?
 
     public init(model: AddHomeViewModel, onBarcode: @escaping () -> Void,
         onLabel: @escaping () -> Void, onLibrary: @escaping () -> Void,
         onType: @escaping () -> Void, onChanged: @escaping () -> Void,
         onNewProduct: (() -> Void)? = nil, onSearchProducts: (() -> Void)? = nil,
-        onOpen: ((RepeatTemplate) -> Void)? = nil) {
+        onOpen: ((RepeatTemplate) -> Void)? = nil, onSavedMeals: (() -> Void)? = nil) {
+        self.onSavedMeals = onSavedMeals
         self.onNewProduct = onNewProduct; self.onSearchProducts = onSearchProducts; self.onOpen = onOpen
         self.model = model
         self.onBarcode = onBarcode
@@ -144,9 +147,9 @@ public struct AddHomeView: View {
         "Meal: \(meal?.displayName ?? "None")"
     }
 
-    /// The four quick actions in one compact row; a row too narrow for four wraps them into two columns.
+    /// The quick actions in one compact row; a row too narrow for four wraps them into two columns.
     private var quickActions: [QuickAction] {
-        [
+        var actions: [QuickAction] = [
             QuickAction(id: "barcode", title: AddQuickActionTitle.barcode, icon: "barcode.viewfinder",
                 help: "Read the code on the package.",
                 available: model.scannerAvailability.barcode,
@@ -162,6 +165,11 @@ public struct AddHomeView: View {
                 help: "Log calories and macros without choosing a food.",
                 available: true, explanation: "", action: { self.quickAdd = self.model.makeQuickAdd() }),
         ]
+        if let onSavedMeals {
+            actions.append(QuickAction(id: "savedMeal", title: "Saved meal", icon: "fork.knife",
+                help: "Log a meal you saved.", available: true, explanation: "", action: onSavedMeals))
+        }
+        return actions
     }
 
     private var quickActionGrid: some View {

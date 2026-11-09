@@ -384,7 +384,9 @@ struct RootView: View {
                     onChanged: { self.reload() },
                     onNewProduct: { self.openProductEditor(home: home) },
                     onSearchProducts: { self.openAddRoute(.productSearch, home: home) },
-                    onOpen: { template in self.openTemplate(template, home: home) }
+                    onOpen: { template in self.openTemplate(template, home: home) },
+                    onSavedMeals: AddSavedMealsViewModel.showsTile(savedMealCount: services.savedMeals.meals.count)
+                        ? { self.openAddRoute(.savedMeals, home: home) } : nil
                 )
                 // A failed Details action from a Recent row shows here, as it does on the picker.
                 .overlay(alignment: .bottom) {
@@ -447,6 +449,8 @@ struct RootView: View {
     private func startAddingIntake(meal: MealLabel? = nil) {
         self.addNavigation.reset()
         self.addFlowError = nil
+        // Read before Add shows, so the Saved meal tile knows whether any meal exists.
+        self.services.savedMeals.load()
         self.addHome = self.makeAddHome(meal: meal)
     }
 
@@ -538,7 +542,7 @@ struct RootView: View {
         case .productSearch:
             self.productSearchModel = CommunityProductSearchViewModel(store: services.journalStore, service: services.productService,
                 openFoodFacts: services.productNameSearch, isSignedIn: { services.account?.phase == .signedIn })
-        case .productEditor, .library: break
+        case .productEditor, .library, .savedMeals: break
         }
         self.addNavigation.path.append(route)
     }
@@ -610,6 +614,11 @@ struct RootView: View {
                 // A picker error is the picker's own: it is cleared when the picker goes away, so it
                 // never shows on Add home. Library product errors are set elsewhere and are not touched.
                 .onDisappear { self.addFlowError = nil }
+        case .savedMeals:
+            AddSavedMealsView(
+                savedMeals: self.services.savedMeals, meal: home.meal,
+                calories: { SavedMealCards.kilocalories(of: $0, store: self.services.journalStore) },
+                onLogged: { self.reload() })
         case .productEditor(let editor):
             CustomProductEditorView(model: editor.model, sharing: services.library.productSharing) { product, openDetails in
                 services.library.load()
