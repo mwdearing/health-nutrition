@@ -82,6 +82,8 @@ public struct TrendsSummary: Equatable {
         public let isPartial: Bool
         /// What the bar says aloud: the day (or "Week of" the first day) and its calories.
         public let spoken: String
+        /// What VoiceOver says for the day: `spoken`, which says "at least" for a partly known day.
+        public var spokenText: String { spoken }
         /// Whether the axis labels this bar; a month or 6 months labels about one bar in several.
         public let showsAxisLabel: Bool
     }
@@ -329,7 +331,7 @@ public struct TrendsCaloriesCard: View {
         guard let average = summary.averageKcal else { return "Calories, daily average. \(summary.emptyMessage)" }
         var parts = ["Calories, daily average, \(summary.range.cardTitle.lowercased()), \(summary.energyIsPartial ? "at least " : "")\(TrendsSummary.figureText(average)) calories"]
         if let difference = summary.difference { parts.append(difference.text) }
-        let days = summary.bars.map(\.spoken)
+        let days = summary.bars.map(\.spokenText)
         parts.append(days.joined(separator: ", "))
         return parts.joined(separator: ". ")
     }

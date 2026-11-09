@@ -57,8 +57,16 @@ struct RootView: View {
     @StateObject private var addNavigation = AddNavigationModel()
     @State private var addFlowError: String?
     @State private var selectedIntakeID: String?
+    /// The Diary row the open entry zooms from. Set only when an entry is opened from the Diary and cleared when one is
+    /// opened from anywhere else, so those open plainly. It is not cleared on dismiss, so the zoom back keeps its source.
+    @State private var zoomSourceID: String?
     /// Links a Diary row to the entry sheet, so the sheet opens as a zoom from the row that was tapped.
     @Namespace private var entryZoom
+
+    private func selectEntry(_ id: String, fromDiary: Bool = false) {
+        zoomSourceID = fromDiary ? id : nil
+        selectedIntakeID = id
+    }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Whether the settings sheet is up, and whether it opens straight onto the daily goals (Today's
     /// "Edit goals" link) rather than onto the settings list.
@@ -133,7 +141,7 @@ struct RootView: View {
                         // Today's rows are the same entries the Journal lists, so they open the same
                         // entry screen: an entry logged late on the wrong day is corrected from where
                         // it is noticed rather than only from the Journal tab.
-                        onSelect: { selectedIntakeID = $0 },
+                        onSelect: { selectEntry($0) },
                         onAddToMeal: { meal in self.startAddingIntake(meal: meal) },
                         checklist: services.firstDayChecklist,
                         onOpenUnits: { self.openSettings(goals: false) },
@@ -165,7 +173,7 @@ struct RootView: View {
             Tab("Diary", systemImage: "book.closed", value: AppTab.journal) {
                 NavigationStack {
                     JournalView(
-                        model: services.journal, onSelect: { selectedIntakeID = $0 },
+                        model: services.journal, onSelect: { selectEntry($0, fromDiary: true) },
                         onAddToMeal: { meal in self.startAddingIntake(meal: meal) },
                         entryZoom: entryZoom)
                         .toolbar { settingsToolbar }
@@ -708,10 +716,10 @@ struct RootView: View {
     @ViewBuilder
     private func entrySheetContent<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
         let stack = NavigationStack { content() }
-        if reduceMotion {
-            stack
+        if !reduceMotion, let source = zoomSourceID {
+            stack.navigationTransition(.zoom(sourceID: source, in: entryZoom))
         } else {
-            stack.navigationTransition(.zoom(sourceID: selectedIntakeID ?? "", in: entryZoom))
+            stack
         }
     }
 
