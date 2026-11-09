@@ -71,4 +71,18 @@ final class CalorieSummarySpokenTests: XCTestCase {
             "of 2,000 Calories goal")
         XCTAssertNil(NourishTodayHeader.summaryFootnote(withoutGoal, ringFootnote: "of 2,000 Calories goal"))
     }
+
+    func testAPartialDayOverGoalIsSpokenAsAtLeast() throws {
+        let calories = CalorieRemaining.make(
+            goal: 2000, food: 2150, partial: true, missingCount: 1, burned: nil, energyLabel: "Energy")
+        let spoken = NourishTodayHeader.spokenSummary(calories, partial: nil, footnote: nil)
+        XCTAssertTrue(spoken.hasPrefix("at least \(BodyActivityViewModel.whole(150)) calories over goal"), spoken)
+    }
+
+    func testAWholeDayOverGoalIsSpokenWithoutAtLeast() throws {
+        let calories = CalorieRemaining.make(
+            goal: 2000, food: 2150, partial: false, missingCount: 0, burned: nil, energyLabel: "Energy")
+        let spoken = NourishTodayHeader.spokenSummary(calories, partial: nil, footnote: nil)
+        XCTAssertTrue(spoken.hasPrefix("\(BodyActivityViewModel.whole(150)) calories over goal"), spoken)
+    }
 }
