@@ -223,6 +223,8 @@ public final class JournalViewModel: ObservableObject {
         calendar.timeZone = dayZone
         let today = calendar.startOfDay(for: now)
         for offset in 0..<max(0, days) {
+            // A read the screen has left or restarted ends here, so a restarted one is not run twice over.
+            if Task.isCancelled { return }
             guard let day = calendar.date(byAdding: .day, value: -offset, to: today) else { continue }
             await loadHealthTotals(forDayKey: Self.dayKey(day, zone: dayZone), now: now)
         }
