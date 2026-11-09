@@ -240,6 +240,20 @@ final class ScreenshotCaptureTests: XCTestCase {
         }
     }
 
+    func testSettingsGoalsCard() throws {
+        let services = try makeSeededServices()
+        try services.goalStore.setGoal(NutrientGoal(nutrient: "energy", target: 2000, unit: .kcal))
+        try services.goalStore.setWeightPlan(
+            WeightPlan(aim: .lose, goalKilograms: 70, weeklyPaceKilograms: Decimal(string: "0.45")!))
+        services.goals.load()
+        try capture("SettingsGoalsCard") {
+            SettingsGoalsCard(
+                summary: AppSettingsViewModel(connections: services.connections, goals: services.goals).goalsSummary,
+                action: {})
+                .padding().background(TokenColors.page)
+        }
+    }
+
     func testEntryDetailView() throws {
         let services = try makeSeededServices()
         try capture("EntryDetailView") {
@@ -634,6 +648,48 @@ private struct ScreenshotProductService: CommunityProductServicing {
         }
     }
 
+    /// Seven invented days, six of them logged, against a 2,100 calorie goal.
+    private func trendsSummaryForCapture() -> TrendsSummary {
+        func total(_ amount: Decimal, _ unit: MeasureUnit) -> NutrientTotal {
+            NutrientTotal(
+                value: .known(amount, unit),
+                coverage: Coverage(knownCount: 1, totalCount: 1, hasBelowReportingThreshold: false, hasUnknown: false))
+        }
+        let zone = TimeZone.current
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = zone
+        let now = calendar.startOfDay(for: Date()).addingTimeInterval(12 * 3_600)
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = zone
+        formatter.dateFormat = "yyyy-MM-dd"
+        let kcal: [Decimal] = [1_950, 2_240, 1_780, 2_060, 1_890, 2_310]
+        let days = kcal.enumerated().map { offset, energy -> InsightsAverages.Day in
+            let date = calendar.date(byAdding: .day, value: -offset, to: now) ?? now
+            return InsightsAverages.Day(
+                key: formatter.string(from: date),
+                totals: DailyTotals(totals: [
+                    "energy": total(energy, .kcal), "protein": total(energy / 20, .g),
+                    "carbohydrate": total(energy / 9, .g), "fat": total(energy / 32, .g),
+                ]))
+        }
+        return TrendsSummary.make(days: days, goal: 2_100, now: now, zone: zone)
+    }
+
+    func testTrendsCaloriesCard() throws {
+        let summary = trendsSummaryForCapture()
+        try capture("TrendsCaloriesCard") {
+            TrendsCaloriesCard(summary: summary).padding()
+        }
+    }
+
+    func testTrendsMacrosCard() throws {
+        let summary = trendsSummaryForCapture()
+        try capture("TrendsMacrosCard") {
+            TrendsMacrosCard(summary: summary).padding()
+        }
+    }
+
     func testInsightsHost() throws {
         let services = try makeSeededServices()
         services.journal.load(now: Date())
@@ -804,6 +860,45 @@ private struct ScreenshotProductService: CommunityProductServicing {
         XCTAssertFalse(model.rows.isEmpty, "The medication history is empty, so the capture would show nothing")
         try capture("MedicationHistoryView") {
             NavigationStack { MedicationHistoryView(model: model, onClose: { _ in }) }
+        }
+    }
+
+    // The Diary's week strip on the "This week" hero: today holds the seeded entries and the six days before it are empty.
+    func testDiaryWeekStrip() throws {
+        let services = try makeSeededServices()
+        let now = Date()
+        services.journal.load(now: now)
+        let strip = try XCTUnwrap(services.journal.weekStrip(chosen: nil, now: now))
+        XCTAssertTrue(strip.days.contains { $0.isLogged }, "the seeded week needs a logged day")
+        XCTAssertTrue(strip.days.contains { !$0.isLogged }, "the seeded week needs an empty day")
+        try capture("DiaryWeekStrip") {
+            ScrollView {
+                HeroCard {
+                    DiaryWeekStrip(model: strip, onSelect: { _ in })
+                }
+                .padding()
+            }
+        }
+    }
+
+    func testSavedMealCardRow() throws {
+        let services = try makeSeededServices()
+        let meals = services.savedMeals
+        let cards = SavedMealCards.make(
+            [SavedMeal(id: "a", name: "Usual breakfast", meal: .breakfast, items: [
+                FavoriteTemplate(id: "a1", displayName: "Oats", category: "food", components: []),
+                FavoriteTemplate(id: "a2", displayName: "Milk", category: "food", components: [])]),
+             SavedMeal(id: "b", name: "Post-run shake", meal: nil, items: [
+                FavoriteTemplate(id: "b1", displayName: "Shake", category: "food", components: [])]),
+             SavedMeal(id: "c", name: "Lunch box", meal: .lunch, items: [
+                FavoriteTemplate(id: "c1", displayName: "Apple", category: "food", components: []),
+                FavoriteTemplate(id: "c2", displayName: "Bread", category: "food", components: [])])],
+            calories: { [Decimal(412), Decimal(1), Decimal(560)][["a", "b", "c"].firstIndex(of: $0.id) ?? 0] })
+        try capture("SavedMealCardRow") {
+            ScrollView {
+                SavedMealCardRow(cards: cards, savedMeals: meals, onAdded: {}).padding()
+            }
+            .background(TokenColors.page)
         }
     }
 

@@ -59,8 +59,7 @@ def test_the_forms_stay_forms_and_the_pending_tint_stays() -> None:
     assert read("LabelCaptureView.swift").count(".listRowBackground(") >= 2
 
 
-def test_add_is_still_a_full_screen_cover_with_its_labels() -> None:
-    assert ".fullScreenCover(item: $addHome," in (APP / "RootView.swift").read_text()
+def test_add_keeps_its_labels() -> None:
     for name, labels in LABELS.items():
         text = read(name)
         for label in labels:

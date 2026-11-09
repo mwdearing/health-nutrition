@@ -2,6 +2,26 @@
 
 Reached from the **Trends** tab. It reads the Diary, and Apple Health where it is connected, and makes no medical claim.
 
+## The Trends tab
+
+Trends opens on two cards above its Vitamins and minerals and Insights rows. Both cover the last seven local days
+ending today (each card says "Last 7 days") and average over the days Insights counts for its averages (a day with
+a food or drink entry, or with intake Apple Health states), using the same rule for the same window. The Insights
+rows average 30 days, so their figures can differ from the cards. The days are read once, by the same function
+Insights uses, so Health-only days are included. With nothing counted, both cards say "Nothing logged this
+week" and show no figure or bar.
+
+- **Calories, daily average.** The average as a large figure, and how far it is from the daily calorie goal, always
+  as a positive figure: "150 under goal", "150 over goal" or "On goal". Below it, one bar per day (today's bar is
+  marked and its day letter bold) and a dashed line at the goal labelled with its value. When a counted day states only part of a figure, the figures read "at least", as Insights does. With no calorie goal (none
+  set, or a goal of zero) there is no line and no difference. It is one VoiceOver element that reads the average, the
+  difference and each day's figure; the chart height grows with the text size, up to a cap.
+- **Macros, daily average.** One bar split into protein, carbohydrate and fat by their share of the calories the
+  averaged grams make (4, 4 and 9 calories per gram), and a legend with the grams of each. The colours only fill the
+  bar and the legend dots; the words and grams carry the meaning.
+
+Code: `TrendsSummary`, `TrendsCaloriesCard` and `TrendsMacrosCard` in `TrendsSummaryCards.swift`.
+
 - **Last 7 days.** One bar per local day for the last seven days, drawn as a bar chart whose height grows with the text size: how many entries each holds, "N of 7 days
   logged", the entry count and the days with nothing logged. A day with nothing logged is shown empty, not as zero
   intake. Each entry is filed on the day it has in the zone it was logged in, as the Diary files it. A day

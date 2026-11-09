@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import SwiftUI
 import UIKit
@@ -50,10 +51,15 @@ struct RootView: View {
     @State private var productSearchModel: CommunityProductSearchViewModel?
     @State private var addIntakeModel: AddIntakeViewModel?
     @State private var confirmDiscardAdd = false
+    /// Live copy of the open Add form's `hasTypedInput`, so the sheet can refuse a swipe down while it holds input.
+    @State private var addFormHasTypedInput = false
     @State private var labelCapture: LabelCaptureViewModel?
     @StateObject private var addNavigation = AddNavigationModel()
     @State private var addFlowError: String?
     @State private var selectedIntakeID: String?
+    /// Links a Diary row to the entry sheet, so the sheet opens as a zoom from the row that was tapped.
+    @Namespace private var entryZoom
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Whether the settings sheet is up, and whether it opens straight onto the daily goals (Today's
     /// "Edit goals" link) rather than onto the settings list.
     @State private var showingSettings = false
@@ -160,7 +166,8 @@ struct RootView: View {
                 NavigationStack {
                     JournalView(
                         model: services.journal, onSelect: { selectedIntakeID = $0 },
-                        onAddToMeal: { meal in self.startAddingIntake(meal: meal) })
+                        onAddToMeal: { meal in self.startAddingIntake(meal: meal) },
+                        entryZoom: entryZoom)
                         .toolbar { settingsToolbar }
                 }
                 .saveConfirmationLine(saveNotice)
@@ -239,7 +246,7 @@ struct RootView: View {
         // Every way out of the entry reloads the screens behind it: Done and Close, and also a swipe down after
         // Log again or a partial Log on other days, which write entries without going through `onFinished`.
         .sheet(isPresented: detailSheetPresented, onDismiss: { self.reload() }) {
-            NavigationStack {
+            entrySheetContent {
                 if let intakeID = selectedIntakeID {
                     EntryDetailView(
                         model: EntryDetailViewModel(
@@ -355,8 +362,9 @@ struct RootView: View {
         .onChange(of: todayModel.waterTotalMilliliters) { _, _ in
             deliverToHealthKit()
         }
-        .fullScreenCover(item: $addHome, onDismiss: {
-            self.addNavigation.reset(); self.reload()
+        .sheet(item: $addHome, onDismiss: {
+            // A swipe down ends Add here without finishAdding(); the same cleanup runs before Settings opens.
+            self.finishAdding()
             if self.settingsAfterAdding { self.settingsAfterAdding = false; self.openSettings(goals: false) }
         }) { home in
             NavigationStack(path: self.$addNavigation.path) {
@@ -395,7 +403,17 @@ struct RootView: View {
                     Button("Discard", role: .destructive) { self.finishAdding() }
                 }
             }
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+            // A swipe down closes an empty Add like Cancel; a form still on the stack with typed input refuses it.
+            .interactiveDismissDisabled(!self.addNavigation.path.isEmpty && self.addFormHasTypedInput)
             .saveConfirmation(addNotice)
+            .onReceive(self.addIntakeModel?.objectWillChange.eraseToAnyPublisher() ?? Empty().eraseToAnyPublisher()) { _ in
+                DispatchQueue.main.async { self.addFormHasTypedInput = self.addIntakeModel?.hasTypedInput == true }
+            }
+            .onChange(of: self.addNavigation.path.count) { _, _ in
+                self.addFormHasTypedInput = self.addIntakeModel?.hasTypedInput == true
+            }
         }
     }
 
@@ -491,7 +509,7 @@ struct RootView: View {
     }
 
     private func finishAdding() {
-        // The cover's own confirmation ends with the cover: it was already shown and announced there.
+        // The sheet's own confirmation ends with the sheet: it was already shown and announced there.
         self.addNotice = nil
         self.addNavigation.reset()
         self.addHome = nil
@@ -674,6 +692,18 @@ struct RootView: View {
     /// Opens the recipes screen from a clean stack.
     private func openRecipes() {
         recipeNavigation.open()
+    }
+
+    /// The entry sheet's navigation stack. It zooms from the Diary row that was tapped (a row with no source opens as a
+    /// sheet normally), and keeps the standard presentation when Reduce Motion is on.
+    @ViewBuilder
+    private func entrySheetContent<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        let stack = NavigationStack { content() }
+        if reduceMotion {
+            stack
+        } else {
+            stack.navigationTransition(.zoom(sourceID: selectedIntakeID ?? "", in: entryZoom))
+        }
     }
 
     /// The journal row being edited, or nil when nothing is open.
