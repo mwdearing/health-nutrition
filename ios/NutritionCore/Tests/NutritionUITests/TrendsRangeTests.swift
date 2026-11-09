@@ -115,7 +115,7 @@ final class TrendsRangeTests: XCTestCase {
     func testAWeeklyBarIsPartialWhenOneOfItsDaysIsPartial() {
         let partialDay = InsightsAverages.Day(
             key: formattedKey(daysBack: 1), totals: DailyTotals(totals: [:]), isLogged: false,
-            outside: .read(values: ["energy": 1_000], readKeys: ["protein"]))
+            outside: .read(values: ["energy": 1_000, "protein": 10], readKeys: ["protein"]))
         let summary = make([day(0, kcal: 2_000), partialDay, day(10, kcal: 1_500)], .sixMonths)
         XCTAssertTrue(summary.bars[25].isPartial)
         XCTAssertTrue(summary.bars[25].spoken.contains("at least"))
