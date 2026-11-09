@@ -63,4 +63,26 @@ final class AddSavedMealsTests: XCTestCase {
         XCTAssertFalse(AddSavedMealsViewModel.showsTile(savedMealCount: 0))
         XCTAssertTrue(AddSavedMealsViewModel.showsTile(savedMealCount: 1))
     }
+
+    func testAMealJustLoggedCannotBeLoggedAgainWhileItsUndoIsOpen() throws {
+        let journal = try makeJournal()
+        let (savedMeals, saved) = try makeSavedMeals(journal)
+        let model = AddSavedMealsViewModel(savedMeals: savedMeals, meal: .dinner, now: { self.now })
+        XCTAssertTrue(model.canLog(saved))
+
+        XCTAssertTrue(model.choose(saved))
+        XCTAssertFalse(model.canLog(saved))
+        // A second tap does nothing: one batch of entries, not two.
+        XCTAssertFalse(model.choose(saved))
+        XCTAssertEqual(try journal.activeIntakes().filter { $0.occurredAt == now }.count, 1)
+
+        // Another meal stays tappable.
+        var other = saved
+        other.id = "other-meal"
+        XCTAssertTrue(model.canLog(other))
+
+        // Once Undo has run, the meal can be logged again.
+        XCTAssertTrue(savedMeals.undo(now: now))
+        XCTAssertTrue(model.canLog(saved))
+    }
 }
