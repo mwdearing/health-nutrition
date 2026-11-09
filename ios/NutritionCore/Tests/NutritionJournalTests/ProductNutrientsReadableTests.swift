@@ -104,7 +104,17 @@ final class ProductNutrientsReadableTests: XCTestCase {
     }
 
     func testRestoreHealsADamagedRowWithTheSameIdentity() throws {
-        let (store, _, _, original) = try makeDamagedStore("restore")
+        // A restore needs a store with no entries, but it can still meet a product row an earlier store left.
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let store = try SwiftDataJournalStore(url: directory.appendingPathComponent("restore.store"))
+        let original = ProductDefinition(
+            snapshotID: "snap-1", productID: "product-1", name: "Oats", brand: "Sample Brand",
+            barcode: "00000000", labelBasis: "per100g", catalogOrigin: "sample", catalogVersion: "1")
+            .withNutrients(["protein": .known(Decimal(5), .g)])
+        try store.insertProductSnapshotForTesting(original)
+        try store.damageNutrientsOnSnapshotForTesting(snapshotID: "snap-1")
         let incoming = original.withNutrients(["protein": .known(Decimal(9), .g)])
         _ = try store.restore(
             JournalRestorePlan(entries: [], tombstones: [], products: [incoming], favorites: []))
