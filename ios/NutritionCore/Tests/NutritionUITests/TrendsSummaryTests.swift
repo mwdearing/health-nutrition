@@ -115,4 +115,25 @@ final class TrendsSummaryTests: XCTestCase {
         XCTAssertFalse(whole.proteinIsPartial)
         XCTAssertEqual(TrendsSummary.gramsText(42), "42 g")
     }
+
+    /// A day with one entry that states energy and one that does not reads "at least" aloud, as the average does; a
+    /// fully known day does not.
+    func testAPartlyKnownDayIsSpokenAsAtLeast() {
+        let partialDay = InsightsAverages.Day(
+            key: "2023-11-14",
+            totals: DailyTotals(totals: [
+                "energy": NutrientTotal(
+                    value: .known(800, .kcal),
+                    coverage: Coverage(knownCount: 1, totalCount: 2, hasBelowReportingThreshold: false, hasUnknown: true))
+            ]))
+        let summary = make([day("2023-11-15", kcal: 2_000), partialDay])
+        let partial = summary.bars[5]
+        let whole = summary.bars[6]
+        XCTAssertTrue(partial.isPartial)
+        XCTAssertTrue(partial.spokenText.contains("at least"), partial.spokenText)
+        XCTAssertFalse(whole.isPartial)
+        XCTAssertFalse(whole.spokenText.contains("at least"), whole.spokenText)
+        XCTAssertTrue(whole.spokenText.hasSuffix("calories"), whole.spokenText)
+        XCTAssertTrue(summary.bars[0].spokenText.hasSuffix("nothing logged"), summary.bars[0].spokenText)
+    }
 }

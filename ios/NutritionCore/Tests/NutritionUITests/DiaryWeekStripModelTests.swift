@@ -126,6 +126,42 @@ final class DiaryWeekStripModelTests: XCTestCase {
         XCTAssertEqual(empty.figures.water, "Nothing logged yet")
     }
 
+    /// A goal Today hides keeps its target but leaves its figure off the strip, as it leaves its bar off the day header.
+    func testAHiddenProteinGoalLeavesProteinOffTheStrip() throws {
+        let journal = try makeJournalStore()
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        try logFood(journal, daysBack: 0, protein: 20, energy: 340)
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setGoalShownOnToday("protein", shown: false)
+        let model = JournalViewModel(
+            store: journal, goals: goals, lookup: StripFacts(), timeZoneIdentifier: "UTC",
+            locale: Locale(identifier: "en_US_POSIX"), preferences: preferences)
+        model.load(now: stripNow)
+
+        let strip = try XCTUnwrap(model.weekStrip(chosen: dayKey(0), now: stripNow))
+        XCTAssertNil(strip.figures.protein)
+        XCTAssertNotEqual(strip.figures.calories, "Nothing logged yet")
+    }
+
+    func testAHiddenWaterGoalLeavesWaterOffTheStrip() throws {
+        let journal = try makeJournalStore()
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "water", target: Decimal(2000), unit: .mL))
+        try logFood(journal, daysBack: 0, protein: 20, energy: 340)
+        try logWater(journal, daysBack: 0)
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setGoalShownOnToday("water", shown: false)
+        let model = JournalViewModel(
+            store: journal, goals: goals, lookup: StripFacts(), timeZoneIdentifier: "UTC",
+            locale: Locale(identifier: "en_US_POSIX"), preferences: preferences)
+        model.load(now: stripNow)
+
+        let strip = try XCTUnwrap(model.weekStrip(chosen: dayKey(0), now: stripNow))
+        XCTAssertNil(strip.figures.water)
+        XCTAssertNotEqual(strip.figures.calories, "Nothing logged yet")
+    }
+
     /// Each day carries the jump target the arrows and the date sheet get for that date.
     func testEachDayCarriesTheJumpTargetOfItsDate() throws {
         let journal = try makeJournalStore()
