@@ -52,6 +52,21 @@ final class CommunityAuthCancellationTests: XCTestCase {
         XCTAssertTrue(transport.hasStarted, "the request never reached the transport")
     }
 
+    /// The canceled caller returns at once with CancellationError; the work it started carries on by itself.
+    private func expectCanceled(_ task: Task<some Any, Error>, file: StaticString = #filePath, line: UInt = #line) async {
+        do {
+            _ = try await task.value
+            XCTFail("a canceled caller should return CancellationError", file: file, line: line)
+        } catch is CancellationError {
+        } catch {
+            XCTFail("expected CancellationError", file: file, line: line)
+        }
+    }
+
+    private func waitUntil(_ condition: () throws -> Bool) async throws {
+        for _ in 0..<500 where try !condition() { try await Task.sleep(nanoseconds: 10_000_000) }
+    }
+
     func testAppleSignInCanceledMidRequestStillKeepsTheSession() async throws {
         let transport = GatedCommunityTransport()
         let store = InMemoryCommunitySessionStore()
@@ -62,9 +77,9 @@ final class CommunityAuthCancellationTests: XCTestCase {
         task.cancel()
         transport.release()
 
-        let session = try await task.value
-        XCTAssertEqual(session.userID, testUserID)
-        XCTAssertEqual(try store.load(), session, "a sign-in the server accepted was dropped on cancellation")
+        await expectCanceled(task)
+        try await waitUntil { try store.load() != nil }
+        XCTAssertEqual(try store.load()?.userID, testUserID, "a sign-in the server accepted was dropped on cancellation")
     }
 
     func testCanceledAppleSignInStillHandsTheAuthorizationCodeToTheServer() async throws {
@@ -79,7 +94,8 @@ final class CommunityAuthCancellationTests: XCTestCase {
         task.cancel()
         transport.release()
 
-        _ = try await task.value
+        await expectCanceled(task)
+        try await waitUntil { transport.paths.count >= 2 }
         XCTAssertEqual(transport.paths, ["/auth/v1/token", "/functions/v1/apple-grant"], "the single-use code was never handed off")
     }
 
@@ -115,8 +131,9 @@ final class CommunityAuthCancellationTests: XCTestCase {
         task.cancel()
         transport.release()
 
-        let session = try await task.value
-        XCTAssertEqual(try store.load(), session, "a verified code was dropped on cancellation")
+        await expectCanceled(task)
+        try await waitUntil { try store.load() != nil }
+        XCTAssertEqual(try store.load()?.userID, testUserID, "a verified code was dropped on cancellation")
     }
 
     func testEmailCodeRequestStillStopsWhenCanceled() async throws {

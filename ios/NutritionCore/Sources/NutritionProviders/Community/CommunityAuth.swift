@@ -117,7 +117,7 @@ public actor CommunityAuth {
         // Each attempt is bounded by the client's 15 s request timeout, so sign-in waits at most about 30 s here.
         // A second try only helps when the first failed before Apple's exchange: the code is single-use.
         for _ in 0..<2 {
-                if (try? await api.send("/functions/v1/apple-grant", bearer: bearer, body: body, sendEvenIfCanceled: true)) != nil { return }
+            if (try? await api.send("/functions/v1/apple-grant", bearer: bearer, body: body)) != nil { return }
         }
     }
 
