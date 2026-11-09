@@ -89,6 +89,8 @@ public struct TrendsView: View {
     private let now: () -> Date
     private let zone: () -> TimeZone
     @State private var range: TrendsRange = .week
+    /// The most days of Health read so far; it grows with a wider range and never shrinks on a switch back.
+    @State private var healthDays = TrendsRange.week.healthReadDays
 
     public init(
         today: TodayViewModel, journal: JournalViewModel, now: @escaping () -> Date = { Date() },
@@ -135,7 +137,8 @@ public struct TrendsView: View {
         .navigationTitle("Trends")
         .onAppear { journal.load(now: now()) }
         // Health knows days the Diary has none for, so the chosen range reads them, and reads again when it changes.
-        .task(id: range) { await journal.loadRecentHealthTotals(days: range.days, now: now()) }
+        .onChange(of: range) { _, new in healthDays = max(healthDays, new.healthReadDays) }
+        .task(id: healthDays) { await journal.loadRecentHealthTotals(days: healthDays, now: now()) }
     }
 
     private func row<Destination: View>(

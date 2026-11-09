@@ -38,6 +38,10 @@ public enum TrendsRange: CaseIterable, Identifiable {
         }
     }
 
+    /// The days of Apple Health intake to read: the range's, but never fewer than Insights averages, which reads
+    /// the same store.
+    public var healthReadDays: Int { max(days, InsightsAverages.windowDays) }
+
     /// What the cards say when the range holds nothing.
     var emptyText: String {
         switch self {
@@ -184,7 +188,7 @@ public struct TrendsSummary: Equatable {
             let fromNewest = count - 1 - index
             let ages = (0..<size).map { fromNewest * size + $0 }
             let keys = Set(
-                ages.compactMap { calendar.date(byAdding: .day, value: -$0, to: today) }.map(keyFormatter.string))
+                ages.compactMap { calendar.date(byAdding: .day, value: -$0, to: today) }.map { keyFormatter.string(from: $0) })
             let first = calendar.date(byAdding: .day, value: -(fromNewest * size + size - 1), to: today) ?? today
             let label = labelFormatter.string(from: first)
             let found = figure("energy", in: inWindow.filter { keys.contains($0.key) }, unit: .kcal)
