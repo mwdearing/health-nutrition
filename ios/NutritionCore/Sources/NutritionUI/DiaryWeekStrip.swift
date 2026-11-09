@@ -103,8 +103,8 @@ public struct DiaryWeekStrip: View {
             : AnyLayout(HStackLayout(alignment: .top, spacing: DesignSpacing.s))
         layout {
             figure("Calories", model.figures.calories)
-            figure("Protein", model.figures.protein)
-            figure("Water", model.figures.water)
+            if let protein = model.figures.protein { figure("Protein", protein) }
+            if let water = model.figures.water { figure("Water", water) }
         }
     }
 
@@ -161,11 +161,12 @@ extension JournalViewModel {
         } else if let outside = outsideIntakeByDay[chosenID], outside.statesIntake {
             // A day logged only through Apple Health has no section: show what Health states, and say where the rest is.
             let fromHealth = Self.stripFigures(
-                totals: DailyTotals(totals: [:]), goals: [], hasFoodEntries: false,
-                unitSystem: preferences.unitSystem, hidden: [], outside: outside)
+                totals: DailyTotals(totals: [:]), goals: storedGoalsForStrip(), hasFoodEntries: false,
+                unitSystem: preferences.unitSystem, hidden: hiddenTodayGoals(in: preferences), outside: outside)
             func fill(_ text: String) -> String { text == Self.nothingLoggedText ? Self.loggedInHealthText : text }
             figures = JournalDayFigures(
-                calories: fill(fromHealth.calories), protein: fill(fromHealth.protein), water: fill(fromHealth.water))
+                calories: fill(fromHealth.calories), protein: fromHealth.protein.map(fill),
+                water: fromHealth.water.map(fill))
         } else {
             figures = empty
         }
