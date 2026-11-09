@@ -76,4 +76,38 @@ final class ProductNutrientsReadableTests: XCTestCase {
         XCTAssertEqual(healed.productID, "product-1")
         XCTAssertEqual(healed.value(for: "protein"), .known(Decimal(7), .g))
     }
+
+    private func makeDamagedStore(_ name: String) throws -> (SwiftDataJournalStore, Intake, IntakeComponent, ProductDefinition) {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let store = try SwiftDataJournalStore(url: directory.appendingPathComponent("\(name).store"))
+        let when = Date(timeIntervalSince1970: 1_700_000_000)
+        let intake = Intake(
+            id: "00000000-0000-4000-8000-000000000001", category: "food", occurredAt: when,
+            timeZoneIdentifier: "UTC", meal: "breakfast")
+        let component = IntakeComponent(componentID: "oats", name: "Oats", amount: 40, unit: .g)
+        let original = ProductDefinition(
+            snapshotID: "snap-1", productID: "product-1", name: "Oats", brand: "Sample Brand",
+            barcode: "00000000", labelBasis: "per100g", catalogOrigin: "sample", catalogVersion: "1")
+            .withNutrients(["protein": .known(Decimal(5), .g)])
+        try store.create(intake, components: [component], product: original, now: when)
+        try store.damageNutrientsOnSnapshotForTesting(snapshotID: "snap-1")
+        return (store, intake, component, original)
+    }
+
+    func testMealRetagWorksOnADamagedProduct() throws {
+        let (store, intake, _, _) = try makeDamagedStore("retag")
+        let when = Date(timeIntervalSince1970: 1_700_000_100)
+        XCTAssertNotNil(try store.changeMeal(intakeID: intake.id, meal: "dinner", now: when))
+        XCTAssertEqual(try store.activeIntakes().first?.meal, "dinner")
+    }
+
+    func testRestoreHealsADamagedRowWithTheSameIdentity() throws {
+        let (store, _, _, original) = try makeDamagedStore("restore")
+        let incoming = original.withNutrients(["protein": .known(Decimal(9), .g)])
+        _ = try store.restore(
+            JournalRestorePlan(entries: [], tombstones: [], products: [incoming], favorites: []))
+        XCTAssertEqual(try store.product(snapshotID: "snap-1")?.value(for: "protein"), .known(Decimal(9), .g))
+    }
 }

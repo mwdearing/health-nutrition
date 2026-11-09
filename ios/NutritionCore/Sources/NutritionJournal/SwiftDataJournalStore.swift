@@ -1288,6 +1288,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalDele
         try context.save()
     }
 
+    #if DEBUG
     /// Overwrites a stored snapshot's nutrient payload with text that does not decode, as a damaged row would hold.
     func damageNutrientsOnSnapshotForTesting(snapshotID: String) throws {
         let context = ModelContext(try openContainer())
@@ -1297,6 +1298,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalDele
         row.nutrientsJSON = "{not json"
         try context.save()
     }
+    #endif
 
     /// Drops a stored snapshot's kind, leaving the row as a store written before the column existed
     /// would have it: the product states what it states and says nothing about what it is.
