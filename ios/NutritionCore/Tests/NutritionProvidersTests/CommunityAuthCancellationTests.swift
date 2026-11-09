@@ -83,6 +83,28 @@ final class CommunityAuthCancellationTests: XCTestCase {
         XCTAssertEqual(transport.paths, ["/auth/v1/token", "/functions/v1/apple-grant"], "the single-use code was never handed off")
     }
 
+    func testACanceledCallerReturnsWithoutWaitingForTheReply() async throws {
+        let transport = GatedCommunityTransport()
+        let store = InMemoryCommunitySessionStore()
+        let auth = try makeGatedAuth(transport, store: store)
+
+        let task = Task { try await auth.signInWithApple(idToken: "test-apple-token", nonce: "test-nonce") }
+        try await waitUntilStarted(transport)
+        task.cancel()
+
+        // The transport is still holding its reply, so the caller must finish on its own.
+        do {
+            _ = try await task.value
+            XCTFail("a canceled caller should not wait for the reply")
+        } catch is CancellationError {
+        }
+        XCTAssertNil(try store.load(), "the reply had not arrived yet")
+
+        transport.release()
+        for _ in 0..<500 where try store.load() == nil { try await Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertEqual(try store.load()?.userID, testUserID, "the reply that arrived later was not saved")
+    }
+
     func testEmailCodeVerifyCanceledMidRequestStillKeepsTheSession() async throws {
         let transport = GatedCommunityTransport()
         let store = InMemoryCommunitySessionStore()

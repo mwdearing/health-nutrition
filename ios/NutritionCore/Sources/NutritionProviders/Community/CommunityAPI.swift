@@ -6,9 +6,7 @@ struct CommunityAPI: Sendable {
     let config: CommunityConfig
     let transport: CommunityTransport
 
-    /// Sends one request and returns the reply without checking its status. With `keepReply` the request runs to its
-    /// end even when the calling task is canceled, and a reply that arrives is returned: for a sign-in the server has
-    /// already issued a session and spent the one-time code, so dropping the reply would lose both.
+    /// Sends one request and returns the reply without checking its status.
     /// `sendEvenIfCanceled` also sends when the task is already canceled, for the follow-up of a kept sign-in.
     func raw(
         _ path: String,
