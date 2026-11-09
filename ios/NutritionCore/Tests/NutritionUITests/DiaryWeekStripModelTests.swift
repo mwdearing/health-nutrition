@@ -162,6 +162,25 @@ final class DiaryWeekStripModelTests: XCTestCase {
         XCTAssertNotEqual(strip.figures.calories, "Nothing logged yet")
     }
 
+    /// A day logged only through Apple Health follows the same rule: a hidden goal's figure stays off the strip.
+    func testAHiddenGoalIsLeftOffAHealthOnlyDay() throws {
+        let journal = try makeJournalStore()
+        let goals = try makeGoalStore()
+        try goals.setGoal(NutrientGoal(nutrient: "protein", target: Decimal(60), unit: .g))
+        try logFood(journal, daysBack: 0)
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setGoalShownOnToday("protein", shown: false)
+        let model = JournalViewModel(
+            store: journal, goals: goals, lookup: StripFacts(), timeZoneIdentifier: "UTC",
+            locale: Locale(identifier: "en_US_POSIX"), preferences: preferences)
+        model.outsideIntakeByDay = [dayKey(5): .read(values: ["protein": 9], readKeys: ["protein"])]
+        model.load(now: stripNow)
+
+        let strip = try XCTUnwrap(model.weekStrip(chosen: dayKey(5), now: stripNow))
+        XCTAssertTrue(try XCTUnwrap(strip.days.first { $0.id == dayKey(5) }).isLogged)
+        XCTAssertNil(strip.figures.protein)
+    }
+
     /// Each day carries the jump target the arrows and the date sheet get for that date.
     func testEachDayCarriesTheJumpTargetOfItsDate() throws {
         let journal = try makeJournalStore()
