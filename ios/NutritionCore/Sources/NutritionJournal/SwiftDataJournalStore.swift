@@ -1819,10 +1819,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalDele
                 kindRaw: product.kind.rawValue))
             return true
         }
-        if !nutrientsReadable(row.nutrientsJSON) {
-            overwrite(row, with: product)
-            return false
-        }
+        if try healDamagedRow(row, with: product) { return false }
         let stored = try snapshot(from: row)
         guard stored.identity == product.identity else {
             throw JournalError.snapshotConflict(id)
@@ -2417,10 +2414,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalDele
             predicate: #Predicate<ProductRecord> { $0.snapshotID == id }))
         if let row = existing.first {
             // A row whose payload does not decode is corrupt; the incoming product is the good copy.
-            if !nutrientsReadable(row.nutrientsJSON) {
-                overwrite(row, with: product)
-                return
-            }
+            if try healDamagedRow(row, with: product) { return }
             let stored = try snapshot(from: row)
             if stored == product { return }
             guard stored.nutrients.isEmpty, stored.identity == product.identity else {
@@ -2684,18 +2678,22 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalDele
         }.sorted { ($0.occurredAt, $0.id) < ($1.occurredAt, $1.id) }
     }
 
-    /// Replaces a corrupt row's content with the incoming product, keeping its snapshot id.
-    private static func overwrite(_ row: ProductRecord, with product: ProductDefinition) {
-        row.productID = product.productID
-        row.name = product.name
-        row.brand = product.brand
-        row.barcode = product.barcode
-        row.labelBasis = product.labelBasis
-        row.catalogOrigin = product.catalogOrigin
-        row.catalogVersion = product.catalogVersion
-        row.kindRaw = product.kind.rawValue
+    /// A row whose nutrient payload does not decode is replaced by the incoming product, but only when the
+    /// identity columns that can still be read (everything except the nutrient and display-name payloads)
+    /// match it; otherwise the same conflict as a healthy row is thrown and the row is left untouched.
+    /// Returns false when the row is readable and the caller carries on with the normal comparison.
+    private static func healDamagedRow(_ row: ProductRecord, with product: ProductDefinition) throws -> Bool {
+        guard !nutrientsReadable(row.nutrientsJSON) else { return false }
+        let storedIdentity = ProductDefinition(
+            snapshotID: row.snapshotID, productID: row.productID, name: row.name, brand: row.brand,
+            barcode: row.barcode, labelBasis: row.labelBasis, catalogOrigin: row.catalogOrigin,
+            catalogVersion: row.catalogVersion, kind: ProductKind(storedRawValue: row.kindRaw))
+        guard storedIdentity == product.identity else {
+            throw JournalError.snapshotConflict(product.snapshotID)
+        }
         row.nutrientsJSON = Self.encodeNutrients(
             product.nutrients, displayNames: product.nutrientDisplayNames)
+        return true
     }
 
     private static func snapshot(from row: ProductRecord) throws -> ProductDefinition {
