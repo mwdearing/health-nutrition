@@ -190,7 +190,9 @@ final class DiaryWeekStripModelTests: XCTestCase {
 
         let strip = try XCTUnwrap(model.weekStrip(chosen: dayKey(5), now: stripNow))
         XCTAssertTrue(try XCTUnwrap(strip.days.first { $0.id == dayKey(5) }).isLogged)
-        for text in [strip.figures.calories, strip.figures.protein, strip.figures.water] {
+        let texts: [String?] = [strip.figures.calories, strip.figures.protein, strip.figures.water]
+        XCTAssertEqual(texts.compactMap { $0 }.count, 3)
+        for text in texts.compactMap({ $0 }) {
             XCTAssertNotEqual(text, "Nothing logged yet")
             XCTAssertFalse(text.isEmpty)
         }
