@@ -41,9 +41,17 @@ final class CalorieSummaryFiguresTests: XCTestCase {
         XCTAssertEqual(NourishTodayHeader.summaryFigures(calories).remaining, "Up to 1,500")
     }
 
-    func testOverGoalIsAPositiveFigureOnAPartialDayWithoutUpTo() {
+    func testAPartialDayOverGoalReadsAtLeast() {
         let calories = CalorieRemaining.make(
             goal: 2000, food: 2150, partial: true, missingCount: 1, burned: nil, energyLabel: "Energy")
         XCTAssertEqual(NourishTodayHeader.summaryFigures(calories).remaining, "At least 150")
+    }
+
+    func testOverGoalCountsBurnedCalories() {
+        // 2,300 eaten against 2,000 is 300 over; 100 burned is added to the goal, so the figure is 200.
+        let calories = CalorieRemaining.make(
+            goal: 2000, food: 2300, partial: false, missingCount: 0, burned: 100, energyLabel: "Energy")
+        XCTAssertEqual(NourishTodayHeader.summaryFigures(calories).remaining, "200")
+        XCTAssertEqual(NourishTodayHeader.remainingCaption(calories), "Calories over goal")
     }
 }
