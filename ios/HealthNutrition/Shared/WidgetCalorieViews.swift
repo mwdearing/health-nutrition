@@ -107,7 +107,7 @@ struct WidgetCalorieSummary: View {
                     .minimumScaleFactor(0.7)
                     .lineLimit(1)
                     .privacySensitive()
-                Text(remainingCaption)
+                Text(snapshot?.remainingCaption ?? "Calories remaining")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .privacySensitive()
