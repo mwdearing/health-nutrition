@@ -61,10 +61,11 @@ public struct JournalMealGroup: Equatable, Identifiable {
 /// The three figures the Diary's week strip shows for a day, worded as the day's header words them.
 public struct JournalDayFigures: Equatable {
     public let calories: String
-    public let protein: String
-    public let water: String
+    /// Nil when Today hides that goal: the strip then leaves the figure off.
+    public let protein: String?
+    public let water: String?
 
-    public init(calories: String, protein: String, water: String) {
+    public init(calories: String, protein: String?, water: String?) {
         self.calories = calories
         self.protein = protein
         self.water = water
@@ -1144,13 +1145,21 @@ public final class JournalViewModel: ObservableObject {
 
     /// The strip's three figures for a day: the header's energy text, and the protein and water bars built as the
     /// header builds its bars (water is not among the header's bars, so it is built here with the same builder).
+    /// The stored goals, read the way the sections read them; empty when there is no store or it cannot be read.
+    func storedGoalsForStrip() -> [NutrientGoal] {
+        (try? goals?.goals()) ?? []
+    }
+
     static func stripFigures(
         totals: DailyTotals, goals: [NutrientGoal], hasFoodEntries: Bool, unitSystem: UnitSystem,
         hidden: Set<String>, outside: HealthIntakeTotals.Outside
     ) -> JournalDayFigures {
-        func figure(_ nutrient: String) -> String {
-            goalBar(
-                nutrient: nutrient, goal: goals.first { $0.nutrient == nutrient }, totals: totals,
+        // Today's rule: a nutrient with a stored goal that Today hides gets no figure.
+        func figure(_ nutrient: String) -> String? {
+            let goal = goals.first { $0.nutrient == nutrient }
+            if goal != nil && hidden.contains(nutrient) { return nil }
+            return goalBar(
+                nutrient: nutrient, goal: goal, totals: totals,
                 hasFoodEntries: hasFoodEntries, unitSystem: unitSystem, outside: outside).valueText
         }
         return JournalDayFigures(

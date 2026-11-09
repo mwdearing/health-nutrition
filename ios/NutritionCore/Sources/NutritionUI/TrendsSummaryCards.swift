@@ -17,6 +17,14 @@ public struct TrendsSummary: Equatable {
         /// The day's energy, or nil when nothing is known for the day.
         public let kcal: Decimal?
         public let isToday: Bool
+        /// True when the day's energy is only partly known, so it is spoken as a minimum.
+        public let isPartial: Bool
+
+        /// What VoiceOver says for the day.
+        public var spokenText: String {
+            guard let kcal else { return "\(label), nothing logged" }
+            return "\(label), \(isPartial ? "at least " : "")\(TrendsSummary.figureText(kcal)) calories"
+        }
     }
 
     /// How the average compares with the daily goal. The figure is always positive; the words carry the direction.
@@ -90,9 +98,10 @@ public struct TrendsSummary: Equatable {
         let bars = week.days.enumerated().map { index, day -> Bar in
             let key = formatter.string(from: day.id)
             let own = inWindow.filter { $0.key == key }
+            let dayFigure = figure("energy", in: own, unit: .kcal)
             return Bar(
-                id: index, label: day.label, kcal: figure("energy", in: own, unit: .kcal)?.value,
-                isToday: index == week.days.count - 1)
+                id: index, label: day.label, kcal: dayFigure?.value,
+                isToday: index == week.days.count - 1, isPartial: dayFigure?.partial ?? false)
         }
         let usableGoal = goal.flatMap { $0 > 0 ? $0 : nil }
         let energy = average("energy")
@@ -232,9 +241,7 @@ public struct TrendsCaloriesCard: View {
         guard let average = summary.averageKcal else { return "Calories, daily average. \(TrendsSummary.emptyText)" }
         var parts = ["Calories, daily average, last 7 days, \(summary.energyIsPartial ? "at least " : "")\(TrendsSummary.figureText(average)) calories"]
         if let difference = summary.difference { parts.append(difference.text) }
-        let days = summary.bars.map { bar in
-            "\(bar.label), \(bar.kcal.map { "\(TrendsSummary.figureText($0)) calories" } ?? "nothing logged")"
-        }
+        let days = summary.bars.map(\.spokenText)
         parts.append(days.joined(separator: ", "))
         return parts.joined(separator: ". ")
     }
