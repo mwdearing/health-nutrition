@@ -9,6 +9,7 @@ struct CommunityAPI: Sendable {
     /// Sends one request and returns the reply without checking its status. With `keepReply` the request runs to its
     /// end even when the calling task is canceled, and a reply that arrives is returned: for a sign-in the server has
     /// already issued a session and spent the one-time code, so dropping the reply would lose both.
+    /// `sendEvenIfCanceled` also sends when the task is already canceled, for the follow-up of a kept sign-in.
     func raw(
         _ path: String,
         method: String = "POST",
@@ -16,7 +17,8 @@ struct CommunityAPI: Sendable {
         bearer: String? = nil,
         body: Data? = nil,
         prefer: String? = nil,
-        keepReply: Bool = false
+        keepReply: Bool = false,
+        sendEvenIfCanceled: Bool = false
     ) async throws -> (Data, HTTPURLResponse) {
         guard var components = URLComponents(url: config.baseURL, resolvingAgainstBaseURL: false) else {
             throw CommunityError.notConfigured
@@ -42,11 +44,11 @@ struct CommunityAPI: Sendable {
             request.setValue(prefer, forHTTPHeaderField: "Prefer")
         }
         do {
-            try Task.checkCancellation()
+            if !sendEvenIfCanceled { try Task.checkCancellation() }
             let transport = transport
             let request = request
             let reply: (Data, HTTPURLResponse)
-            if keepReply {
+            if keepReply || sendEvenIfCanceled {
                 // A new task does not inherit the caller's cancellation.
                 reply = try await Task { try await transport.send(request) }.value
             } else {
@@ -75,10 +77,12 @@ struct CommunityAPI: Sendable {
         bearer: String? = nil,
         body: Data? = nil,
         prefer: String? = nil,
-        keepReply: Bool = false
+        keepReply: Bool = false,
+        sendEvenIfCanceled: Bool = false
     ) async throws -> (Data, HTTPURLResponse) {
         let (data, response) = try await raw(
-            path, method: method, query: query, bearer: bearer, body: body, prefer: prefer, keepReply: keepReply
+            path, method: method, query: query, bearer: bearer, body: body, prefer: prefer,
+            keepReply: keepReply, sendEvenIfCanceled: sendEvenIfCanceled
         )
         guard (200..<300).contains(response.statusCode) else {
             throw CommunityError.from(status: response.statusCode, body: data)

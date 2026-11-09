@@ -99,7 +99,7 @@ public actor CommunityAuth {
         // A second try only helps when the first failed before Apple's exchange: the code is single-use.
         for _ in 0..<2 {
             // The sign-in was kept even if the caller was canceled, so the handoff of its single-use code runs too.
-            if (try? await api.send("/functions/v1/apple-grant", bearer: bearer, body: body, keepReply: true)) != nil { return }
+            if (try? await api.send("/functions/v1/apple-grant", bearer: bearer, body: body, sendEvenIfCanceled: true)) != nil { return }
         }
     }
 
