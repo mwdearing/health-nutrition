@@ -21,6 +21,7 @@ enum AddRoute: Hashable {
     case barcodeScanner
     case labelScanner
     case library
+    case savedMeals
     case productSearch
     case productEditor(ProductEditorPrefill)
     case details(AddPrefill?)
