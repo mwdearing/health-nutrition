@@ -3,9 +3,70 @@ import Foundation
 import NutritionDomain
 import SwiftUI
 
-/// The figures behind the two Trends cards: the last seven local days ending today, averaged over exactly the
+/// How far back the Trends cards look.
+public enum TrendsRange: CaseIterable, Identifiable {
+    case week
+    case month
+    case sixMonths
+
+    public var id: Self { self }
+
+    /// The picker's segment.
+    public var title: String {
+        switch self {
+        case .week: return "Week"
+        case .month: return "Month"
+        case .sixMonths: return "6 months"
+        }
+    }
+
+    /// What the cards say they cover.
+    public var cardTitle: String {
+        switch self {
+        case .week: return "Last 7 days"
+        case .month: return "Last 30 days"
+        case .sixMonths: return "Last 6 months"
+        }
+    }
+
+    /// The local days ending today that the range covers.
+    public var days: Int {
+        switch self {
+        case .week: return 7
+        case .month: return 30
+        case .sixMonths: return 182
+        }
+    }
+
+    /// The days of Apple Health intake to read: the range's, but never fewer than Insights averages, which reads
+    /// the same store.
+    public var healthReadDays: Int { max(days, InsightsAverages.windowDays) }
+
+    /// What the cards say when the range holds nothing.
+    var emptyText: String {
+        switch self {
+        case .week: return TrendsSummary.emptyText
+        case .month: return "Nothing logged this month"
+        case .sixMonths: return "Nothing logged in 6 months"
+        }
+    }
+
+    /// Days in one bar: a day, or a week of days for 6 months.
+    var daysPerBar: Int { self == .sixMonths ? 7 : 1 }
+
+    /// A label under every n-th bar, counting back from the newest, for the ranges too wide to label each bar.
+    var axisStep: Int {
+        switch self {
+        case .week: return 1
+        case .month: return 7
+        case .sixMonths: return 6
+        }
+    }
+}
+
+/// The figures behind the two Trends cards: the chosen range's local days ending today (a week by default), averaged over exactly the
 /// days Insights counts for its averages (a day with a food or drink entry, or with intake Health states): the same
-/// days for the same window. Insights averages 30 days, the cards 7, so their figures can differ.
+/// days for the same window. Insights averages 30 days, the cards the chosen range, so their figures can differ.
 public struct TrendsSummary: Equatable {
     public static let windowDays = InsightsWeek.length
     public static let emptyText = "Nothing logged this week"
@@ -17,14 +78,14 @@ public struct TrendsSummary: Equatable {
         /// The day's energy, or nil when nothing is known for the day.
         public let kcal: Decimal?
         public let isToday: Bool
-        /// True when the day's energy is only partly known, so it is spoken as a minimum.
+        /// True when a counted day in the bar states only part of the energy.
         public let isPartial: Bool
-
-        /// What VoiceOver says for the day.
-        public var spokenText: String {
-            guard let kcal else { return "\(label), nothing logged" }
-            return "\(label), \(isPartial ? "at least " : "")\(TrendsSummary.figureText(kcal)) calories"
-        }
+        /// What the bar says aloud: the day (or "Week of" the first day) and its calories.
+        public let spoken: String
+        /// What VoiceOver says for the day: `spoken`, which says "at least" for a partly known day.
+        public var spokenText: String { spoken }
+        /// Whether the axis labels this bar; a month or 6 months labels about one bar in several.
+        public let showsAxisLabel: Bool
     }
 
     /// How the average compares with the daily goal. The figure is always positive; the words carry the direction.
@@ -48,6 +109,7 @@ public struct TrendsSummary: Equatable {
         public let fat: Double
     }
 
+    public let range: TrendsRange
     public let bars: [Bar]
     public let averageKcal: Decimal?
     public let proteinGrams: Decimal?
@@ -60,6 +122,8 @@ public struct TrendsSummary: Equatable {
     public let proteinIsPartial: Bool
     public let carbsArePartial: Bool
     public let fatIsPartial: Bool
+
+    public var emptyMessage: String { range.emptyText }
 
     public var hasData: Bool { averageKcal != nil }
 
@@ -84,35 +148,61 @@ public struct TrendsSummary: Equatable {
     }
 
     public static func make(
-        days: [InsightsAverages.Day], goal: Decimal?, now: Date, zone: TimeZone, locale: Locale = .current
+        days: [InsightsAverages.Day], goal: Decimal?, now: Date, zone: TimeZone, locale: Locale = .current,
+        range: TrendsRange = .week
     ) -> TrendsSummary {
-        let inWindow = InsightsAverages.daysInWindow(days, now: now, zone: zone, length: windowDays)
+        let inWindow = InsightsAverages.daysInWindow(days, now: now, zone: zone, length: range.days)
         func average(_ nutrient: String, grams: Bool = false) -> (value: Decimal, partial: Bool)? {
             figure(nutrient, in: inWindow, unit: grams ? .g : .kcal)
         }
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = zone
-        formatter.dateFormat = "yyyy-MM-dd"
-        let week = InsightsWeek.make(entries: [], now: now, zone: zone, locale: locale)
-        let bars = week.days.enumerated().map { index, day -> Bar in
-            let key = formatter.string(from: day.id)
-            let own = inWindow.filter { $0.key == key }
-            let dayFigure = figure("energy", in: own, unit: .kcal)
-            return Bar(
-                id: index, label: day.label, kcal: dayFigure?.value,
-                isToday: index == week.days.count - 1, isPartial: dayFigure?.partial ?? false)
-        }
+        let bars = makeBars(inWindow, range: range, now: now, zone: zone, locale: locale)
         let usableGoal = goal.flatMap { $0 > 0 ? $0 : nil }
         let energy = average("energy")
         let protein = average("protein", grams: true)
         let carbs = average("carbohydrate", grams: true)
         let fat = average("fat", grams: true)
         return TrendsSummary(
-            bars: bars, averageKcal: energy?.value, proteinGrams: protein?.value, carbGrams: carbs?.value,
-            fatGrams: fat?.value, goal: usableGoal, energyIsPartial: energy?.partial ?? false,
-            proteinIsPartial: protein?.partial ?? false, carbsArePartial: carbs?.partial ?? false,
-            fatIsPartial: fat?.partial ?? false)
+            range: range, bars: bars, averageKcal: energy?.value, proteinGrams: protein?.value,
+            carbGrams: carbs?.value, fatGrams: fat?.value, goal: usableGoal,
+            energyIsPartial: energy?.partial ?? false, proteinIsPartial: protein?.partial ?? false,
+            carbsArePartial: carbs?.partial ?? false, fatIsPartial: fat?.partial ?? false)
+    }
+
+    /// One bar per day (a week, a month) or per seven days (6 months), oldest first, the last holding today.
+    /// A bar is the average of its counted days, so a week with two logged days is not diluted by five empty ones.
+    private static func makeBars(
+        _ inWindow: [InsightsAverages.Day], range: TrendsRange, now: Date, zone: TimeZone, locale: Locale
+    ) -> [Bar] {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = zone
+        let today = calendar.startOfDay(for: now)
+        let keyFormatter = DateFormatter()
+        keyFormatter.locale = Locale(identifier: "en_US_POSIX")
+        keyFormatter.timeZone = zone
+        keyFormatter.dateFormat = "yyyy-MM-dd"
+        let labelFormatter = DateFormatter()
+        labelFormatter.locale = locale
+        labelFormatter.timeZone = zone
+        labelFormatter.setLocalizedDateFormatFromTemplate(range == .week ? "EEE" : "MMMd")
+        let size = range.daysPerBar
+        let count = range.days / size
+        return (0..<count).map { index in
+            let fromNewest = count - 1 - index
+            let ages = (0..<size).map { fromNewest * size + $0 }
+            let keys = Set(
+                ages.compactMap { calendar.date(byAdding: .day, value: -$0, to: today) }.map { keyFormatter.string(from: $0) })
+            let first = calendar.date(byAdding: .day, value: -(fromNewest * size + size - 1), to: today) ?? today
+            let label = labelFormatter.string(from: first)
+            let found = figure("energy", in: inWindow.filter { keys.contains($0.key) }, unit: .kcal)
+            let name = range == .sixMonths ? "Week of \(label)" : label
+            let amount = found.map {
+                "\($0.partial ? "at least " : "")\(figureText($0.value)) calories"
+            } ?? "nothing logged"
+            return Bar(
+                id: index, label: label, kcal: found?.value, isToday: fromNewest == 0,
+                isPartial: found?.partial ?? false, spoken: "\(name), \(amount)",
+                showsAxisLabel: fromNewest % range.axisStep == 0)
+        }
     }
 
     private static func figure(_ nutrient: String, in days: [InsightsAverages.Day], unit: MeasureUnit)
@@ -161,7 +251,7 @@ public struct TrendsCaloriesCard: View {
                     .font(.subheadline)
                     .foregroundStyle(TokenColors.heroSecondaryText)
                     .accessibilityAddTraits(.isHeader)
-                Text("Last 7 days")
+                Text(summary.range.cardTitle)
                     .font(.caption)
                     .foregroundStyle(TokenColors.heroSecondaryText)
                 if let average = summary.averageKcal {
@@ -182,7 +272,7 @@ public struct TrendsCaloriesCard: View {
                     }
                     chart
                 } else {
-                    Text(TrendsSummary.emptyText)
+                    Text(summary.emptyMessage)
                         .font(.title3.weight(.semibold))
                         .foregroundStyle(TokenColors.heroText)
                 }
@@ -220,11 +310,11 @@ public struct TrendsCaloriesCard: View {
         .chartXScale(domain: keys)
         .chartYScale(domain: 0...(NSDecimalNumber(decimal: top).doubleValue * 1.25 + 1))
         .chartXAxis {
-            AxisMarks(values: keys) { value in
+            AxisMarks(values: summary.bars.filter(\.showsAxisLabel).map { String($0.id) }) { value in
                 AxisValueLabel {
                     if let key = value.as(String.self), let index = Int(key), summary.bars.indices.contains(index) {
                         let bar = summary.bars[index]
-                        Text(String(bar.label.prefix(1)))
+                        Text(summary.range == .week ? String(bar.label.prefix(1)) : bar.label)
                             .font(.caption2)
                             .fontWeight(bar.isToday ? .bold : .regular)
                             .foregroundStyle(TokenColors.heroSecondaryText)
@@ -238,8 +328,8 @@ public struct TrendsCaloriesCard: View {
     }
 
     private var spokenLabel: String {
-        guard let average = summary.averageKcal else { return "Calories, daily average. \(TrendsSummary.emptyText)" }
-        var parts = ["Calories, daily average, last 7 days, \(summary.energyIsPartial ? "at least " : "")\(TrendsSummary.figureText(average)) calories"]
+        guard let average = summary.averageKcal else { return "Calories, daily average. \(summary.emptyMessage)" }
+        var parts = ["Calories, daily average, \(summary.range.cardTitle.lowercased()), \(summary.energyIsPartial ? "at least " : "")\(TrendsSummary.figureText(average)) calories"]
         if let difference = summary.difference { parts.append(difference.text) }
         let days = summary.bars.map(\.spokenText)
         parts.append(days.joined(separator: ", "))
@@ -262,7 +352,7 @@ public struct TrendsMacrosCard: View {
                     .font(.headline)
                     .foregroundStyle(TokenColors.textPrimary)
                     .accessibilityAddTraits(.isHeader)
-                Text("Last 7 days")
+                Text(summary.range.cardTitle)
                     .font(.caption)
                     .foregroundStyle(TokenColors.textSecondary)
                 if let shares = summary.macroShares {
@@ -273,7 +363,7 @@ public struct TrendsMacrosCard: View {
                         legend("Fat", grams: summary.fatGrams, partial: summary.fatIsPartial, color: TokenColors.macroFat)
                     }
                 } else {
-                    Text(TrendsSummary.emptyText)
+                    Text(summary.emptyMessage)
                         .font(.subheadline)
                         .foregroundStyle(TokenColors.textSecondary)
                 }
@@ -315,8 +405,8 @@ public struct TrendsMacrosCard: View {
     }
 
     private var spokenLabel: String {
-        guard summary.macroShares != nil else { return "Macros, daily average. \(TrendsSummary.emptyText)" }
-        return "Macros, daily average, last 7 days. Protein, \(TrendsSummary.gramsText(summary.proteinGrams, partial: summary.proteinIsPartial)). "
+        guard summary.macroShares != nil else { return "Macros, daily average. \(summary.emptyMessage)" }
+        return "Macros, daily average, \(summary.range.cardTitle.lowercased()). Protein, \(TrendsSummary.gramsText(summary.proteinGrams, partial: summary.proteinIsPartial)). "
             + "Carbs, \(TrendsSummary.gramsText(summary.carbGrams, partial: summary.carbsArePartial)). "
             + "Fat, \(TrendsSummary.gramsText(summary.fatGrams, partial: summary.fatIsPartial))."
     }
