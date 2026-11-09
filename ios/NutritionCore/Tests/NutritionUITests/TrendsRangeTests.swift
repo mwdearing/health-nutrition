@@ -75,4 +75,52 @@ final class TrendsRangeTests: XCTestCase {
         XCTAssertEqual(TrendsRange.sixMonths.healthReadDays, 182)
         XCTAssertTrue(TrendsRange.allCases.allSatisfy { $0.healthReadDays >= InsightsAverages.windowDays })
     }
+
+    func testSixMonthsBucketsAcrossADaylightSavingChange() throws {
+        // The clocks go back on 2023-11-05 in Chicago. Now is 2023-11-12, so the newest week is Nov 6 to Nov 12 and
+        // the one before it Oct 30 to Nov 5, which holds the 25-hour day.
+        let chicago = try XCTUnwrap(TimeZone(identifier: "America/Chicago"))
+        let chicagoNow = Date(timeIntervalSince1970: 1_699_812_000)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = chicago
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = chicago
+        formatter.dateFormat = "yyyy-MM-dd"
+        func keyed(_ key: String, _ kcal: Decimal) -> InsightsAverages.Day {
+            let energy = NutrientTotal(
+                value: .known(kcal, .kcal),
+                coverage: Coverage(knownCount: 1, totalCount: 1, hasBelowReportingThreshold: false, hasUnknown: false))
+            return InsightsAverages.Day(key: key, totals: DailyTotals(totals: ["energy": energy]))
+        }
+        let today = calendar.startOfDay(for: chicagoNow)
+        let oldest = formatter.string(from: try XCTUnwrap(calendar.date(byAdding: .day, value: -181, to: today)))
+        let tooOld = formatter.string(from: try XCTUnwrap(calendar.date(byAdding: .day, value: -182, to: today)))
+        let days = [
+            keyed("2023-11-02", 1_000),  // three days before the change
+            keyed("2023-11-06", 2_000),  // the day after it
+            keyed(oldest, 1_800), keyed(tooOld, 5_000),
+        ]
+        let summary = TrendsSummary.make(
+            days: days, goal: nil, now: chicagoNow, zone: chicago, locale: Locale(identifier: "en_US"),
+            range: .sixMonths)
+        XCTAssertEqual(summary.bars.count, 26)
+        XCTAssertEqual(summary.bars[25].kcal, 2_000)
+        XCTAssertEqual(summary.bars[24].kcal, 1_000)
+        XCTAssertEqual(summary.bars[0].kcal, 1_800)
+        XCTAssertEqual(summary.bars.compactMap(\.kcal).count, 3)
+        XCTAssertEqual(summary.averageKcal, 1_600)
+    }
+
+    func testAWeeklyBarIsPartialWhenOneOfItsDaysIsPartial() {
+        let partialDay = InsightsAverages.Day(
+            key: formattedKey(daysBack: 1), totals: DailyTotals(totals: [:]), isLogged: false,
+            outside: .read(values: ["energy": 1_000], readKeys: ["protein"]))
+        let summary = make([day(0, kcal: 2_000), partialDay, day(10, kcal: 1_500)], .sixMonths)
+        XCTAssertTrue(summary.bars[25].isPartial)
+        XCTAssertTrue(summary.bars[25].spoken.contains("at least"))
+        XCTAssertFalse(summary.bars[24].isPartial)
+    }
+
+    private func formattedKey(daysBack: Int) -> String { day(daysBack, kcal: 0).key }
 }
