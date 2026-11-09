@@ -36,6 +36,9 @@ Undo removes only that new entry. Without recent items, home says
 **Amounts only** (#146) opens a form for calories, protein, carbs and fat. It saves one
 serving under the selected meal, with the typed values as its per-serving facts, and shows
 the same Undo toast. An empty field stays unknown; a typed zero is stored as zero.
+**Saved meal** shows after Amounts only, only once at least one meal is saved. It opens the saved
+meals, each with its item count and calories; a tap logs the meal with the meal chosen on Add and
+shows the Undo bar for ten seconds. With no meal chosen it asks which meal first.
 **Describe or photograph a meal** (#149) remains disabled, carries a Later badge, and
 announces "Not available yet".
 

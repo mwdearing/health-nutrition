@@ -9,7 +9,7 @@ import XCTest
 final class AddNavigationTests: XCTestCase {
     func testAddNavigationResetsOnCancelAndSave() {
         let model = AddNavigationModel()
-        for route in [AddRoute.barcodeScanner, .labelScanner, .library, .productSearch, .details(nil)] {
+        for route in [AddRoute.barcodeScanner, .labelScanner, .library, .savedMeals, .productSearch, .details(nil)] {
             model.path = [route]
             model.reset()
             XCTAssertEqual(model.path, [])

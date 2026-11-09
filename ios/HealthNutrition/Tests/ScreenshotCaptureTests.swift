@@ -370,6 +370,28 @@ final class ScreenshotCaptureTests: XCTestCase {
         }
     }
 
+    // The saved meals list on Add, with invented meals.
+    func testAddSavedMealsView() throws {
+        let services = try makeSeededServices()
+        let defaults = UserDefaults(suiteName: "capture-add-saved-meals-\(UUID().uuidString)")!
+        let savedMeals = SavedMealsModel(store: UserDefaultsSavedMealStore(defaults: defaults), journal: services.journalStore)
+        func item(_ name: String, _ grams: String) -> FavoriteTemplate {
+            FavoriteTemplate(id: UUID().uuidString.lowercased(), displayName: name, category: "food",
+                components: [FavoriteComponent(componentID: name.lowercased(), name: name, amountText: grams, unitSymbol: "g")])
+        }
+        let store = UserDefaultsSavedMealStore(defaults: defaults)
+        try store.update { meals in meals = [
+            SavedMeal(id: "usual-breakfast", name: "Usual breakfast", meal: .breakfast, items: [item("Oats", "40"), item("Milk", "200")]),
+            SavedMeal(id: "post-run-shake", name: "Post-run shake", meal: .snack, items: [item("Banana", "120")]),
+        ] }
+        savedMeals.load()
+        try capture("AddSavedMealsView") {
+            NavigationStack {
+                AddSavedMealsView(savedMeals: savedMeals, meal: .lunch, calories: { _ in nil }, onLogged: {})
+            }
+        }
+    }
+
     // The amounts-only form as the Add screen presents it, with a few values typed in.
     func testQuickAddView() throws {
         let services = try makeSeededServices()
