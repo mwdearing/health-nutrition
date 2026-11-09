@@ -74,21 +74,43 @@ public actor CommunityAuth {
         nonce: String,
         authorizationCode: String? = nil
     ) async throws -> CommunitySession {
+        // A caller that is already canceled sends nothing and changes no state.
+        try Task.checkCancellation()
         // The sign-in service does not ask for a challenge on an identity token, so none is requested.
         let body = try CommunityAPI.encode(AppleBody(idToken: idToken, nonce: nonce, metaSecurity: nil))
         authenticationIntent += 1
         deletedOwners.removeAll()
         let startedAtIntent = authenticationIntent
-        let (data, response) = try await api.send(
-            "/auth/v1/token",
-            query: [URLQueryItem(name: "grant_type", value: "id_token")],
-            body: body
-        )
-        let session = try acceptAuthentication(data, response, startedAtIntent: startedAtIntent)
-        if let authorizationCode, !authorizationCode.isEmpty {
-            await handOffAppleAuthorizationCode(authorizationCode, bearer: session.accessToken)
+        return try await finishingEvenIfCanceled { auth in
+            let (data, response) = try await auth.api.send(
+                "/auth/v1/token",
+                query: [URLQueryItem(name: "grant_type", value: "id_token")],
+                body: body
+            )
+            let session = try await auth.acceptAuthentication(data, response, startedAtIntent: startedAtIntent)
+            if let authorizationCode, !authorizationCode.isEmpty {
+                await auth.handOffAppleAuthorizationCode(authorizationCode, bearer: session.accessToken)
+            }
+            return session
         }
-        return session
+    }
+
+    /// Runs a sign-in request, its save and any follow-up on a task of its own, so a reply the server already issued
+    /// (a session, a spent one-time code) is kept even when the caller goes away. A canceled caller returns at once
+    /// with CancellationError and does not wait for the reply.
+    private func finishingEvenIfCanceled(
+        _ work: @escaping @Sendable (CommunityAuth) async throws -> CommunitySession
+    ) async throws -> CommunitySession {
+        let race = CancellationRace()
+        let task = Task { [self] in
+            do { race.finish(.success(try await work(self))) } catch { race.finish(.failure(error)) }
+        }
+        _ = task
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { race.attach($0) }
+        } onCancel: {
+            race.finish(.failure(CancellationError()))
+        }
     }
 
     /// POST /functions/v1/apple-grant {action: store}. The Apple key never leaves the server.
@@ -109,13 +131,16 @@ public actor CommunityAuth {
     }
 
     public func verifyEmailCode(email: String, code: String) async throws -> CommunitySession {
+        try Task.checkCancellation()
         // Checking the emailed code is not challenged either; only asking for it is.
         let body = try CommunityAPI.encode(VerifyBody(email: email, token: code, metaSecurity: nil))
         authenticationIntent += 1
         deletedOwners.removeAll()
         let startedAtIntent = authenticationIntent
-        let (data, response) = try await api.send("/auth/v1/verify", body: body)
-        return try acceptAuthentication(data, response, startedAtIntent: startedAtIntent)
+        return try await finishingEvenIfCanceled { auth in
+            let (data, response) = try await auth.api.send("/auth/v1/verify", body: body)
+            return try await auth.acceptAuthentication(data, response, startedAtIntent: startedAtIntent)
+        }
     }
 
     /// The stored session, renewed first when it is about to expire. A rejected renewal ends the session.
@@ -282,7 +307,8 @@ public actor CommunityAuth {
         // A session-replacement request remains valid across failures to invalidate an older token,
         // but a later auth attempt, logout, or unknown storage state fences it.
         guard startedAtIntent == authenticationIntent else { throw CommunityError.signedOut }
-        let session = try save(data, response)
+        // The server has issued this session, so a cancellation after the reply does not drop it.
+        let session = try save(data, response, honorCancellation: false)
         localCredentialsRevoked = false
         return session
     }
@@ -301,8 +327,13 @@ public actor CommunityAuth {
         return try save(data, response, expectedUserID: owner)
     }
 
-    private func save(_ data: Data, _ response: HTTPURLResponse, expectedUserID: String? = nil) throws -> CommunitySession {
-        try Task.checkCancellation()
+    private func save(
+        _ data: Data,
+        _ response: HTTPURLResponse,
+        expectedUserID: String? = nil,
+        honorCancellation: Bool = true
+    ) throws -> CommunitySession {
+        if honorCancellation { try Task.checkCancellation() }
         let reply = try CommunityAPI.decode(TokenReply.self, from: data, status: response.statusCode)
         let owner = AccountIdentity(reply.user.id)
         guard !deletedOwners.contains(owner) else { throw CommunityError.signedOut }
@@ -401,4 +432,32 @@ private struct TokenReply: Decodable {
     let refreshToken: String
     let expiresIn: TimeInterval
     let user: User
+}
+
+/// Hands one result to whichever comes first: the work finishing or its caller being canceled.
+private final class CancellationRace: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<CommunitySession, Error>?
+    private var early: Result<CommunitySession, Error>?
+    private var done = false
+
+    func attach(_ next: CheckedContinuation<CommunitySession, Error>) {
+        let ready = lock.withLock { () -> Result<CommunitySession, Error>? in
+            if let early { return early }
+            continuation = next
+            return nil
+        }
+        if let ready { next.resume(with: ready) }
+    }
+
+    func finish(_ result: Result<CommunitySession, Error>) {
+        let waiting = lock.withLock { () -> CheckedContinuation<CommunitySession, Error>? in
+            if done { return nil }
+            done = true
+            guard let continuation else { early = result; return nil }
+            self.continuation = nil
+            return continuation
+        }
+        waiting?.resume(with: result)
+    }
 }
