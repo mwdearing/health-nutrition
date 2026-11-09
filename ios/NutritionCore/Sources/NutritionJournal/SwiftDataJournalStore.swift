@@ -1522,7 +1522,8 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalDele
                 guard let productRow = productRows.first else {
                     throw JournalError.corruptRecord("product")
                 }
-                product = try Self.snapshot(from: productRow)
+                // Re-tagging the meal does not read nutrients, so it works on a product whose payload is damaged.
+                product = try Self.snapshot(from: productRow, allowingDamage: true)
             }
             let number = current + 1
             record.meal = stored
@@ -2597,6 +2598,15 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalDele
         return try rows.first.map { try Self.snapshot(from: $0) }
     }
 
+    public func productAllowingDamage(snapshotID: String) throws -> (product: ProductDefinition, nutrientsDamaged: Bool)? {
+        let context = ModelContext(try openContainer())
+        let rows = try context.fetch(FetchDescriptor<ProductRecord>(
+            predicate: #Predicate<ProductRecord> { $0.snapshotID == snapshotID }))
+        return try rows.first.map {
+            (try Self.snapshot(from: $0, allowingDamage: true), !Self.nutrientsReadable($0.nutrientsJSON))
+        }
+    }
+
     // MARK: Helpers
 
     private static func intakeRecord(_ id: String, in context: ModelContext) throws -> IntakeRecord? {
@@ -2698,10 +2708,11 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalDele
         return true
     }
 
-    private static func snapshot(from row: ProductRecord) throws -> ProductDefinition {
+    private static func snapshot(from row: ProductRecord, allowingDamage: Bool = false) throws -> ProductDefinition {
         // A product whose stored nutrients cannot be read is an error, not a product with none: an empty map
-        // would add nothing to the day and would not mark it partial.
-        guard nutrientsReadable(row.nutrientsJSON) else {
+        // would add nothing to the day and would not mark it partial. A caller that only needs the product's
+        // identity passes `allowingDamage` and gets the readable fields with no nutrients.
+        guard allowingDamage || nutrientsReadable(row.nutrientsJSON) else {
             throw JournalError.corruptRecord("product nutrients")
         }
         return ProductDefinition(
@@ -2858,3 +2869,5 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalDele
         return String(hash, radix: 16)
     }
 }
+
+extension SwiftDataJournalStore: JournalDamagedProductReading {}

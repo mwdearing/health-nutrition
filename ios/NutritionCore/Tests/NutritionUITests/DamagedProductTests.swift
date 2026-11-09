@@ -39,6 +39,7 @@ final class DamagedProductTests: XCTestCase {
         let model = EntryDetailViewModel(store: store, intakeID: id, timeZoneIdentifier: "UTC")
         model.load(now: now)
         XCTAssertNil(model.errorMessage)
+        XCTAssertEqual(model.productUnreadableNote, "This product's details could not be read.")
         XCTAssertTrue(model.delete(now: now))
         XCTAssertTrue(try store.activeIntakes().isEmpty)
     }
