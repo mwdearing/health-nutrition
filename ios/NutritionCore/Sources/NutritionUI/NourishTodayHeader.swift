@@ -71,10 +71,15 @@ public struct NourishTodayHeader: View {
 
     /// Whether a value shows as above zero once rounded to whole calories, as the figure is drawn.
     static func roundsAboveZero(_ value: Decimal) -> Bool {
+        wholeFigure(value) > 0
+    }
+
+    /// The whole calories a value is drawn as, halves away from zero, the same rule the widgets use (#1385 review).
+    static func wholeFigure(_ value: Decimal) -> Decimal {
         var rounded = Decimal()
         var source = value
         NSDecimalRound(&rounded, &source, 0, .plain)
-        return rounded > 0
+        return rounded
     }
 
     /// The caption under the remaining figure: over the goal it says so, and the figure beside it is how far over.
@@ -85,7 +90,7 @@ public struct NourishTodayHeader: View {
     /// Over the goal only when the rounded figure is above zero: a shortfall under half a calorie reads as zero remaining.
     static func isOverGoal(_ calories: CalorieRemaining) -> Bool {
         guard let remaining = calories.remaining, remaining < 0 else { return false }
-        return BodyActivityViewModel.whole(-remaining) != BodyActivityViewModel.whole(0)
+        return wholeFigure(-remaining) > 0
     }
 
     /// The one spoken line for the summary: remaining (or how far over), or why there is no total, then food and
@@ -96,9 +101,9 @@ public struct NourishTodayHeader: View {
         let lead: String?
         if let remaining = calories.remaining {
             lead = isOverGoal(calories)
-                ? (calories.isPartial ? "at least " : "") + "\(BodyActivityViewModel.whole(-remaining)) calories over goal"
+                ? (calories.isPartial ? "at least " : "") + "\(BodyActivityViewModel.whole(wholeFigure(-remaining))) calories over goal"
                 : (calories.isPartial && Self.roundsAboveZero(remaining) ? "up to " : "")
-                    + "\(BodyActivityViewModel.whole(max(remaining, 0))) calories remaining"
+                    + "\(BodyActivityViewModel.whole(max(wholeFigure(remaining), 0))) calories remaining"
         } else if calories.food == nil {
             lead = uncountedEntries > 0 ? "Calories can't total yet" : "Nothing logged yet"
         } else {
@@ -135,7 +140,7 @@ public struct NourishTodayHeader: View {
             let upper = calories.isPartial && !isOverGoal(calories) && Self.roundsAboveZero(value) ? "Up to " : ""
             // Over goal on a partial day is only what is known so far, so it reads "At least N".
             let overPrefix = isOverGoal(calories) && calories.isPartial ? "At least " : ""
-            remaining = overPrefix + upper + BodyActivityViewModel.whole(isOverGoal(calories) ? -value : max(value, 0))
+            remaining = overPrefix + upper + BodyActivityViewModel.whole(isOverGoal(calories) ? wholeFigure(-value) : max(wholeFigure(value), 0))
         } else if calories.goal != nil {
             remaining = "—"
         } else {
