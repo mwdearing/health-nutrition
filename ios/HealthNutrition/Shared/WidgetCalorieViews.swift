@@ -47,7 +47,7 @@ extension WidgetSnapshot {
     var calorieSpoken: String {
         let parts = [
             isOverGoal
-                ? overGoalText.map { (isPartial("energy") ? "at least " : "") + "\($0) calories over goal" }
+                ? overGoalText.map { "\($0.prefix(1).lowercased() + $0.dropFirst()) calories over goal" }
                 : remainingText.map { (remainingIsUpperBound ? "up to " : "") + "\($0) calories remaining" },
             foodNumber.map { "Food, \(isPartial("energy") ? "at least " : "")\($0) calories" },
             burnedText.map { "Burned, \($0) calories" },
