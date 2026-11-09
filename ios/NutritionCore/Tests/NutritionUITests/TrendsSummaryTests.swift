@@ -119,13 +119,17 @@ final class TrendsSummaryTests: XCTestCase {
     /// A day with one entry that states energy and one that does not reads "at least" aloud, as the average does; a
     /// fully known day does not.
     func testAPartlyKnownDayIsSpokenAsAtLeast() {
+        // The Insights rule: a day whose total cannot be formed (one entry states no energy) but whose known entries
+        // sum to 800 is a minimum, so the total is unknown and the known sum carries the figure.
         let partialDay = InsightsAverages.Day(
             key: "2023-11-14",
-            totals: DailyTotals(totals: [
-                "energy": NutrientTotal(
-                    value: .known(800, .kcal),
-                    coverage: Coverage(knownCount: 1, totalCount: 2, hasBelowReportingThreshold: false, hasUnknown: true))
-            ]))
+            totals: DailyTotals(
+                totals: [
+                    "energy": NutrientTotal(
+                        value: .unknown,
+                        coverage: Coverage(knownCount: 1, totalCount: 2, hasBelowReportingThreshold: false, hasUnknown: true))
+                ],
+                knownSums: ["energy": .known(800, .kcal)], missingCounts: ["energy": 1]))
         let summary = make([day("2023-11-15", kcal: 2_000), partialDay])
         let partial = summary.bars[5]
         let whole = summary.bars[6]
