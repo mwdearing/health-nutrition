@@ -74,6 +74,8 @@ public actor CommunityAuth {
         nonce: String,
         authorizationCode: String? = nil
     ) async throws -> CommunitySession {
+        // A caller that is already canceled sends nothing and changes no state.
+        try Task.checkCancellation()
         // The sign-in service does not ask for a challenge on an identity token, so none is requested.
         let body = try CommunityAPI.encode(AppleBody(idToken: idToken, nonce: nonce, metaSecurity: nil))
         authenticationIntent += 1
@@ -129,6 +131,7 @@ public actor CommunityAuth {
     }
 
     public func verifyEmailCode(email: String, code: String) async throws -> CommunitySession {
+        try Task.checkCancellation()
         // Checking the emailed code is not challenged either; only asking for it is.
         let body = try CommunityAPI.encode(VerifyBody(email: email, token: code, metaSecurity: nil))
         authenticationIntent += 1
