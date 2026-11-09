@@ -160,6 +160,22 @@ final class WidgetSnapshotTests: XCTestCase {
         XCTAssertFalse(snapshot.calorieSpoken.contains("at least"))
     }
 
+    func testTheInlineLineReadsTheOverGoalFigureFirst() {
+        var snapshot = WidgetSnapshot.empty(at: Date(timeIntervalSince1970: 1_700_000_000))
+        snapshot.energyKcal = 2_150
+        snapshot.remainingKcal = -150
+        XCTAssertEqual(snapshot.remainingInlineLine, "150 calories over goal")
+        snapshot.partialFigures = ["energy"]
+        snapshot.remainingIsPartial = true
+        XCTAssertEqual(snapshot.remainingInlineLine, "At least 150 calories over goal")
+        // Under goal the existing form is unchanged.
+        snapshot.remainingKcal = 1_200
+        XCTAssertEqual(snapshot.remainingInlineLine, "Calories remaining up to 1,200")
+        snapshot.remainingIsPartial = nil
+        snapshot.partialFigures = nil
+        XCTAssertEqual(snapshot.remainingInlineLine, "Calories remaining 1,200")
+    }
+
     func testOnlyTheListedFiguresAreTreatedAsPartial() {
         var snapshot = WidgetSnapshot.empty(at: Date(timeIntervalSince1970: 1_700_000_000))
         XCTAssertFalse(snapshot.isPartial("energy"))

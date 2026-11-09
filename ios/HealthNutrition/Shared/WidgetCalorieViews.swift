@@ -43,6 +43,13 @@ extension WidgetSnapshot {
         return remainingText.map { remainingIsUpperBound ? "up to \($0)" : $0 }
     }
 
+    /// The one-line widget text. Over goal it leads with the figure ("At least 150 calories over goal" on a partial
+    /// day, "150 calories over goal" on a whole one); otherwise it keeps the caption-first form.
+    var remainingInlineLine: String? {
+        guard let figure = remainingInlineText else { return nil }
+        return isOverGoal ? "\(overGoalText ?? figure) calories over goal" : "\(remainingCaption) \(figure)"
+    }
+
     /// What VoiceOver reads for the calorie block, in Today's order.
     var calorieSpoken: String {
         let parts = [
