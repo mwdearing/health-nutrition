@@ -104,8 +104,10 @@ final class AddTypedInputSwipeUITests: XCTestCase {
             RunLoop.current.run(until: Date().addingTimeInterval(0.2))
         }
         // Fail with the reason, not by dragging anyway: a drag on a form whose Back never became hittable says nothing (#866).
-        XCTAssertTrue(formBack.exists && formBack.isHittable,
-                      "the details form's Back button never became hittable, so the edge drag was not attempted. Element tree: \(app.debugDescription)")
+        guard formBack.exists && formBack.isHittable else {
+            XCTFail("the details form's Back button never became hittable, so the edge drag was not attempted. Element tree: \(app.debugDescription)")
+            return
+        }
         RunLoop.current.run(until: Date().addingTimeInterval(0.8))
         let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5))
         let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5))
