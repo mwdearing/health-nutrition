@@ -110,6 +110,7 @@ struct WidgetCalorieSummary: View {
                 Text(remainingCaption)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .privacySensitive()
             }
             WidgetFoodBurned(snapshot: snapshot, vertical: verticalDetails)
         }
