@@ -1819,6 +1819,10 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalDele
                 kindRaw: product.kind.rawValue))
             return true
         }
+        if !nutrientsReadable(row.nutrientsJSON) {
+            overwrite(row, with: product)
+            return false
+        }
         let stored = try snapshot(from: row)
         guard stored.identity == product.identity else {
             throw JournalError.snapshotConflict(id)
@@ -2412,6 +2416,11 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalDele
         let existing = try context.fetch(FetchDescriptor<ProductRecord>(
             predicate: #Predicate<ProductRecord> { $0.snapshotID == id }))
         if let row = existing.first {
+            // A row whose payload does not decode is corrupt; the incoming product is the good copy.
+            if !nutrientsReadable(row.nutrientsJSON) {
+                overwrite(row, with: product)
+                return
+            }
             let stored = try snapshot(from: row)
             if stored == product { return }
             guard stored.nutrients.isEmpty, stored.identity == product.identity else {
@@ -2675,6 +2684,20 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalDele
         }.sorted { ($0.occurredAt, $0.id) < ($1.occurredAt, $1.id) }
     }
 
+    /// Replaces a corrupt row's content with the incoming product, keeping its snapshot id.
+    private static func overwrite(_ row: ProductRecord, with product: ProductDefinition) {
+        row.productID = product.productID
+        row.name = product.name
+        row.brand = product.brand
+        row.barcode = product.barcode
+        row.labelBasis = product.labelBasis
+        row.catalogOrigin = product.catalogOrigin
+        row.catalogVersion = product.catalogVersion
+        row.kindRaw = product.kind.rawValue
+        row.nutrientsJSON = Self.encodeNutrients(
+            product.nutrients, displayNames: product.nutrientDisplayNames)
+    }
+
     private static func snapshot(from row: ProductRecord) throws -> ProductDefinition {
         // A product whose stored nutrients cannot be read is an error, not a product with none: an empty map
         // would add nothing to the day and would not mark it partial.
@@ -2721,20 +2744,24 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalDele
         return String(decoding: data, as: UTF8.self)
     }
 
+    /// The one place a stored nutrient payload is decoded. Nil when the text is present but does not decode;
+    /// an absent payload is an empty list. Every reader and the readability check go through here.
+    private static func decodeStoredNutrients(_ json: String?) -> [StoredNutrient]? {
+        guard let json else { return [] }
+        guard let data = json.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode([StoredNutrient].self, from: data)
+    }
+
     /// True when the stored nutrient payload is absent or decodes. A payload that is present but does not decode
     /// must not be read as a product with no nutrients.
     static func nutrientsReadable(_ json: String?) -> Bool {
-        guard let json else { return true }
-        guard let data = json.data(using: .utf8) else { return false }
-        return (try? JSONDecoder().decode([StoredNutrient].self, from: data)) != nil
+        decodeStoredNutrients(json) != nil
     }
 
     /// The printed names stored beside the values, keyed the same way. A payload written before the
     /// names existed carries none, so every key falls back to the name its slug spells out.
     static func decodeDisplayNames(_ json: String?) -> [String: String] {
-        guard let json, let data = json.data(using: .utf8),
-            let stored = try? JSONDecoder().decode([StoredNutrient].self, from: data)
-        else { return [:] }
+        guard let stored = decodeStoredNutrients(json) else { return [:] }
         var names: [String: String] = [:]
         for item in stored {
             guard let name = item.displayName, !name.isEmpty else { continue }
@@ -2746,9 +2773,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalDele
     /// Reads the stored values. An entry that cannot be read is left out, so it reads as unknown
     /// rather than as a number this build invented.
     static func decodeNutrients(_ json: String?) -> [String: NutrientValue] {
-        guard let json, let data = json.data(using: .utf8),
-            let stored = try? JSONDecoder().decode([StoredNutrient].self, from: data)
-        else { return [:] }
+        guard let stored = decodeStoredNutrients(json) else { return [:] }
         var values: [String: NutrientValue] = [:]
         for item in stored {
             switch item.state {
