@@ -146,6 +146,9 @@ public final class EntryDetailViewModel: ObservableObject {
     /// The rows under "Where this came from": the input, and what the snapshot stores about the values.
     @Published public private(set) var sourceDetailRows: [SourceDetailRow] = EntryDetailViewModel.sourceDetails(for: nil)
     /// The product's name and brand, and what kind of thing it is, for the header. Nil when there is no snapshot.
+    /// One line shown when the product's nutrient details could not be read; nil otherwise.
+    @Published public private(set) var productUnreadableNote: String?
+    static let unreadableProductText = "This product's details could not be read."
     @Published public private(set) var productName: String?
     @Published public private(set) var brand: String?
     @Published public private(set) var kind: ProductKind = .food
@@ -260,7 +263,11 @@ public final class EntryDetailViewModel: ObservableObject {
                     amountText: $0.amount.isNaN ? "unknown" : DecimalFormatting.text($0.amount), unit: $0.unit)
             }
             // A snapshot that cannot be read is a failed read, not an entry without a product (#775).
-            let snapshot = try current.productSnapshotID.flatMap { try store.product(snapshotID: $0) }
+            // A product whose nutrients cannot be decoded still opens, with its readable fields and no
+            // nutrients, so the entry can be corrected or deleted.
+            let read = try current.productSnapshotID.flatMap { try store.readProduct(snapshotID: $0) }
+            let snapshot = read?.product
+            productUnreadableNote = (read?.nutrientsDamaged ?? false) ? Self.unreadableProductText : nil
             additionalNutrients = Self.additionalNutrients(of: snapshot)
             sourceLine = Self.sourceLine(for: snapshot)
             sourceDetailRows = Self.sourceDetails(for: snapshot)
@@ -485,7 +492,7 @@ public final class EntryDetailViewModel: ObservableObject {
             fieldErrors = errors
             guard errors.isEmpty, !parsed.isEmpty else { return false }
             var product: ProductDefinition?
-            if let snapshotID = current?.productSnapshotID { product = try store.product(snapshotID: snapshotID) }
+            if let snapshotID = current?.productSnapshotID { product = try store.readProduct(snapshotID: snapshotID)?.product }
             let correctedTime: Date? = storedOccurredAt == nil || storedOccurredAt == occurredAt
                 ? nil
                 : occurredAt

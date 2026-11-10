@@ -833,3 +833,21 @@ public enum DrinkType: String, CaseIterable, Sendable {
         }
     }
 }
+
+/// A store that can read a product whose nutrient payload does not decode, as its readable fields with no
+/// nutrients. Reads through `JournalStore.product(snapshotID:)` still throw for such a row; this is for the
+/// callers that must not be stranded by it (export, the entry screen, recipe logging).
+public protocol JournalDamagedProductReading: JournalStore {
+    func productAllowingDamage(snapshotID: String) throws -> (product: ProductDefinition, nutrientsDamaged: Bool)?
+}
+
+extension JournalStore {
+    /// The product with its readable fields, and whether its nutrients could not be read. A store without the
+    /// tolerant read answers as `product(snapshotID:)` does.
+    public func readProduct(snapshotID: String) throws -> (product: ProductDefinition, nutrientsDamaged: Bool)? {
+        if let tolerant = self as? JournalDamagedProductReading {
+            return try tolerant.productAllowingDamage(snapshotID: snapshotID)
+        }
+        return try product(snapshotID: snapshotID).map { ($0, false) }
+    }
+}

@@ -204,6 +204,11 @@ public struct EntryDetailView: View {
                 }
             }
             Section("Where this came from") {
+                if let note = model.productUnreadableNote {
+                    Text(note)
+                        .font(.footnote)
+                        .foregroundStyle(TokenColors.textSecondary)
+                }
                 HStack {
                     Text(model.sourceLine)
                         .font(.body)
