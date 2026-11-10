@@ -157,6 +157,15 @@ jobs:
       - name: Generate the Xcode project
         working-directory: ios/HealthNutrition
         run: '"$RUNNER_TEMP/xcodegen-dist/xcodegen/bin/xcodegen" generate'
+      # The runner image may not carry the watchOS simulator runtime, so install it when it is missing.
+      - name: Install the watchOS simulator runtime if missing
+        timeout-minutes: 40
+        run: |
+          set -euo pipefail
+          if ! xcrun simctl list runtimes | grep -q "watchOS.*available"; then
+            xcodebuild -downloadPlatform watchOS
+          fi
+          xcrun simctl list runtimes | grep -i watchos || true
       - name: Create the Apple Watch simulator
         id: simulator
         run: |
