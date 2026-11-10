@@ -120,4 +120,4 @@ Checked pairs (light / dark ratio):
 - `StatTile`: a small card with an icon, one figure and an optional bar; `DesignRadius.tile`, `track` and `accent` for the bar.
 - `HeroCard`: the deep teal card at the top of a screen; `hero` fill, `heroText` and `heroSecondaryText`, content drawn in the dark appearance.
 - `CalorieRing`: a ring that fills with the day's calories around the caller's content; `track` for the unfilled arc and `accent` for the fill, or `heroTrack` and mint on the hero.
-- `MacroBar`: one macro's label and figure above a thin bar in the macro's colour; `textSecondary` for the label, `track` behind the fill, and on the hero `heroTrack`, `heroText` and `heroSecondaryText`.
+- `MacroBar`: one macro's label and figure above a thin bar in the macro's color; `textSecondary` for the label, `track` behind the fill, and on the hero `heroTrack`, `heroText` and `heroSecondaryText`.

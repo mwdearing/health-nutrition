@@ -45,7 +45,7 @@ struct OpenFoodFactsProductLookup {
         let trimmedText = (text?.isEmpty == false) ? text : nil
         let quantity = product.servingQuantity.flatMap { $0 > 0 ? $0 : nil }
         guard trimmedText != nil || quantity != nil else { return nil }
-        // The source's quantity is in the unit its text names: millilitres for "250 ml", grams for "30 g".
+        // The source's quantity is in the unit its text names: milliliters for "250 ml", grams for "30 g".
         // A text naming neither gives no unit, so the amount is not opened on it.
         let lowered = trimmedText?.lowercased() ?? ""
         let unit: MeasureUnit?

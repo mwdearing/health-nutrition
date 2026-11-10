@@ -187,7 +187,7 @@ struct OpenFoodFactsTextList: Decodable {
 }
 
 /// A reply from the full-text search service. Its index holds names, brands and per-100 figures, but
-/// not the serving or whether a product is measured in grams or millilitres.
+/// not the serving or whether a product is measured in grams or milliliters.
 struct OpenFoodFactsSearchResponse: Decodable {
     /// A field of the wrong shape is read as missing, so one odd hit cannot fail the whole reply.
     struct Hit: Decodable {

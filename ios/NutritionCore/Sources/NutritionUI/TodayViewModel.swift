@@ -709,7 +709,7 @@ public final class TodayViewModel: ObservableObject {
         return true
     }
 
-    /// The water other apps logged to Apple Health today, in millilitres, added to Today's water the way their
+    /// The water other apps logged to Apple Health today, in milliliters, added to Today's water the way their
     /// nutrients are added to Today's lines. The read leaves out the samples this app wrote, so a drink logged here
     /// is never counted twice. A read that did not complete, or Health not connected, adds nothing.
     static func outsideWaterMilliliters(_ outside: HealthIntakeTotals.Outside) -> Decimal {

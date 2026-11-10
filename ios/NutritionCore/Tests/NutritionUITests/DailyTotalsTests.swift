@@ -395,7 +395,7 @@ final class DailyTotalsTests: XCTestCase {
                        .known(Decimal(string: "5.4")! * Decimal(string: "283.49523125")! / 100, .g))
     }
 
-    /// The same basis on a millilitre entry is per 100 mL, so a 354.88235475 mL drink of a product stating
+    /// The same basis on a milliliter entry is per 100 mL, so a 354.88235475 mL drink of a product stating
     /// 40 kcal per 100 mL is 141.95 kcal.
     func testPerHundredGOrMLScalesAMillilitreEntryPer100ML() throws {
         let store = try makeStore()
@@ -413,7 +413,7 @@ final class DailyTotalsTests: XCTestCase {
                        .known(Decimal(40) * Decimal(string: "354.88235475")! / 100, .kcal))
     }
 
-    /// A scoop or a piece is neither grams nor millilitres, so "per 100 g or mL" cannot scale it and the
+    /// A scoop or a piece is neither grams nor milliliters, so "per 100 g or mL" cannot scale it and the
     /// nutrient stays unknown rather than zero.
     func testPerHundredGOrMLLeavesACountedEntryUnknown() throws {
         let store = try makeStore()

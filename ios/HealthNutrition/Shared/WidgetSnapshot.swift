@@ -121,7 +121,7 @@ enum WidgetFigure {
         return text + (partial ? "+" : "") + " " + unit
     }
 
-    /// Water as the person reads it: whole fluid ounces under US units, whole millilitres otherwise; dashes when the
+    /// Water as the person reads it: whole fluid ounces under US units, whole milliliters otherwise; dashes when the
     /// value is missing or cannot be shown.
     /// A partial total (some water entries have no known amount) gets the same "+" as the macros: "1,000+ mL".
     static func water(_ milliliters: Double?, usUnits: Bool?, partial: Bool = false) -> String {

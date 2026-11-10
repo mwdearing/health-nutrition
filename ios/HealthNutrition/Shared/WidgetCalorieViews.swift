@@ -34,7 +34,7 @@ extension WidgetSnapshot {
     }
 
     /// The one figure a small gauge holds: Food ("N+" when partial). The ring is the share of the goal eaten, so its
-    /// centre is what was eaten, as before; Remaining is on the larger families and in the inline text.
+    /// center is what was eaten, as before; Remaining is on the larger families and in the inline text.
     var gaugeHeadline: String? { foodText }
 
     /// Remaining for a single line of text: "up to N" on a partial day with something left, otherwise the number.

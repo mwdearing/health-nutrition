@@ -15,11 +15,11 @@ counted, both cards say "Nothing logged this week" (or "this month", or "in 6 mo
 - **Calories, daily average.** The average as a large figure, and how far it is from the daily calorie goal, always
   as a positive figure: "150 under goal", "150 over goal" or "On goal". Below it, one bar per day for a week (today's bar is
   marked and its day letter bold), 30 daily bars for a month with a date under about one bar in seven, and 26
-  weekly bars for 6 months, each the average of that week's counted days and labelled by the week's first day and a dashed line at the goal labelled with its value. When a counted day states only part of a figure, the figures read "at least", as Insights does. With no calorie goal (none
+  weekly bars for 6 months, each the average of that week's counted days and labeled by the week's first day and a dashed line at the goal labeled with its value. When a counted day states only part of a figure, the figures read "at least", as Insights does. With no calorie goal (none
   set, or a goal of zero) there is no line and no difference. It is one VoiceOver element that reads the average, the
   difference and each day's figure; the chart height grows with the text size, up to a cap.
 - **Macros, daily average.** One bar split into protein, carbohydrate and fat by their share of the calories the
-  averaged grams make (4, 4 and 9 calories per gram), and a legend with the grams of each. The colours only fill the
+  averaged grams make (4, 4 and 9 calories per gram), and a legend with the grams of each. The colors only fill the
   bar and the legend dots; the words and grams carry the meaning.
 
 Code: `TrendsRange`, `TrendsSummary`, `TrendsCaloriesCard` and `TrendsMacrosCard` in `TrendsSummaryCards.swift`.

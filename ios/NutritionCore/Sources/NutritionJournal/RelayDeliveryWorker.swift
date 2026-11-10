@@ -749,11 +749,11 @@ public struct RelayDeliveryWorker: Sendable {
 
     /// Whether a store read failed for a reason another attempt can get past.
     ///
-    /// **Only what is recognised as passing is retried.** A closed store, a database another connection holds
+    /// **Only what is recognized as passing is retried.** A closed store, a database another connection holds
     /// busy or locked, and a persistent-store timeout can clear by the next run. Everything else cannot be
     /// assumed to: a stored record that does not decode, a corrupt file or a refused permission reads the same
     /// way every time, so retrying it would reschedule the projection forever and hold back the ones behind
-    /// it. Anything not recognised here is treated as lasting and goes to a person.
+    /// it. Anything not recognized here is treated as lasting and goes to a person.
     private static func isTransientRead(_ error: any Error) -> Bool {
         if error is DecodingError { return false }
         if let journal = error as? JournalError { return journal == .closed }

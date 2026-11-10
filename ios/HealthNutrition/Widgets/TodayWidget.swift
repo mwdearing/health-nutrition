@@ -147,7 +147,7 @@ struct TodayWidgetView: View {
         }
     }
 
-    /// One macro: its name and grams in white over a bar filled in the macro colour; one spoken label.
+    /// One macro: its name and grams in white over a bar filled in the macro color; one spoken label.
     private func macroBar(_ name: String, grams: Double?, share: Double?, color: Color, key: String) -> some View {
         let figure = WidgetFigure.figure(grams, unit: "g", partial: snapshot?.isPartial(key) == true)
         return VStack(alignment: .leading, spacing: 2) {
