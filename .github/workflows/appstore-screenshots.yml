@@ -170,8 +170,8 @@ jobs:
         id: simulator
         run: |
           set -euo pipefail
-          type_id=$(xcrun simctl list devicetypes | awk -F '[()]' '/Apple Watch Series 10 \(46mm\)/{print $2; exit}')
-          runtime_id=$(xcrun simctl list runtimes | awk '/watchOS/ && /available/{print $NF; exit}' | tr -d '()')
+          type_id=$(xcrun simctl list devicetypes --json | python3 -I -c 'import json,sys; print(next((t["identifier"] for t in json.load(sys.stdin)["devicetypes"] if t["name"] == "Apple Watch Series 10 (46mm)"), ""))')
+          runtime_id=$(xcrun simctl list runtimes available --json | python3 -I -c 'import json,sys; print(next((r["identifier"] for r in json.load(sys.stdin)["runtimes"] if "watchOS" in r["name"]), ""))')
           [[ -n "$type_id" && -n "$runtime_id" ]] || { echo "::error::no Apple Watch device type or watchOS runtime on this runner"; xcrun simctl list runtimes; exit 1; }
           udid=$(xcrun simctl create "Watch Shots" "$type_id" "$runtime_id")
           xcrun simctl boot "$udid"
