@@ -87,13 +87,14 @@ public enum DailyTotalsBuilder {
         // One snapshot is read once per build, however many intakes and nutrients refer to it.
         var snapshots: [String: ProductDefinition?] = [:]
         var entries: [(components: [IntakeComponent], snapshot: ProductDefinition?, category: String, typed: Bool)] = []
-        var withoutRevision = 0
+        var waterWithoutRevision = 0
+        var otherWithoutRevision = 0
         for intake in intakes {
             let revisions = try store.revisions(of: intake.id)
-            // An intake whose current revision cannot be found states nothing: it counts as unknown for every nutrient
-            // below, so the day reads partial instead of the entry vanishing from it.
+            // An intake whose current revision cannot be found states nothing: it counts as unknown below (for water only if it is a
+            // water entry, otherwise for every nutrient but water), so the day reads partial instead of the entry vanishing from it.
             guard let current = revisions.first(where: { $0.number == intake.currentRevision }) else {
-                withoutRevision += 1
+                if intake.category == waterCategory { waterWithoutRevision += 1 } else { otherWithoutRevision += 1 }
                 continue
             }
             let snapshot = Self.snapshot(of: current, in: &snapshots, using: store)
@@ -118,6 +119,9 @@ public enum DailyTotalsBuilder {
                 if contribution.contains(.unknown) { missing += 1 }
                 values.append(contentsOf: contribution)
             }
+            // A water entry is unknown only for water; any other entry is unknown for everything except water, since a
+            // food is no evidence about water (as in contributions(of:)).
+            let withoutRevision = nutrient == waterKey ? waterWithoutRevision : otherWithoutRevision
             missing += withoutRevision
             values.append(contentsOf: Array(repeating: NutrientValue.unknown, count: withoutRevision))
             missingCounts[nutrient] = missing
