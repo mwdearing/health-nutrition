@@ -143,3 +143,71 @@ jobs:
           name: store-shots-xcresult-${{ matrix.size }}
           path: ${{ runner.temp }}/store-shots.xcresult
           retention-days: 7
+
+  watch:
+    name: Apple Watch screenshot
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Show Xcode version
+        run: xcodebuild -version
+      - name: Install XcodeGen (pinned release, checksum verified)
+        run: bash "$GITHUB_WORKSPACE/.github/scripts/install-xcodegen.sh"
+      - name: Generate the Xcode project
+        working-directory: ios/HealthNutrition
+        run: '"$RUNNER_TEMP/xcodegen-dist/xcodegen/bin/xcodegen" generate'
+      - name: Create the Apple Watch simulator
+        id: simulator
+        run: |
+          set -euo pipefail
+          type_id=$(xcrun simctl list devicetypes | awk -F '[()]' '/Apple Watch Series 10 \(46mm\)/{print $2; exit}')
+          runtime_id=$(xcrun simctl list runtimes | awk '/watchOS/ && /available/{print $NF; exit}' | tr -d '()')
+          [[ -n "$type_id" && -n "$runtime_id" ]] || { echo "::error::no Apple Watch device type or watchOS runtime on this runner"; xcrun simctl list runtimes; exit 1; }
+          udid=$(xcrun simctl create "Watch Shots" "$type_id" "$runtime_id")
+          xcrun simctl boot "$udid"
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+      - name: Build the Watch app
+        run: |
+          set -euo pipefail
+          xcodebuild -project ios/HealthNutrition/HealthNutrition.xcodeproj -scheme HealthNutritionWatch \
+            -destination "platform=watchOS Simulator,id=${{ steps.simulator.outputs.udid }}" \
+            -derivedDataPath "$RUNNER_TEMP/watch-derived" CODE_SIGNING_ALLOWED=NO build > "$RUNNER_TEMP/watch-build.log" 2>&1 || { tail -40 "$RUNNER_TEMP/watch-build.log"; exit 1; }
+      - name: Seed the Watch summary and capture the screen
+        env:
+          UDID: ${{ steps.simulator.outputs.udid }}
+        run: |
+          set -euo pipefail
+          app=$(find "$RUNNER_TEMP/watch-derived" -name "HealthNutritionWatch.app" -type d | head -1)
+          [[ -n "$app" ]] || { echo "::error::Watch app not built"; exit 1; }
+          bundle=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$app/Info.plist")
+          xcrun simctl install "$UDID" "$app"
+          group_dir=$(xcrun simctl get_app_container "$UDID" "$bundle" groups | awk '/group.'"${bundle%.watchkitapp}"'/{print $NF; exit}')
+          [[ -n "$group_dir" ]] || { echo "::error::no app group container for $bundle"; exit 1; }
+          python3 -I - "$group_dir" <<'PY'
+          import json, sys, datetime, pathlib
+          now = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
+          snap = {
+              "generatedAt": now.isoformat().replace("+00:00", "Z"),
+              "hasEntries": True,
+              "energyKcal": 1420, "energyGoalKcal": 2000,
+              "proteinGrams": 96, "carbohydrateGrams": 150, "fatGrams": 52,
+              "waterMilliliters": 1500,
+              "usUnits": False,
+              "partialFigures": [],
+              "remainingKcal": 580, "burnedKcal": 0, "remainingIsPartial": False,
+          }
+          path = pathlib.Path(sys.argv[1]) / "today-widget.json"
+          path.write_text(json.dumps(snap))
+          print("seeded", path)
+          PY
+          xcrun simctl launch "$UDID" "$bundle" > /dev/null
+          sleep 8
+          mkdir -p "$RUNNER_TEMP/watch-screenshots"
+          xcrun simctl io "$UDID" screenshot "$RUNNER_TEMP/watch-screenshots/watch-today.png"
+          file "$RUNNER_TEMP/watch-screenshots/watch-today.png"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: appstore-screenshots-watch
+          path: ${{ runner.temp }}/watch-screenshots
+          if-no-files-found: error
