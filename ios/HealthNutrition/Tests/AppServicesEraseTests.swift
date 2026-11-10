@@ -494,7 +494,7 @@ final class MedicationReminderFollowUpTests: XCTestCase {
         XCTAssertFalse(confirmed)
     }
 
-    private func controller(
+    private func makeController(
         _ scheduler: CountingMedicationScheduler, store: MedicationStore, medication: Medication
     ) throws -> (MedicationReminderController, InMemoryMedicationReminderStore) {
         try store.saveMedication(medication)
@@ -516,7 +516,7 @@ final class MedicationReminderFollowUpTests: XCTestCase {
         let scheduler = CountingMedicationScheduler()
         scheduler.state = .notDetermined
         let med = Medication(name: "Example weekly injection", unit: .mg, scheduleDays: 7)
-        let (controller, reminderStore) = try controller(scheduler, store: InMemoryMedicationStore(), medication: med)
+        let (controller, reminderStore) = try makeController(scheduler, store: InMemoryMedicationStore(), medication: med)
         await controller.sync()
         XCTAssertEqual(reminderStore.settings.count, 1)
         XCTAssertNotNil(controller.time(for: med.id))
@@ -527,7 +527,7 @@ final class MedicationReminderFollowUpTests: XCTestCase {
     func testSwitchingOffRemovesTheMedicationsRequests() async throws {
         let scheduler = CountingMedicationScheduler()
         let med = Medication(name: "Example weekly injection", unit: .mg, scheduleDays: 7)
-        let (controller, _) = try controller(scheduler, store: InMemoryMedicationStore(), medication: med)
+        let (controller, _) = try makeController(scheduler, store: InMemoryMedicationStore(), medication: med)
         await controller.setReminder(nil, for: med.id)
         XCTAssertEqual(scheduler.cancelled, [med.id])
     }
@@ -537,7 +537,7 @@ final class MedicationReminderFollowUpTests: XCTestCase {
         let scheduler = CountingMedicationScheduler()
         let store = FlakyMedicationStore()
         let med = Medication(name: "Example weekly injection", unit: .mg, scheduleDays: 7)
-        let (controller, reminderStore) = try controller(scheduler, store: store, medication: med)
+        let (controller, reminderStore) = try makeController(scheduler, store: store, medication: med)
         store.failing = true
         await controller.sync()
         XCTAssertEqual(reminderStore.settings.count, 1)
