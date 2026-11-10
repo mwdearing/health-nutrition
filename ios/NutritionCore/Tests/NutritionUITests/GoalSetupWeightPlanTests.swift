@@ -495,7 +495,7 @@ final class GoalSetupWeightPlanTests: XCTestCase {
         prefs.setUnitSystem(.usCustomary)
         model.unitSystemDidChange()
 
-        XCTAssertEqual(model.weightPoundsText, "7o")
+        XCTAssertEqual(model.weightPoundsText, "7o kg", "the unit the text was typed in is shown (#1104)")
         XCTAssertEqual(model.goalWeightPoundsText, "6o")
         XCTAssertEqual(model.heightFeetText, "18o")
         XCTAssertEqual(model.heightInchesText, "")
