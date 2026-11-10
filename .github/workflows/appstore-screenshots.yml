@@ -181,7 +181,7 @@ jobs:
           set -euo pipefail
           xcodebuild -project ios/HealthNutrition/HealthNutrition.xcodeproj -scheme HealthNutritionWatch \
             -destination "platform=watchOS Simulator,id=${{ steps.simulator.outputs.udid }}" \
-            -derivedDataPath "$RUNNER_TEMP/watch-derived" CODE_SIGNING_ALLOWED=NO build > "$RUNNER_TEMP/watch-build.log" 2>&1 || { tail -40 "$RUNNER_TEMP/watch-build.log"; exit 1; }
+            -derivedDataPath "$RUNNER_TEMP/watch-derived" CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY="-" build > "$RUNNER_TEMP/watch-build.log" 2>&1 || { tail -40 "$RUNNER_TEMP/watch-build.log"; exit 1; }
       - name: Seed the Watch summary and capture the screen
         env:
           UDID: ${{ steps.simulator.outputs.udid }}
