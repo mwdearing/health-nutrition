@@ -206,7 +206,8 @@ jobs:
               "partialFigures": [],
               "remainingKcal": 580, "burnedKcal": 0, "remainingIsPartial": False,
           }
-          path = pathlib.Path(sys.argv[1]) / "today-widget.json"
+          path = pathlib.Path(sys.argv[1]) / "WidgetSummary" / "today-widget.json"
+          path.parent.mkdir(parents=True, exist_ok=True)
           path.write_text(json.dumps(snap))
           print("seeded", path)
           PY
