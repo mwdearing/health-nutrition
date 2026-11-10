@@ -102,6 +102,8 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
     /// The weight text that did not read as a number, kept with the unit it was typed in on the other side of a
     /// switch (#1104). The pair is (kilograms field, pounds field), so a switch back restores the text as typed.
     private var carriedWeight: (kilograms: String, pounds: String)?
+    /// The same for the goal weight, kept as (kilograms field, pounds field) across a unit switch (#1104).
+    private var carriedGoalWeight: (kilograms: String, pounds: String)?
     /// The drafts exactly as the last estimate wrote them, so a pace change can tell untouched drafts from edited ones.
     private var estimatedTargets: [String: String]?
 
@@ -177,7 +179,16 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
                 carriedWeight = (kilograms: weightKilogramsText, pounds: labelled)
                 weightPoundsText = labelled
             }
-            goalWeightPoundsText = goal?.text ?? goalWeightKilogramsText
+            if let goalWeight = goal {
+                goalWeightPoundsText = goalWeight.text
+                carriedGoalWeight = nil
+            } else if let carried = carriedGoalWeight, carried.kilograms == goalWeightKilogramsText {
+                goalWeightPoundsText = carried.pounds
+            } else {
+                let labelled = Self.labelledWeight(goalWeightKilogramsText, unit: "kg")
+                carriedGoalWeight = (kilograms: goalWeightKilogramsText, pounds: labelled)
+                goalWeightPoundsText = labelled
+            }
             if let height {
                 carriedHeight = nil
                 heightFeetText = height.feetText
@@ -200,7 +211,16 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
                 carriedWeight = (kilograms: labelled, pounds: weightPoundsText)
                 weightKilogramsText = labelled
             }
-            goalWeightKilogramsText = goal?.text ?? goalWeightPoundsText
+            if let goalWeight = goal {
+                goalWeightKilogramsText = goalWeight.text
+                carriedGoalWeight = nil
+            } else if let carried = carriedGoalWeight, carried.pounds == goalWeightPoundsText {
+                goalWeightKilogramsText = carried.kilograms
+            } else {
+                let labelled = Self.labelledWeight(goalWeightPoundsText, unit: "lb")
+                carriedGoalWeight = (kilograms: labelled, pounds: goalWeightPoundsText)
+                goalWeightKilogramsText = labelled
+            }
             if let height {
                 carriedHeight = nil
                 heightCentimetersText = height.centimetersText
@@ -609,6 +629,7 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
         step = .aim
         carriedHeight = nil
         carriedWeight = nil
+        carriedGoalWeight = nil
         aim = nil
         sex = nil
         ageText = ""
