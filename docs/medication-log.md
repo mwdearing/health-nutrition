@@ -70,6 +70,34 @@ A refused save writes nothing. Saving a medication or dose with an existing id r
 Removing a medication also removes its doses. Changing a medication's unit leaves every dose
 already logged in its old unit.
 
+## Reminders
+
+A medication that is active and keeps a schedule can have a reminder. It is off by default and is set per
+medication, on the medication's history screen, under **Reminder**: the switch **Remind me on due days**, and
+a time of day (09:00 until the person changes it) while the switch is on.
+
+- **What triggers it.** One local notification for the day the schedule next asks for a dose (the last
+  dose's day plus the schedule's days), at the time picked. Nothing is set when there is no dose yet, when
+  the dose's day cannot be read, when that day has passed, when the picked time is already past today, for
+  an archived medication, for one with no schedule, or while the Medication log switch is off in Settings.
+  Logging, undoing, editing or deleting a dose, adding or archiving a medication, switching the log on or
+  off, opening the app and returning to it all set the notification again.
+- **The text.** The title is "Medication log" and the body is "A dose in your medication log is due today."
+  The notification does not name the medication or a dose, and gives no advice.
+- **The footer** under the switch says what is pending, or why nothing is.
+- **Permission.** Switching a reminder on asks for notification permission only when it has not been
+  decided. Opening the app never asks, and while the choice is undecided it leaves the settings alone. If
+  notifications are turned off for the app, every medication reminder switches off and says so.
+- **Unreadable log.** If the medication log cannot be read, nothing stays pending, the settings are kept and the
+  screen says reminders are paused until it can be read.
+- **At most 20** medication reminders are pending at once, soonest first.
+- **Switching off removes it.** Switching a reminder off removes its pending and its already delivered
+  notification; switching the log off removes the pending ones and keeps the settings.
+- **Erase all data removes them**: the settings and every pending or delivered request with the
+  `medication-reminder-` prefix, whether or not its medication still has a setting. The erase waits for the
+  removal before its check, and names "medication reminders" if one is still there or the removal could not be confirmed.
+- Stored on this device only (`display.reminders.medication`). Not exported.
+
 ## Store
 
 The medications and doses are kept in their own store file, `medications.store`, separate from

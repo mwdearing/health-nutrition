@@ -35,7 +35,8 @@ public struct MedicationDoseDraft: Equatable {
 @MainActor
 public final class MedicationHistoryViewModel: ObservableObject {
     private let store: MedicationStore
-    private let medicationID: UUID
+    /// The medication this history belongs to.
+    public let medicationID: UUID
     private let now: () -> Date
     private let timeZone: () -> TimeZone
 
@@ -47,6 +48,10 @@ public final class MedicationHistoryViewModel: ObservableObject {
     @Published public private(set) var errorMessage: String?
     /// Whether a dose was edited or deleted here, so the list behind can read the log again.
     @Published public private(set) var didChange = false
+    /// Whether a reminder can be offered: the medication is active and keeps a schedule.
+    @Published public private(set) var canRemind = false
+    /// Called after a dose is saved or deleted here, so the medication reminders follow the change at once.
+    public var onLogChanged: (() -> Void)?
 
     /// A view model over one medication's doses. `now` is kept for the same clock as the list, and `timeZone` is the
     /// device's zone, which a changed time takes.
@@ -70,10 +75,12 @@ public final class MedicationHistoryViewModel: ObservableObject {
         }
         guard let medication = medications.first(where: { $0.id == medicationID }) else {
             rows = []
+            canRemind = false
             errorMessage = "This medication is no longer in the list."
             return
         }
         title = medication.name
+        canRemind = !medication.isArchived && medication.scheduleDays != nil
         rows = doses.map(Self.row(for:))
         errorMessage = nil
     }
@@ -115,6 +122,7 @@ public final class MedicationHistoryViewModel: ObservableObject {
         }
         didChange = true
         load()
+        onLogChanged?()
         return nil
     }
 
@@ -128,6 +136,7 @@ public final class MedicationHistoryViewModel: ObservableObject {
         }
         didChange = true
         load()
+        onLogChanged?()
     }
 
     // MARK: - Reading
