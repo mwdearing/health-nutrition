@@ -2703,6 +2703,10 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalDele
         guard storedIdentity == product.identity else {
             throw JournalError.snapshotConflict(product.snapshotID)
         }
+        // An incoming product that states no nutrients has nothing to heal the row with: rewriting the payload as an
+        // empty list would turn damage into a valid "states nothing". The row stays damaged and the caller's change
+        // (an entry edit, say) still goes through.
+        guard !product.nutrients.isEmpty else { return true }
         row.nutrientsJSON = Self.encodeNutrients(
             product.nutrients, displayNames: product.nutrientDisplayNames)
         return true
