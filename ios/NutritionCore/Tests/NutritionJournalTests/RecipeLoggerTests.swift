@@ -20,6 +20,20 @@ final class RecipeLoggerTests: XCTestCase {
         return try XCTUnwrap(try journal.product(snapshotID: snapshotID))
     }
 
+    func testARecipeLogsAgainAfterItsSnapshotWasDamaged() throws {
+        let journal = try makeJournal()
+        _ = try RecipeLogger.logPortion(
+            store: journal, version: sampleVersion(), portion: 1, now: when, id: intakeID,
+            timeZoneIdentifier: "UTC", meal: "dinner")
+        try journal.damageNutrientsOnSnapshotForTesting(snapshotID: "recipe:recipe-1:v1")
+        let second = "0b6f7d3e-5a1c-4c52-9a2e-3f1d8c7b6a11"
+        _ = try RecipeLogger.logPortion(
+            store: journal, version: sampleVersion(), portion: 1, now: when, id: second,
+            timeZoneIdentifier: "UTC", meal: "dinner")
+        XCTAssertEqual(try journal.activeIntakes().count, 2)
+        XCTAssertNoThrow(try loggedProduct(journal, intakeID: second))
+    }
+
     /// One intake, one revision, ONE component named after the recipe: the recipe the user chose,
     /// not a list of nutrients.
     func testLogCreatesOneIntakeWithOneComponentNamedAfterTheRecipe() throws {

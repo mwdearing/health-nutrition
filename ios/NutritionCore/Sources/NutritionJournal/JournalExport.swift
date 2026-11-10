@@ -995,7 +995,7 @@ public enum JournalExporter {
                     if let cached = productsByID[snapshotID] {
                         resolved = cached
                     } else {
-                        guard let product = try store.product(snapshotID: snapshotID) else {
+                        guard let product = try store.readProduct(snapshotID: snapshotID)?.product else {
                             throw JournalExportError.missingProductSnapshot(snapshotID)
                         }
                         resolved = JournalExportProvenance(product: product)
@@ -1018,7 +1018,7 @@ public enum JournalExporter {
             // because repeating the favorite later needs the snapshot and not just the id.
             for favorite in favoriteList {
                 guard let snapshotID = favorite.productSnapshotID, productsByID[snapshotID] == nil else { continue }
-                guard let product = try store.product(snapshotID: snapshotID) else {
+                guard let product = try store.readProduct(snapshotID: snapshotID)?.product else {
                     throw JournalExportError.missingProductSnapshot(snapshotID)
                 }
                 productsByID[snapshotID] = JournalExportProvenance(product: product)
@@ -1034,7 +1034,7 @@ public enum JournalExporter {
             // An item keeps its product for the reason a favorite does: logging the meal again needs the snapshot.
             for item in savedMealList.flatMap(\.items) {
                 guard let snapshotID = item.productSnapshotID, productsByID[snapshotID] == nil else { continue }
-                guard let product = try store.product(snapshotID: snapshotID) else {
+                guard let product = try store.readProduct(snapshotID: snapshotID)?.product else {
                     throw JournalExportError.missingProductSnapshot(snapshotID)
                 }
                 productsByID[snapshotID] = JournalExportProvenance(product: product)

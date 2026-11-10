@@ -89,7 +89,7 @@ public enum RecipeLogger {
                 catalogOrigin: catalogOrigin, catalogVersion: String(version.number), nutrients: perServing)
         }
         let plain = product(plainSnapshotID(recipeID: version.recipeID, number: version.number))
-        guard let stored = try store.product(snapshotID: plain.snapshotID), stored != plain,
+        guard let stored = try store.readProduct(snapshotID: plain.snapshotID)?.product, stored != plain,
             !(stored.nutrients.isEmpty && stored.identity == plain.identity)
         else { return plain }
         return product(digestSnapshotID(
