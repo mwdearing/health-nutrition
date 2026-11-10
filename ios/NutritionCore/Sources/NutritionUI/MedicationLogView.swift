@@ -101,7 +101,7 @@ public struct MedicationLogView: View {
         }
         .navigationDestination(item: $historyMedicationID) { medicationID in
             MedicationHistoryView(
-                model: model.historyModel(for: medicationID),
+                model: model.historyModel(for: medicationID), reminders: model.reminders,
                 onClose: { changed in if changed { self.model.historyChanged() } })
         }
     }

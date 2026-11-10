@@ -147,11 +147,12 @@ final class AppServicesEraseTests: XCTestCase {
         ])
     }
 
-    /// A system scheduler that also supports custom reminders adds "custom reminders" to the erase, after the
-    /// daily reminders and before the journal, so a custom request is cleared too.
+    /// A system scheduler that also supports custom and medication reminders adds "custom reminders" and then
+    /// "medication reminders" to the erase, after the daily reminders and before the journal, so their requests are
+    /// cleared too.
     func testEraseOrderNamesIncludeCustomRemindersWithTheSystemScheduler() throws {
         XCTAssertEqual(eraseNamesFromBuilderInputs(withCustomReminders: true), [
-            "widget data", "saved meals", "supplements", "reminders", "custom reminders",
+            "widget data", "saved meals", "supplements", "reminders", "custom reminders", "medication reminders",
             "journal", "favorites", "recipes", "goals", "medications",
         ])
     }
@@ -161,6 +162,12 @@ final class AppServicesEraseTests: XCTestCase {
     func testTheCustomReminderDecisionTakesTheCustomSideOnlyWhereTheSchedulerSupportsIt() {
         XCTAssertNotNil(AppServices.customReminderScheduling(of: CustomCapableReminderScheduler()))
         XCTAssertNil(AppServices.customReminderScheduling(of: RecordingReminderScheduler()))
+    }
+
+    /// The medication-reminder decision, both sides, like the custom one.
+    func testTheMedicationReminderDecisionTakesItOnlyWhereTheSchedulerSupportsIt() {
+        XCTAssertNotNil(AppServices.medicationReminderScheduling(of: MedicationCapableReminderScheduler()))
+        XCTAssertNil(AppServices.medicationReminderScheduling(of: RecordingReminderScheduler()))
     }
 
     /// The erase order from eraseOrder, with stores in a temporary directory and fakes for the reminder centers.
@@ -181,6 +188,9 @@ final class AppServicesEraseTests: XCTestCase {
         if withCustomReminders {
             reminders.append(CustomReminderEraser(
                 store: UserDefaultsCustomReminderStore(), scheduler: CustomCapableReminderScheduler(),
+                erasures: ReminderErasures()))
+            reminders.append(MedicationReminderEraser(
+                store: InMemoryMedicationReminderStore(), scheduler: MedicationCapableReminderScheduler(),
                 erasures: ReminderErasures()))
         }
         let order = ConnectionsPrivacyViewModel.eraseOrder(ConnectionsPrivacyViewModel.EraseStores(
@@ -209,6 +219,9 @@ final class AppServicesEraseTests: XCTestCase {
         let custom = CustomReminderEraser(
             store: UserDefaultsCustomReminderStore(), scheduler: CustomCapableReminderScheduler(),
             erasures: ReminderErasures())
+        let medicationReminders = MedicationReminderEraser(
+            store: InMemoryMedicationReminderStore(), scheduler: MedicationCapableReminderScheduler(),
+            erasures: ReminderErasures())
         let journal = try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
         let favorites = try SwiftDataFavoritesStore(url: directory.appendingPathComponent("favorites.store"))
         let recipes = try SwiftDataRecipeStore(url: directory.appendingPathComponent("recipes.store"))
@@ -217,15 +230,16 @@ final class AppServicesEraseTests: XCTestCase {
 
         let stores = AppServices.eraseStores(
             widgets: widgets, savedMeals: savedMeals, supplements: supplements, dailyReminders: daily,
-            customReminders: custom, journal: journal, favorites: favorites, recipes: recipes, goals: goals,
+            customReminders: custom, medicationReminders: medicationReminders, journal: journal, favorites: favorites, recipes: recipes, goals: goals,
             medications: medications)
 
         XCTAssertTrue(stores.widgets === widgets)
         XCTAssertTrue(stores.savedMeals === savedMeals)
         XCTAssertTrue(stores.supplements === supplements)
-        XCTAssertEqual(stores.reminders.count, 2)
+        XCTAssertEqual(stores.reminders.count, 3)
         XCTAssertTrue(stores.reminders[0] === daily)
         XCTAssertTrue(stores.reminders[1] === custom)
+        XCTAssertTrue(stores.reminders[2] === medicationReminders)
         XCTAssertTrue(stores.journal === journal)
         XCTAssertTrue(stores.favorites === favorites)
         XCTAssertTrue(stores.recipes === recipes)
@@ -357,6 +371,238 @@ final class CustomCapableReminderScheduler: ReminderScheduling, CustomReminderSc
     func pendingDailyCount() async -> Int { 0 }
     func replaceAll(with reminders: [CustomReminder]) async throws {}
     func cancel(ids: [UUID]) {}
+}
+
+/// A daily scheduler that also takes medication reminders, as the system scheduler does.
+final class MedicationCapableReminderScheduler: ReminderScheduling, MedicationReminderScheduling, @unchecked Sendable {
+    func permission() async -> ReminderPermission { .notDetermined }
+    func requestPermission() async -> Bool { false }
+    func scheduleDaily(at time: ReminderTime) async throws {}
+    func cancelDaily() {}
+    func pendingDailyCount() async -> Int { 0 }
+    func replaceAll(with requests: [MedicationReminderRequest]) async throws {}
+    func cancelAll() {}
+}
+
+/// Records the medication reminder calls, for the erase and the history re-sync.
+final class CountingMedicationScheduler: ReminderScheduling, MedicationReminderScheduling, @unchecked Sendable {
+    private let lock = NSLock()
+    private var _replaces = 0
+    private var _cancelled: [UUID] = []
+    private var _cancelAlls = 0
+    var cancelAlls: Int { lock.withLock { _cancelAlls } }
+    var replaces: Int { lock.withLock { _replaces } }
+    var cancelled: [UUID] { lock.withLock { _cancelled } }
+    var state: ReminderPermission = .allowed
+    func permission() async -> ReminderPermission { state }
+    func requestPermission() async -> Bool { true }
+    func scheduleDaily(at time: ReminderTime) async throws {}
+    func cancelDaily() {}
+    func pendingDailyCount() async -> Int { 0 }
+    func replaceAll(with requests: [MedicationReminderRequest]) async throws { lock.withLock { _replaces += 1 } }
+    func cancelAll() { lock.withLock { _cancelAlls += 1 } }
+    /// Identifiers the system still holds as delivered; the sweep removes those under the prefix after a delay.
+    var delivered: Set<String> {
+        get { lock.withLock { _delivered } }
+        set { lock.withLock { _delivered = newValue } }
+    }
+    private var _delivered: Set<String> = []
+    var sweepFinished: Bool { lock.withLock { _sweepFinished } }
+    private var _sweepFinished = false
+    var sweepResult = true
+    func removeAll() async -> Bool {
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        lock.withLock {
+            _delivered = _delivered.filter { !$0.hasPrefix(MedicationReminderPlan.identifierPrefix) }
+            _sweepFinished = true
+        }
+        return sweepResult
+    }
+    func cancel(medicationIDs: [UUID]) { lock.withLock { _cancelled += medicationIDs } }
+}
+
+/// A medication store whose reads can be switched to fail, for a log that cannot be read.
+final class FlakyMedicationStore: MedicationStore, @unchecked Sendable {
+    private let inner = InMemoryMedicationStore()
+    private let lock = NSLock()
+    private var _failing = false
+    var failing: Bool {
+        get { lock.withLock { _failing } }
+        set { lock.withLock { _failing = newValue } }
+    }
+    private struct Unreadable: Error {}
+    func medications() throws -> [Medication] { if failing { throw Unreadable() }; return try inner.medications() }
+    func allDoses() throws -> [MedicationDose] { if failing { throw Unreadable() }; return try inner.allDoses() }
+    func doses(of medicationID: UUID) throws -> [MedicationDose] { try inner.doses(of: medicationID) }
+    func saveMedication(_ medication: Medication) throws { try inner.saveMedication(medication) }
+    func removeMedication(id: UUID) throws { try inner.removeMedication(id: id) }
+    func saveDose(_ dose: MedicationDose) throws { try inner.saveDose(dose) }
+    func removeDose(id: UUID) throws { try inner.removeDose(id: id) }
+}
+
+@MainActor
+final class MedicationReminderFollowUpTests: XCTestCase {
+    /// The erase removes the pending and delivered requests of every stored setting before it returns.
+    func testEraseRemovesEachMedicationRequestBeforeItReturns() {
+        let scheduler = CountingMedicationScheduler()
+        let store = InMemoryMedicationReminderStore()
+        let id = UUID()
+        store.save([MedicationReminderSetting(medicationID: id, time: ReminderTime(hour: 8, minute: 0))])
+        let eraser = MedicationReminderEraser(store: store, scheduler: scheduler, erasures: ReminderErasures())
+        eraser.eraseAll()
+        XCTAssertEqual(scheduler.cancelled, [id])
+        XCTAssertEqual(store.settings, [])
+    }
+
+    /// Settings data that cannot be decoded reads as none, so the erase must still remove every request under the prefix.
+    func testEraseRemovesEveryPrefixedRequestWhenTheSettingsCannotBeRead() {
+        let suite = "MedicationReminderEraseTests-" + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(Data("not json".utf8), forKey: UserDefaultsMedicationReminderStore.key)
+        let store = UserDefaultsMedicationReminderStore(defaults: defaults)
+        XCTAssertEqual(store.settings, [])
+        let scheduler = CountingMedicationScheduler()
+        MedicationReminderEraser(store: store, scheduler: scheduler, erasures: ReminderErasures()).eraseAll()
+        XCTAssertGreaterThanOrEqual(scheduler.cancelAlls, 1)
+        XCTAssertNil(defaults.data(forKey: UserDefaultsMedicationReminderStore.key))
+    }
+
+    /// The erase's sweep removes every delivered request under the prefix, also one for a medication whose reminder
+    /// was switched off earlier, and the readback waits for it.
+    func testTheEraseSweepIsAwaitedAndRemovesDeliveredRequestsUnderThePrefix() async {
+        let scheduler = CountingMedicationScheduler()
+        scheduler.delivered = [MedicationReminderPlan.identifierPrefix + UUID().uuidString, "custom-reminder-keep"]
+        let eraser = MedicationReminderEraser(
+            store: InMemoryMedicationReminderStore(), scheduler: scheduler, erasures: ReminderErasures())
+        eraser.eraseAll()
+        XCTAssertFalse(scheduler.sweepFinished, "the sweep is still running when the erase returns")
+        let confirmed = await eraser.finishRemoval()
+        XCTAssertTrue(confirmed)
+        XCTAssertTrue(scheduler.sweepFinished, "finishRemoval waits for the sweep")
+        XCTAssertEqual(scheduler.delivered, ["custom-reminder-keep"])
+    }
+
+    /// A sweep the system cannot confirm is reported, so the readback does not claim success.
+    func testAnUnconfirmedSweepIsReported() async {
+        let scheduler = CountingMedicationScheduler()
+        scheduler.sweepResult = false
+        let eraser = MedicationReminderEraser(
+            store: InMemoryMedicationReminderStore(), scheduler: scheduler, erasures: ReminderErasures())
+        eraser.eraseAll()
+        let confirmed = await eraser.finishRemoval()
+        XCTAssertFalse(confirmed)
+    }
+
+    private func makeController(
+        _ scheduler: CountingMedicationScheduler, store: MedicationStore, medication: Medication
+    ) throws -> (MedicationReminderController, InMemoryMedicationReminderStore) {
+        try store.saveMedication(medication)
+        try store.saveDose(MedicationDose(
+            medicationID: medication.id, takenAt: Date().addingTimeInterval(-86_400), timeZoneIdentifier: "UTC",
+            amount: 2.5, unit: .mg))
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setMedicationLogOn(true)
+        let reminderStore = InMemoryMedicationReminderStore()
+        reminderStore.save([MedicationReminderSetting(medicationID: medication.id, time: ReminderTime(hour: 8, minute: 0))])
+        let controller = MedicationReminderController(
+            store: reminderStore, permissions: scheduler, scheduler: scheduler, medications: store,
+            preferences: preferences)
+        return (controller, reminderStore)
+    }
+
+    /// A sync while notifications are not yet decided leaves every setting and the message alone.
+    func testASyncWhileUndecidedKeepsTheSettingsAndShowsNoMessage() async throws {
+        let scheduler = CountingMedicationScheduler()
+        scheduler.state = .notDetermined
+        let med = Medication(name: "Example weekly injection", unit: .mg, scheduleDays: 7)
+        let (controller, reminderStore) = try makeController(scheduler, store: InMemoryMedicationStore(), medication: med)
+        await controller.sync()
+        XCTAssertEqual(reminderStore.settings.count, 1)
+        XCTAssertNotNil(controller.time(for: med.id))
+        XCTAssertNil(controller.message)
+    }
+
+    /// Switching a reminder off removes that medication's pending and delivered request.
+    func testSwitchingOffRemovesTheMedicationsRequests() async throws {
+        let scheduler = CountingMedicationScheduler()
+        let med = Medication(name: "Example weekly injection", unit: .mg, scheduleDays: 7)
+        let (controller, _) = try makeController(scheduler, store: InMemoryMedicationStore(), medication: med)
+        await controller.setReminder(nil, for: med.id)
+        XCTAssertEqual(scheduler.cancelled, [med.id])
+    }
+
+    /// A log that cannot be read keeps the settings and says why nothing is scheduled.
+    func testAnUnreadableLogKeepsTheSettingsAndShowsAMessage() async throws {
+        let scheduler = CountingMedicationScheduler()
+        let store = FlakyMedicationStore()
+        let med = Medication(name: "Example weekly injection", unit: .mg, scheduleDays: 7)
+        let (controller, reminderStore) = try makeController(scheduler, store: store, medication: med)
+        store.failing = true
+        await controller.sync()
+        XCTAssertEqual(reminderStore.settings.count, 1)
+        XCTAssertNotNil(controller.message)
+        XCTAssertTrue(scheduler.sweepFinished, "the pending requests are removed and awaited")
+    }
+
+    /// A history whose medication has gone stops offering a reminder.
+    func testTheHistoryStopsOfferingAReminderOnceTheMedicationIsGone() throws {
+        let store = InMemoryMedicationStore()
+        let med = Medication(name: "Example weekly injection", unit: .mg, scheduleDays: 7)
+        try store.saveMedication(med)
+        let history = MedicationHistoryViewModel(store: store, medicationID: med.id)
+        history.load()
+        XCTAssertTrue(history.canRemind)
+        try store.removeMedication(id: med.id)
+        history.load()
+        XCTAssertFalse(history.canRemind)
+    }
+
+    private func waitForReplaces(_ scheduler: CountingMedicationScheduler, above count: Int) async {
+        for _ in 0..<200 where scheduler.replaces <= count { try? await Task.sleep(nanoseconds: 10_000_000) }
+    }
+
+    /// A saved edit or a delete in the history re-syncs the reminders while the screen is still open; a refused
+    /// save does not.
+    func testHistoryEditAndDeleteResyncTheRemindersAndAFailedSaveDoesNot() async throws {
+        let medication = Medication(name: "Example weekly injection", unit: .mg, scheduleDays: 7)
+        let store = InMemoryMedicationStore()
+        try store.saveMedication(medication)
+        let first = MedicationDose(
+            medicationID: medication.id, takenAt: Date().addingTimeInterval(-86_400), timeZoneIdentifier: "UTC",
+            amount: 2.5, unit: .mg)
+        let second = MedicationDose(
+            medicationID: medication.id, takenAt: Date().addingTimeInterval(-3_600), timeZoneIdentifier: "UTC",
+            amount: 2.5, unit: .mg)
+        try store.saveDose(first)
+        try store.saveDose(second)
+        let preferences = InMemoryDisplayPreferences()
+        preferences.setMedicationLogOn(true)
+        let scheduler = CountingMedicationScheduler()
+        let reminderStore = InMemoryMedicationReminderStore()
+        reminderStore.save([MedicationReminderSetting(medicationID: medication.id, time: ReminderTime(hour: 8, minute: 0))])
+        let controller = MedicationReminderController(
+            store: reminderStore, permissions: scheduler, scheduler: scheduler, medications: store,
+            preferences: preferences)
+        let log = MedicationLogViewModel(store: store, preferences: preferences)
+        log.reminders = controller
+        let history = log.historyModel(for: medication.id)
+        history.load()
+
+        var seen = scheduler.replaces
+        XCTAssertNotNil(history.saveEdit(doseID: second.id, amountText: "0", takenAt: Date(), noteText: ""))
+        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertEqual(scheduler.replaces, seen, "a refused save does not re-sync")
+
+        XCTAssertNil(history.saveEdit(doseID: second.id, amountText: "3", takenAt: Date(), noteText: ""))
+        await waitForReplaces(scheduler, above: seen)
+        XCTAssertGreaterThan(scheduler.replaces, seen, "a saved edit re-syncs")
+
+        seen = scheduler.replaces
+        history.deleteDose(id: first.id)
+        await waitForReplaces(scheduler, above: seen)
+        XCTAssertGreaterThan(scheduler.replaces, seen, "a delete re-syncs")
+    }
 }
 
 /// A reminder scheduler that records calls and answers from settable state, for the app's own wiring.
