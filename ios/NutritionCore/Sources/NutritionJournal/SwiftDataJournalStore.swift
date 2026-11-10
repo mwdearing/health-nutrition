@@ -2707,7 +2707,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalDele
         // empty list would turn damage into a valid "states nothing". The row stays damaged and the caller's change
         // (an entry edit, say) still goes through.
         guard !product.nutrients.isEmpty else { return true }
-        row.nutrientsJSON = Self.encodeNutrients(
+        row.nutrientsJSON = try Self.encodeNutrients(
             product.nutrients, displayNames: product.nutrientDisplayNames)
         return true
     }
