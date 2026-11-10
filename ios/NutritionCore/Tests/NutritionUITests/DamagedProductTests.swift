@@ -50,4 +50,23 @@ final class DamagedProductTests: XCTestCase {
             for: try store.activeIntakes(), store: store, lookup: SnapshotOnlyFacts(), nutrients: ["protein"])
         XCTAssertEqual(totals.total(for: "protein")?.value, .unknown)
     }
+
+    /// An exported product that states no nutrients restores as one with none; the day total reads that as
+    /// unknown (partial), never as zero.
+    func testARestoredProductWithNoNutrientsCountsAsUnknown() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let store = try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
+        let bare = ProductDefinition(
+            snapshotID: "snap-2", productID: "product-2", name: "Oats", labelBasis: "per 100 g",
+            catalogOrigin: "test", catalogVersion: "1")
+        try store.create(
+            Intake(id: UUID().uuidString.lowercased(), category: "food", occurredAt: now, timeZoneIdentifier: "UTC"),
+            components: [IntakeComponent(componentID: "oats", name: "Oats", amount: 40, unit: .g)],
+            product: bare, now: now)
+        let totals = try DailyTotalsBuilder.totals(
+            for: try store.activeIntakes(), store: store, lookup: SnapshotOnlyFacts(), nutrients: ["protein"])
+        XCTAssertEqual(totals.total(for: "protein")?.value, .unknown)
+    }
 }

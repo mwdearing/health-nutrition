@@ -120,4 +120,41 @@ final class ProductNutrientsReadableTests: XCTestCase {
             JournalRestorePlan(entries: [], tombstones: [], products: [incoming], favorites: []))
         XCTAssertEqual(try store.product(snapshotID: "snap-1")?.value(for: "protein"), .known(Decimal(9), .g))
     }
+
+    func testAnEditWithoutNutrientsLeavesADamagedRowDamaged() throws {
+        let (store, intake, component, original) = try makeDamagedStore("identity-only")
+        let when = Date(timeIntervalSince1970: 1_700_000_200)
+        XCTAssertNoThrow(try store.edit(
+            intakeID: intake.id, components: [component], product: original.identity,
+            changeReason: "fix amount", now: when))
+        XCTAssertEqual(try store.revisions(of: intake.id).count, 2)
+        XCTAssertThrowsError(try store.product(snapshotID: "snap-1")) {
+            XCTAssertEqual($0 as? JournalError, .corruptRecord("product nutrients"))
+        }
+    }
+
+    func testAHealedRowSurvivesReopeningTheStore() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("reopen.store")
+        let store = try SwiftDataJournalStore(url: url)
+        let when = Date(timeIntervalSince1970: 1_700_000_000)
+        let intake = Intake(
+            id: "00000000-0000-4000-8000-000000000001", category: "food", occurredAt: when,
+            timeZoneIdentifier: "UTC", meal: "breakfast")
+        let component = IntakeComponent(componentID: "oats", name: "Oats", amount: 40, unit: .g)
+        let original = ProductDefinition(
+            snapshotID: "snap-1", productID: "product-1", name: "Oats", brand: "Sample Brand",
+            barcode: "00000000", labelBasis: "per100g", catalogOrigin: "sample", catalogVersion: "1")
+            .withNutrients(["protein": .known(Decimal(5), .g)])
+        try store.create(intake, components: [component], product: original, now: when)
+        try store.damageNutrientsOnSnapshotForTesting(snapshotID: "snap-1")
+        try store.edit(
+            intakeID: intake.id, components: [component],
+            product: original.withNutrients(["protein": .known(Decimal(8), .g)]), changeReason: "rescan", now: when)
+        store.close()
+        let reopened = try SwiftDataJournalStore(url: url)
+        XCTAssertEqual(try reopened.product(snapshotID: "snap-1")?.value(for: "protein"), .known(Decimal(8), .g))
+    }
 }
