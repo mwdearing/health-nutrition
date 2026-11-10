@@ -4,6 +4,14 @@ extension WidgetSnapshot {
     /// The figures as Today words them. A figure that is absent is nil, never "0": Remaining is hidden without a goal
     /// and Burned without a burned value. Over goal is a plain negative number.
     var remainingText: String? { WidgetFigure.groupedWholeNumber(remainingKcal) }
+
+    /// Over goal (remaining below zero) the figure is shown as a positive number under "Calories over goal".
+    var isOverGoal: Bool { (remainingKcal?.rounded() ?? 0) < 0 }
+    var remainingCaption: String { isOverGoal ? "Calories over goal" : "Calories remaining" }
+    /// A partial day's over-goal figure is only what is known so far, so it reads "At least N" (as food does).
+    var overGoalText: String? {
+        WidgetFigure.groupedWholeNumber(remainingKcal.map { -$0 }).map { (isPartial("energy") ? "At least " : "") + $0 }
+    }
     var burnedText: String? { WidgetFigure.groupedWholeNumber(burnedKcal) }
 
     /// Food, "N+" on a day where some entries have no calories: the known part, which is at least that.
@@ -21,7 +29,8 @@ extension WidgetSnapshot {
 
     /// The Remaining figure as drawn: the number, or "Up to N" on a partial day with something left.
     var remainingDisplay: String? {
-        remainingText.map { remainingIsUpperBound ? "Up to \($0)" : $0 }
+        if isOverGoal { return overGoalText }
+        return remainingText.map { remainingIsUpperBound ? "Up to \($0)" : $0 }
     }
 
     /// The one figure a small gauge holds: Food ("N+" when partial). The ring is the share of the goal eaten, so its
@@ -30,13 +39,23 @@ extension WidgetSnapshot {
 
     /// Remaining for a single line of text: "up to N" on a partial day with something left, otherwise the number.
     var remainingInlineText: String? {
-        remainingText.map { remainingIsUpperBound ? "up to \($0)" : $0 }
+        if isOverGoal { return overGoalText?.replacingOccurrences(of: "At least ", with: "at least ") }
+        return remainingText.map { remainingIsUpperBound ? "up to \($0)" : $0 }
+    }
+
+    /// The one-line widget text. Over goal it leads with the figure ("At least 150 calories over goal" on a partial
+    /// day, "150 calories over goal" on a whole one); otherwise it keeps the caption-first form.
+    var remainingInlineLine: String? {
+        guard let figure = remainingInlineText else { return nil }
+        return isOverGoal ? "\(overGoalText ?? figure) calories over goal" : "\(remainingCaption) \(figure)"
     }
 
     /// What VoiceOver reads for the calorie block, in Today's order.
     var calorieSpoken: String {
         let parts = [
-            remainingText.map { (remainingIsUpperBound ? "up to " : "") + "\($0) calories remaining" },
+            isOverGoal
+                ? overGoalText.map { "\($0.prefix(1).lowercased() + $0.dropFirst()) calories over goal" }
+                : remainingText.map { (remainingIsUpperBound ? "up to " : "") + "\($0) calories remaining" },
             foodNumber.map { "Food, \(isPartial("energy") ? "at least " : "")\($0) calories" },
             burnedText.map { "Burned, \($0) calories" },
         ].compactMap { $0 }
@@ -95,9 +114,10 @@ struct WidgetCalorieSummary: View {
                     .minimumScaleFactor(0.7)
                     .lineLimit(1)
                     .privacySensitive()
-                Text("Calories remaining")
+                Text(snapshot?.remainingCaption ?? "Calories remaining")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .privacySensitive()
             }
             WidgetFoodBurned(snapshot: snapshot, vertical: verticalDetails)
         }

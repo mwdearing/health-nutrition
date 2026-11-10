@@ -72,8 +72,8 @@ struct TodayWidgetView: View {
         case .accessoryInline:
             if isEmpty {
                 Text("Nothing logged today")
-            } else if let remaining = snapshot?.remainingInlineText {
-                Text("Calories remaining \(remaining)")
+            } else if let line = snapshot?.remainingInlineLine {
+                Text(line)
                     .accessibilityLabel(spokenCalories)
                     .privacySensitive()
             } else {
@@ -127,7 +127,7 @@ struct TodayWidgetView: View {
                             .minimumScaleFactor(0.6)
                             .lineLimit(1)
                             .foregroundStyle(Color("heroText"))
-                        Text(snapshot?.remainingDisplay == nil ? "Food" : "Calories remaining")
+                        Text(snapshot?.remainingDisplay == nil ? "Food" : (snapshot?.remainingCaption ?? "Calories remaining"))
                             .font(.caption2)
                             .minimumScaleFactor(0.6)
                             .foregroundStyle(Color("heroSecondaryText"))

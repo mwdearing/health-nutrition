@@ -148,7 +148,7 @@ struct WatchTodayView: View {
     /// the food and burned lines follow. One spoken label covers them all: the caption is visible only, because the
     /// snapshot's own wording already says "calories remaining" or "Food, N calories".
     private func ring(for snapshot: WidgetSnapshot?) -> some View {
-        let caption = snapshot?.remainingDisplay == nil ? "eaten" : "left"
+        let caption = snapshot?.remainingDisplay == nil ? "eaten" : (snapshot?.isOverGoal == true ? "over" : "left")
         return VStack(alignment: .leading, spacing: 4) {
             Gauge(value: hidesFigures ? 0 : (snapshot?.energyFraction ?? 0)) {
                 Text("Calories")
