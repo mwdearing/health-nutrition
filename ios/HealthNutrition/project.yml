@@ -107,7 +107,7 @@ targets:
         INFOPLIST_KEY_NSCameraUsageDescription: "Add intake can scan the barcode on a package to fill in the barcode field, and can read the text of a Nutrition Facts panel so you can check the values before they are filled in. The camera is only used for those two things, and for a rare camera check when you ask for an emailed sign-in code. Everything the app reads is read on this device, and no image is stored or sent by this app."
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
-        TARGETED_DEVICE_FAMILY: "1,2"
+        TARGETED_DEVICE_FAMILY: "1"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         CODE_SIGN_STYLE: Automatic
@@ -146,7 +146,7 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: Today
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
-        TARGETED_DEVICE_FAMILY: "1,2"
+        TARGETED_DEVICE_FAMILY: "1"
         CODE_SIGN_STYLE: Automatic
         SKIP_INSTALL: YES
         SWIFT_EMIT_LOC_STRINGS: YES
