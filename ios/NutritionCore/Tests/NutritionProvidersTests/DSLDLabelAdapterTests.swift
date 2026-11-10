@@ -169,7 +169,7 @@ final class DSLDLabelAdapterTests: XCTestCase {
                     "\(entry.file) lost the provenance of \(fact.labelName)"
                 )
                 if case .known(let value, _) = fact.amount {
-                    XCTAssertGreaterThan(value, 0, "a stated zero is never a known amount")
+                    XCTAssertGreaterThanOrEqual(value, 0, "a negative amount is never known")
                 }
             }
         }
@@ -374,12 +374,12 @@ final class DSLDLabelAdapterTests: XCTestCase {
         XCTAssertEqual(epa.chemicalForm, "Fish Oil")
     }
 
-    func testAZeroQuantityIsUnknownRatherThanZero() throws {
+    func testANegativeQuantityIsUnknown() throws {
         let label = try parseInline(
             """
             {"id":1,"fullName":"Zero","brandName":"Test","offMarket":0,
              "ingredientRows":[{"order":1,"name":"Vitamin C","forms":[],"nestedRows":[],
-              "quantity":[{"servingSizeOrder":1,"operator":"=","quantity":0,"unit":"mg"}]}]}
+              "quantity":[{"servingSizeOrder":1,"operator":"=","quantity":-1,"unit":"mg"}]}]}
             """
         )
         XCTAssertEqual(label.facts.first?.amount, .unknown)

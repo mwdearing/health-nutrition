@@ -2315,7 +2315,7 @@ final class HealthKitDeliveryWorkerTests: XCTestCase {
     func testTheMigrationToTheSuspensionColumnKeepsTheNutrientValues() throws {
         let directory = try makeDirectory()
         let url = directory.appendingPathComponent("journal.store")
-        let nutrients = SwiftDataJournalStore.encodeNutrients(["protein": .known(dec("13"), .g)])
+        let nutrients = try SwiftDataJournalStore.encodeNutrients(["protein": .known(dec("13"), .g)])
         try SwiftDataJournalStore.writeV2SuspendedOperationForTesting(
             url: url, operationID: "op-v2", intakeID: intakeID, revision: 1,
             destination: .healthKit, nutrientsJSON: nutrients)

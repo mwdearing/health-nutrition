@@ -48,25 +48,25 @@ final class StoredDecimalTests: XCTestCase {
         XCTAssertNil(DecimalText.decode(DecimalText.encode(value)))
     }
 
-    func testStorableRoundsOnlyAValueTheTextCannotReadBack() {
-        XCTAssertEqual(StoredDecimal.storable(dec(thirtyNine)), dec(thirtyEight))
-        XCTAssertNotNil(DecimalText.decode(DecimalText.encode(StoredDecimal.storable(dec(thirtyNine)))))
+    func testStorableRoundsOnlyAValueTheTextCannotReadBack() throws {
+        XCTAssertEqual(try StoredDecimal.storable(dec(thirtyNine)), dec(thirtyEight))
+        XCTAssertNotNil(DecimalText.decode(DecimalText.encode(try StoredDecimal.storable(dec(thirtyNine)))))
         let long = dec("39.986744197183098591549295774647887323")
-        XCTAssertEqual(StoredDecimal.storable(long), long)
-        XCTAssertEqual(StoredDecimal.storable(dec("5.2")), dec("5.2"))
-        XCTAssertEqual(StoredDecimal.storable(0), 0)
+        XCTAssertEqual(try StoredDecimal.storable(long), long)
+        XCTAssertEqual(try StoredDecimal.storable(dec("5.2")), dec("5.2"))
+        XCTAssertEqual(try StoredDecimal.storable(0), 0)
         XCTAssertEqual(
-            StoredDecimal.storable(dec("13.3333333333333333333333333333333333332")),
+            try StoredDecimal.storable(dec("13.3333333333333333333333333333333333332")),
             dec("13.333333333333333333333333333333333333"))
     }
 
-    /// At the top of `Decimal`'s range there is no room to round: the value is kept as it is, never turned
-    /// into a zero, and a stored row holding it stays refused.
+    /// At the top of `Decimal`'s range there is no room to round: the value is refused, never turned into a
+    /// zero, and a stored row holding it stays refused.
     func testAValueAtTheTopOfTheRangeIsNeverRoundedToZero() {
         let text = "340282366920938463463374607431768211455" + String(repeating: "0", count: 127)
         let top = dec(text)
         XCTAssertEqual(DecimalText.encode(top), text)
-        XCTAssertEqual(StoredDecimal.storable(top), top)
+        XCTAssertThrowsError(try StoredDecimal.storable(top))
         XCTAssertNil(StoredDecimal.readBack(text))
         XCTAssertNil(
             SwiftDataJournalStore.decodeNutrients(
