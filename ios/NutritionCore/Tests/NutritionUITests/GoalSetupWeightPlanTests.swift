@@ -291,6 +291,25 @@ final class GoalSetupWeightPlanTests: XCTestCase {
         XCTAssertEqual(model.goalWeightPoundsText, "")
     }
 
+    /// Weight text that does not read as a number is carried to the other unit with its unit, and a switch back
+    /// returns it as typed (#1104).
+    func testAWeightThatDoesNotReadKeepsItsUnitAcrossASwitchAndBack() throws {
+        let prefs = InMemoryDisplayPreferences(unitSystem: .metric)
+        let goals = GoalsViewModel(store: GoalSetupPlanStore(), preferences: prefs)
+        goals.load()
+        let model = GoalSetupViewModel(goals: goals)
+        model.weightKilogramsText = "1,000"
+
+        prefs.setUnitSystem(.usCustomary)
+        model.unitSystemDidChange()
+        XCTAssertEqual(model.weightPoundsText, "1,000 kg")
+
+        prefs.setUnitSystem(.metric)
+        model.unitSystemDidChange()
+        XCTAssertEqual(model.weightKilogramsText, "1,000")
+        XCTAssertEqual(model.weightPoundsText, "1,000 kg", "the pounds field keeps what was carried")
+    }
+
     func testSwitchingToPoundsConvertsTheTypedGoalWeightAndSaveKeepsTheGoal() throws {
         let prefs = InMemoryDisplayPreferences(unitSystem: .metric)
         let store = GoalSetupPlanStore()
@@ -476,8 +495,8 @@ final class GoalSetupWeightPlanTests: XCTestCase {
         prefs.setUnitSystem(.usCustomary)
         model.unitSystemDidChange()
 
-        XCTAssertEqual(model.weightPoundsText, "7o")
-        XCTAssertEqual(model.goalWeightPoundsText, "6o")
+        XCTAssertEqual(model.weightPoundsText, "7o kg", "the unit the text was typed in is shown (#1104)")
+        XCTAssertEqual(model.goalWeightPoundsText, "6o kg", "the goal weight shows its unit as well (#1104)")
         XCTAssertEqual(model.heightFeetText, "18o")
         XCTAssertEqual(model.heightInchesText, "")
 
