@@ -339,8 +339,8 @@ public struct DSLDLabelAdapter: Sendable {
 
     /// Reads one quantity entry.
     ///
-    /// - A missing entry, a missing number, a number of zero and a unit the registry does not carry are
-    ///   all `.unknown`. Unknown is never zero: a label that states no amount does not state that the
+    /// - A missing entry, a missing number, a negative number and a unit the registry does not carry are
+    ///   all `.unknown`; a stated zero with the `=` operator is a known zero. Unknown is never zero: a label that states no amount does not state that the
     ///   amount is nil.
     /// - Only the `=` operator states an exact amount. "less than" becomes
     ///   `.belowReportingThreshold` when its unit is one the table covers and `.unknown` otherwise, and any
@@ -352,13 +352,15 @@ public struct DSLDLabelAdapter: Sendable {
         let symbol = unitSymbol(in: quantity)
         guard let text = quantity["quantity"]?.numberText,
               let value = Decimal(string: text, locale: Locale(identifier: "en_US_POSIX")),
-              value > 0
+              value >= 0
         else { return .unknown }
         if operatorSymbol == "=" {
             guard let symbol, let unit = unit(for: symbol) else { return .unknown }
             return .known(value, unit)
         }
         if operatorSymbol == "<" {
+            // A bound of zero states nothing useful; it stays unknown as before.
+            guard !value.isZero else { return .unknown }
             // A bound only carries meaning with a unit the app can interpret; without one it is unknown,
             // because a threshold with no dimension states nothing.
             guard let symbol, let thresholdUnit = unit(for: symbol) else { return .unknown }

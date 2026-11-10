@@ -15,6 +15,8 @@ public enum CommunityError: Error, Equatable, Sendable {
     case permissionDenied
     /// The request never got a reply.
     case network
+    /// The reply was larger than the client reads.
+    case responseTooLarge
     /// The reply had an unexpected HTTP status.
     case server(Int)
     /// The session could not be read from or written to the Keychain.

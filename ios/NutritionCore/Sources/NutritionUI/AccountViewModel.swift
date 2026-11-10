@@ -25,6 +25,7 @@ public final class AccountViewModel: ObservableObject {
     public static let codeFormatMessage = "Enter the six-digit code from your email."
     public static let addressMessage = "Enter the email address you want to sign in with."
     public static let networkMessage = "Could not reach the server. Check your connection and try again."
+    public static let responseTooLargeMessage = "The reply was too large to read."
     public static let sessionEndedMessage = "Your sign-in has ended. Sign in again to continue."
     public static let rateLimitedMessage = "Too many attempts. Wait a few minutes and try again."
     public static let storageMessage = "Could not keep your sign-in on this device. Try again."
@@ -504,6 +505,7 @@ public final class AccountViewModel: ObservableObject {
     private static func message(for error: Error, fallback: String) -> String {
         switch error as? CommunityError {
         case .network?: return networkMessage
+        case .responseTooLarge?: return responseTooLargeMessage
         case .signedOut?: return sessionEndedMessage
         case .rateLimited?: return rateLimitedMessage
         case .storage?: return storageMessage

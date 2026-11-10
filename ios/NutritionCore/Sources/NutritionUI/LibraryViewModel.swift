@@ -375,7 +375,7 @@ public final class LibraryViewModel: ObservableObject {
             var kinds: [String: ProductKind] = [:]
             for snapshotID in snapshotIDs {
                 // A read that fails leaves no kind, so the template's own category decides (#775).
-                kinds[snapshotID] = (try? store.product(snapshotID: snapshotID))?.kind
+                kinds[snapshotID] = (try? store.readProduct(snapshotID: snapshotID))?.product.kind
             }
             func kind(of template: RepeatTemplate) -> ProductKind {
                 ProductKindResolution.kind(
@@ -398,7 +398,7 @@ public final class LibraryViewModel: ObservableObject {
             let standaloneIDs = Set(standaloneProducts.map(\.localProductID))
             let legacyFoods = foods.filter { food in
                 guard let snapshotID = food.template.productSnapshotID,
-                      let product = try? store.product(snapshotID: snapshotID),
+                      let product = (try? store.readProduct(snapshotID: snapshotID))?.product,
                       let id = UUID(uuidString: product.productID) else { return true }
                 return !standaloneIDs.contains(id)
             }

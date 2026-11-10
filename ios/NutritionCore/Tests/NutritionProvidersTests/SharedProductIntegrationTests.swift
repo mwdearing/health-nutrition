@@ -51,7 +51,7 @@ final class SharedProductIntegrationTests: XCTestCase {
         let api = CommunityAPI(config: try makeConfig(), transport: FakeCommunityTransport([
             .response(status: 200, body: String(repeating: "x", count: 1_048_577))
         ]))
-        await assertCommunityError(.network) { try await api.raw("/rest/v1/rpc/catalog_capabilities_v2") }
+        await assertCommunityError(.responseTooLarge) { try await api.raw("/rest/v1/rpc/catalog_capabilities_v2") }
     }
 
     func testOrdinaryForbiddenAndTypedConsentRetainV2Credentials() async throws {

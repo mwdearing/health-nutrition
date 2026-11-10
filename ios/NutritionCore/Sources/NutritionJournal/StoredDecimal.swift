@@ -7,13 +7,21 @@ import NutritionDomain
 /// 38. A value scaled by a factor that does not terminate can land on 39: (709.7647095 + 236.5882365) / 710
 /// of 1 g is 1.33289147323943661971830985915492957746 g. Written as it is, that value came back as nothing at
 /// all, so the nutrient vanished from the entry. Such a value is rounded, half away from zero, to 38
-/// significant digits; every other value is kept exactly as it is.
+/// significant digits; every other value is kept exactly as it is. A value that cannot be rounded to one the
+/// journal reads back is refused, never written.
 public enum StoredDecimal {
     /// The most significant digits `DecimalText` reads back.
     static let maximumSignificantDigits = 38
 
-    /// `value`, or that value at 38 significant digits when `DecimalText` could not read it back.
+    /// `value`, or that value at 38 significant digits when `DecimalText` could not read it back. A value that
+    /// cannot be rounded is returned as it came; the store's write path (`requireStorable`) refuses it.
     public static func storable(_ value: Decimal) -> Decimal {
+        (try? requireStorable(value)) ?? value
+    }
+
+    /// The same, but throws `JournalError.invalidAmount` when no readable value exists, so the journal never
+    /// saves a value that would be dropped on read.
+    static func requireStorable(_ value: Decimal) throws -> Decimal {
         guard !value.isNaN, !readsBack(value) else { return value }
         var fractionDigits = maximumSignificantDigits - 1 - leadingExponent(of: DecimalText.encode(value.magnitude))
         var rounded = DisplayRounding.rounded(value, fractionDigits: fractionDigits)
@@ -23,8 +31,10 @@ public enum StoredDecimal {
             rounded = DisplayRounding.rounded(value, fractionDigits: fractionDigits)
         }
         // At the edges of Decimal's range there is no room to round, and Foundation returns zero. A value
-        // that cannot be rounded is kept as it is rather than turned into a different number.
-        guard readsBack(rounded), !rounded.isNaN, rounded != 0, (rounded < 0) == (value < 0) else { return value }
+        // that cannot be rounded is refused: saved as it is, it would be dropped on read.
+        guard readsBack(rounded), !rounded.isNaN, rounded != 0, (rounded < 0) == (value < 0) else {
+            throw JournalError.invalidAmount("a value too large to store")
+        }
         return rounded
     }
 
@@ -38,6 +48,14 @@ public enum StoredDecimal {
         values.mapValues { storable($0) }
     }
 
+    /// Every value made storable, or `JournalError.invalidAmount` for the first one that cannot be.
+    static func requireStorable(_ values: [String: NutrientValue]) throws -> [String: NutrientValue] {
+        try values.mapValues { value in
+            guard case .known(let amount, let unit) = value else { return value }
+            return .known(try requireStorable(amount), unit)
+        }
+    }
+
     /// A value the store wrote as text: what `DecimalText` reads back, or, for a row written before the
     /// journal kept its values readable, a value the encoder wrote with one digit more, rounded as
     /// `storable` rounds it. Text in any other form, or a value that cannot be rounded, stays refused.
@@ -47,7 +65,7 @@ public enum StoredDecimal {
               let value = Decimal(string: text, locale: DecimalText.locale), !value.isNaN,
               DecimalText.encode(value) == text
         else { return nil }
-        let rounded = storable(value)
+        guard let rounded = try? requireStorable(value) else { return nil }
         return readsBack(rounded) ? rounded : nil
     }
 

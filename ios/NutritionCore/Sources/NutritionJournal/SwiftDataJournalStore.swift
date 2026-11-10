@@ -1808,7 +1808,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalDele
     private static func restoreSnapshot(_ product: ProductDefinition, in context: ModelContext) throws -> Bool {
         // Compared and written as the store keeps them (`StoredDecimal`), so a value one digit too long to
         // read back is the same value it was stored as rather than a conflict.
-        let product = product.withNutrients(StoredDecimal.storable(product.nutrients))
+        let product = try product.withNutrients(StoredDecimal.requireStorable(product.nutrients))
         let id = product.snapshotID
         let existing = try context.fetch(FetchDescriptor<ProductRecord>(
             predicate: #Predicate<ProductRecord> { $0.snapshotID == id }))
@@ -1817,7 +1817,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalDele
                 snapshotID: product.snapshotID, productID: product.productID, name: product.name,
                 brand: product.brand, barcode: product.barcode, labelBasis: product.labelBasis,
                 catalogOrigin: product.catalogOrigin, catalogVersion: product.catalogVersion,
-                nutrientsJSON: Self.encodeNutrients(
+                nutrientsJSON: try Self.encodeNutrients(
                     product.nutrients, displayNames: product.nutrientDisplayNames),
                 kindRaw: product.kind.rawValue))
             return true
@@ -1839,7 +1839,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalDele
         // products that state different things.
         guard !product.nutrients.isEmpty, stored.nutrients != product.nutrients else { return false }
         guard stored.nutrients.isEmpty else { throw JournalError.snapshotConflict(id) }
-        row.nutrientsJSON = Self.encodeNutrients(
+        row.nutrientsJSON = try Self.encodeNutrients(
             product.nutrients, displayNames: product.nutrientDisplayNames)
         return false
     }
@@ -2411,7 +2411,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalDele
     /// product states. Any other difference is still a conflict.
     private static func insertSnapshot(_ product: ProductDefinition, in context: ModelContext) throws {
         // Compared and written as the store keeps them (`StoredDecimal`), as a restore does.
-        let product = product.withNutrients(StoredDecimal.storable(product.nutrients))
+        let product = try product.withNutrients(StoredDecimal.requireStorable(product.nutrients))
         let id = product.snapshotID
         let existing = try context.fetch(FetchDescriptor<ProductRecord>(
             predicate: #Predicate<ProductRecord> { $0.snapshotID == id }))
@@ -2423,7 +2423,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalDele
             guard stored.nutrients.isEmpty, stored.identity == product.identity else {
                 throw JournalError.snapshotConflict(id)
             }
-            row.nutrientsJSON = Self.encodeNutrients(
+            row.nutrientsJSON = try Self.encodeNutrients(
                 product.nutrients, displayNames: product.nutrientDisplayNames)
             return
         }
@@ -2431,7 +2431,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalDele
             snapshotID: product.snapshotID, productID: product.productID, name: product.name,
             brand: product.brand, barcode: product.barcode, labelBasis: product.labelBasis,
             catalogOrigin: product.catalogOrigin, catalogVersion: product.catalogVersion,
-            nutrientsJSON: Self.encodeNutrients(
+            nutrientsJSON: try Self.encodeNutrients(
                 product.nutrients, displayNames: product.nutrientDisplayNames),
             kindRaw: product.kind.rawValue))
     }
@@ -2707,7 +2707,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalDele
         // empty list would turn damage into a valid "states nothing". The row stays damaged and the caller's change
         // (an entry edit, say) still goes through.
         guard !product.nutrients.isEmpty else { return true }
-        row.nutrientsJSON = Self.encodeNutrients(
+        row.nutrientsJSON = try Self.encodeNutrients(
             product.nutrients, displayNames: product.nutrientDisplayNames)
         return true
     }
@@ -2728,19 +2728,19 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalDele
     }
 
     /// The nutrient values a product states, sorted by id so the same values always write the same
-    /// text. Values that cannot be encoded are left out rather than stored as something else. The
+    /// text. A value that cannot be stored is refused with `JournalError.invalidAmount`. The
     /// printed names travel with the values in the same payload, so a key that is a slug of the
     /// label's own wording keeps that wording through a store round trip.
     static func encodeNutrients(
         _ values: [String: NutrientValue], displayNames: [String: String] = [:]
-    ) -> String {
-        let stored = values.keys.sorted().compactMap { id -> StoredNutrient? in
+    ) throws -> String {
+        let stored = try values.keys.sorted().compactMap { id -> StoredNutrient? in
             guard let value = values[id] else { return nil }
             let displayName = displayNames[id]
             switch value {
             case .known(let amount, let unit):
                 return StoredNutrient(
-                    id: id, state: "known", valueText: DecimalText.encode(StoredDecimal.storable(amount)),
+                    id: id, state: "known", valueText: DecimalText.encode(try StoredDecimal.requireStorable(amount)),
                     unitSymbol: unit.symbol,
                     displayName: displayName)
             case .unknown:

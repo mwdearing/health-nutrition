@@ -294,7 +294,7 @@ final class BoundedResponseLoaderTests: XCTestCase {
         }
     }
 
-    func testCommunityAPIMapsOversizedResponseToGenericNetworkError() async throws {
+    func testCommunityAPIMapsOversizedResponseToResponseTooLarge() async throws {
         let config = try XCTUnwrap(CommunityConfig(infoDictionary: [
             "SUPABASE_URL": "https://example.supabase.co", "SUPABASE_ANON_KEY": "synthetic-key",
         ]))
@@ -303,7 +303,7 @@ final class BoundedResponseLoaderTests: XCTestCase {
             _ = try await api.raw("/rpc/lookup_label_v2", method: "POST")
             XCTFail("expected an oversized-response refusal")
         } catch {
-            XCTAssertEqual(error as? CommunityError, .network)
+            XCTAssertEqual(error as? CommunityError, .responseTooLarge)
             XCTAssertFalse(String(describing: error).contains("synthetic-key"))
             XCTAssertFalse(String(describing: error).contains("example.supabase.co"))
         }

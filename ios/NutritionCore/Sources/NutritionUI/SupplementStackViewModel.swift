@@ -174,7 +174,7 @@ public final class SupplementStackViewModel: ObservableObject {
             func product(_ snapshotID: String?) -> ProductDefinition? {
                 guard let snapshotID else { return nil }
                 if let known = products[snapshotID] { return known }
-                let found = try? store.product(snapshotID: snapshotID)
+                let found = (try? store.readProduct(snapshotID: snapshotID))?.product
                 products[snapshotID] = found
                 return found
             }

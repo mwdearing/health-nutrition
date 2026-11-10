@@ -50,6 +50,8 @@ struct CommunityAPI: Sendable {
             throw CancellationError()
         } catch let error as URLError where error.code == .cancelled {
             throw CancellationError()
+        } catch BoundedResponseError.responseTooLarge {
+            throw CommunityError.responseTooLarge
         } catch {
             // The transport error is dropped on purpose: its text could contain the request URL.
             throw CommunityError.network
