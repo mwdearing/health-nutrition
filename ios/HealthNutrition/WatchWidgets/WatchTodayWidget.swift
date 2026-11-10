@@ -72,8 +72,8 @@ struct WatchTodayWidgetView: View {
         case .accessoryInline:
             if snapshot?.hasEntries == false {
                 Text("Nothing logged today")
-            } else if let remaining = snapshot?.remainingInlineText {
-                Text("Calories remaining \(remaining)").accessibilityLabel(spoken).privacySensitive()
+            } else if let line = snapshot?.remainingInlineLine {
+                Text(line).accessibilityLabel(spoken).privacySensitive()
             } else {
                 Text("\(snapshot?.foodText ?? "—") Food").accessibilityLabel(spoken).privacySensitive()
             }

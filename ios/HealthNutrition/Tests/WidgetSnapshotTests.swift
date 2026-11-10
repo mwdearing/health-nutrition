@@ -90,7 +90,8 @@ final class WidgetSnapshotTests: XCTestCase {
         XCTAssertEqual(
             snapshot.calorieSpoken,
             "\(grouped(1_200)) calories remaining, Food, 800 calories, Burned, 250 calories")
-        // Over goal is a plain negative number, with no word for it.
+        // The stored remaining figure (remainingText) is a plain negative number when over goal; the displayed figure is
+        // positive under "Calories over goal" (see the tests below).
         snapshot.remainingKcal = -150
         XCTAssertEqual(snapshot.remainingText, grouped(-150))
         let negative = try XCTUnwrap(snapshot.remainingText)
@@ -128,12 +129,13 @@ final class WidgetSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.gaugeHeadline, "800+")
         // Burned never gets a marker.
         XCTAssertEqual(snapshot.burnedText, "250")
-        // At or below zero while partial: a plain negative number, no marker.
+        // Over goal while partial: a positive figure under "Calories over goal", no marker.
         snapshot.remainingKcal = -150
         XCTAssertFalse(snapshot.remainingIsUpperBound)
-        XCTAssertEqual(snapshot.remainingDisplay, grouped(-150))
+        XCTAssertEqual(snapshot.remainingDisplay, "At least \(grouped(150))")
+        XCTAssertEqual(snapshot.remainingCaption, "Calories over goal")
         XCTAssertEqual(snapshot.gaugeHeadline, "800+")
-        XCTAssertTrue(snapshot.calorieSpoken.hasPrefix("\(grouped(-150)) calories remaining"))
+        XCTAssertTrue(snapshot.calorieSpoken.hasPrefix("at least \(grouped(150)) calories over goal"))
         snapshot.remainingKcal = 0
         XCTAssertFalse(snapshot.remainingIsUpperBound)
         // A whole day has no markers at all.
@@ -143,6 +145,35 @@ final class WidgetSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.foodText, "800")
         XCTAssertEqual(snapshot.remainingDisplay, grouped(1_200))
         XCTAssertEqual(snapshot.gaugeHeadline, "800")
+    }
+
+    func testAWholeDayOverGoalShowsAPlainPositiveFigure() {
+        let grouped = { (value: Double) in
+            value.formatted(.number.precision(.fractionLength(0)).locale(Locale(identifier: "en_US")))
+        }
+        var snapshot = WidgetSnapshot.empty(at: Date(timeIntervalSince1970: 1_700_000_000))
+        snapshot.energyKcal = 2_150
+        snapshot.remainingKcal = -150
+        XCTAssertEqual(snapshot.remainingDisplay, grouped(150))
+        XCTAssertEqual(snapshot.remainingCaption, "Calories over goal")
+        XCTAssertEqual(snapshot.calorieSpoken, "\(grouped(150)) calories over goal, Food, \(grouped(2_150)) calories")
+        XCTAssertFalse(snapshot.calorieSpoken.contains("at least"))
+    }
+
+    func testTheInlineLineReadsTheOverGoalFigureFirst() {
+        var snapshot = WidgetSnapshot.empty(at: Date(timeIntervalSince1970: 1_700_000_000))
+        snapshot.energyKcal = 2_150
+        snapshot.remainingKcal = -150
+        XCTAssertEqual(snapshot.remainingInlineLine, "150 calories over goal")
+        snapshot.partialFigures = ["energy"]
+        snapshot.remainingIsPartial = true
+        XCTAssertEqual(snapshot.remainingInlineLine, "At least 150 calories over goal")
+        // Under goal the existing form is unchanged.
+        snapshot.remainingKcal = 1_200
+        XCTAssertEqual(snapshot.remainingInlineLine, "Calories remaining up to 1,200")
+        snapshot.remainingIsPartial = nil
+        snapshot.partialFigures = nil
+        XCTAssertEqual(snapshot.remainingInlineLine, "Calories remaining 1,200")
     }
 
     func testOnlyTheListedFiguresAreTreatedAsPartial() {
