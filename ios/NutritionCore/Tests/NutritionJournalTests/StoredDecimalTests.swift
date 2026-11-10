@@ -66,7 +66,7 @@ final class StoredDecimalTests: XCTestCase {
         let text = "340282366920938463463374607431768211455" + String(repeating: "0", count: 127)
         let top = dec(text)
         XCTAssertEqual(DecimalText.encode(top), text)
-        XCTAssertThrowsError(StoredDecimal.storable(top))
+        XCTAssertThrowsError(try StoredDecimal.requireStorable(top))
         XCTAssertNil(StoredDecimal.readBack(text))
         XCTAssertNil(
             SwiftDataJournalStore.decodeNutrients(
