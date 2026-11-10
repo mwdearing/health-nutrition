@@ -56,6 +56,19 @@ final class P3ReviewBatchTests: XCTestCase {
         XCTAssertTrue(zincTotal.coverage.hasUnknown, "it is unknown for every nutrient asked for")
     }
 
+    func testAWaterEntryWithoutItsRevisionIsUnknownOnlyForWater() throws {
+        let store = try makeStore()
+        var water = try log(store, id: "water-a")
+        water.category = DailyTotalsBuilder.waterCategory
+        water.currentRevision = 99
+        let totals = try DailyTotalsBuilder.totals(
+            for: [water], store: store, lookup: SnapshotFacts(), nutrients: [DailyTotalsBuilder.waterKey, "iron"])
+        let waterTotal = try XCTUnwrap(totals.total(for: DailyTotalsBuilder.waterKey))
+        XCTAssertTrue(waterTotal.coverage.hasUnknown, "a water entry that cannot be read is unknown for water")
+        let iron = totals.total(for: "iron")
+        XCTAssertFalse(iron?.coverage.hasUnknown ?? false, "water is no evidence about iron")
+    }
+
     func testNutrientGapsCountsAMissingRevisionAsUnknown() throws {
         let store = try makeStore()
         let readable = try log(store, id: "oats-a")
