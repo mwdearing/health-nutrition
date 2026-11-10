@@ -360,7 +360,7 @@ public struct DSLDLabelAdapter: Sendable {
         }
         if operatorSymbol == "<" {
             // A bound of zero states nothing useful; it stays unknown as before.
-            guard value > 0 else { return .unknown }
+            guard !value.isZero else { return .unknown }
             // A bound only carries meaning with a unit the app can interpret; without one it is unknown,
             // because a threshold with no dimension states nothing.
             guard let symbol, let thresholdUnit = unit(for: symbol) else { return .unknown }

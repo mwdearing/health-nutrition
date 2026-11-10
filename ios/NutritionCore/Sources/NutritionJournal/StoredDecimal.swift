@@ -13,9 +13,15 @@ public enum StoredDecimal {
     /// The most significant digits `DecimalText` reads back.
     static let maximumSignificantDigits = 38
 
-    /// `value`, or that value at 38 significant digits when `DecimalText` could not read it back. Throws
-    /// `JournalError.invalidAmount` when no such value exists.
-    public static func storable(_ value: Decimal) throws -> Decimal {
+    /// `value`, or that value at 38 significant digits when `DecimalText` could not read it back. A value that
+    /// cannot be rounded is returned as it came; the store's write path (`requireStorable`) refuses it.
+    public static func storable(_ value: Decimal) -> Decimal {
+        (try? requireStorable(value)) ?? value
+    }
+
+    /// The same, but throws `JournalError.invalidAmount` when no readable value exists, so the journal never
+    /// saves a value that would be dropped on read.
+    static func requireStorable(_ value: Decimal) throws -> Decimal {
         guard !value.isNaN, !readsBack(value) else { return value }
         var fractionDigits = maximumSignificantDigits - 1 - leadingExponent(of: DecimalText.encode(value.magnitude))
         var rounded = DisplayRounding.rounded(value, fractionDigits: fractionDigits)
@@ -33,13 +39,21 @@ public enum StoredDecimal {
     }
 
     /// A known value made storable; every other state is kept as it is.
-    public static func storable(_ value: NutrientValue) throws -> NutrientValue {
+    public static func storable(_ value: NutrientValue) -> NutrientValue {
         guard case .known(let amount, let unit) = value else { return value }
-        return .known(try storable(amount), unit)
+        return .known(storable(amount), unit)
     }
 
-    public static func storable(_ values: [String: NutrientValue]) throws -> [String: NutrientValue] {
-        try values.mapValues { try storable($0) }
+    public static func storable(_ values: [String: NutrientValue]) -> [String: NutrientValue] {
+        values.mapValues { storable($0) }
+    }
+
+    /// Every value made storable, or `JournalError.invalidAmount` for the first one that cannot be.
+    static func requireStorable(_ values: [String: NutrientValue]) throws -> [String: NutrientValue] {
+        try values.mapValues { value in
+            guard case .known(let amount, let unit) = value else { return value }
+            return .known(try requireStorable(amount), unit)
+        }
     }
 
     /// A value the store wrote as text: what `DecimalText` reads back, or, for a row written before the
@@ -51,7 +65,7 @@ public enum StoredDecimal {
               let value = Decimal(string: text, locale: DecimalText.locale), !value.isNaN,
               DecimalText.encode(value) == text
         else { return nil }
-        guard let rounded = try? storable(value) else { return nil }
+        guard let rounded = try? requireStorable(value) else { return nil }
         return readsBack(rounded) ? rounded : nil
     }
 

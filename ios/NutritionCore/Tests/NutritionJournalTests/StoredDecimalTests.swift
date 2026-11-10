@@ -48,15 +48,15 @@ final class StoredDecimalTests: XCTestCase {
         XCTAssertNil(DecimalText.decode(DecimalText.encode(value)))
     }
 
-    func testStorableRoundsOnlyAValueTheTextCannotReadBack() throws {
-        XCTAssertEqual(try StoredDecimal.storable(dec(thirtyNine)), dec(thirtyEight))
-        XCTAssertNotNil(DecimalText.decode(DecimalText.encode(try StoredDecimal.storable(dec(thirtyNine)))))
+    func testStorableRoundsOnlyAValueTheTextCannotReadBack() {
+        XCTAssertEqual(StoredDecimal.storable(dec(thirtyNine)), dec(thirtyEight))
+        XCTAssertNotNil(DecimalText.decode(DecimalText.encode(StoredDecimal.storable(dec(thirtyNine)))))
         let long = dec("39.986744197183098591549295774647887323")
-        XCTAssertEqual(try StoredDecimal.storable(long), long)
-        XCTAssertEqual(try StoredDecimal.storable(dec("5.2")), dec("5.2"))
-        XCTAssertEqual(try StoredDecimal.storable(0), 0)
+        XCTAssertEqual(StoredDecimal.storable(long), long)
+        XCTAssertEqual(StoredDecimal.storable(dec("5.2")), dec("5.2"))
+        XCTAssertEqual(StoredDecimal.storable(0), 0)
         XCTAssertEqual(
-            try StoredDecimal.storable(dec("13.3333333333333333333333333333333333332")),
+            StoredDecimal.storable(dec("13.3333333333333333333333333333333333332")),
             dec("13.333333333333333333333333333333333333"))
     }
 
@@ -66,7 +66,7 @@ final class StoredDecimalTests: XCTestCase {
         let text = "340282366920938463463374607431768211455" + String(repeating: "0", count: 127)
         let top = dec(text)
         XCTAssertEqual(DecimalText.encode(top), text)
-        XCTAssertThrowsError(try StoredDecimal.storable(top))
+        XCTAssertThrowsError(StoredDecimal.storable(top))
         XCTAssertNil(StoredDecimal.readBack(text))
         XCTAssertNil(
             SwiftDataJournalStore.decodeNutrients(
