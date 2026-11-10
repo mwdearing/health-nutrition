@@ -70,4 +70,45 @@ final class P3ReviewBatchTests: XCTestCase {
         XCTAssertEqual(iron.missing, 2, "unknown for every nutrient, not skipped")
         XCTAssertEqual(read.loggedDays, 1)
     }
+
+    func testAnUnreadableSnapshotIsNotCountedAsFoodOnToday() throws {
+        let store = try makeStore()
+        let supplement = ProductDefinition(
+            snapshotID: "snapshot-multi", productID: "product-multi", name: "Synthetic multi", labelBasis: "per serving",
+            catalogOrigin: "test", catalogVersion: "1", kind: .supplement, nutrients: ["zinc": .known(Decimal(10), .mg)])
+        let id = UUID().uuidString.lowercased()
+        try store.create(
+            Intake(id: id, category: "food", occurredAt: noon, timeZoneIdentifier: "UTC"),
+            components: [IntakeComponent(componentID: "multi", name: "Synthetic multi", amount: 1, unit: .serving)],
+            product: supplement, now: noon)
+        try store.damageNutrientsOnSnapshotForTesting(snapshotID: "snapshot-multi")
+        let model = TodayViewModel(store: store, timeZoneIdentifier: "UTC")
+        model.load(now: noon)
+        let row = try XCTUnwrap(model.rows.first { $0.id == id })
+        XCTAssertEqual(row.kind, .supplement, "a damaged product keeps its kind instead of becoming food")
+    }
+
+    func testAFailedProductReadDoesNotDuplicateALibraryRow() throws {
+        let store = try makeStore()
+        let custom = CustomProductRevision(
+            localProductID: UUID(), revisionID: UUID(), content: .init(name: "Synthetic tea", kind: .drink, basis: .perServing))
+        try store.saveCustomProduct(.init(revision: custom), now: noon)
+        let product = ProductDefinition(
+            snapshotID: "snapshot-tea", productID: custom.localProductID.uuidString, name: "Synthetic tea",
+            labelBasis: "per serving", catalogOrigin: "test", catalogVersion: "1",
+            nutrients: ["zinc": .known(Decimal(1), .mg)])
+        try store.create(
+            Intake(id: UUID().uuidString.lowercased(), category: "food", occurredAt: noon, timeZoneIdentifier: "UTC"),
+            components: [IntakeComponent(componentID: "tea", name: "Synthetic tea", amount: 1, unit: .serving)],
+            product: product, now: noon)
+        try store.damageNutrientsOnSnapshotForTesting(snapshotID: "snapshot-tea")
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        let favorites = try SwiftDataFavoritesStore(url: directory.appendingPathComponent("favorites.store"))
+        let model = LibraryViewModel(store: store, favorites: favorites, productStore: store, timeZoneIdentifier: "UTC")
+        model.load()
+        let ids = model.sections.flatMap(\.items).map(\.id) + model.loggedProducts.map(\.id)
+        XCTAssertFalse(ids.contains { $0.hasPrefix("food:") }, "the product is listed once, as its saved product")
+    }
 }

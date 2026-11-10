@@ -51,9 +51,9 @@ final class DamagedProductTests: XCTestCase {
         XCTAssertEqual(totals.total(for: "protein")?.value, .unknown)
     }
 
-    /// An exported product that states no nutrients restores as one with none; the day total reads that as
+    /// A product that states no nutrients is stored with none; the day total reads that as
     /// unknown (partial), never as zero.
-    func testARestoredProductWithNoNutrientsCountsAsUnknown() throws {
+    func testAProductWithNoNutrientsCountsAsUnknown() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }

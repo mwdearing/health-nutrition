@@ -332,7 +332,14 @@ public final class TodayViewModel: ObservableObject {
                 let components = current?.components ?? []
                 // Read once per entry, and once per snapshot however many components name it: what the
                 // entry is comes from the same snapshot its values come from.
-                let snapshot = Self.snapshot(of: current, in: &snapshots, using: store)
+                let readSnapshot = Self.snapshot(of: current, in: &snapshots, using: store)
+                // A snapshot that cannot be read at all is unknown for every nutrient and is not food: a stand-in
+                // with no values and the kind its category gives states exactly that.
+                let snapshot = readSnapshot ?? current?.productSnapshotID.map {
+                    ProductDefinition(
+                        snapshotID: $0, productID: $0, name: "", labelBasis: "", catalogOrigin: "", catalogVersion: "",
+                        kind: intake.category == ProductKindResolution.supplementCategory ? .supplement : .food)
+                }
                 // An entry with no product snapshot takes its stored category, so a typed supplement is a supplement;
                 // an entry with a snapshot states its kind through that snapshot (#416, #364).
                 let kind = ProductKindResolution.kind(
@@ -921,13 +928,14 @@ public final class TodayViewModel: ObservableObject {
     }
 
     /// The product snapshot a revision points at, read at most once per snapshot id. A snapshot that
-    /// cannot be read is nil, which the lookup answers as unknown rather than as zero.
+    /// cannot be read is nil. A product whose nutrients are damaged is still read, with its kind and no values,
+    /// so it counts as what it is and its nutrients as unknown.
     private static func snapshot(
         of revision: IntakeRevision?, in cache: inout [String: ProductDefinition?], using store: JournalStore
     ) -> ProductDefinition? {
         guard let id = revision?.productSnapshotID else { return nil }
         if let cached = cache[id] { return cached }
-        let found = try? store.product(snapshotID: id)
+        let found = (try? store.readProduct(snapshotID: id))?.product
         cache[id] = found
         return found
     }
