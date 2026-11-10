@@ -29,7 +29,7 @@ final class P3ReviewBatchTests: XCTestCase {
         ProductDefinition(
             snapshotID: "snapshot-oats", productID: "product-oats", name: "Rolled oats",
             labelBasis: "per 100 g", catalogOrigin: "test", catalogVersion: "1",
-            nutrients: ["protein": .known(Decimal(13), .g)])
+            nutrients: ["iron": .known(Decimal(13), .mg)])
     }
 
     private func log(_ store: SwiftDataJournalStore, id: String) throws -> Intake {
@@ -47,13 +47,13 @@ final class P3ReviewBatchTests: XCTestCase {
         var broken = try log(store, id: "oats-b")
         broken.currentRevision = 99
         let totals = try DailyTotalsBuilder.totals(
-            for: [readable, broken], store: store, lookup: SnapshotFacts(), nutrients: ["protein", "iron"])
-        let protein = try XCTUnwrap(totals.total(for: "protein"))
-        XCTAssertTrue(protein.coverage.hasUnknown, "the entry with no current revision is unknown, not skipped")
-        XCTAssertEqual(protein.coverage.totalCount, 2)
-        XCTAssertEqual(protein.coverage.knownCount, 1)
+            for: [readable, broken], store: store, lookup: SnapshotFacts(), nutrients: ["iron", "zinc"])
         let iron = try XCTUnwrap(totals.total(for: "iron"))
-        XCTAssertTrue(iron.coverage.hasUnknown, "it is unknown for every nutrient asked for")
+        XCTAssertTrue(iron.coverage.hasUnknown, "the entry with no current revision is unknown, not skipped")
+        XCTAssertEqual(iron.coverage.totalCount, 2)
+        XCTAssertEqual(iron.coverage.knownCount, 1)
+        let zincTotal = try XCTUnwrap(totals.total(for: "zinc"))
+        XCTAssertTrue(zincTotal.coverage.hasUnknown, "it is unknown for every nutrient asked for")
     }
 
     func testNutrientGapsCountsAMissingRevisionAsUnknown() throws {
@@ -63,11 +63,11 @@ final class P3ReviewBatchTests: XCTestCase {
         broken.currentRevision = 99
         let read = try NutrientGapsViewModel.tallies(
             intakes: [readable, broken], store: store, lookup: SnapshotFacts(), now: noon, zoneID: "UTC")
-        let protein = try XCTUnwrap(read.tallies["protein"])
-        XCTAssertEqual(protein.known, 1)
-        XCTAssertEqual(protein.missing, 1, "the entry with no current revision is one unknown entry")
         let iron = try XCTUnwrap(read.tallies["iron"])
-        XCTAssertEqual(iron.missing, 2, "unknown for every nutrient, not skipped")
+        XCTAssertEqual(iron.known, 1)
+        XCTAssertEqual(iron.missing, 1, "the entry with no current revision is one unknown entry")
+        let zincTally = try XCTUnwrap(read.tallies["zinc"])
+        XCTAssertEqual(zincTally.missing, 2, "unknown for every nutrient, not skipped")
         XCTAssertEqual(read.loggedDays, 1)
     }
 
@@ -75,7 +75,7 @@ final class P3ReviewBatchTests: XCTestCase {
         let store = try makeStore()
         let supplement = ProductDefinition(
             snapshotID: "snapshot-multi", productID: "product-multi", name: "Synthetic multi", labelBasis: "per serving",
-            catalogOrigin: "test", catalogVersion: "1", kind: .supplement, nutrients: ["zinc": .known(Decimal(10), .mg)])
+            catalogOrigin: "test", catalogVersion: "1", kind: .supplement, nutrients: ["iron": .known(Decimal(10), .mg)])
         let id = UUID().uuidString.lowercased()
         try store.create(
             Intake(id: id, category: "food", occurredAt: noon, timeZoneIdentifier: "UTC"),
