@@ -790,13 +790,13 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
             typed: pounds ? goalWeightPoundsText : goalWeightKilogramsText, pounds: pounds, known: convertedGoalWeight)
     }
 
-    /// The kilograms a weight field stands for. A field still showing the text of a switch keeps the exact
-    /// kilograms that text was converted from; any other text is read in the field's unit.
     /// Text that does not read as a number, with the unit it was typed in. Empty text stays empty.
     static func labelledWeight(_ text: String, unit: String) -> String {
         text.isEmpty ? text : "\(text) \(unit)"
     }
 
+    /// The kilograms a weight field stands for. A field still showing the text of a switch keeps the exact
+    /// kilograms that text was converted from; any other text is read in the field's unit.
     private static func kilograms(typed text: String, pounds: Bool, known: ConvertedWeight?) -> Decimal? {
         if let known, known.text == text { return known.kilograms }
         guard let value = AmountParser.parseTyped(text) else { return nil }
