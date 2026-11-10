@@ -412,7 +412,7 @@ def test_every_wire_unit_symbol_is_one_the_ios_unit_registry_knows(product_schem
     "text",
     ["Éclair drink", "明治おいしい牛乳", "Müsli & Früchte 30 %", "Сырок глазированный", "x", "Crème fraîche d'Isigny",
      "Fromage 30\u202f% MG", "Lait\u00a0entier", "Oats \U0001f33e", "عصير برتقال", "Jalapen\u0303o", "한국 우유",
-     # The neighbours of the noncharacters are ordinary characters.
+     # The neighbors of the noncharacters are ordinary characters.
      "Oa\ufdcfts", "Oa\ufdf0ts", "Oa\U0001fffdts", "Oa\U00020000ts"],
 )
 def test_display_text_may_be_in_any_script(product_validator, field, text):
@@ -682,8 +682,8 @@ def convert(amount: Fraction, unit: str, target: str, registry, density: Fractio
             raise UnitError("missing_density")
         if density <= 0:
             raise UnitError("invalid_density")
-        # Density is grams per millilitre. The step is made in the canonical units, then the
-        # result takes the target unit's power of ten: grams divide by it, millilitres multiply.
+        # Density is grams per milliliter. The step is made in the canonical units, then the
+        # result takes the target unit's power of ten: grams divide by it, milliliters multiply.
         canonical = bounded(amount * exact(source["factor_to_canonical"]))
         if source["dimension"] == "mass":
             canonical = quotient(canonical, density)

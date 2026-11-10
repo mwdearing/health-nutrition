@@ -5,7 +5,7 @@ read live in `NutritionJournal`. The app target wires them together. Tests cover
 
 ## Screens
 - **Today** (`TodayView`, `TodayViewModel`): the date, then a teal hero (`NourishTodayHeader`) holding the calorie ring with the
-  remaining figure, the Food and Burned row and the protein, carbohydrate and fat bars. Over the goal the ring's centre says how far
+  remaining figure, the Food and Burned row and the protein, carbohydrate and fat bars. Over the goal the ring's center says how far
   over ("Calories over goal", never a negative figure). Below the hero, in content cards: the goal bars for any other tracked
   nutrient (see "Goal bars" below), an "Edit goals" link, a **Water** card with the total, the quick-add water
   capsule and its undo, an **Other amount** capsule that opens a typed field with an Add button, then the day's food and drink entries grouped by meal (Breakfast, Lunch, Dinner, Snack, then

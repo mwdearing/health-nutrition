@@ -53,7 +53,7 @@ final class SnapshotlessSupplementRowsTests: XCTestCase {
         journal.load(now: now)
         let row = try XCTUnwrap(journal.sections.flatMap(\.rows).first)
         XCTAssertFalse(row.detail.contains("tsp"), "a typed food has no spoon reading, got \(row.detail)")
-        XCTAssertTrue(row.detail.contains("mL"), "a typed food keeps its millilitres, got \(row.detail)")
+        XCTAssertTrue(row.detail.contains("mL"), "a typed food keeps its milliliters, got \(row.detail)")
         XCTAssertEqual(row.kind, .food)
     }
 

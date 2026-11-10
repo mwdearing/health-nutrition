@@ -12,7 +12,7 @@ public struct USDAFood: Sendable, Equatable {
     public let brand: String?
     public let dataType: String
     public let nutrientsPer100g: [String: NutrientValue]
-    /// The gram weight of one labelled serving, when the record gives one (Branded foods do).
+    /// The gram weight of one labeled serving, when the record gives one (Branded foods do).
     public let servingGrams: Decimal?
     /// The source's own household wording, such as "1 cup" or "1 medium".
     public let servingText: String?

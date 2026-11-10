@@ -6,7 +6,7 @@ water beside it, on the Home Screen (small, medium) and the Lock Screen (circula
 hidden without a goal, Burned without a burned value, and over goal it is a plain negative number. On a day where
 some entries have no calories, Food reads "N+" (VoiceOver "at least N calories") and, while there is something left,
 Remaining reads "Up to N" ("up to N calories remaining"); the medium widget adds its note line. Burned never has a marker. The circular
-widget's ring is the share of the goal eaten and its centre is Food ("N+" on a partial day). The rectangular
+widget's ring is the share of the goal eaten and its center is Food ("N+" on a partial day). The rectangular
 widgets (Lock Screen and Watch) show the calorie block only; the medium widget keeps protein, carbohydrate, fat and
 water beside it, and the Watch app lists them under it. With nothing logged it reads "Nothing logged today". A day with no entries but food or nutrient intake
 read from Apple Health (water alone does not count) counts as logged, as in the Diary, and shows its figures. Tapping it opens
@@ -69,11 +69,11 @@ figures; and confirm the summary file is excluded from a device backup (its reso
 
 The Home Screen widgets sit on the deep teal hero background with white text and a secondary tint for captions. Remaining
 is the figure inside a ring (mint on a darker track, filled to the share of the goal eaten), with Food and Burned under
-it; the medium widget adds protein, carbohydrate and fat as bars filled in the macro colours (each bar shows that macro's
+it; the medium widget adds protein, carbohydrate and fat as bars filled in the macro colors (each bar shows that macro's
 share of the three, since no macro goals are stored) and water. The Lock Screen families keep the system rendering. The Watch app shows
-the title, the ring with Remaining, then the macros as white figures beside coloured dots (the colours are fills, never
+the title, the ring with Remaining, then the macros as white figures beside colored dots (the colors are fills, never
 text), then water. Each ring and bar reads as one VoiceOver label, the same sentences as before. The widgets and the Watch app
-do not link the shared design package, so each target carries colour sets named after the design tokens (`hero`,
+do not link the shared design package, so each target carries color sets named after the design tokens (`hero`,
 `heroText`, `heroSecondaryText`, `heroTrack`, `RelayMint`, `macroProtein`, `macroCarbs`, `macroFat`; the Watch app needs the last
 five); `scripts/tests/test_widget_watch_colours.py` keeps them equal to the tokens in light and dark.
 

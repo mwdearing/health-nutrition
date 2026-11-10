@@ -132,7 +132,7 @@ public final class UserDefaultsSavedMealStore: SavedMealStoring, JournalErasing,
     }
 
     /// The list is written before its receipt, so a stop between the two leaves the file's meals with no
-    /// receipt, which a resume recognises and writes again. The check and the write share the store's lock.
+    /// receipt, which a resume recognizes and writes again. The check and the write share the store's lock.
     public func restoreJournalSavedMeals(_ meals: [JournalSavedMeal], receipt: String) throws {
         let list = meals.map { SavedMeal(id: $0.id, name: $0.name, meal: $0.meal, items: $0.items) }
         let data = try JSONEncoder().encode(list)

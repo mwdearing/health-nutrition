@@ -284,7 +284,7 @@ public final class JournalViewModel: ObservableObject {
               let nextNoon = calendar.date(byAdding: .day, value: 1, to: noon),
               let start = Optional(calendar.startOfDay(for: noon)),
               let end = Optional(calendar.startOfDay(for: nextNoon)),
-              // A key that names no real day (2026-02-31) would be normalised to another day, so it is refused.
+              // A key that names no real day (2026-02-31) would be normalized to another day, so it is refused.
               dayKey(start, zone: zone) == key
         else { return nil }
         return (start, end)

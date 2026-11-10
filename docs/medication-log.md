@@ -17,7 +17,7 @@ dose, and it holds no list of drugs, dose ranges, titration steps or advice.
 - **List.** Each active medication shows its name, unit and schedule, then these lines:
   - "Last dose" with the amount, unit, day and time of the latest dose, or "No dose logged yet";
   - days since the last dose: "Today", "1 day since" or "N days since". A dose whose own day is after
-    today on this device (logged further east, then read after travelling west) has no days-since line;
+    today on this device (logged further east, then read after traveling west) has no days-since line;
   - the schedule standing: "Next by your schedule: <day>", "Due today", "Overdue by 1 day" or
     "Overdue by N days". A medication with no schedule, or with no dose yet, shows no standing line.
     A dose whose own day is after today on this device has no standing line either, as it has no

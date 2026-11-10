@@ -510,7 +510,7 @@ public final class GoalsViewModel: ObservableObject {
     }
 
     /// Waits for the last Clear's Undo to close, then hides it. Sleeps again after an early wake, so it expires
-    /// only at or after the deadline, and a cancelled wait leaves the Undo alone (#526). The sleeper and clock are
+    /// only at or after the deadline, and a canceled wait leaves the Undo alone (#526). The sleeper and clock are
     /// injected so the wait is tested without real time.
     public func runClearUndoExpiry(
         sleep: @escaping (TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0)) },

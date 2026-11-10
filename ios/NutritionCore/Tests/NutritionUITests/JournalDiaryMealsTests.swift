@@ -74,7 +74,7 @@ final class JournalDiaryMealsTests: XCTestCase {
 
     /// Near midnight, the add row must sit on the section an entry added now lands in, in the zone the add flow
     /// stamps. Here it is 01:40 UTC on the 15th, which is 17:40 on the 14th in Los Angeles: the add lands on the 14th
-    /// there, so the row sits on the 14th and not on the neighbouring 15th.
+    /// there, so the row sits on the 14th and not on the neighboring 15th.
     func testAddRowSitsOnTheSectionAnAddNowLandsIn() {
         let nearMidnight = Date(timeIntervalSince1970: 1_700_012_400)  // 2023-11-15 01:40 UTC
         let utc = TimeZone(identifier: "UTC")!

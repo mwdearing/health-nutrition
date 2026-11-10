@@ -391,7 +391,7 @@ final class LabelCaptureViewModelTests: XCTestCase {
     }
 
     /// The same holds for the printed serving: an open serving field holds the values until it is saved or
-    /// cancelled, so a typed serving cannot be dropped by using the values first.
+    /// canceled, so a typed serving cannot be dropped by using the values first.
     func testValuesCannotBeUsedWhileTheServingIsBeingCorrected() {
         let model = makeModel()
         model.load(lines: panelWithFlaggedRow)

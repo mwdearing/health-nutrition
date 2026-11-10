@@ -47,7 +47,7 @@ final class CalorieRemainingTests: XCTestCase {
     }
 
     func testSettingOffLeavesBurnedOutOfRemaining() {
-        // The setting off is modelled by passing no burned: the stored goal less food, with no Burned shown.
+        // The setting off is modeled by passing no burned: the stored goal less food, with no Burned shown.
         let value = CalorieRemaining.make(
             goal: 2000, food: 1500, partial: false, missingCount: 0, burned: nil, energyLabel: "Energy")
         XCTAssertEqual(value.remaining, 500)

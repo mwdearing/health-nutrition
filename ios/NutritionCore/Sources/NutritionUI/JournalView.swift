@@ -412,7 +412,7 @@ public struct JournalView: View {
         }
     }
 
-    /// The add row under an empty meal, labelled with the shared add action. Only today's section offers it, since
+    /// The add row under an empty meal, labeled with the shared add action. Only today's section offers it, since
     /// the add flow logs to now, and a past day's add belongs to the add owner's routing work.
     @ViewBuilder
     private func addFoodRow(_ group: JournalMealGroup, in section: JournalDaySection) -> some View {

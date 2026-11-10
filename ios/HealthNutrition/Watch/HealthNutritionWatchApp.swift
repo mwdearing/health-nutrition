@@ -172,7 +172,7 @@ struct WatchTodayView: View {
             : (snapshot?.calorieSpoken ?? "Calories unknown"))
     }
 
-    /// A coloured dot (a fill, never text) beside the macro's name and grams in the primary text colour.
+    /// A colored dot (a fill, never text) beside the macro's name and grams in the primary text color.
     private func macroRow(_ name: String, grams: Double?, key: String, color: Color, snapshot: WidgetSnapshot?) -> some View {
         let figure = WidgetFigure.figure(grams, unit: "g", partial: snapshot?.isPartial(key) == true)
         return HStack(alignment: .firstTextBaseline, spacing: 6) {

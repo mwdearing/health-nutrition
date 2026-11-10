@@ -59,7 +59,7 @@ final class AppleHealthDeliveryTests: XCTestCase {
         XCTAssertEqual(Set(try services.journalStore.pendingOutbox().map(\.destination)), [.healthKit])
     }
 
-    /// The "does it actually write" check: a glass of water and a scaled portion of a labelled food,
+    /// The "does it actually write" check: a glass of water and a scaled portion of a labeled food,
     /// logged through the app's own store, reach the writer as water, protein and a mineral in Health's
     /// units, with the label's per-100 g values scaled to the 40 g logged.
     func testLoggedWaterAndScaledFoodNutrientsAreWrittenToHealth() async throws {

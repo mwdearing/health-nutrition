@@ -77,7 +77,7 @@ final class StoredShareCountingTests: XCTestCase {
         XCTAssertEqual(health, .known(200, .mL))
     }
 
-    /// An old drink given a share counts in all three places. The edit is modelled as the entry carrying the
+    /// An old drink given a share counts in all three places. The edit is modeled as the entry carrying the
     /// share from its new revision; the counting reads only the stored share, so the result is the same.
     func testAnOldDrinkGivenAShareCountsInAllThreePlaces() async throws {
         let store = try makeStore()

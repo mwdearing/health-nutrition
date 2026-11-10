@@ -89,7 +89,7 @@ public struct LogOnOtherDaysSheet: View {
         }
     }
 
-    /// "3 days selected, up to 14": the count Log checks, shown while days are picked so a greyed Log has a reason.
+    /// "3 days selected, up to 14": the count Log checks, shown while days are picked so a grayed Log has a reason.
     public static func selectionText(count: Int) -> String {
         "\(count) \(count == 1 ? "day" : "days") selected, up to \(IntakeMultiDayLogger.maximumDays)"
     }

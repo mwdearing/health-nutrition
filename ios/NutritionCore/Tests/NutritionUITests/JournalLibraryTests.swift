@@ -659,7 +659,7 @@ final class JournalLibraryTests: XCTestCase {
         XCTAssertEqual(model.revisions.first?.changeReason, "eaten earlier")
     }
 
-    /// A save that moves the amounts **and** the time is an ordinary edit, and is recorded as one. Labelling
+    /// A save that moves the amounts **and** the time is an ordinary edit, and is recorded as one. Labeling
     /// it "Time corrected" would tell a reader the time was the only thing that changed when the amounts
     /// changed too, and the history would then misdescribe the correction.
     func testEntryDetailRecordsATimeAndAmountChangeAsAnOrdinaryEdit() throws {
