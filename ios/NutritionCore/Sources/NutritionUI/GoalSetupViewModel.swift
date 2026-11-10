@@ -99,6 +99,9 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
     private var convertedHeight: ConvertedHeight?
     /// Height text that did not read as a number, as it stands in each unit, so switching back shows it as typed.
     private var carriedHeight: (metric: String, feet: String, inches: String)?
+    /// The weight text that did not read as a number, kept with the unit it was typed in on the other side of a
+    /// switch (#1104). The pair is (kilograms field, pounds field), so a switch back restores the text as typed.
+    private var carriedWeight: (kilograms: String, pounds: String)?
     /// The drafts exactly as the last estimate wrote them, so a pace change can tell untouched drafts from edited ones.
     private var estimatedTargets: [String: String]?
 
@@ -164,7 +167,16 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
                 : Self.centimeters(metricText: heightCentimetersText, known: convertedHeight))
         // Text that does not read as a number is carried over as typed, so the person sees it and can fix it.
         if pounds {
-            weightPoundsText = current?.text ?? weightKilogramsText
+            if let weight = current {
+                weightPoundsText = weight.text
+                carriedWeight = nil
+            } else if let carried = carriedWeight, carried.kilograms == weightKilogramsText {
+                weightPoundsText = carried.pounds
+            } else {
+                let labelled = Self.labelledWeight(weightKilogramsText, unit: "kg")
+                carriedWeight = (kilograms: weightKilogramsText, pounds: labelled)
+                weightPoundsText = labelled
+            }
             goalWeightPoundsText = goal?.text ?? goalWeightKilogramsText
             if let height {
                 carriedHeight = nil
@@ -178,7 +190,16 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
                 (heightFeetText, heightInchesText) = (heightCentimetersText, "")
             }
         } else {
-            weightKilogramsText = current?.text ?? weightPoundsText
+            if let weight = current {
+                weightKilogramsText = weight.text
+                carriedWeight = nil
+            } else if let carried = carriedWeight, carried.pounds == weightPoundsText {
+                weightKilogramsText = carried.kilograms
+            } else {
+                let labelled = Self.labelledWeight(weightPoundsText, unit: "lb")
+                carriedWeight = (kilograms: labelled, pounds: weightPoundsText)
+                weightKilogramsText = labelled
+            }
             goalWeightKilogramsText = goal?.text ?? goalWeightPoundsText
             if let height {
                 carriedHeight = nil
@@ -587,6 +608,7 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
     public func clearAnswers() {
         step = .aim
         carriedHeight = nil
+        carriedWeight = nil
         aim = nil
         sex = nil
         ageText = ""
@@ -770,6 +792,11 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
 
     /// The kilograms a weight field stands for. A field still showing the text of a switch keeps the exact
     /// kilograms that text was converted from; any other text is read in the field's unit.
+    /// Text that does not read as a number, with the unit it was typed in. Empty text stays empty.
+    static func labelledWeight(_ text: String, unit: String) -> String {
+        text.isEmpty ? text : "\(text) \(unit)"
+    }
+
     private static func kilograms(typed text: String, pounds: Bool, known: ConvertedWeight?) -> Decimal? {
         if let known, known.text == text { return known.kilograms }
         guard let value = AmountParser.parseTyped(text) else { return nil }
