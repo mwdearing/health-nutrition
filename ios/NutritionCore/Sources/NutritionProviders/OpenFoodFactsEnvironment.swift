@@ -20,6 +20,7 @@ public struct OpenFoodFactsEnvironment: Sendable, Hashable {
         searchBaseURL: URL(string: "https://search.openfoodfacts.org")!
     )
 
+    #if DEBUG
     /// Staging is for manual checks only. The caller injects the Authorization header value
     /// (the staging credentials are published in the Open Food Facts documentation); it is
     /// never stored in this repository.
@@ -29,6 +30,7 @@ public struct OpenFoodFactsEnvironment: Sendable, Hashable {
             authorizationHeader: authorization
         )
     }
+    #endif
 }
 
 public enum OpenFoodFactsAttribution: Sendable {

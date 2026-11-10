@@ -131,8 +131,8 @@ public final class AddHomeViewModel: ObservableObject, Identifiable {
                         labelBasis: product.labelBasis, logged: prefill.components)
                 // Scaled values are kept to what the journal reads back (`StoredDecimal`) before they name a
                 // snapshot, so the snapshot id and the stored values agree.
-                let nutrients = product.nutrients.mapValues { value in
-                    factor.map { StoredDecimal.storable(value.scaled(by: $0)) } ?? .unknown
+                let nutrients = try product.nutrients.mapValues { value in
+                    try factor.map { try StoredDecimal.storable(value.scaled(by: $0)) } ?? .unknown
                 }
                 model.applyLabelProduct(ProductDefinition(
                     snapshotID: UUID().uuidString.lowercased(), productID: product.productID,

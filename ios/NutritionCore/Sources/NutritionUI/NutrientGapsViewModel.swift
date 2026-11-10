@@ -445,7 +445,8 @@ public final class NutrientGapsViewModel: ObservableObject {
 
     /// For each nutrient, the days in the span with at least one entry that states it or could have
     /// (a food, or a supplement that declares it). A day logged with only supplements that do not
-    /// declare a nutrient says nothing about it, like a day nothing was logged, so it is not one of them.
+    /// declare a nutrient says nothing about it, like a day nothing was logged, so it is not one of them. A day
+    /// whose entries all leave the nutrient unknown is one of them: the entry could have stated it.
     static func statedDays(_ byDay: [[String: NutrientDayTally]]) -> [String: Int] {
         var days: [String: Int] = [:]
         for day in byDay {
@@ -538,8 +539,10 @@ public final class NutrientGapsViewModel: ObservableObject {
         return tallies
     }
 
-    /// The week's totals as a daily average over each nutrient's own stated days, so a day that said
-    /// nothing about a nutrient never reads as a day with none of it. Entry counts stay totals, so
+    /// The week's totals as a daily average over each nutrient's own days, so a day with no entry that speaks
+    /// to a nutrient never reads as a day with none of it. A day whose only entries leave the nutrient
+    /// unknown still has an entry that speaks to it, so it is in the divisor with nothing added to the sum;
+    /// the figure is read as "at least". Entry counts stay totals, so
     /// "Unknown for 3 entries" still counts entries.
     static func averaged(_ tallies: [String: NutrientDayTally], byDay: [[String: NutrientDayTally]]) -> [String: NutrientDayTally] {
         let days = statedDays(byDay)
@@ -648,8 +651,12 @@ public final class NutrientGapsViewModel: ObservableObject {
             // Today is 0; a day in the future or before the span is not part of it.
             guard (0..<max(days, 1)).contains(day.offset) else { continue }
             let revisions = try store.revisions(of: intake.id)
-            guard let current = revisions.first(where: { $0.number == intake.currentRevision }) else { continue }
             if intake.category != DailyTotalsBuilder.waterCategory { logged.insert(day.date) }
+            // A current revision that is missing states nothing: the entry is unknown for every nutrient.
+            guard let current = revisions.first(where: { $0.number == intake.currentRevision }) else {
+                for nutrient in nutrients { byDate[day.date, default: [:]][nutrient, default: NutrientDayTally()].missing += 1 }
+                continue
+            }
             // A snapshot that cannot be read fails the read, rather than counting a supplement as food (#775).
             let snapshot = try current.productSnapshotID.flatMap { try store.product(snapshotID: $0) }
             // A hand-typed entry has no snapshot, so its category says whether it is a supplement (#364).

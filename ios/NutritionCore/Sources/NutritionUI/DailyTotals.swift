@@ -87,9 +87,13 @@ public enum DailyTotalsBuilder {
         // One snapshot is read once per build, however many intakes and nutrients refer to it.
         var snapshots: [String: ProductDefinition?] = [:]
         var entries: [(components: [IntakeComponent], snapshot: ProductDefinition?, category: String, typed: Bool)] = []
+        var withoutRevision = 0
         for intake in intakes {
             let revisions = try store.revisions(of: intake.id)
+            // An intake whose current revision cannot be found states nothing: it counts as unknown for every nutrient
+            // below, so the day reads partial instead of the entry vanishing from it.
             guard let current = revisions.first(where: { $0.number == intake.currentRevision }) else {
+                withoutRevision += 1
                 continue
             }
             let snapshot = Self.snapshot(of: current, in: &snapshots, using: store)
@@ -114,6 +118,8 @@ public enum DailyTotalsBuilder {
                 if contribution.contains(.unknown) { missing += 1 }
                 values.append(contentsOf: contribution)
             }
+            missing += withoutRevision
+            values.append(contentsOf: Array(repeating: NutrientValue.unknown, count: withoutRevision))
             missingCounts[nutrient] = missing
             totals[nutrient] = Self.sum(values, nutrient: nutrient)
             if let partial = Self.partialKnownSum(values, nutrient: nutrient) {
