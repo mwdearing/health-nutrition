@@ -57,8 +57,10 @@ final class CalorieSummaryFiguresTests: XCTestCase {
 
     /// A half calorie rounds away from zero in Today and on the widgets alike, so both read "over goal" by one.
     func testAHalfCalorieOverGoalRoundsTheSameAsTheWidgets() {
-        let result = figures(goal: 2000, food: Decimal(string: "2000.5")!)
-        XCTAssertEqual(result.remaining, "1")
-        XCTAssertEqual(result.caption, "Calories over goal")
+        let calories = CalorieRemaining.make(
+            goal: 2000, food: Decimal(string: "2000.5")!, partial: false, missingCount: 0, burned: nil,
+            energyLabel: "Energy")
+        XCTAssertEqual(NourishTodayHeader.summaryFigures(calories).remaining, "1")
+        XCTAssertEqual(NourishTodayHeader.remainingCaption(calories), "Calories over goal")
     }
 }
