@@ -654,6 +654,8 @@ public final class NutrientGapsViewModel: ObservableObject {
             if intake.category != DailyTotalsBuilder.waterCategory { logged.insert(day.date) }
             // A current revision that is missing states nothing: the entry is unknown for every nutrient.
             guard let current = revisions.first(where: { $0.number == intake.currentRevision }) else {
+                // Water states no nutrients, so a missing revision leaves nothing unknown.
+                if intake.category == DailyTotalsBuilder.waterCategory { continue }
                 for nutrient in nutrients { byDate[day.date, default: [:]][nutrient, default: NutrientDayTally()].missing += 1 }
                 continue
             }
