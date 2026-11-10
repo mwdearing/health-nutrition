@@ -71,6 +71,18 @@ final class P3ReviewBatchTests: XCTestCase {
         XCTAssertEqual(read.loggedDays, 1)
     }
 
+    func testAWaterEntryWithoutItsRevisionAddsNoUnknownNutrients() throws {
+        let store = try makeStore()
+        var water = try log(store, id: "water-a")
+        water.category = DailyTotalsBuilder.waterCategory
+        water.currentRevision = 99
+        let read = try NutrientGapsViewModel.tallies(
+            intakes: [water], store: store, lookup: SnapshotFacts(), now: noon, zoneID: "UTC")
+        XCTAssertEqual(read.tallies["iron"]?.missing ?? 0, 0, "water states no nutrients, so it is not unknown")
+        XCTAssertEqual(read.tallies["zinc"]?.missing ?? 0, 0)
+        XCTAssertEqual(read.loggedDays, 0)
+    }
+
     func testAnUnreadableSnapshotIsNotCountedAsFoodOnToday() throws {
         let store = try makeStore()
         let supplement = ProductDefinition(
