@@ -507,7 +507,6 @@ final class GoalSetupWeightPlanTests: XCTestCase {
 
         XCTAssertEqual(model.weightKilogramsText, "7o")
         XCTAssertEqual(model.goalWeightKilogramsText, "6o")
-        XCTAssertEqual(model.goalWeightKilogramsText, "6o")
         XCTAssertEqual(model.heightCentimetersText, "5 ft 1x in")
 
         // Inches with no feet do not read as a height, and the carried text must not read as centimeters.
