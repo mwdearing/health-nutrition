@@ -26,7 +26,7 @@ public struct CustomProductSave: Sendable {
 }
 
 public enum ProductOperationKind: String, Codable, Sendable { case publish, withdraw }
-public enum ProductOperationStatus: String, Codable, Sendable { case pending, sending, paused, acknowledged, failed, canceled, needsReview, satisfied }
+public enum ProductOperationStatus: String, Codable, Sendable { case pending, sending, paused, acknowledged, failed, cancelled, needsReview, satisfied }
 public enum ProductAccountState: String, Codable, Sendable { case none, active, withdrawn, rejected }
 /// Closed codes only: server error text and personal information never enter the queue.
 public enum ProductDeliveryReason: String, Codable, Sendable { case network, authentication, consent, rateLimited, invalidInput, conflict, rejected, unavailable }
