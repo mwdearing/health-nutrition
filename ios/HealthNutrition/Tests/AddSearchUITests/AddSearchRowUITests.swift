@@ -61,7 +61,10 @@ final class AddSearchRowUITests: XCTestCase {
         // Log one typed entry so the search screen has a Recent row to push.
         tapHittableAdd(app)
         let typeIt = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Type it in")).firstMatch
-        XCTAssertTrue(typeIt.waitForExistence(timeout: 10), "the Type it in tile is not on Add. \(describeAddState(app))")
+        // The Add screen can take longer than a fixed wait on a slow runner, so wait until the tile is hittable (#1358).
+        XCTAssertTrue(
+            pollUntil(timeout: 30, { typeIt.exists && typeIt.isHittable }),
+            "the Type it in tile is not hittable on Add. \(describeAddState(app))")
         typeIt.tap()
         XCTAssertTrue(app.navigationBars["Log entry"].waitForExistence(timeout: 20), "the details screen did not open")
         // The Name field's title is not its spoken name (only opted-in fields are), so it is the form's first field.
