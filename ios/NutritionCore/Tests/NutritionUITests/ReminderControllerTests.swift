@@ -121,6 +121,13 @@ final class ReminderControllerTests: XCTestCase {
         (ReminderController(preferences: preferences, scheduler: scheduler, erasures: erasures), preferences)
     }
 
+    func testNoNoticeOffersNoWayToSettings() async throws {
+        let (controller, _) = makeController(FakeReminderScheduler())
+
+        XCTAssertNil(controller.message)
+        XCTAssertFalse(controller.offersOpenSettings)
+    }
+
     func testReminderIsOffByDefaultAndSchedulesNothing() async throws {
         let scheduler = FakeReminderScheduler()
         scheduler.settablePermission = .notDetermined
@@ -195,6 +202,7 @@ final class ReminderControllerTests: XCTestCase {
         XCTAssertFalse(controller.isOn)
         XCTAssertFalse(preferences.isReminderOn)
         XCTAssertEqual(controller.message, withdrawnMessage)
+        XCTAssertTrue(controller.offersOpenSettings, "notifications that are off must offer a way to Settings")
         XCTAssertEqual(scheduler.scheduledTimes, [])
         XCTAssertNil(scheduler.pendingTime)
     }
