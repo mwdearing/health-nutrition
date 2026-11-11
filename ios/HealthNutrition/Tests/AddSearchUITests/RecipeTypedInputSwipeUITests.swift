@@ -71,6 +71,37 @@ final class RecipeTypedInputSwipeUITests: XCTestCase {
         XCTAssertTrue(askedFirst || stillThere,
                       "the edge swipe left the recipe editor and lost the typed title without asking")
     }
+
+    /// The recipes sheet opens over Library with the list as the root of its own stack, so Close must be the way
+    /// out. Route: Library tab, Recipes segment, "Open recipes", then "Close".
+    func testRecipesSheetHasACloseThatLeavesIt() throws {
+        let app = XCUIApplication()
+        app.launch()
+
+        let getStarted = app.buttons["Get started"]
+        if getStarted.waitForExistence(timeout: 5) { getStarted.tap() }
+
+        let library = app.tabBars.buttons["Library"]
+        XCTAssertTrue(library.waitForExistence(timeout: 10), "no Library tab")
+        library.tap()
+
+        let segment = app.segmentedControls.buttons["Recipes"].firstMatch
+        XCTAssertTrue(segment.waitForExistence(timeout: 20), "Library has no Recipes segment")
+        segment.tap()
+        if !waitUntil(timeout: 5, { segment.isSelected }) { segment.tap() }
+        XCTAssertTrue(waitUntil(timeout: 10, { segment.isSelected }), "the Recipes segment did not become selected")
+
+        let openRecipes = app.buttons["Open recipes"]
+        XCTAssertTrue(openRecipes.waitForExistence(timeout: 20), "Library has no Open recipes control")
+        openRecipes.tap()
+
+        let close = app.navigationBars["Recipes"].buttons["Close"]
+        XCTAssertTrue(close.waitForExistence(timeout: 10), "the recipes sheet has no Close")
+        close.tap()
+        XCTAssertTrue(
+            waitUntil(timeout: 10, { !app.navigationBars["Recipes"].exists }),
+            "Close did not leave the recipes sheet")
+    }
 }
 
 /// Polls `condition` until it holds or `timeout` seconds pass; true when it held.
