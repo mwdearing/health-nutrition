@@ -318,9 +318,9 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
         guard let goal = goalWeightKilograms(), goal > 0 else { return Self.invalidFieldNotice }
         guard GoalEstimator.weightRangeKilograms.contains(goal) else {
             guard unitSystem == .usCustomary else { return "Check your goal weight. It must be between 30 and 300 kg." }
-            let least = Self.rounded(Decimal(30) / Self.kilogramsPerPound, scale: 0, .down)
-            let most = Self.rounded(Decimal(300) / Self.kilogramsPerPound, scale: 0, .down)
-            return "Check your goal weight. It must be about \(DecimalFormatting.text(least)) to \(DecimalFormatting.text(most)) lb."
+            let least = Self.rounded(Decimal(30) / Self.kilogramsPerPound, scale: 1, .up)
+            let most = Self.rounded(Decimal(300) / Self.kilogramsPerPound, scale: 1, .down)
+            return "Check your goal weight. It must be between \(DecimalFormatting.text(least)) and \(DecimalFormatting.text(most)) lb."
         }
         guard let current = weightKilograms() else { return nil }
         if aim == .lose && goal >= current { return Self.goalWeightBelowNotice }
@@ -699,9 +699,9 @@ public final class GoalSetupViewModel: ObservableObject, Identifiable {
             return "Check your height. It must be between \(Self.feetAndInches(inches: least)) and \(Self.feetAndInches(inches: most))."
         case .outOfRange(.weight):
             guard usCustomary else { return "Check your weight. It must be between 30 and 300 kg." }
-            let least = Self.rounded(Decimal(30) / Self.kilogramsPerPound, scale: 0, .down)
-            let most = Self.rounded(Decimal(300) / Self.kilogramsPerPound, scale: 0, .down)
-            return "Check your weight. It must be about \(DecimalFormatting.text(least)) to \(DecimalFormatting.text(most)) lb."
+            let least = Self.rounded(Decimal(30) / Self.kilogramsPerPound, scale: 1, .up)
+            let most = Self.rounded(Decimal(300) / Self.kilogramsPerPound, scale: 1, .down)
+            return "Check your weight. It must be between \(DecimalFormatting.text(least)) and \(DecimalFormatting.text(most)) lb."
         case .outOfRange(.weeklyChange):
             guard usCustomary else { return "Check your pace. It must be between 0.1 and 1 kg a week." }
             let least = Self.rounded(Decimal(string: "0.1")! / Self.kilogramsPerPound, scale: 1, .up)
