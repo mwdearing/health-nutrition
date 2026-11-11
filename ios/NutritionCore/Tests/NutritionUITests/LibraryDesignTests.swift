@@ -262,6 +262,24 @@ final class LibraryDesignTests: XCTestCase {
         XCTAssertNil(library.errorMessage)
     }
 
+    /// The notice sits in view beside Undo, so it must not outlive what it was about.
+    func testAnItemNoticeGoesWithAChangeOfSegmentOrSearch() throws {
+        let library = makeLibrary(store: try makeStore(), favorites: try makeFavorites())
+        library.load()
+
+        library.reportOpenFailure()
+        library.segment = .recent
+        XCTAssertNil(library.errorMessage, "a segment change left the item notice on screen")
+
+        library.reportOpenFailure()
+        library.searchText = "oats"
+        XCTAssertNil(library.errorMessage, "a search change left the item notice on screen")
+
+        library.reportOpenFailure()
+        library.segment = .recent
+        XCTAssertNotNil(library.errorMessage, "choosing the segment already shown must not clear a notice")
+    }
+
     func testAddHomeCarriesAMealIntoPrefilledDetails() throws {
         let store = try makeStore()
         XCTAssertNil(LibraryViewModel.mealLabel(for: RepeatTemplate(
