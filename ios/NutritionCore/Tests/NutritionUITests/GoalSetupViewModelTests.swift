@@ -435,7 +435,7 @@ final class GoalSetupViewModelTests: XCTestCase {
         model.weightKilogramsText = ""
         model.weightPoundsText = "900"
         model.next(); model.next(); model.next(); model.next()
-        // 30 kg is 66.1 lb, so the least weight accepted is 67 lb; 300 kg is 661.4 lb.
+        // 30 kg is 66.14 lb, so the least weight shown is 66.2 lb (rounded up); 300 kg is 661.38 lb, shown as 661.3 lb (rounded down).
         XCTAssertEqual(model.resultError, "Check your weight. It must be between 66.2 and 661.3 lb.")
     }
 
