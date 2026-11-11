@@ -174,7 +174,7 @@ public struct CustomProductSharingSection: View {
                         Text(preview.revision.content.name)
                         if let brand = preview.revision.content.brand { Text(brand) }
                         Text(preview.revision.content.kind.displayName)
-                        Text(preview.revision.content.basis.rawValue)
+                        Text("Values are \(Self.basisText(preview.revision.content.basis))")
                         if let serving = preview.revision.content.serving {
                             Text("Serving: \(NSDecimalNumber(decimal: serving.quantity).stringValue) \(serving.unit.screenSymbol)")
                             if let text = serving.text { Text(text) }
@@ -183,7 +183,7 @@ public struct CustomProductSharingSection: View {
                         ForEach(preview.revision.content.facts, id: \.rawKeyIdentity) { fact in Text("\(fact.displayName): \(Self.describe(fact.value))") }
                     }
                     Text("Shared products are visible immediately and remain unverified until owner review. Your consumed amount, time, meal, notes and history are excluded.")
-                    if let state = preview.ownState { Text("Your current contribution: \(state.currentState.rawValue), revision \(state.currentRevision ?? "none").") }
+                    if let state = preview.ownState { Text("Your current contribution: \(Self.contributionText(state.currentState)).") }
                     if let sharedProduct = preview.currentSharedProduct {
                         DisclosureGroup("Current shared representative") {
                             Text("These shared facts may differ from your own contribution. They are not merged with your edit.").font(.footnote)
@@ -211,9 +211,9 @@ public struct CustomProductSharingSection: View {
         switch product.product {
         case .custom(let content):
             Text(content.kind.displayName)
-            Text(content.basis.rawValue)
+            Text("Values are \(Self.basisText(content.basis))")
             ForEach(content.facts, id: \.rawKeyIdentity) { fact in
-                Text("\(fact.displayName): \(fact.amount ?? fact.state.rawValue) \(fact.unit?.screenSymbol ?? "")")
+                Text("\(fact.displayName): \(fact.amount ?? Self.factStateText(fact.state)) \(fact.unit?.screenSymbol ?? "")")
             }
         case .legacyLabel(let label):
             Text(label.kind?.displayName ?? "Kind needs review")
@@ -221,6 +221,32 @@ public struct CustomProductSharingSection: View {
             ForEach(label.nutrients.keys.sorted(), id: \.self) { key in
                 Text("\(key): \(NSDecimalNumber(decimal: label.nutrients[key]!).stringValue)")
             }
+        }
+    }
+    /// The words for a stored basis, never its stored key.
+    static func basisText(_ basis: ProductBasis) -> String {
+        switch basis {
+        case .per100g: return "per 100 g"
+        case .per100mL: return "per 100 mL"
+        case .perServing: return "per serving"
+        }
+    }
+    /// The words for a fact that has no amount.
+    static func factStateText(_ state: ProductFactState) -> String {
+        switch state {
+        case .known: return "Known"
+        case .unknown: return "Unknown"
+        case .notApplicable: return "Not applicable"
+        case .belowReportingThreshold: return "Below reporting threshold"
+        }
+    }
+    /// The words for the person's current contribution state.
+    static func contributionText(_ status: ProductContributionStatus) -> String {
+        switch status {
+        case .none: return "none"
+        case .active: return "shared"
+        case .withdrawn: return "removed"
+        case .rejected: return "rejected"
         }
     }
     private static func describe(_ value: NutrientValue) -> String {
