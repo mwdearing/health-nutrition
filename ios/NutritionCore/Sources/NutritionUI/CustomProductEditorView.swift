@@ -225,29 +225,15 @@ public struct CustomProductSharingSection: View {
     }
     /// The words for a stored basis, never its stored key.
     static func basisText(_ basis: ProductBasis) -> String {
-        switch basis {
-        case .per100g: return "per 100 g"
-        case .per100mL: return "per 100 mL"
-        case .perServing: return "per serving"
-        }
+        return basis.rawValue
     }
     /// The words for a fact that has no amount.
     static func factStateText(_ state: ProductFactState) -> String {
-        switch state {
-        case .known: return "Known"
-        case .unknown: return "Unknown"
-        case .notApplicable: return "Not applicable"
-        case .belowReportingThreshold: return "Below reporting threshold"
-        }
+        return state.rawValue
     }
     /// The words for the person's current contribution state.
     static func contributionText(_ status: ProductContributionStatus) -> String {
-        switch status {
-        case .none: return "none"
-        case .active: return "shared"
-        case .withdrawn: return "removed"
-        case .rejected: return "rejected"
-        }
+        return status.rawValue
     }
     private static func describe(_ value: NutrientValue) -> String {
         switch value {
