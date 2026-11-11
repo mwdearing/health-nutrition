@@ -437,6 +437,15 @@ final class WidgetSnapshotTests: XCTestCase {
         XCTAssertNil(WidgetFigure.wholeNumber(1e30))
     }
 
+    /// #1417: a half calorie rounds half away from zero on the widgets, as on Today's header, so the same figure
+    /// reads the same on both (2.5 is 3, 0.5 is 1, -2.5 is -3). Pinned here so a change to either side shows.
+    func testAHalfCalorieRoundsAwayFromZeroLikeTodayHeader() {
+        XCTAssertEqual(WidgetFigure.wholeNumber(2.5), "3")
+        XCTAssertEqual(WidgetFigure.wholeNumber(0.5), "1")
+        XCTAssertEqual(WidgetFigure.wholeNumber(-2.5), "-3")
+        XCTAssertEqual(WidgetFigure.wholeNumber(-0.4), "0", "a hair under zero never reads -0")
+    }
+
     /// #1148: a day whose water is partly unknown (a distrusted entry with a share) is listed as partial, so the
     /// widget and Watch can mark the water with "+". A day with all water known is not listed.
     @MainActor
