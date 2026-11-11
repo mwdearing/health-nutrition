@@ -79,9 +79,6 @@ public struct LibraryView: View {
                 }
                 segmentContent
             }
-            if let message = model.errorMessage {
-                Text(message).font(.footnote).foregroundStyle(TokenColors.error)
-            }
             }
             .listRowBackground(TokenColors.card)
         }
@@ -95,6 +92,12 @@ public struct LibraryView: View {
         .safeAreaInset(edge: .bottom) {
             // Pick mode is Add's "From Library": a token from this screen must never show there.
             VStack(spacing: 0) {
+            // A failure shows here, in view beside Undo, not as a footnote at the foot of a long list.
+            if let message = model.errorMessage {
+                InlineNotice(message, tone: .failed)
+                    .padding(.horizontal, DesignSpacing.m)
+                    .padding(.top, DesignSpacing.s)
+            }
             if onPick == nil, let savedMeals = model.savedMeals { SavedMealUndoBar(model: savedMeals) }
             if onPick == nil, let token = model.undoToken {
                 UndoToast(token.message) {
