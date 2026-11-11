@@ -680,6 +680,12 @@ struct RootView: View {
                 }
             )
             .saveConfirmation(recipeNotice)
+            .toolbar {
+                // The list is the root of its own stack, so it has no Back; Close is the way out of the sheet.
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { recipeNavigation.showingRecipes = false }
+                }
+            }
             .navigationDestination(for: RecipeRoute.self) { route in
                 switch route {
                 case .detail(let version):
