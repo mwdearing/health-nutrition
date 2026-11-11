@@ -71,24 +71,6 @@ final class RecipeTypedInputSwipeUITests: XCTestCase {
         XCTAssertTrue(askedFirst || stillThere,
                       "the edge swipe left the recipe editor and lost the typed title without asking")
     }
-}
-
-/// Polls `condition` until it holds or `timeout` seconds pass; true when it held.
-private func waitUntil(timeout: TimeInterval, _ condition: () -> Bool) -> Bool {
-    let deadline = Date().addingTimeInterval(timeout)
-    while Date() < deadline {
-        if condition() { return true }
-        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
-    }
-    return condition()
-}
-
-/// Once a form is pushed, its own navigation bar shows exactly one leading control, Back or Cancel.
-private func assertOneLeadingControl(_ app: XCUIApplication, bar: String, file: StaticString = #filePath, line: UInt = #line) {
-    let navBar = app.navigationBars[bar]
-    XCTAssertTrue(navBar.waitForExistence(timeout: 10), "\(bar) bar is missing", file: file, line: line)
-    let leading = navBar.buttons.matching(NSPredicate(format: "label == %@ OR label == %@", "Back", "Cancel"))
-    XCTAssertEqual(leading.count, 1, "\(bar) shows \(leading.count) leading controls, expected one", file: file, line: line)
 
     /// The recipes sheet opens over Library with the list as the root of its own stack, so Close must be the way
     /// out. Route: Library tab, Recipes segment, "Open recipes", then "Close".
@@ -120,4 +102,22 @@ private func assertOneLeadingControl(_ app: XCUIApplication, bar: String, file: 
             waitUntil(timeout: 10, { !app.navigationBars["Recipes"].exists }),
             "Close did not leave the recipes sheet")
     }
+}
+
+/// Polls `condition` until it holds or `timeout` seconds pass; true when it held.
+private func waitUntil(timeout: TimeInterval, _ condition: () -> Bool) -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+    while Date() < deadline {
+        if condition() { return true }
+        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+    }
+    return condition()
+}
+
+/// Once a form is pushed, its own navigation bar shows exactly one leading control, Back or Cancel.
+private func assertOneLeadingControl(_ app: XCUIApplication, bar: String, file: StaticString = #filePath, line: UInt = #line) {
+    let navBar = app.navigationBars[bar]
+    XCTAssertTrue(navBar.waitForExistence(timeout: 10), "\(bar) bar is missing", file: file, line: line)
+    let leading = navBar.buttons.matching(NSPredicate(format: "label == %@ OR label == %@", "Back", "Cancel"))
+    XCTAssertEqual(leading.count, 1, "\(bar) shows \(leading.count) leading controls, expected one", file: file, line: line)
 }
