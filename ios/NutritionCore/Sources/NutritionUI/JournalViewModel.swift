@@ -1172,21 +1172,19 @@ public final class JournalViewModel: ObservableObject {
     /// The day's energy as "1240 kcal", or nil when the day cannot total it. Never a zero for unknown. `outside` is
     /// the energy other apps logged to Apple Health that day, added as Today adds it.
     static func energyText(totals: DailyTotals, outside: HealthIntakeTotals.Outside = .notConnected) -> String? {
-        let journalLine = NutrientProgressLine.make(nutrient: energyKey, total: totals.total(for: energyKey), goal: nil)
+        // The same line the energy goal bar uses (goalBar), so the header's figure and the bar agree (#1407).
         let countedLine = NutrientProgressLine.make(
             nutrient: energyKey, total: totals.total(for: energyKey), goal: nil,
             knownSum: totals.knownSum(for: energyKey), missingCount: totals.missingCount(for: energyKey))
-        let combined = HealthIntakeTotals.combine([countedLine], outside: outside).first ?? countedLine
-        // An exact figure only: a combined day that is partial (a Health read that did not complete, or journal entries
-        // with no energy) keeps the journal-only figure the header showed before, rather than a figure that is short.
-        let line: NutrientProgressLine
-        if case .known = combined.amount, !combined.isPartial { line = combined } else { line = journalLine }
+        let line = HealthIntakeTotals.combine([countedLine], outside: outside).first ?? countedLine
         guard case .known(let value, _) = line.amount else { return nil }
         // Energy reads as "400 Calories": the Diary never shows the kcal symbol on a screen. A small positive
         // amount reads "under 1", never "0", the same as Today's ring.
         if value > 0 && value < 1 { return "less than 1 calorie" }
         let whole = BodyActivityViewModel.whole(value)
-        return whole == "1" ? "1 calorie" : "\(whole) calories"
+        // A partial day is the known sum, so it reads "at least N", as the goal bar does.
+        let prefix = line.isPartial ? "at least " : ""
+        return prefix + (whole == "1" ? "1 calorie" : "\(whole) calories")
     }
 
     /// "1 entry" or "9 entries".
