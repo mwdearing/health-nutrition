@@ -389,7 +389,6 @@ private struct SettingsContent: View {
                     Button(CameraAccessNotice.openSettingsTitle) {
                         if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
                     }
-                    .accessibilityHint("Opens Settings to allow notifications")
                 }
                 #endif
             }
