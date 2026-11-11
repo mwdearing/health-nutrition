@@ -168,7 +168,7 @@ final class GoalSetupWeightPlanTests: XCTestCase {
         answer(model, aim: .lose, system: .usCustomary)
         walk(model, to: .pace)
         model.goalWeightPoundsText = "700"
-        XCTAssertEqual(model.goalWeightNotice, "Check your goal weight. It must be between 67 and 661 lb.")
+        XCTAssertEqual(model.goalWeightNotice, "Check your goal weight. It must be about 66 to 661 lb.")
     }
 
     func testDirectionNoticesAreFixedSentences() {

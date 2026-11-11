@@ -436,7 +436,7 @@ final class GoalSetupViewModelTests: XCTestCase {
         model.weightPoundsText = "900"
         model.next(); model.next(); model.next(); model.next()
         // 30 kg is 66.1 lb, so the least weight accepted is 67 lb; 300 kg is 661.4 lb.
-        XCTAssertEqual(model.resultError, "Check your weight. It must be between 67 and 661 lb.")
+        XCTAssertEqual(model.resultError, "Check your weight. It must be about 66 to 661 lb.")
     }
 
     func testAPaceOutOfRangeIsWordedInKilogramsForMetric() {
