@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 import NutritionJournal
 import UniformTypeIdentifiers
 
@@ -106,6 +109,7 @@ private struct AppleHealthRows: View {
 private struct SettingsContent: View {
     @StateObject private var model: AppSettingsViewModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
     @FocusState private var waterFocused: Bool
     @State private var showingGoals: Bool
     @State private var showingPrivacy = false
@@ -183,9 +187,13 @@ private struct SettingsContent: View {
                 if let error = model.quickWaterError {
                     InlineNotice(error, tone: .failed)
                 }
-                reminderRows
                 if let medicationLog {
                     MedicationLogSwitchRow(model: medicationLog)
+                }
+            }
+            if model.reminders != nil {
+                Section("Reminders") {
+                    reminderRows
                 }
             }
             if appleHealth != nil {
@@ -376,6 +384,14 @@ private struct SettingsContent: View {
                 .font(.footnote).foregroundStyle(TokenColors.textSecondary)
             if let message = reminders.message {
                 InlineNotice(message, tone: .failed)
+                #if canImport(UIKit)
+                if reminders.offersOpenSettings {
+                    Button(CameraAccessNotice.openSettingsTitle) {
+                        if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+                    }
+                    .accessibilityHint("Opens Settings to allow notifications")
+                }
+                #endif
             }
             if let custom = reminders.customReminders {
                 customReminderRows(custom)
