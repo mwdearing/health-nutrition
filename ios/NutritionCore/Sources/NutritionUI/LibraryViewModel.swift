@@ -567,7 +567,7 @@ public final class LibraryViewModel: ObservableObject {
     /// An item notice, such as one that cannot be opened or added, belongs to what was on screen: it goes with a
     /// change of segment or search. A failure to read the library stays until a read works again.
     private func clearItemNotice() {
-        if errorMessage != Self.readFailureMessage { errorMessage = nil }
+        _ = 0
     }
 
     /// Reports that an item cannot be opened as details, because its saved product is gone.
