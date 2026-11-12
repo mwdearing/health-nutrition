@@ -54,7 +54,7 @@ ones included, but some layouts are still misread. An open case: a nested `#if` 
 view can let an outer arm lend that label to an unlabeled image (#68). A misread is silenced with `lint-allow`.
 
 A SwiftSyntax version of `unlabeled-image` and `fixed-font-size` was tried first in #75 (closed unmerged). It agreed
-with this lint on 50 of 55 corpus cases. A second one now lives in `tools/view-lint` (#68), with a harness that runs
+with this lint on 50 of 55 corpus cases. A second one now lives in `ios/Tools/view-lint` (#68), with a harness that runs
 this lint's own tests against it: it agrees on every valid-Swift case that lint tests build. The cases where the two differ are
 path scoping, `lint-allow`, tests written in Swift that does not parse, and a few `#if` shapes found by probing (see its
 README). This Python lint is still

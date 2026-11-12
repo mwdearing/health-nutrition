@@ -1,7 +1,7 @@
 """Differential run: the text lint's own tests, with the SwiftSyntax tool run over the same trees.
 
 Usage (from the repo root):
-    VIEW_LINT_BIN=tools/view-lint/.build/release/ViewLint python3 -m pytest -p scripts.tests.view_lint_diff \
+    VIEW_LINT_BIN=ios/Tools/view-lint/.build/release/ViewLint python3 -m pytest -p scripts.tests.view_lint_diff \
         scripts/tests/test_lint_swift_sources.py -q -p no:cacheprovider
 
 Every call of the tests' `run(root)` also runs the tool over `root`. The two rules both tools implement are compared

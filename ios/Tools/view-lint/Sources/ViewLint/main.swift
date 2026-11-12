@@ -296,11 +296,14 @@ final class Linter: SyntaxVisitor {
     func buildsAFont(_ call: FunctionCallExprSyntax, _ member: MemberAccessExprSyntax, _ name: String) -> Bool {
         if name == "system" { return true }
         if rootIsFont(member.base) { return true }
-        var current: Syntax? = Syntax(call).parent
+        var child: Syntax = Syntax(call)
+        var current: Syntax? = child.parent
         while let node = current {
             if let outer = node.as(FunctionCallExprSyntax.self),
                let outerMember = outer.calledExpression.as(MemberAccessExprSyntax.self),
-               outerMember.declName.baseName.text == "font" { return true }
+               outerMember.declName.baseName.text == "font",
+               child.parent?.is(LabeledExprSyntax.self) == true || child.is(LabeledExprListSyntax.self) { return true }
+            child = node
             current = node.parent
         }
         return false
@@ -310,7 +313,12 @@ final class Linter: SyntaxVisitor {
         var current = expression
         while let node = current {
             if let reference = node.as(DeclReferenceExprSyntax.self) { return reference.baseName.text == "Font" }
-            if let member = node.as(MemberAccessExprSyntax.self) { current = member.base; continue }
+            if let member = node.as(MemberAccessExprSyntax.self) {
+                // `SwiftUI.Font` is the same type as `Font`.
+                if member.declName.baseName.text == "Font", member.base?.as(DeclReferenceExprSyntax.self)?.baseName.text == "SwiftUI" { return true }
+                current = member.base
+                continue
+            }
             if let call = node.as(FunctionCallExprSyntax.self) { current = call.calledExpression; continue }
             return false
         }

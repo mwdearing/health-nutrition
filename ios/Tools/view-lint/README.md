@@ -7,9 +7,9 @@ a real Swift syntax tree, so `#if` blocks, nested closures and call chains are s
 ## Build and run
 
 ```sh
-cd tools/view-lint
+cd ios/Tools/view-lint
 swift build -c release            # about 6 minutes the first time (it builds swift-syntax), seconds after
-.build/release/ViewLint ../../ios/NutritionCore/Sources/NutritionUI ../../ios/HealthNutrition/Sources
+.build/release/ViewLint ../../NutritionCore/Sources/NutritionUI ../../HealthNutrition/Sources
 ```
 
 It prints `path:line: rule: message` for each finding and exits 1 when there is one. `VIEW_LINT_DUMP=1` also prints
@@ -25,7 +25,7 @@ builds, also runs this tool, then writes `AGREE` or `DIFFER` per test:
 
 ```sh
 python3 -m venv .venv && .venv/bin/pip install pytest
-PYTHONPATH=scripts/tests VIEW_LINT_BIN=$PWD/tools/view-lint/.build/release/ViewLint \
+PYTHONPATH=scripts/tests VIEW_LINT_BIN=$PWD/ios/Tools/view-lint/.build/release/ViewLint \
     .venv/bin/python -m pytest -p view_lint_diff scripts/tests/test_lint_swift_sources.py -q
 cat view-lint-diff.txt
 ```
