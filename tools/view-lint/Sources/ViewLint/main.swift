@@ -187,18 +187,22 @@ final class Linter: SyntaxVisitor {
     /// Whether `scope` holds a `Text` that VoiceOver reads in every build. A text hidden with
     /// `.accessibilityHidden(true)` in any build, including one `#if` arm alone, names nothing there.
     func visibleText(in scope: Syntax) -> Bool {
-        let collector = TextCollector(viewMode: .sourceAccurate)
-        collector.walk(scope)
-        // A text inside a conditional-compilation arm of the label is absent from the other builds, where the image
-        // would be unnamed, so only a text outside any `#if` of the label names the control.
-        return collector.texts.contains { !mayBeHidden(Syntax($0)) && !insideConditional($0, within: scope) }
+        return guaranteesText(in: scope)
     }
 
-    func insideConditional(_ node: FunctionCallExprSyntax, within scope: Syntax) -> Bool {
-        var current: Syntax? = Syntax(node).parent
-        while let candidate = current, candidate.id != scope.id {
-            if candidate.is(IfConfigDeclSyntax.self) { return true }
-            current = candidate.parent
+    /// Whether every build compiles a `Text` VoiceOver reads somewhere under `node`. A text outside any `#if` does;
+    /// a conditional does when it has an `#else` and every arm guarantees one; a text hidden in some build does not.
+    func guaranteesText(in node: Syntax) -> Bool {
+        for child in node.children(viewMode: .sourceAccurate) {
+            if let call = child.as(FunctionCallExprSyntax.self), callName(call) == "Text", !mayBeHidden(Syntax(call)) {
+                return true
+            }
+            if let config = child.as(IfConfigDeclSyntax.self) {
+                let exhaustive = config.clauses.contains { $0.condition == nil }
+                if exhaustive, config.clauses.allSatisfy({ guaranteesText(in: Syntax($0)) }) { return true }
+                continue
+            }
+            if guaranteesText(in: child) { return true }
         }
         return false
     }
