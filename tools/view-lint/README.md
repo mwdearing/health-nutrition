@@ -42,7 +42,11 @@ On the 89 trees the text lint's tests build, the two agree on 79. The 10 that di
 - None is a difference on valid Swift in that corpus. Shapes raised in review agree too: a label whose only `Text` is
   inside an `#if` without `#else` is a finding; an `#if ... #else` whose arms each hold a `Text` is not; and an image
   and its `Text` inside the same `#if DEBUG` block is not, because only the configurations that compile the image count.
-  Conditional compilation is where the two are most likely to still differ, which is why the Python lint stays the gate.
+  Conditional compilation is where the two still differ, which is why the Python lint stays the gate. Known
+  differences on valid Swift, found by probing past the corpus:
+  - A `Text` hidden by an `#if` arm that no build compiling the image uses (the tool treats any hiding arm as hiding).
+  - A `Label` whose only `Text` sits inside an `#if` without `#else`, next to an unconditional `Image`: the tool reports
+    it, the Python lint does not.
 
 On the real tree (`ios/NutritionCore/Sources/NutritionUI` and `ios/HealthNutrition/Sources`) both report nothing.
 The tool checks every file it is given, so run over the whole `ios/HealthNutrition` root it also reports three images in
