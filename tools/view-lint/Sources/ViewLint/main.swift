@@ -144,7 +144,7 @@ final class Linter: SyntaxVisitor {
         if chainHolds(after: imageNode, { namesOrHides($0, $1) }) { return }
         if let (control, closure) = labelControl(of: imageNode) {
             if chainHolds(after: Syntax(control), { namesOrHides($0, $1) }) { return }
-            for scope in labelScopes(control, closure) where visibleText(in: scope) { return }
+            for scope in labelScopes(control, closure) where visibleText(in: scope, image: imageNode) { return }
         }
         findings.append((line(image), "unlabeled-image", "image without an accessibility label"))
     }
@@ -186,23 +186,38 @@ final class Linter: SyntaxVisitor {
 
     /// Whether `scope` holds a `Text` that VoiceOver reads in every build. A text hidden with
     /// `.accessibilityHidden(true)` in any build, including one `#if` arm alone, names nothing there.
-    func visibleText(in scope: Syntax) -> Bool {
-        return guaranteesText(in: scope)
+    func visibleText(in scope: Syntax, image: Syntax) -> Bool {
+        return guaranteesText(in: scope, image: image)
     }
 
-    /// Whether every build compiles a `Text` VoiceOver reads somewhere under `node`. A text outside any `#if` does;
-    /// a conditional does when it has an `#else` and every arm guarantees one; a text hidden in some build does not.
-    func guaranteesText(in node: Syntax) -> Bool {
+    /// Whether every build that compiles the image also compiles a `Text` VoiceOver reads somewhere under `node`.
+    /// A text outside any `#if` does; a conditional does when it has an `#else` and every arm guarantees one; a text
+    /// hidden in some build does not. A conditional that holds the image itself only matters through the arm that holds
+    /// it, since the other arms do not compile the image.
+    func guaranteesText(in node: Syntax, image: Syntax) -> Bool {
         for child in node.children(viewMode: .sourceAccurate) {
             if let call = child.as(FunctionCallExprSyntax.self), callName(call) == "Text", !mayBeHidden(Syntax(call)) {
                 return true
             }
             if let config = child.as(IfConfigDeclSyntax.self) {
+                if let own = config.clauses.first(where: { contains($0, image) }) {
+                    if guaranteesText(in: Syntax(own), image: image) { return true }
+                    continue
+                }
                 let exhaustive = config.clauses.contains { $0.condition == nil }
-                if exhaustive, config.clauses.allSatisfy({ guaranteesText(in: Syntax($0)) }) { return true }
+                if exhaustive, config.clauses.allSatisfy({ guaranteesText(in: Syntax($0), image: image) }) { return true }
                 continue
             }
-            if guaranteesText(in: child) { return true }
+            if guaranteesText(in: child, image: image) { return true }
+        }
+        return false
+    }
+
+    func contains(_ ancestor: SyntaxProtocol, _ node: Syntax) -> Bool {
+        var current: Syntax? = node
+        while let candidate = current {
+            if candidate.id == Syntax(ancestor).id { return true }
+            current = candidate.parent
         }
         return false
     }

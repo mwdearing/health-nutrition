@@ -39,8 +39,10 @@ On the 89 trees the text lint's tests build, the two agree on 79. The 10 that di
 - 4 are tests written in Swift that does not parse: a view statement inside a postfix `#if` arm
   (`Text(...)` after `.accessibilityHidden(true)`), and `Custom.Button(action: {}) label: { ... }`, where `label:` cannot
   follow the argument list. The tool reads what the parser makes of them, which is not what the tests meant.
-- None is a difference on valid Swift. The shapes reviewers raised agree too: a label whose only `Text` is inside an
-  `#if` without `#else` is a finding, while an `#if ... #else` whose arms each hold a `Text` is not.
+- None is a difference on valid Swift in that corpus. Shapes raised in review agree too: a label whose only `Text` is
+  inside an `#if` without `#else` is a finding; an `#if ... #else` whose arms each hold a `Text` is not; and an image
+  and its `Text` inside the same `#if DEBUG` block is not, because only the configurations that compile the image count.
+  Conditional compilation is where the two are most likely to still differ, which is why the Python lint stays the gate.
 
 On the real tree (`ios/NutritionCore/Sources/NutritionUI` and `ios/HealthNutrition/Sources`) both report nothing.
 The tool checks every file it is given, so run over the whole `ios/HealthNutrition` root it also reports three images in
