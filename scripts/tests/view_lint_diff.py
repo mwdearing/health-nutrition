@@ -49,9 +49,19 @@ def _compare(request, monkeypatch):
         if tool.returncode not in (0, 1):
             # A crash or a usage error is never an agreement, whatever it printed.
             swift = swift | {("tool-failed", tool.returncode, tool.stderr.strip()[:80])}
-        # Paths differ by tree (the tmp_path of each run), so findings are compared by their path under the root.
-        text = {(Path(p).relative_to(root).as_posix() if Path(p).is_absolute() else p, n, r) for p, n, r in text}
-        swift = {(Path(p).relative_to(root).as_posix() if Path(p).is_absolute() else p, n, r) for p, n, r in swift}
+        # Paths differ by tree (the tmp_path of each run), so findings are compared by their path under the tree. The
+        # text lint also reads the app target beside the package root, so the base is two levels up from the root.
+        base = root.parent.parent
+
+        def relative(finding):
+            path, number, rule = finding
+            try:
+                return (Path(path).relative_to(base).as_posix(), number, rule)
+            except ValueError:
+                return finding
+
+        text = {relative(finding) for finding in text}
+        swift = {relative(finding) for finding in swift}
         with out.open("a", encoding="utf-8") as handle:
             status = "AGREE" if text == swift else "DIFFER"
             handle.write(f"{status} {request.node.name}\n")
