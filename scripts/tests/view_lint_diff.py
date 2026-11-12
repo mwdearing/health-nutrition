@@ -31,6 +31,12 @@ def _parse(output: str) -> set[tuple[str, int, str]]:
     return found
 
 
+def pytest_sessionstart(session) -> None:
+    """Start each run with an empty log, so a rerun does not stack on the last one."""
+    if os.environ.get("VIEW_LINT_BIN"):
+        Path(os.environ.get("VIEW_LINT_DIFF_OUT", "view-lint-diff.txt")).unlink(missing_ok=True)
+
+
 @pytest.fixture(autouse=True)
 def _compare(request, monkeypatch):
     binary = os.environ.get("VIEW_LINT_BIN")
@@ -46,7 +52,8 @@ def _compare(request, monkeypatch):
         result = original(root)
         tool = subprocess.run([binary, str(root)], capture_output=True, text=True, check=False)
         text, swift = _parse(result.stdout), _parse(tool.stdout)
-        if tool.returncode not in (0, 1):
+        if tool.returncode not in (0, 1) or (tool.returncode == 1 and not swift):
+            # (Exit 1 means "found something", so an exit 1 with nothing parsed is a failed run, not a clean one.)
             # A crash or a usage error is never an agreement, whatever it printed.
             swift = swift | {("tool-failed", tool.returncode, tool.stderr.strip()[:80])}
         # Paths differ by tree (the tmp_path of each run), so findings are compared by their path under the tree. The

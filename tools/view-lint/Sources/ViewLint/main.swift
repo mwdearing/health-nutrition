@@ -189,7 +189,18 @@ final class Linter: SyntaxVisitor {
     func visibleText(in scope: Syntax) -> Bool {
         let collector = TextCollector(viewMode: .sourceAccurate)
         collector.walk(scope)
-        return collector.texts.contains { !mayBeHidden(Syntax($0)) }
+        // A text inside a conditional-compilation arm of the label is absent from the other builds, where the image
+        // would be unnamed, so only a text outside any `#if` of the label names the control.
+        return collector.texts.contains { !mayBeHidden(Syntax($0)) && !insideConditional($0, within: scope) }
+    }
+
+    func insideConditional(_ node: FunctionCallExprSyntax, within scope: Syntax) -> Bool {
+        var current: Syntax? = Syntax(node).parent
+        while let candidate = current, candidate.id != scope.id {
+            if candidate.is(IfConfigDeclSyntax.self) { return true }
+            current = candidate.parent
+        }
+        return false
     }
 
     /// Whether the chain written after `node` hides it in some build.
