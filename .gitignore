@@ -32,3 +32,5 @@ __pycache__/
 
 # Local agent worktrees and settings: never commit nested checkouts
 .claude/
+
+view-lint-diff.txt

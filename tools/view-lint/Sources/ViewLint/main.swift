@@ -313,9 +313,23 @@ func swiftFiles(_ path: String) -> [String] {
 }
 
 var failed = false
+var usageError = false
+if CommandLine.arguments.count < 2 {
+    FileHandle.standardError.write(Data("usage: ViewLint <file-or-directory>...\n".utf8))
+    exit(2)
+}
 for argument in CommandLine.arguments.dropFirst() {
+    if !FileManager.default.fileExists(atPath: argument) {
+        FileHandle.standardError.write(Data("error: no such file or directory: \(argument)\n".utf8))
+        usageError = true
+        continue
+    }
     for file in swiftFiles(argument) {
-        guard let source = try? String(contentsOfFile: file, encoding: .utf8) else { continue }
+        guard let source = try? String(contentsOfFile: file, encoding: .utf8) else {
+            FileHandle.standardError.write(Data("error: cannot read \(file)\n".utf8))
+            usageError = true
+            continue
+        }
         let tree = Parser.parse(source: source)
         if ProcessInfo.processInfo.environment["VIEW_LINT_DUMP"] != nil { print(tree.debugDescription) }
         let linter = Linter(path: file, tree: tree)
@@ -326,4 +340,4 @@ for argument in CommandLine.arguments.dropFirst() {
         }
     }
 }
-exit(failed ? 1 : 0)
+exit(usageError ? 2 : (failed ? 1 : 0))

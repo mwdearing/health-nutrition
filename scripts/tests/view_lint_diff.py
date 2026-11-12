@@ -27,7 +27,7 @@ def _parse(output: str) -> set[tuple[str, int, str]]:
             continue
         rule = parts[2].strip()
         if rule in RULES:
-            found.add((Path(parts[0]).name, int(parts[1]), rule))
+            found.add((parts[0], int(parts[1]), rule))
     return found
 
 
@@ -46,6 +46,12 @@ def _compare(request, monkeypatch):
         result = original(root)
         tool = subprocess.run([binary, str(root)], capture_output=True, text=True, check=False)
         text, swift = _parse(result.stdout), _parse(tool.stdout)
+        if tool.returncode not in (0, 1):
+            # A crash or a usage error is never an agreement, whatever it printed.
+            swift = swift | {("tool-failed", tool.returncode, tool.stderr.strip()[:80])}
+        # Paths differ by tree (the tmp_path of each run), so findings are compared by their path under the root.
+        text = {(Path(p).relative_to(root).as_posix() if Path(p).is_absolute() else p, n, r) for p, n, r in text}
+        swift = {(Path(p).relative_to(root).as_posix() if Path(p).is_absolute() else p, n, r) for p, n, r in swift}
         with out.open("a", encoding="utf-8") as handle:
             status = "AGREE" if text == swift else "DIFFER"
             handle.write(f"{status} {request.node.name}\n")

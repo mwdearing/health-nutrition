@@ -42,3 +42,9 @@ On the 89 trees the text lint's tests build, the two agree on 79. The 10 that di
 - None is a difference on valid Swift.
 
 On the real tree (`ios/NutritionCore/Sources/NutritionUI` and `ios/HealthNutrition/Sources`) both report nothing.
+The tool checks every file it is given, so run over the whole `ios/HealthNutrition` root it also reports three images in
+the Gauge labels of `Widgets/TodayWidget.swift` and `WatchWidgets/WatchTodayWidget.swift`: the Python lint does not
+scope those folders in (`is_view_scope`). That is the same scoping difference as above, and a decision for whoever
+makes the tool a check.
+
+A path that does not exist, or a file that cannot be read, exits 2 with a message, as the Python lint does.
