@@ -41,9 +41,11 @@ final class CalorieWordingTests: XCTestCase {
     func testAPartialDayEnergyReadsAtLeast() {
         // One known entry of 400 calories and one entry with no energy: a partial day.
         let total = NutrientTotal(
-            value: .known(400, .kcal),
+            value: .unknown,
             coverage: Coverage(knownCount: 1, totalCount: 2, hasBelowReportingThreshold: false, hasUnknown: true))
-        let partial = DailyTotals(totals: ["energy": total])
+        let partial = DailyTotals(
+            totals: ["energy": total], knownSums: ["energy": .known(Decimal(400), .kcal)],
+            missingCounts: ["energy": 1])
         XCTAssertEqual(JournalViewModel.energyText(totals: partial), "at least 400 calories")
     }
 }

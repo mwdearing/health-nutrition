@@ -1176,7 +1176,14 @@ public final class JournalViewModel: ObservableObject {
         let countedLine = NutrientProgressLine.make(
             nutrient: energyKey, total: totals.total(for: energyKey), goal: nil,
             knownSum: totals.knownSum(for: energyKey), missingCount: totals.missingCount(for: energyKey))
-        let line = HealthIntakeTotals.combine([countedLine], outside: outside).first ?? countedLine
+        // A Health read that did not cover energy keeps the journal's own figure, as the goal bar does.
+        let line: NutrientProgressLine
+        if case .read(_, let readKeys) = outside,
+           !readKeys.contains(HealthKitWritePlanner.canonicalKey(for: energyKey)) {
+            line = countedLine
+        } else {
+            line = HealthIntakeTotals.combine([countedLine], outside: outside).first ?? countedLine
+        }
         guard case .known(let value, _) = line.amount else { return nil }
         // Energy reads as "400 Calories": the Diary never shows the kcal symbol on a screen. A small positive
         // amount reads "under 1", never "0", the same as Today's ring.
