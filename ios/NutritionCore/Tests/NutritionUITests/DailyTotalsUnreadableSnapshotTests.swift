@@ -23,6 +23,27 @@ final class DailyTotalsUnreadableSnapshotTests: XCTestCase {
         return try SwiftDataJournalStore(url: directory.appendingPathComponent("journal.store"))
     }
 
+    /// A drink whose product cannot be read may carry a stored hydration share: its water is unknown for the day,
+    /// not dropped as if it had no water (#1433 review P2).
+    func testAnUnreadableDrinkWithAHydrationShareMakesTheDaysWaterUnknown() throws {
+        let journal = try makeJournal()
+        let product = ProductDefinition(
+            snapshotID: "snap-drink", productID: "synthetic-drink", name: "Synthetic drink",
+            labelBasis: "per 100 mL", catalogOrigin: "test", catalogVersion: "unknown", kind: .drink, nutrients: [:])
+        let intake = Intake(id: UUID().uuidString.lowercased(), category: "drink", occurredAt: now, timeZoneIdentifier: "UTC")
+        try journal.create(
+            intake,
+            components: [IntakeComponent(componentID: "soda", name: "Synthetic soda", amount: 200, unit: .mL, hydrationPercent: 50)],
+            product: product, now: now)
+        let store = ProductReadFailingStore(base: journal, failingSnapshotID: "snap-drink")
+
+        let totals = try DailyTotalsBuilder.totals(
+            for: [intake], store: store, lookup: FoodValueFacts(), nutrients: ["water"])
+
+        let water = try XCTUnwrap(totals.total(for: "water"))
+        XCTAssertTrue(water.coverage.hasUnknown, "a drink with a hydration share and an unreadable product makes the day's water unknown")
+    }
+
     func testAnEntryWhoseSnapshotCannotBeReadIsUnknownNotFood() throws {
         let journal = try makeJournal()
         let product = ProductDefinition(
