@@ -1187,7 +1187,8 @@ public final class JournalViewModel: ObservableObject {
         guard case .known(let value, _) = line.amount else { return nil }
         // Energy reads as "400 Calories": the Diary never shows the kcal symbol on a screen. A small positive
         // amount reads "under 1", never "0", the same as Today's ring.
-        if value > 0 && value < 1 { return "less than 1 calorie" }
+        // A partial day keeps its "at least" qualifier even under 1, so it never reads as a complete "less than 1" (#1407 review P2).
+        if value > 0 && value < 1 && !line.isPartial { return "less than 1 calorie" }
         let whole = BodyActivityViewModel.whole(value)
         // A partial day is the known sum, so it reads "at least N", as the goal bar does.
         let prefix = line.isPartial ? "at least " : ""
