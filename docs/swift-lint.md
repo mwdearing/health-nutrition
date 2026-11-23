@@ -53,10 +53,12 @@ The lint reads masked source text, not a Swift syntax tree. The `unlabeled-image
 ones included, but some layouts are still misread. An open case: a nested `#if` arm that starts with a labeled sibling
 view can let an outer arm lend that label to an unlabeled image (#68). A misread is silenced with `lint-allow`.
 
-A SwiftSyntax version of `unlabeled-image` and `fixed-font-size` was tried (#75, closed unmerged). It agreed with this
-lint on 50 of 55 corpus cases and missed some `#if` cases of its own. The current decision is to keep this Python lint
-as the only gate and revisit a parser when the text rules need more `#if` handling than they can carry. That ADR,
-0003, is still Proposed on the spike branch and is not in `docs/adr/`.
+A SwiftSyntax version of `unlabeled-image` and `fixed-font-size` was tried first in #75 (closed unmerged). It agreed
+with this lint on 50 of 55 corpus cases. A second one now lives in `ios/Tools/view-lint` (#68), with a harness that runs
+this lint's own tests against it: it agrees on every valid-Swift case that lint tests build. The cases where the two differ are
+path scoping, `lint-allow`, tests written in Swift that does not parse, and a few `#if` shapes found by probing (see its
+README). This Python lint is still
+the only gate. Making the tool a CI check is a separate decision, because it needs a Swift toolchain in the lint job.
 
 ## Allowing a finding
 

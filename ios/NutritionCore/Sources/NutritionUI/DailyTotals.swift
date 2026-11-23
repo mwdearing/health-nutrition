@@ -97,7 +97,14 @@ public enum DailyTotalsBuilder {
                 if intake.category == waterCategory { waterWithoutRevision += 1 } else { otherWithoutRevision += 1 }
                 continue
             }
-            let snapshot = Self.snapshot(of: current, in: &snapshots, using: store)
+            // A snapshot that cannot be read counts as unknown for the day, like a revision that cannot be found (#775).
+            let snapshot: ProductDefinition?
+            do {
+                snapshot = try Self.snapshot(of: current, in: &snapshots, using: store)
+            } catch {
+                if intake.category == waterCategory { waterWithoutRevision += 1 } else { otherWithoutRevision += 1 }
+                continue
+            }
             // Typed means the revision names no snapshot, so a snapshot that could not be read is not mistaken for one.
             entries.append((current.components, snapshot, intake.category, current.productSnapshotID == nil))
         }
@@ -475,10 +482,10 @@ public enum DailyTotalsBuilder {
     /// cannot be read is nil, which the lookup answers as unknown rather than as zero.
     private static func snapshot(
         of revision: IntakeRevision, in cache: inout [String: ProductDefinition?], using store: any JournalStore
-    ) -> ProductDefinition? {
+    ) throws -> ProductDefinition? {
         guard let id = revision.productSnapshotID else { return nil }
         if let cached = cache[id] { return cached }
-        let found = try? store.product(snapshotID: id)
+        let found = try store.product(snapshotID: id)
         cache[id] = found
         return found
     }
