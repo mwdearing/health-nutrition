@@ -1184,7 +1184,8 @@ public final class JournalViewModel: ObservableObject {
         } else {
             line = HealthIntakeTotals.combine([countedLine], outside: outside).first ?? countedLine
         }
-        guard case .known(let value, _) = line.amount else { return nil }
+        // A partial day shows its known sum, not the unknown total (shownAmount), or the header would read nothing (#1407).
+        guard case .known(let value, _) = line.shownAmount else { return nil }
         // Energy reads as "400 Calories": the Diary never shows the kcal symbol on a screen. A small positive
         // amount reads "under 1", never "0", the same as Today's ring.
         // A partial day under 1 reads "so far", never a complete "less than 1" or a 0 (#1407 review P2).
