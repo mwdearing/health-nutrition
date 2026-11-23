@@ -48,4 +48,15 @@ final class CalorieWordingTests: XCTestCase {
             missingCounts: ["energy": 1])
         XCTAssertEqual(JournalViewModel.energyText(totals: partial), "at least 400 calories")
     }
+
+    /// A partial day under 1 calorie keeps its partial marker and never reads as a complete "less than 1" (#1407 review P2).
+    func testAPartialDayUnderOneCalorieReadsSoFar() {
+        let total = NutrientTotal(
+            value: .unknown,
+            coverage: Coverage(knownCount: 1, totalCount: 2, hasBelowReportingThreshold: false, hasUnknown: true))
+        let partial = DailyTotals(
+            totals: ["energy": total], knownSums: ["energy": .known(Decimal(string: "0.4")!, .kcal)],
+            missingCounts: ["energy": 1])
+        XCTAssertEqual(JournalViewModel.energyText(totals: partial), "less than 1 calorie so far")
+    }
 }
