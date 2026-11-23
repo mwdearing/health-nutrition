@@ -61,8 +61,11 @@ public struct InsightsHost: View {
                 InsightsView(week: week, skippedCount: skipped, averages: averages)
             case .failed(let message):
                 ScrollView {
-                    InlineNotice(message, tone: .failed)
-                        .padding(DesignSpacing.m)
+                    VStack(alignment: .leading, spacing: DesignSpacing.m) {
+                        InlineNotice(message, tone: .failed)
+                        Button("Try again") { journal.load(now: now()) }
+                    }
+                    .padding(DesignSpacing.m)
                 }
                 .background(TokenColors.background)
                 .navigationTitle("Insights")

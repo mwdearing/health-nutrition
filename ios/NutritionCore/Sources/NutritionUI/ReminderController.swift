@@ -47,6 +47,9 @@ public final class ReminderController: ObservableObject {
     @Published public private(set) var isOn: Bool
     @Published public private(set) var time: ReminderTime
     @Published public private(set) var message: String?
+    /// Whether the notice is the one for notifications that are off for the app, which a person can only turn
+    /// back on in the Settings app, so the screen offers a button that opens it.
+    public var offersOpenSettings: Bool { message == Self.withdrawnMessage }
     /// The water and supplement reminders, when this build wires them in. Set once at startup.
     public var customReminders: CustomReminderController?
     /// The per-medication reminders, synced and reset with the others. Nil where the system does not schedule them.

@@ -281,11 +281,11 @@ public final class LibraryViewModel: ObservableObject {
     private var savedMealsObservation: AnyCancellable?
     @Published public private(set) var errorMessage: String?
     @Published public private(set) var standaloneProducts: [CustomProductRevision] = []
-    @Published public var searchText = ""
+    @Published public var searchText = "" { didSet { if searchText != oldValue { clearItemNotice() } } }
     @Published public private(set) var deliveryRefresh = UUID()
     public let productSharing: CustomProductSharingModel?
     private let productStore: (any CustomProductStore)?
-    @Published public var segment: LibrarySegment = .favorites
+    @Published public var segment: LibrarySegment = .favorites { didSet { if segment != oldValue { clearItemNotice() } } }
     @Published public private(set) var undoToken: LibraryUndoToken?
     /// The supplement list the Library links to. Set once by the app; nil leaves the link out.
     public var supplementStack: SupplementStackViewModel?
@@ -427,7 +427,7 @@ public final class LibraryViewModel: ObservableObject {
         } catch {
             // Rows from an earlier load are not kept under the error: they may be what failed to read.
             sections = []
-            errorMessage = "Could not read the library."
+            errorMessage = Self.readFailureMessage
         }
     }
 
@@ -560,6 +560,14 @@ public final class LibraryViewModel: ObservableObject {
     /// Clears the token when the Undo window ends, but only if it is still the current one.
     public func expireUndo(_ token: LibraryUndoToken) {
         if undoToken == token { undoToken = nil }
+    }
+
+    static let readFailureMessage = "Could not read the library."
+
+    /// An item notice, such as one that cannot be opened or added, belongs to what was on screen: it goes with a
+    /// change of segment or search. A failure to read the library stays until a read works again.
+    private func clearItemNotice() {
+        if errorMessage != Self.readFailureMessage { errorMessage = nil }
     }
 
     /// Reports that an item cannot be opened as details, because its saved product is gone.

@@ -109,9 +109,12 @@ final class AddTypedInputSwipeUITests: XCTestCase {
             return
         }
         RunLoop.current.run(until: Date().addingTimeInterval(0.8))
+        // #930 diagnostic: state of the form and of the recognizer just before the drag, logged to the test output.
+        print("DIAG-930 before drag1 backHittable=\(formBack.isHittable) barExists=\(app.navigationBars["Log entry"].exists) tree=\(app.debugDescription.prefix(4000))")
         let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5))
         let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5))
         start.press(forDuration: 0.1, thenDragTo: end, withVelocity: .fast, thenHoldForDuration: 0)
+        print("DIAG-930 after drag1 barExists=\(app.navigationBars["Log entry"].exists) typeItExists=\(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Type it in")).firstMatch.exists)")
 
         // The pop itself: back on Add, the Type it in tile is on screen again.
         let typeItAgain = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Type it in")).firstMatch
