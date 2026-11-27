@@ -102,7 +102,13 @@ public enum DailyTotalsBuilder {
             do {
                 snapshot = try Self.snapshot(of: current, in: &snapshots, using: store)
             } catch {
-                if intake.category == waterCategory { waterWithoutRevision += 1 } else { otherWithoutRevision += 1 }
+                // The entry's nutrients are unknown. A drink with a stored hydration share also makes the day's water
+                // unknown, since its water would otherwise be dropped as if it had none. The check covers every unreadable entry with a
+                // stored hydration share, drink or food, as the distrusted-entry check in DailyTotals does (#1433 review P2).
+                if intake.category == waterCategory || current.components.contains(where: { $0.hydrationPercent != nil }) {
+                    waterWithoutRevision += 1
+                }
+                if intake.category != waterCategory { otherWithoutRevision += 1 }
                 continue
             }
             // Typed means the revision names no snapshot, so a snapshot that could not be read is not mistaken for one.
