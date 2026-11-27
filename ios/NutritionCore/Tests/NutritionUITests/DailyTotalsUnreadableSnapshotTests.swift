@@ -44,6 +44,27 @@ final class DailyTotalsUnreadableSnapshotTests: XCTestCase {
         XCTAssertTrue(water.coverage.hasUnknown, "a drink with a hydration share and an unreadable product makes the day's water unknown")
     }
 
+    /// The hydration check covers every unreadable entry that stores a hydration share, food included, as the comment in
+    /// DailyTotals states (#1439 review P2). Mutation target: narrowing the check to drinks turns this red.
+    func testAnUnreadableFoodWithAHydrationShareMakesTheDaysWaterUnknown() throws {
+        let journal = try makeJournal()
+        let product = ProductDefinition(
+            snapshotID: "snap-food", productID: "synthetic-soup", name: "Synthetic soup",
+            labelBasis: "per 100 mL", catalogOrigin: "test", catalogVersion: "unknown", kind: .food, nutrients: [:])
+        let intake = Intake(id: UUID().uuidString.lowercased(), category: "food", occurredAt: now, timeZoneIdentifier: "UTC")
+        try journal.create(
+            intake,
+            components: [IntakeComponent(componentID: "soup", name: "Synthetic soup", amount: 250, unit: .mL, hydrationPercent: 100)],
+            product: product, now: now)
+        let store = ProductReadFailingStore(base: journal, failingSnapshotID: "snap-food")
+
+        let totals = try DailyTotalsBuilder.totals(
+            for: [intake], store: store, lookup: FoodValueFacts(), nutrients: ["water"])
+
+        let water = try XCTUnwrap(totals.total(for: "water"))
+        XCTAssertTrue(water.coverage.hasUnknown, "a food with a hydration share and an unreadable product makes the day's water unknown")
+    }
+
     func testAnEntryWhoseSnapshotCannotBeReadIsUnknownNotFood() throws {
         let journal = try makeJournal()
         let product = ProductDefinition(
