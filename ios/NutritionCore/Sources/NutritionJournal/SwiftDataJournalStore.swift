@@ -979,7 +979,7 @@ enum JournalMigrationPlan: SchemaMigrationPlan {
         [
             JournalSchemaV1.self, JournalSchemaV2.self, JournalSchemaV3.self, JournalSchemaV4.self,
             JournalSchemaV5.self, JournalSchemaV6.self, JournalSchemaV7.self, JournalSchemaV8.self,
-            JournalSchemaV9.self, JournalSchemaV10.self,
+            JournalSchemaV9.self, JournalSchemaV10.self, JournalSchemaV11.self,
         ]
     }
     static var stages: [MigrationStage] {
@@ -1005,6 +1005,7 @@ enum JournalMigrationPlan: SchemaMigrationPlan {
             .lightweight(fromVersion: JournalSchemaV7.self, toVersion: JournalSchemaV8.self),
             .lightweight(fromVersion: JournalSchemaV8.self, toVersion: JournalSchemaV9.self),
             .lightweight(fromVersion: JournalSchemaV9.self, toVersion: JournalSchemaV10.self),
+            .lightweight(fromVersion: JournalSchemaV10.self, toVersion: JournalSchemaV11.self),
         ]
     }
 
@@ -1156,7 +1157,7 @@ public final class SwiftDataJournalStore: JournalDeliverySuspension, JournalDele
     }
 
     static func makeContainer(url: URL) throws -> ModelContainer {
-        let schema = Schema(versionedSchema: JournalSchemaV10.self)
+        let schema = Schema(versionedSchema: JournalSchemaV11.self)
         let configuration = ModelConfiguration(schema: schema, url: url, cloudKitDatabase: .none)
         return try ModelContainer(
             for: schema, migrationPlan: JournalMigrationPlan.self, configurations: configuration)
